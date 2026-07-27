@@ -18,7 +18,10 @@
 - `data/`：上传、运行快照、输出、日志和数据库，不进入 Git。
 - `docs/`：架构与 Skill 接入协议。
 - `scripts/`：初始化、启动和停止脚本。
-- 当前模型：阿里云百炼千问 `qwen3.7-plus`，通过 OpenAI-Compatible 接口调用。
+- 模型接入：普通用户可在前端只输入 API Key，后端自动验证百炼并读取支持
+  Tool Calling 的千问模型；API Key 加密存放在 SQLite，主密钥位于
+  `data/credential.key`，前端只显示脱敏提示。
+- 任务模型：用户可在每次 Skill 运行时选择连接与模型，运行审计保留供应商和模型名。
 
 ## 本地命令
 

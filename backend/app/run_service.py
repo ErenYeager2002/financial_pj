@@ -15,7 +15,8 @@ from sqlalchemy.orm import Session
 
 from .auth import UserContext
 from .events import emit_event
-from .models import FileRecord, RunRecord
+from .model_service import resolve_runtime_config
+from .models import FileRecord, RunModelAudit, RunRecord
 from .orchestrator import interpret_parameters
 from .registry import RegisteredSkill, registry
 from .schemas import RunCreate, RunRead
@@ -57,6 +58,8 @@ def serialize_run(run: RunRecord) -> RunRead:
         skill_name=run.skill_name,
         skill_version=run.skill_version,
         skill_commit=run.skill_commit,
+        model_provider=run.model_audit.provider if run.model_audit else "",
+        model_name=run.model_audit.model if run.model_audit else "",
         state=run.state,
         progress=run.progress,
         progress_message=run.progress_message,
@@ -152,7 +155,18 @@ def create_run(db: Session, request: RunCreate, user: UserContext) -> RunRecord:
         if existing:
             return existing
 
-    parameters, missing, _, _ = interpret_parameters(skill, request.message, request.parameters)
+    llm_config = resolve_runtime_config(
+        db,
+        user,
+        request.model_connection_id,
+        request.model,
+    )
+    parameters, missing, _, _ = interpret_parameters(
+        skill,
+        request.message,
+        request.parameters,
+        llm_config,
+    )
     if missing:
         raise HTTPException(status_code=422, detail={"message": "缺少必要参数", "missing": missing})
     errors = sorted(
@@ -201,6 +215,15 @@ def create_run(db: Session, request: RunCreate, user: UserContext) -> RunRecord:
     )
     db.add(run)
     db.flush()
+    if llm_config:
+        db.add(
+            RunModelAudit(
+                run_id=run.id,
+                connection_id=llm_config.connection_id,
+                provider=llm_config.provider,
+                model=llm_config.model,
+            )
+        )
     emit_event(
         db,
         run,
@@ -208,6 +231,10 @@ def create_run(db: Session, request: RunCreate, user: UserContext) -> RunRecord:
         state=run.state,
         progress=0,
         message=run.progress_message,
+        data={
+            "model_provider": llm_config.provider if llm_config else "",
+            "model_name": llm_config.model if llm_config else "",
+        },
     )
     return run
 

@@ -14,6 +14,14 @@ from sqlalchemy.orm import Session
 
 from .auth import UserContext, get_current_user, get_sse_user, require_admin
 from .database import SessionLocal, get_db, init_db
+from .model_service import (
+    connect_api_key,
+    list_connections,
+    refresh_connection,
+    remove_connection,
+    resolve_runtime_config,
+    select_model,
+)
 from .models import FileRecord, RunEvent, RunRecord
 from .orchestrator import interpret_parameters
 from .registry import registry
@@ -25,7 +33,16 @@ from .run_service import (
     get_run_or_404,
     serialize_run,
 )
-from .schemas import InterpretRequest, InterpretResponse, RunActionResponse, RunCreate, RunRead
+from .schemas import (
+    InterpretRequest,
+    InterpretResponse,
+    ModelConnectionRead,
+    ModelConnectRequest,
+    ModelSelectRequest,
+    RunActionResponse,
+    RunCreate,
+    RunRead,
+)
 from .settings import settings
 from .storage import save_upload
 
@@ -94,13 +111,76 @@ def get_skill(
 def interpret(
     skill_id: str,
     body: InterpretRequest,
+    db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ) -> InterpretResponse:
     skill = registry.get(skill_id, include_unpublished=user.is_admin)
     if not skill:
         raise HTTPException(status_code=404, detail="Skill 不存在。")
-    parameters, missing, source, notes = interpret_parameters(skill, body.message, body.parameters)
+    llm_config = resolve_runtime_config(
+        db,
+        user,
+        body.model_connection_id,
+        body.model,
+    )
+    parameters, missing, source, notes = interpret_parameters(
+        skill,
+        body.message,
+        body.parameters,
+        llm_config,
+    )
     return InterpretResponse(parameters=parameters, missing=missing, source=source, notes=notes)
+
+
+@app.get("/api/model-connections", response_model=list[ModelConnectionRead])
+def model_connections(
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> list[ModelConnectionRead]:
+    return list_connections(db, user)
+
+
+@app.post("/api/model-connections", response_model=ModelConnectionRead)
+def connect_model(
+    body: ModelConnectRequest,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> ModelConnectionRead:
+    return connect_api_key(db, user, body.api_key)
+
+
+@app.patch(
+    "/api/model-connections/{connection_id}",
+    response_model=ModelConnectionRead,
+)
+def update_model(
+    connection_id: str,
+    body: ModelSelectRequest,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> ModelConnectionRead:
+    return select_model(db, user, connection_id, body.selected_model)
+
+
+@app.post(
+    "/api/model-connections/{connection_id}/refresh",
+    response_model=ModelConnectionRead,
+)
+def refresh_model(
+    connection_id: str,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> ModelConnectionRead:
+    return refresh_connection(db, user, connection_id)
+
+
+@app.delete("/api/model-connections/{connection_id}", status_code=204)
+def delete_model(
+    connection_id: str,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> None:
+    remove_connection(db, user, connection_id)
 
 
 @app.post("/api/files")

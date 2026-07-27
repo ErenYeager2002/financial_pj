@@ -7,8 +7,8 @@
 ---
 
 **Project:** Financial Skill Platform
-**Generated:** 2026-07-27 13:19:29
-**Category:** Analytics Dashboard
+**Generated:** 2026-07-27 14:20:33
+**Category:** Financial Dashboard
 
 ---
 
@@ -158,13 +158,13 @@
 
 ## Style Guidelines
 
-**Style:** Data-Dense Dashboard
+**Style:** Dark Mode (OLED)
 
-**Keywords:** Multiple charts/widgets, data tables, KPI cards, minimal padding, grid layout, space-efficient, maximum data visibility
+**Keywords:** Dark theme, low light, high contrast, deep black, midnight blue, eye-friendly, OLED, night mode, power efficient
 
-**Best For:** Business intelligence dashboards, financial analytics, enterprise reporting, operational dashboards, data warehousing
+**Best For:** Night-mode apps, coding platforms, entertainment, eye-strain prevention, OLED devices, low-light
 
-**Key Effects:** Hover tooltips, chart zoom on click, row highlighting on hover, smooth filter animations, data loading spinners
+**Key Effects:** Minimal glow (text-shadow: 0 0 10px), dark-to-light transitions, low white emission, high readability, visible focus
 
 ### Page Pattern
 
@@ -178,8 +178,8 @@
 
 ## Anti-Patterns (Do NOT Use)
 
-- ❌ Ornate design
-- ❌ No filtering
+- ❌ Light mode default
+- ❌ Slow rendering
 
 ### Additional Forbidden Patterns
 

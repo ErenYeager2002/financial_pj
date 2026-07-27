@@ -9,6 +9,8 @@ from pydantic import BaseModel, Field
 class InterpretRequest(BaseModel):
     message: str = ""
     parameters: dict[str, Any] = Field(default_factory=dict)
+    model_connection_id: str | None = None
+    model: str | None = None
 
 
 class InterpretResponse(BaseModel):
@@ -24,6 +26,8 @@ class RunCreate(BaseModel):
     parameters: dict[str, Any] = Field(default_factory=dict)
     files: dict[str, str | list[str]] = Field(default_factory=dict)
     idempotency_key: str | None = None
+    model_connection_id: str | None = None
+    model: str | None = None
 
 
 class RunActionResponse(BaseModel):
@@ -40,6 +44,8 @@ class RunRead(BaseModel):
     skill_name: str
     skill_version: str
     skill_commit: str
+    model_provider: str
+    model_name: str
     state: str
     progress: int
     progress_message: str
@@ -64,3 +70,23 @@ class FileRead(BaseModel):
     sha256: str
     kind: str
     download_url: str
+
+
+class ModelConnectRequest(BaseModel):
+    api_key: str = Field(min_length=8, max_length=512)
+
+
+class ModelSelectRequest(BaseModel):
+    selected_model: str = Field(min_length=1, max_length=255)
+
+
+class ModelConnectionRead(BaseModel):
+    id: str
+    provider: str
+    provider_name: str
+    api_key_hint: str
+    models: list[str]
+    selected_model: str
+    status: str
+    last_checked_at: datetime
+    created_at: datetime

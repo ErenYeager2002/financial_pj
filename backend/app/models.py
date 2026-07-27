@@ -28,6 +28,28 @@ class FileRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class ModelConnection(Base):
+    __tablename__ = "model_connections"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner_id: Mapped[str] = mapped_column(String(128), index=True)
+    department_id: Mapped[str] = mapped_column(String(128), index=True)
+    provider: Mapped[str] = mapped_column(String(64), index=True)
+    provider_name: Mapped[str] = mapped_column(String(128))
+    base_url: Mapped[str] = mapped_column(Text)
+    api_key_encrypted: Mapped[str] = mapped_column(Text)
+    api_key_hint: Mapped[str] = mapped_column(String(32))
+    api_key_fingerprint: Mapped[str] = mapped_column(String(64), index=True)
+    models_json: Mapped[str] = mapped_column(Text, default="[]")
+    selected_model: Mapped[str] = mapped_column(String(255), default="")
+    status: Mapped[str] = mapped_column(String(32), default="connected")
+    last_checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
 class RunRecord(Base):
     __tablename__ = "runs"
 
@@ -66,6 +88,9 @@ class RunRecord(Base):
     events: Mapped[list[RunEvent]] = relationship(
         back_populates="run", cascade="all, delete-orphan"
     )
+    model_audit: Mapped[RunModelAudit | None] = relationship(
+        back_populates="run", cascade="all, delete-orphan", uselist=False
+    )
 
 
 class RunEvent(Base):
@@ -81,3 +106,15 @@ class RunEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     run: Mapped[RunRecord] = relationship(back_populates="events")
+
+
+class RunModelAudit(Base):
+    __tablename__ = "run_model_audits"
+
+    run_id: Mapped[str] = mapped_column(String(36), ForeignKey("runs.id"), primary_key=True)
+    connection_id: Mapped[str] = mapped_column(String(36), index=True)
+    provider: Mapped[str] = mapped_column(String(64))
+    model: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    run: Mapped[RunRecord] = relationship(back_populates="model_audit")

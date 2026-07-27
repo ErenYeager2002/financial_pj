@@ -65,6 +65,24 @@ waiting_confirmation
 - 独立 Worker：轮询数据库队列，按 `python`、`rpa`、`http` 池领取任务。
 - React：Skill 目录、参数解析、任务提交、实时进度、结果下载和管理员页面。
 - Skill Registry：扫描 `skills/*/tool.yaml`，也可配置外部 Git 工作树。
+- Model Connections：API Key 自动探测、加密保存、模型发现和任务级模型选择。
+
+## 模型接入流程
+
+```mermaid
+flowchart LR
+    A["员工输入 API Key"] --> B["后端探测允许的供应商端点"]
+    B --> C["验证密钥并读取模型列表"]
+    C --> D["筛选支持 Tool Calling 的文本模型"]
+    D --> E["加密保存 API Key"]
+    E --> F["前端仅显示脱敏提示和模型名称"]
+    F --> G["任务选择连接与模型"]
+    G --> H["模型提取受 Schema 约束的参数"]
+    H --> I["Skill 确定性执行财务任务"]
+```
+
+凭据密文保存在 SQLite，Fernet 主密钥位于 `data/credential.key`，两者都不进入
+Git。生产环境应把主密钥迁移到公司密钥管理系统，并限制数据库和数据目录权限。
 
 ## 下一阶段
 

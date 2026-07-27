@@ -1,6 +1,7 @@
 import {
   ArrowLeft,
   ArrowRight,
+  Bot,
   Check,
   FileCheck2,
   FileUp,
@@ -15,6 +16,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
 import type {
   JsonSchemaProperty,
+  ModelConnection,
   SkillManifest,
   UploadedFile,
 } from '../types'
@@ -36,6 +38,9 @@ export function SkillRun() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [notes, setNotes] = useState<string[]>([])
+  const [modelConnections, setModelConnections] = useState<ModelConnection[]>([])
+  const [modelConnectionId, setModelConnectionId] = useState('')
+  const [selectedModel, setSelectedModel] = useState('')
 
   useEffect(() => {
     api.skill(skillId)
@@ -50,6 +55,18 @@ export function SkillRun() {
       })
       .catch((reason: Error) => setError(reason.message))
   }, [skillId])
+
+  useEffect(() => {
+    api.modelConnections()
+      .then((connections) => {
+        setModelConnections(connections)
+        if (connections.length) {
+          setModelConnectionId(connections[0].id)
+          setSelectedModel(connections[0].selected_model)
+        }
+      })
+      .catch((reason: Error) => setError(reason.message))
+  }, [])
 
   const ready = useMemo(() => {
     if (!skill) return false
@@ -75,7 +92,13 @@ export function SkillRun() {
     setInterpreting(true)
     setError('')
     try {
-      const result = await api.interpret(skill.id, message, parameters)
+      const result = await api.interpret(
+        skill.id,
+        message,
+        parameters,
+        modelConnectionId,
+        selectedModel,
+      )
       setParameters(result.parameters)
       setNotes(result.notes)
       if (result.missing.length) {
@@ -98,6 +121,8 @@ export function SkillRun() {
         message,
         parameters,
         Object.fromEntries(Object.entries(files).map(([role, file]) => [role, file.id])),
+        modelConnectionId,
+        selectedModel,
       )
       navigate(`/runs/${run.id}`)
     } catch (reason) {
@@ -190,6 +215,49 @@ export function SkillRun() {
             <span className="step-number">2</span>
             <div><h3>说明本次要求</h3><p>可以说人话，模型只负责把要求整理成下面的参数。</p></div>
           </div>
+          {modelConnections.length ? (
+            <div className="task-model-selector">
+              <div className="task-model-icon"><Bot size={19} /></div>
+              <label className="field">
+                <span>本次使用的模型服务</span>
+                <select
+                  value={modelConnectionId}
+                  onChange={(event) => {
+                    const connection = modelConnections.find(
+                      (item) => item.id === event.target.value,
+                    )
+                    setModelConnectionId(event.target.value)
+                    setSelectedModel(connection?.selected_model || '')
+                  }}
+                >
+                  {modelConnections.map((connection) => (
+                    <option key={connection.id} value={connection.id}>
+                      {connection.provider_name} · {connection.api_key_hint}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>执行模型</span>
+                <select
+                  value={selectedModel}
+                  onChange={(event) => setSelectedModel(event.target.value)}
+                >
+                  {(modelConnections.find((item) => item.id === modelConnectionId)?.models || [])
+                    .map((model) => <option key={model} value={model}>{model}</option>)}
+                </select>
+              </label>
+            </div>
+          ) : (
+            <div className="model-required">
+              <Bot size={18} />
+              <div>
+                <strong>尚未接入可选模型</strong>
+                <span>可以继续使用平台默认配置，或先前往模型接入页面添加 API Key。</span>
+              </div>
+              <Link to="/models">接入模型</Link>
+            </div>
+          )}
           <label className="field">
             <span>补充说明</span>
             <textarea
@@ -232,6 +300,7 @@ export function SkillRun() {
           <dl>
             <div><dt>Skill 版本</dt><dd>v{skill.version}</dd></div>
             <div><dt>执行器</dt><dd>{skill.handler.adapter.toUpperCase()}</dd></div>
+            <div><dt>理解模型</dt><dd>{selectedModel || '平台默认'}</dd></div>
             <div><dt>风险等级</dt><dd>{skill.risk.level === 'read_only' ? '只读分析' : '需要确认'}</dd></div>
             <div><dt>最长运行</dt><dd>{skill.runtime.timeout_seconds} 秒</dd></div>
           </dl>

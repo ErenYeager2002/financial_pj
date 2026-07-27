@@ -1,5 +1,6 @@
 import {
   Blocks,
+  Bot,
   ChevronDown,
   LayoutDashboard,
   ListChecks,
@@ -16,6 +17,7 @@ const TITLES: Record<string, string> = {
   '/': '工作概览',
   '/skills': '财务工具',
   '/runs': '运行记录',
+  '/models': '模型接入',
   '/admin': 'Skill 管理',
 }
 
@@ -61,6 +63,9 @@ export function Layout() {
           </NavLink>
           <NavLink to="/runs">
             <ListChecks size={18} /> 运行记录
+          </NavLink>
+          <NavLink to="/models">
+            <Bot size={18} /> 模型接入
           </NavLink>
           {role === 'skill_admin' && (
             <>
@@ -111,4 +116,3 @@ export function Layout() {
     </div>
   )
 }
-

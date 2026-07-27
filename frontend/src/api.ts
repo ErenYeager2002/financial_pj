@@ -1,5 +1,6 @@
 import type {
   RunRecord,
+  ModelConnection,
   SkillManifest,
   UploadedFile,
   UserRole,
@@ -47,6 +48,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     }
     throw new Error(message)
   }
+  if (response.status === 204) return undefined as T
   return (await response.json()) as T
 }
 
@@ -56,6 +58,23 @@ export const api = {
   skill: (id: string) => request<SkillManifest>(`/api/skills/${id}`),
   runs: () => request<RunRecord[]>('/api/runs'),
   run: (id: string) => request<RunRecord>(`/api/runs/${id}`),
+  modelConnections: () => request<ModelConnection[]>('/api/model-connections'),
+  connectModel: (apiKey: string) =>
+    request<ModelConnection>('/api/model-connections', {
+      method: 'POST',
+      body: JSON.stringify({ api_key: apiKey }),
+    }),
+  selectModel: (connectionId: string, selectedModel: string) =>
+    request<ModelConnection>(`/api/model-connections/${connectionId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ selected_model: selectedModel }),
+    }),
+  refreshModel: (connectionId: string) =>
+    request<ModelConnection>(`/api/model-connections/${connectionId}/refresh`, {
+      method: 'POST',
+    }),
+  deleteModel: (connectionId: string) =>
+    request<void>(`/api/model-connections/${connectionId}`, { method: 'DELETE' }),
   upload: async (role: string, file: File) => {
     const data = new FormData()
     data.append('role', role)
@@ -66,6 +85,8 @@ export const api = {
     skillId: string,
     message: string,
     parameters: Record<string, unknown>,
+    modelConnectionId?: string,
+    model?: string,
   ) =>
     request<{
       parameters: Record<string, unknown>
@@ -74,13 +95,20 @@ export const api = {
       notes: string[]
     }>(`/api/skills/${skillId}/interpret`, {
       method: 'POST',
-      body: JSON.stringify({ message, parameters }),
+      body: JSON.stringify({
+        message,
+        parameters,
+        model_connection_id: modelConnectionId || null,
+        model: model || null,
+      }),
     }),
   createRun: (
     skillId: string,
     message: string,
     parameters: Record<string, unknown>,
     files: Record<string, string | string[]>,
+    modelConnectionId?: string,
+    model?: string,
   ) =>
     request<RunRecord>('/api/runs', {
       method: 'POST',
@@ -90,6 +118,8 @@ export const api = {
         parameters,
         files,
         idempotency_key: crypto.randomUUID(),
+        model_connection_id: modelConnectionId || null,
+        model: model || null,
       }),
     }),
   confirmRun: (id: string) =>

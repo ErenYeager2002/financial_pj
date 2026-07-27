@@ -24,6 +24,10 @@ Set-Location D:\BESTEASY\financial_pj
 `qwen3.7-plus`。模型只负责理解自然语言和生成受 Schema 约束的参数；
 最终财务计算仍由确定性 Skill 完成。
 
+也可以直接在网页的“模型接入”页面输入 API Key。平台会自动验证供应商、
+读取支持 Tool Calling 的模型，并允许在每次 Skill 运行时选择具体模型。
+API Key 使用服务端密钥加密保存，接口只返回脱敏后的末四位。
+
 ## 目录
 
 ```text

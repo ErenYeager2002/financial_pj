@@ -52,6 +52,10 @@ class Settings:
         return self.data_dir / "logs"
 
     @property
+    def credential_key_file(self) -> Path:
+        return self.data_dir / "credential.key"
+
+    @property
     def frontend_dist(self) -> Path:
         return self.project_root / "frontend" / "dist"
 

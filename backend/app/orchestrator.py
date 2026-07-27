@@ -2,12 +2,22 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
 
 from .registry import RegisteredSkill
 from .settings import settings
+
+
+@dataclass(frozen=True)
+class LlmConfig:
+    provider: str
+    connection_id: str
+    base_url: str
+    api_key: str
+    model: str
 
 
 def _apply_defaults(schema: dict[str, Any], values: dict[str, Any]) -> dict[str, Any]:
@@ -45,9 +55,19 @@ def interpret_parameters(
     skill: RegisteredSkill,
     message: str,
     current: dict[str, Any],
+    llm_config: LlmConfig | None = None,
 ) -> tuple[dict[str, Any], list[str], str, list[str]]:
     schema = skill.manifest.input_schema
-    if settings.llm_base_url and settings.llm_api_key and settings.llm_model and message.strip():
+    config = llm_config
+    if not config and settings.llm_base_url and settings.llm_api_key and settings.llm_model:
+        config = LlmConfig(
+            provider="environment",
+            connection_id="",
+            base_url=settings.llm_base_url,
+            api_key=settings.llm_api_key,
+            model=settings.llm_model,
+        )
+    if config and message.strip():
         tool = {
             "type": "function",
             "function": {
@@ -57,7 +77,7 @@ def interpret_parameters(
             },
         }
         payload = {
-            "model": settings.llm_model,
+            "model": config.model,
             "messages": [
                 {
                     "role": "system",
@@ -70,13 +90,14 @@ def interpret_parameters(
             ],
             "tools": [tool],
             "tool_choice": {"type": "function", "function": {"name": tool["function"]["name"]}},
-            "enable_thinking": False,
             "temperature": 0,
         }
+        if config.provider in {"qwen", "environment"} or config.model.startswith("qwen"):
+            payload["enable_thinking"] = False
         try:
             response = httpx.post(
-                f"{settings.llm_base_url}/chat/completions",
-                headers={"Authorization": f"Bearer {settings.llm_api_key}"},
+                f"{config.base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {config.api_key}"},
                 json=payload,
                 timeout=30,
             )

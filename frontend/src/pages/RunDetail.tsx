@@ -1,5 +1,6 @@
 import {
   ArrowLeft,
+  Bot,
   CheckCircle2,
   CircleStop,
   Clock3,
@@ -134,6 +135,7 @@ export function RunDetail() {
           <span><Clock3 size={15} /> 创建于 {new Date(run.created_at).toLocaleString('zh-CN')}</span>
           <span><Hash size={15} /> Skill SHA {run.skill_commit?.slice(0, 10) || '本地版本'}</span>
           <span><ShieldCheck size={15} /> v{run.skill_version} 运行快照</span>
+          <span><Bot size={15} /> {run.model_name || '平台默认模型'}</span>
         </div>
       </section>
 

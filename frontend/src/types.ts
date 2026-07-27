@@ -77,6 +77,18 @@ export interface UploadedFile {
   kind: string
 }
 
+export interface ModelConnection {
+  id: string
+  provider: string
+  provider_name: string
+  api_key_hint: string
+  models: string[]
+  selected_model: string
+  status: string
+  last_checked_at: string
+  created_at: string
+}
+
 export interface RunResultFile {
   name: string
   file_id: string
@@ -93,6 +105,8 @@ export interface RunRecord {
   skill_name: string
   skill_version: string
   skill_commit: string
+  model_provider: string
+  model_name: string
   state: string
   progress: number
   progress_message: string
@@ -124,4 +138,3 @@ export interface RunEvent {
   data: Record<string, unknown>
   created_at: string
 }
-
