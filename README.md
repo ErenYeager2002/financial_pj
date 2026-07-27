@@ -20,6 +20,10 @@ Set-Location D:\BESTEASY\financial_pj
 .\scripts\stop.ps1
 ```
 
+本地 `.env` 已支持阿里云百炼 OpenAI-Compatible 接口，当前模型为
+`qwen3.7-plus`。模型只负责理解自然语言和生成受 Schema 约束的参数；
+最终财务计算仍由确定性 Skill 完成。
+
 ## 目录
 
 ```text

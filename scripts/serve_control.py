@@ -17,6 +17,22 @@ LOG_DIR = DATA_DIR / "logs"
 RUNTIME_FILE = DATA_DIR / "runtime.json"
 
 
+def runtime_environment() -> dict[str, str]:
+    environment = os.environ.copy()
+    env_file = PROJECT_ROOT / ".env"
+    if not env_file.is_file():
+        return environment
+    for raw_line in env_file.read_text(encoding="utf-8-sig").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not environment.get(key):
+            environment[key] = value.strip().strip("\"'")
+    return environment
+
+
 def process_exists(process_id: int) -> bool:
     if sys.platform == "win32":
         result = subprocess.run(
@@ -65,6 +81,7 @@ def start(port: int, open_browser: bool) -> int:
     worker_out = (LOG_DIR / "worker.out.log").open("a", encoding="utf-8")
     worker_err = (LOG_DIR / "worker.err.log").open("a", encoding="utf-8")
     creationflags = hidden_flags()
+    environment = runtime_environment()
 
     api = subprocess.Popen(
         [
@@ -81,6 +98,7 @@ def start(port: int, open_browser: bool) -> int:
         stdout=api_out,
         stderr=api_err,
         creationflags=creationflags,
+        env=environment,
     )
     worker = subprocess.Popen(
         [sys.executable, "-m", "app.worker", "--pools", "python,http"],
@@ -88,6 +106,7 @@ def start(port: int, open_browser: bool) -> int:
         stdout=worker_out,
         stderr=worker_err,
         creationflags=creationflags,
+        env=environment,
     )
     runtime = {
         "api_pid": api.pid,

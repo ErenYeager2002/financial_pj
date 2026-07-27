@@ -70,6 +70,7 @@ def interpret_parameters(
             ],
             "tools": [tool],
             "tool_choice": {"type": "function", "function": {"name": tool["function"]["name"]}},
+            "enable_thinking": False,
             "temperature": 0,
         }
         try:

@@ -18,6 +18,7 @@
 - `data/`：上传、运行快照、输出、日志和数据库，不进入 Git。
 - `docs/`：架构与 Skill 接入协议。
 - `scripts/`：初始化、启动和停止脚本。
+- 当前模型：阿里云百炼千问 `qwen3.7-plus`，通过 OpenAI-Compatible 接口调用。
 
 ## 本地命令
 

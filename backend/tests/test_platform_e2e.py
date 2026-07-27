@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from io import BytesIO
+from types import SimpleNamespace
 
+from app import orchestrator
 from app.main import app
+from app.registry import registry
 from app.worker import run_once
 from fastapi.testclient import TestClient
 from openpyxl import Workbook, load_workbook
@@ -52,6 +55,62 @@ def test_registry_and_admin_boundary() -> None:
         assert allowed.status_code == 200
         assert allowed.json()["skills"] == 1
         assert allowed.json()["errors"] == []
+
+
+def test_qwen_tool_call_disables_thinking(monkeypatch) -> None:
+    registry.refresh()
+    skill = registry.get("reconcile-bank")
+    assert skill is not None
+    captured: dict[str, object] = {}
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "tool_calls": [
+                                {
+                                    "function": {
+                                        "arguments": (
+                                            '{"amount_tolerance":3,"date_tolerance_days":4}'
+                                        )
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+
+    def fake_post(*_, **kwargs):
+        captured.update(kwargs["json"])
+        return FakeResponse()
+
+    monkeypatch.setattr(
+        orchestrator,
+        "settings",
+        SimpleNamespace(
+            llm_base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+            llm_api_key="test-key",
+            llm_model="qwen3.7-plus",
+        ),
+    )
+    monkeypatch.setattr(orchestrator.httpx, "post", fake_post)
+
+    parameters, missing, source, notes = orchestrator.interpret_parameters(
+        skill,
+        "金额差异 3 元以内，日期相差 4 天可以匹配",
+        {},
+    )
+    assert captured["enable_thinking"] is False
+    assert parameters == {"amount_tolerance": 3, "date_tolerance_days": 4}
+    assert missing == []
+    assert source == "llm"
+    assert notes == []
 
 
 def test_upload_run_worker_and_download() -> None:
