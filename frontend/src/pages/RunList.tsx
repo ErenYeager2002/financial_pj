@@ -32,7 +32,7 @@ export function RunList() {
     <div className="page-stack">
       <div className="page-intro">
         <div>
-          <span className="eyebrow">RUN HISTORY</span>
+          <span className="eyebrow">任务审计</span>
           <h2>部门运行记录</h2>
           <p>每次运行都保存 Skill 版本、文件哈希、参数、进度、结果和异常。</p>
         </div>
@@ -87,4 +87,3 @@ export function RunList() {
     </div>
   )
 }
-

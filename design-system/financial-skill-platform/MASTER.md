@@ -18,18 +18,18 @@
 
 | Role | Hex | CSS Variable |
 |------|-----|--------------|
-| Primary | `#0F172A` | `--color-primary` |
+| Primary | `#2558B8` | `--color-primary` |
 | On Primary | `#FFFFFF` | `--color-on-primary` |
-| Secondary | `#1E293B` | `--color-secondary` |
-| Accent/CTA | `#22C55E` | `--color-accent` |
-| Background | `#020617` | `--color-background` |
-| Foreground | `#F8FAFC` | `--color-foreground` |
-| Muted | `#1A1E2F` | `--color-muted` |
-| Border | `#334155` | `--color-border` |
-| Destructive | `#EF4444` | `--color-destructive` |
-| Ring | `#0F172A` | `--color-ring` |
+| Secondary | `#147A5B` | `--color-secondary` |
+| Accent/CTA | `#2558B8` | `--color-accent` |
+| Background | `#F4F7FB` | `--color-background` |
+| Foreground | `#172033` | `--color-foreground` |
+| Muted | `#65728A` | `--color-muted` |
+| Border | `#D9E2EF` | `--color-border` |
+| Destructive | `#C43B47` | `--color-destructive` |
+| Ring | `#2563EB` | `--color-ring` |
 
-**Color Notes:** Dark bg + green positive indicators
+**Color Notes:** 浅灰工作台背景，蓝色主操作，绿色仅用于成功和安全状态。
 
 ### Typography
 
@@ -73,7 +73,7 @@
 ```css
 /* Primary Button */
 .btn-primary {
-  background: #22C55E;
+  background: #2558B8;
   color: white;
   padding: 12px 24px;
   border-radius: 8px;
@@ -90,8 +90,8 @@
 /* Secondary Button */
 .btn-secondary {
   background: transparent;
-  color: #0F172A;
-  border: 2px solid #0F172A;
+  color: #36506F;
+  border: 1px solid #D4DEEB;
   padding: 12px 24px;
   border-radius: 8px;
   font-weight: 600;
@@ -104,7 +104,8 @@
 
 ```css
 .card {
-  background: #020617;
+  background: #FFFFFF;
+  border: 1px solid #E7EDF5;
   border-radius: 12px;
   padding: 24px;
   box-shadow: var(--shadow-md);
@@ -130,9 +131,9 @@
 }
 
 .input:focus {
-  border-color: #0F172A;
+  border-color: #2563EB;
   outline: none;
-  box-shadow: 0 0 0 3px #0F172A20;
+  box-shadow: 0 0 0 3px #2563EB1A;
 }
 ```
 
@@ -158,13 +159,13 @@
 
 ## Style Guidelines
 
-**Style:** Dark Mode (OLED)
+**Style:** Data-Dense Enterprise Dashboard
 
-**Keywords:** Dark theme, low light, high contrast, deep black, midnight blue, eye-friendly, OLED, night mode, power efficient
+**Keywords:** Light workspace, professional, high contrast, data dense, calm, trustworthy, responsive
 
-**Best For:** Night-mode apps, coding platforms, entertainment, eye-strain prevention, OLED devices, low-light
+**Best For:** 财务操作台、内部业务系统、任务编排、审计与数据列表
 
-**Key Effects:** Minimal glow (text-shadow: 0 0 10px), dark-to-light transitions, low white emission, high readability, visible focus
+**Key Effects:** 轻量阴影、清晰分区、150–250ms 状态过渡、可见焦点与低干扰背景
 
 ### Page Pattern
 
@@ -178,7 +179,7 @@
 
 ## Anti-Patterns (Do NOT Use)
 
-- ❌ Light mode default
+- ❌ 大面积高饱和深色背景
 - ❌ Slow rendering
 
 ### Additional Forbidden Patterns

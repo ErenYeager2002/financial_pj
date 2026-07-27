@@ -166,7 +166,7 @@ export function RunDetail() {
       <section className="detail-grid">
         <div className="surface-panel">
           <div className="section-heading">
-            <div><span className="eyebrow">ACTIVITY</span><h2>执行动态</h2></div>
+          <div><span className="eyebrow">处理过程</span><h2>执行动态</h2></div>
           </div>
           <div className="timeline">
             {(events.length ? events : [{
@@ -192,7 +192,7 @@ export function RunDetail() {
 
         <div className="surface-panel">
           <div className="section-heading">
-            <div><span className="eyebrow">ARTIFACTS</span><h2>结果文件</h2></div>
+          <div><span className="eyebrow">交付结果</span><h2>结果文件</h2></div>
           </div>
           <div className="artifact-list">
             {outputs.map((file) => (

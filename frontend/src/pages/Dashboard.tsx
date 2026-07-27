@@ -3,6 +3,7 @@ import {
   CheckCircle2,
   Clock3,
   FileSpreadsheet,
+  LoaderCircle,
   PlayCircle,
   TriangleAlert,
 } from 'lucide-react'
@@ -25,6 +26,7 @@ export function Dashboard() {
   const [skills, setSkills] = useState<SkillManifest[]>([])
   const [runs, setRuns] = useState<RunRecord[]>([])
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     Promise.all([api.skills(), api.runs()])
@@ -33,6 +35,7 @@ export function Dashboard() {
         setRuns(runData)
       })
       .catch((reason: Error) => setError(reason.message))
+      .finally(() => setLoading(false))
   }, [])
 
   const metrics = useMemo(() => {
@@ -86,26 +89,26 @@ export function Dashboard() {
       <section className="metric-grid" aria-label="运行概览">
         <article className="metric-card">
           <div className="metric-icon metric-blue"><FileSpreadsheet size={20} /></div>
-          <div><span>已发布 Skill</span><strong>{skills.length}</strong><small>部门可直接使用</small></div>
+          <div><span>已发布 Skill</span><strong>{loading ? '—' : skills.length}</strong><small>部门可直接使用</small></div>
         </article>
         <article className="metric-card">
           <div className="metric-icon metric-amber"><Clock3 size={20} /></div>
-          <div><span>正在处理</span><strong>{metrics.active}</strong><small>排队或执行中</small></div>
+          <div><span>正在处理</span><strong>{loading ? '—' : metrics.active}</strong><small>排队或执行中</small></div>
         </article>
         <article className="metric-card">
           <div className="metric-icon metric-green"><CheckCircle2 size={20} /></div>
-          <div><span>成功完成</span><strong>{metrics.succeeded}</strong><small>历史运行次数</small></div>
+          <div><span>成功完成</span><strong>{loading ? '—' : metrics.succeeded}</strong><small>历史运行次数</small></div>
         </article>
         <article className="metric-card">
           <div className="metric-icon metric-red"><TriangleAlert size={20} /></div>
-          <div><span>需要关注</span><strong>{metrics.attention}</strong><small>失败或等待人工</small></div>
+          <div><span>需要关注</span><strong>{loading ? '—' : metrics.attention}</strong><small>失败或等待人工</small></div>
         </article>
       </section>
 
       <section className="split-grid">
         <div className="surface-panel">
           <div className="section-heading">
-            <div><span className="eyebrow">QUICK START</span><h2>常用财务工具</h2></div>
+            <div><span className="eyebrow">快捷入口</span><h2>常用财务工具</h2></div>
             <Link to="/skills">全部工具 <ArrowRight size={15} /></Link>
           </div>
           <div className="skill-quick-grid">
@@ -120,13 +123,14 @@ export function Dashboard() {
                 <ArrowRight size={17} />
               </Link>
             ))}
-            {!skills.length && <div className="empty-inline">暂无已发布 Skill。</div>}
+            {loading && <div className="empty-inline"><LoaderCircle className="spin" size={17} /> 正在读取工具…</div>}
+            {!loading && !skills.length && <div className="empty-inline">暂无已发布 Skill。</div>}
           </div>
         </div>
 
         <div className="surface-panel">
           <div className="section-heading">
-            <div><span className="eyebrow">RECENT RUNS</span><h2>最近运行</h2></div>
+            <div><span className="eyebrow">任务动态</span><h2>最近运行</h2></div>
           </div>
           <div className="recent-list">
             {runs.slice(0, 5).map((run) => (
@@ -139,7 +143,8 @@ export function Dashboard() {
                 <StatusBadge state={run.state} />
               </Link>
             ))}
-            {!runs.length && <div className="empty-inline">还没有运行记录。</div>}
+            {loading && <div className="empty-inline"><LoaderCircle className="spin" size={17} /> 正在读取任务…</div>}
+            {!loading && !runs.length && <div className="empty-inline">还没有运行记录。</div>}
           </div>
         </div>
       </section>

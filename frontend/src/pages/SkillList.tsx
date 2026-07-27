@@ -1,4 +1,4 @@
-import { ArrowRight, Bot, FileSpreadsheet, Search, ShieldCheck } from 'lucide-react'
+import { ArrowRight, Bot, FileSpreadsheet, LoaderCircle, Search, ShieldCheck } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api'
@@ -8,9 +8,10 @@ export function SkillList() {
   const [skills, setSkills] = useState<SkillManifest[]>([])
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('全部')
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    api.skills().then(setSkills)
+    api.skills().then(setSkills).finally(() => setLoading(false))
   }, [])
 
   const categories = ['全部', ...new Set(skills.map((item) => item.category))]
@@ -28,7 +29,7 @@ export function SkillList() {
     <div className="page-stack">
       <div className="page-intro">
         <div>
-          <span className="eyebrow">SKILL CATALOG</span>
+          <span className="eyebrow">工具目录</span>
           <h2>选择一项财务工作</h2>
           <p>普通用户可以运行所有已发布 Skill，但不能修改其业务规则和执行程序。</p>
         </div>
@@ -57,7 +58,12 @@ export function SkillList() {
         </div>
       </div>
 
-      <div className="skill-grid">
+      {loading && (
+        <div className="loading-screen">
+          <LoaderCircle className="spin" size={20} /> 正在读取财务工具…
+        </div>
+      )}
+      {!loading && <div className="skill-grid">
         {filtered.map((skill) => (
           <article className="skill-card" key={skill.id}>
             <div className="skill-card-top">
@@ -84,8 +90,8 @@ export function SkillList() {
             </div>
           </article>
         ))}
-      </div>
-      {!filtered.length && (
+      </div>}
+      {!loading && !filtered.length && (
         <div className="empty-state">
           <Search size={28} />
           <h3>没有找到匹配的 Skill</h3>
@@ -95,4 +101,3 @@ export function SkillList() {
     </div>
   )
 }
-

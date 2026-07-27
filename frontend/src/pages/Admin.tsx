@@ -26,7 +26,7 @@ export function Admin() {
     <div className="page-stack">
       <div className="page-intro">
         <div>
-          <span className="eyebrow">SKILL REGISTRY</span>
+          <span className="eyebrow">SKILL 注册中心</span>
           <h2>已批准版本</h2>
           <p>普通员工运行的是发布时固化的只读副本，只有管理员可以重新加载 Registry。</p>
         </div>

@@ -23,12 +23,15 @@ export function ModelSettings() {
   const [busyId, setBusyId] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [loading, setLoading] = useState(true)
 
   const load = async () => {
     try {
       setConnections(await api.modelConnections())
     } catch (reason) {
       setError((reason as Error).message)
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -112,7 +115,7 @@ export function ModelSettings() {
     <div className="page-stack">
       <div className="page-intro">
         <div>
-          <span className="eyebrow">MODEL CONNECTIONS</span>
+          <span className="eyebrow">模型服务</span>
           <h2>模型接入</h2>
           <p>只输入 API Key，平台自动识别供应商并读取支持 Tool Calling 的模型。</p>
         </div>
@@ -176,11 +179,16 @@ export function ModelSettings() {
 
       <section>
         <div className="section-heading">
-          <div><span className="eyebrow">CONNECTED</span><h2>已接入模型服务</h2></div>
+          <div><span className="eyebrow">连接列表</span><h2>已接入模型服务</h2></div>
           <span className="connection-count">{connections.length} 个连接</span>
         </div>
         <div className="model-connection-grid">
-          {connections.map((connection) => (
+          {loading && (
+            <div className="loading-screen model-empty">
+              <LoaderCircle className="spin" size={20} /> 正在读取模型连接…
+            </div>
+          )}
+          {!loading && connections.map((connection) => (
             <article className="model-connection-card" key={connection.id}>
               <div className="connection-card-head">
                 <div className="provider-mark"><Server size={20} /></div>
@@ -229,7 +237,7 @@ export function ModelSettings() {
               </div>
             </article>
           ))}
-          {!connections.length && (
+          {!loading && !connections.length && (
             <div className="empty-state model-empty">
               <Bot size={28} />
               <h3>尚未接入模型</h3>

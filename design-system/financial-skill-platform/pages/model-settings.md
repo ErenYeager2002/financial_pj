@@ -27,7 +27,7 @@
 
 ### Color Overrides
 
-- **Strategy:** Dark or neutral. Status colors (green/amber/red). Data-dense but scannable.
+- **Strategy:** 浅色中性表面。蓝色用于主操作，绿色/琥珀色/红色仅用于状态。
 
 ### Component Overrides
 
@@ -43,5 +43,6 @@
 
 ## Recommendations
 
-- Effects: Drag-to-rotate, pinch-to-zoom, spin animation, AR placement, material switching, smooth orbit controls
-- CTA Placement: Primary CTA in nav + After metrics
+- API Key 输入始终使用可见标签、明文切换按钮和提交加载状态。
+- 连接卡片优先展示供应商、脱敏密钥、连接状态和默认模型。
+- 删除连接使用二次确认；动态结果通过 `aria-live` 通知。

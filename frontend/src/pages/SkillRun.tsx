@@ -295,7 +295,7 @@ export function SkillRun() {
 
       <aside className="run-summary">
         <div className="summary-sticky">
-          <span className="eyebrow">RUN SUMMARY</span>
+          <span className="eyebrow">运行确认</span>
           <h3>执行前复核</h3>
           <dl>
             <div><dt>Skill 版本</dt><dd>v{skill.version}</dd></div>
