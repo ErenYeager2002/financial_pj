@@ -1,0 +1,58 @@
+# Skill 接入协议
+
+每个可执行 Skill 至少包含：
+
+```text
+skill-id/
+├── SKILL.md
+├── tool.yaml
+└── scripts/
+    └── entry.py
+```
+
+`tool.yaml` 定义身份、文件角色、输入/输出 JSON Schema、执行适配器、超时、并发和风险等级。平台只向普通员工展示 `status: published` 的 Skill。
+
+## Python 与 RPA 入口
+
+平台调用：
+
+```text
+python entry.py --request <运行目录/request.json> --result <运行目录/result.json>
+```
+
+入口可以向标准输出逐行打印 JSON 事件：
+
+```json
+{"type":"progress","progress":45,"state":"running","message":"正在核对第 3 批数据"}
+```
+
+需要员工操作浏览器时：
+
+```json
+{"type":"notice","state":"waiting_user_action","message":"请在浏览器中完成登录"}
+```
+
+最终必须写入：
+
+```json
+{
+  "status": "success",
+  "summary": {"matched": 1189, "unmatched": 71},
+  "output_files": [
+    {"name": "对账结果.xlsx", "path": "运行目录内的绝对路径"}
+  ],
+  "warnings": []
+}
+```
+
+输出文件只能位于本次运行目录。平台会重新计算 SHA-256、登记文件 ID，并把本地路径替换为受权限控制的下载地址。
+
+## Git 托管方式
+
+Skill 可以维护在私有 GitHub 仓库。生产运行时不直接执行浮动的 `main` 分支，而是：
+
+1. 管理员批准 commit 或 tag。
+2. 平台拉取到受控工作树。
+3. Registry 校验 `tool.yaml` 和入口。
+4. 创建任务时复制不可变 Skill 快照。
+5. 审计记录保留版本、commit SHA 和内容哈希。

@@ -1,0 +1,93 @@
+schema_version: 1
+id: reconcile-bank
+name: 银行流水自动对账
+version: 1.0.0
+status: published
+category: 对账核对
+description: 对银行流水和财务总账进行确定性匹配，输出匹配明细、未匹配流水和未匹配总账。
+tags:
+  - Excel
+  - 银行流水
+  - 总账
+  - 只读
+
+file_inputs:
+  - role: bank_file
+    name: 银行流水
+    description: 包含交易日期和金额列的 Excel 文件
+    required: true
+    multiple: false
+    extensions: [xlsx]
+    max_size_mb: 50
+  - role: ledger_file
+    name: 财务总账
+    description: 包含凭证日期和金额列的 Excel 文件
+    required: true
+    multiple: false
+    extensions: [xlsx]
+    max_size_mb: 50
+
+input_schema:
+  type: object
+  additionalProperties: false
+  properties:
+    amount_tolerance:
+      type: number
+      title: 金额容差（元）
+      description: 两边金额差不超过该值时允许匹配
+      minimum: 0
+      maximum: 100
+      default: 0.01
+    date_tolerance_days:
+      type: integer
+      title: 日期容差（天）
+      description: 两边日期相差不超过该天数时允许匹配
+      minimum: 0
+      maximum: 31
+      default: 1
+  required:
+    - amount_tolerance
+    - date_tolerance_days
+
+output_schema:
+  type: object
+  required:
+    - status
+    - summary
+    - output_files
+    - warnings
+  properties:
+    status:
+      const: success
+    summary:
+      type: object
+      required:
+        - bank_records
+        - ledger_records
+        - matched
+        - unmatched_bank
+        - unmatched_ledger
+    output_files:
+      type: array
+    warnings:
+      type: array
+
+handler:
+  adapter: python
+  entrypoint: scripts/reconcile.py
+  worker_pool: python
+
+runtime:
+  timeout_seconds: 300
+  memory_mb: 1024
+  concurrency_limit: 2
+  network_access: false
+
+risk:
+  level: read_only
+  requires_confirmation: false
+
+permissions:
+  run: finance_user
+  manage: skill_admin
+
