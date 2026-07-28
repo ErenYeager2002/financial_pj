@@ -72,7 +72,9 @@ def build_execution_request(ctx: ExecutionContext) -> tuple[dict[str, Any], Path
             if not record:
                 raise RuntimeError(f"输入文件记录不存在：{item['file_id']}")
             local_path = copy_input_to_workspace(
-                Path(record.stored_path), inputs_dir, f"{role}_{len(copied) + 1}"
+                Path(record.stored_path),
+                inputs_dir,
+                f"{role}_{len(copied) + 1}__{Path(record.original_name).stem}",
             )
             copied.append(
                 {

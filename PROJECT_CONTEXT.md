@@ -14,7 +14,8 @@
 
 - `backend/`：FastAPI、SQLAlchemy、SQLite、Registry、Orchestrator、Worker 与适配器。
 - `frontend/`：React + TypeScript + Vite。
-- `skills/`：平台托管 Skill；当前示例为 `reconcile-bank`。
+- `skills/`：平台托管 Skill；共登记 18 个，其中 9 个 published、2 个 draft、
+  7 个 disabled。状态明细见 `docs/FINANCE_SKILLS_CATALOG.md`。
 - `data/`：上传、运行快照、输出、日志和数据库，不进入 Git。
 - `docs/`：架构与 Skill 接入协议。
 - `scripts/`：初始化、启动和停止脚本。
@@ -51,3 +52,18 @@ npm run build
 ## 当前边界
 
 第一期使用演示身份请求头和 SQLite，适合单部门内网验证。正式部署前需要接公司 SSO、PostgreSQL、独立隔离 Worker、Git 批准版本同步、病毒扫描、日志脱敏和备份策略。
+
+## 2026-07-28 · finance-skills 批量接入
+
+- 从 `D:\BESTEASY\finance-skills\skills` 安全同步其余 17 个 Skill，源仓库只读，
+  不提交或覆盖其中的用户改动。
+- 8 个成熟离线脚本通过统一桥接协议发布；加上原有 `reconcile-bank`，
+  普通用户当前可运行 9 个工具。
+- 同步包排除 `工作区`、测试、缓存、历史输出、`config.local*` 和凭据；
+  运行不依赖源仓库或 GitHub 在线状态。
+- Registry 哈希覆盖整个 Skill 包，而不再只哈希 manifest 和入口脚本；
+  任务输入副本保留原文件名信息，多版本输入支持最小文件数校验。
+- `ar-hexiao-daily`、金蝶 RPA 和文档/Agent 基础能力已登记但未伪装成可运行工具；
+  其中现金流量核对需先修复“会计期间”分组口径。
+- Python 依赖新增 pandas、xlrd、pdfplumber、requests；本机已通过清华镜像安装。
+- RPA Worker 由 `FINANCIAL_WORKER_POOLS` 控制，默认仍只启用 `python,http`。

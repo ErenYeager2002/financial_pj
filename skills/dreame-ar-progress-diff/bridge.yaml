@@ -1,0 +1,11 @@
+name: 追觅应收进度对比
+command: vendor/scripts/compare.py
+arguments:
+- kind: files
+  role: versions
+  flag: --files
+output:
+  type: file
+  flag: --out
+  path: 追觅应收进度对比报告.xlsx
+success_message: 多版本应收进度对比报告已经生成。

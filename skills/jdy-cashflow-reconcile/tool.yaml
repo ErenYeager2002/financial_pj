@@ -1,0 +1,51 @@
+schema_version: 1
+id: jdy-cashflow-reconcile
+name: 现金流量明细核对
+version: 1.0.0
+status: disabled
+category: 对账核对
+description: 按现金流量项目和凭证号核对明细表与整合表并标记差异。
+tags:
+- Excel
+- 现金流量
+- 凭证核对
+file_inputs: []
+input_schema:
+  type: object
+  additionalProperties: true
+  properties: {}
+output_schema:
+  type: object
+  required:
+  - status
+  - summary
+  - output_files
+  - warnings
+  properties:
+    status:
+      const: success
+    summary:
+      type: object
+    output_files:
+      type: array
+    warnings:
+      type: array
+handler:
+  adapter: python
+  entrypoint: scripts/entry.py
+  worker_pool: python
+runtime:
+  timeout_seconds: 600
+  memory_mb: 2048
+  concurrency_limit: 1
+  network_access: false
+risk:
+  level: read_only
+  requires_confirmation: false
+permissions:
+  run: finance_user
+  manage: skill_admin
+upstream:
+  repository: https://github.com/EvanLee2004/finance-skills
+  path: skills/jdy-cashflow-reconcile
+blocked_reason: 现有实现缺少会计期间维度，同号凭证跨月时会错误合并，修复前禁止发布。

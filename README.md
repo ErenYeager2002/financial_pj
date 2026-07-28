@@ -2,7 +2,11 @@
 
 面向财务部门的内部工具平台：员工选择 Skill、上传文件、描述要求，平台完成参数解析、校验、排队、确定性执行、实时进度、结果下载和审计留痕。
 
-当前内置“银行流水自动对账”示例，已经覆盖从 Excel 上传到结果工作簿下载的完整链路。
+当前 Registry 共接入 18 个 Skill：9 个已发布、2 个草稿、7 个停用。
+已发布工具覆盖应收合并与拆分、劳务发票核对、合规抽查、申报表重命名、
+追觅应收进度对比、部门费用分摊、九点下单统计和银行流水对账。
+完整状态与暂缓发布原因见
+[docs/FINANCE_SKILLS_CATALOG.md](docs/FINANCE_SKILLS_CATALOG.md)。
 
 ## 快速启动
 
@@ -41,6 +45,17 @@ financial_pj/
 ```
 
 架构与完整业务流程见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)，新 Skill 接入方式见 [docs/SKILL_CONTRACT.md](docs/SKILL_CONTRACT.md)。
+
+同步 `finance-skills` 仓库中的已审查版本：
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\sync_finance_skills.py `
+  --source D:\BESTEASY\finance-skills\skills
+```
+
+同步脚本只复制业务说明、脚本、配置和参考资料；会排除测试缓存、工作区、
+历史输出、浏览器账号配置和本地凭据。同步后的 Skill 自包含在本仓库中，
+运行时不会直接执行远程 GitHub `main` 分支。
 
 ## GitHub Skill
 

@@ -42,7 +42,11 @@ export function Admin() {
           <tbody>
             {skills.map((skill) => (
               <tr key={skill.id}>
-                <td><strong>{skill.name}</strong><small>{skill.id}</small></td>
+                <td>
+                  <strong>{skill.name}</strong>
+                  <small>{skill.id}</small>
+                  {skill.blocked_reason && <small>{skill.blocked_reason}</small>}
+                </td>
                 <td>{skill.category}</td>
                 <td>v{skill.version}</td>
                 <td><span className={`publish-state ${skill.status}`}>{skill.status}</span></td>

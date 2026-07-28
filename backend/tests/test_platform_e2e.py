@@ -3,15 +3,16 @@ from __future__ import annotations
 from io import BytesIO
 from types import SimpleNamespace
 
+from fastapi.testclient import TestClient
+from openpyxl import Workbook, load_workbook
+from sqlalchemy import select
+
 from app import model_service, orchestrator
 from app.database import SessionLocal
 from app.main import app
 from app.models import ModelConnection
 from app.registry import registry
 from app.worker import run_once
-from fastapi.testclient import TestClient
-from openpyxl import Workbook, load_workbook
-from sqlalchemy import select
 
 
 def workbook_bytes(headers: list[str], rows: list[list[object]]) -> bytes:
@@ -46,7 +47,17 @@ def test_registry_and_admin_boundary() -> None:
     with TestClient(app) as client:
         skills = client.get("/api/skills")
         assert skills.status_code == 200
-        assert [item["id"] for item in skills.json()] == ["reconcile-bank"]
+        assert [item["id"] for item in skills.json()] == [
+            "labor-invoice-check",
+            "compliance-spot-check",
+            "reconcile-bank",
+            "split-by-sales",
+            "receivables-merge",
+            "dreame-ar-progress-diff",
+            "withholding-report-rename",
+            "order-daily-summary",
+            "dept-expense-alloc",
+        ]
 
         denied = client.post("/api/admin/registry/reload")
         assert denied.status_code == 403
@@ -56,7 +67,7 @@ def test_registry_and_admin_boundary() -> None:
             headers={"X-User-Role": "skill_admin"},
         )
         assert allowed.status_code == 200
-        assert allowed.json()["skills"] == 1
+        assert allowed.json()["skills"] == 18
         assert allowed.json()["errors"] == []
 
 

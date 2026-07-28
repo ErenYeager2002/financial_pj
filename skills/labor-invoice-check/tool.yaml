@@ -1,0 +1,71 @@
+schema_version: 1
+id: labor-invoice-check
+name: 劳务发票核对
+version: 1.0.0
+status: published
+category: 发票核对
+description: 按业务规则核对劳务清单与发票台账，输出支付前核对结果。
+tags:
+- Excel
+- 劳务
+- 发票
+- 核对
+file_inputs:
+- role: labor_list
+  name: 劳务清单
+  description: ''
+  required: true
+  multiple: false
+  min_files: 1
+  extensions:
+  - xlsx
+  - xls
+  max_size_mb: 100
+- role: invoice_ledger
+  name: 发票台账
+  description: ''
+  required: true
+  multiple: false
+  min_files: 1
+  extensions:
+  - xlsx
+  - xls
+  max_size_mb: 100
+input_schema:
+  type: object
+  additionalProperties: false
+  properties: {}
+output_schema:
+  type: object
+  required:
+  - status
+  - summary
+  - output_files
+  - warnings
+  properties:
+    status:
+      const: success
+    summary:
+      type: object
+    output_files:
+      type: array
+    warnings:
+      type: array
+handler:
+  adapter: python
+  entrypoint: scripts/entry.py
+  worker_pool: python
+runtime:
+  timeout_seconds: 600
+  memory_mb: 2048
+  concurrency_limit: 1
+  network_access: false
+risk:
+  level: read_only
+  requires_confirmation: false
+permissions:
+  run: finance_user
+  manage: skill_admin
+upstream:
+  repository: https://github.com/EvanLee2004/finance-skills
+  path: skills/labor-invoice-check

@@ -12,6 +12,21 @@ skill-id/
 
 `tool.yaml` 定义身份、文件角色、输入/输出 JSON Schema、执行适配器、超时、并发和风险等级。平台只向普通员工展示 `status: published` 的 Skill。
 
+多文件输入可在文件角色中声明 `min_files`，后端会在任务排队前校验数量：
+
+```yaml
+file_inputs:
+  - role: versions
+    name: 应收进度版本
+    required: true
+    multiple: true
+    min_files: 2
+    extensions: [xlsx, xlsm]
+```
+
+平台复制输入文件时会保留安全化的原文件名信息，便于旧脚本继续识别日期；
+Skill 只能读取任务工作区副本，不能修改上传存储区中的原文件。
+
 ## Python 与 RPA 入口
 
 平台调用：

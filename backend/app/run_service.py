@@ -95,6 +95,11 @@ def _validate_files(
         ids = raw_ids if isinstance(raw_ids, list) else ([raw_ids] if raw_ids else [])
         if spec.required and not ids:
             raise HTTPException(status_code=422, detail=f"缺少文件：{spec.name}")
+        if ids and len(ids) < spec.min_files:
+            raise HTTPException(
+                status_code=422,
+                detail=f"{spec.name} 至少需要上传 {spec.min_files} 个文件。",
+            )
         if not spec.multiple and len(ids) > 1:
             raise HTTPException(status_code=422, detail=f"{spec.name} 只能上传一个文件。")
         records: list[dict[str, Any]] = []

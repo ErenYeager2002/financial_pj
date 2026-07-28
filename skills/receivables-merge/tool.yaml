@@ -1,0 +1,77 @@
+schema_version: 1
+id: receivables-merge
+name: 应收账款合并
+version: 1.0.0
+status: published
+category: 应收管理
+description: 合并应收源台账并按上一版台账回填，生成新的应收 all 工作簿。
+tags:
+- Excel
+- 应收
+- 合并
+- 离线
+file_inputs:
+- role: source
+  name: 本期应收源台账
+  description: ''
+  required: true
+  multiple: false
+  min_files: 1
+  extensions:
+  - xlsx
+  - xls
+  max_size_mb: 100
+- role: reference
+  name: 上一版应收 all
+  description: ''
+  required: false
+  multiple: false
+  min_files: 1
+  extensions:
+  - xlsx
+  - xls
+  max_size_mb: 100
+input_schema:
+  type: object
+  additionalProperties: false
+  properties:
+    base_month:
+      type: string
+      title: 账龄基准月
+      description: 可留空自动识别；补历史月份时填写 YYYYMM。
+      pattern: ^$|^\d{6}$
+      default: ''
+output_schema:
+  type: object
+  required:
+  - status
+  - summary
+  - output_files
+  - warnings
+  properties:
+    status:
+      const: success
+    summary:
+      type: object
+    output_files:
+      type: array
+    warnings:
+      type: array
+handler:
+  adapter: python
+  entrypoint: scripts/entry.py
+  worker_pool: python
+runtime:
+  timeout_seconds: 600
+  memory_mb: 2048
+  concurrency_limit: 1
+  network_access: false
+risk:
+  level: read_only
+  requires_confirmation: false
+permissions:
+  run: finance_user
+  manage: skill_admin
+upstream:
+  repository: https://github.com/EvanLee2004/finance-skills
+  path: skills/receivables-merge

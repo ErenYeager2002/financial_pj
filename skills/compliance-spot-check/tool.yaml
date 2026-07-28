@@ -1,0 +1,70 @@
+schema_version: 1
+id: compliance-spot-check
+name: 合规文件抽查建议
+version: 1.0.0
+status: published
+category: 合规检查
+description: 依据应收 all 和可选历史记录生成本周合规抽查建议清单。
+tags:
+- Excel
+- 合规
+- 抽查
+- 建议
+file_inputs:
+- role: receivables
+  name: 应收 all
+  description: ''
+  required: true
+  multiple: false
+  min_files: 1
+  extensions:
+  - xlsx
+  - xls
+  max_size_mb: 100
+- role: history
+  name: 抽查历史
+  description: ''
+  required: false
+  multiple: false
+  min_files: 1
+  extensions:
+  - csv
+  max_size_mb: 100
+input_schema:
+  type: object
+  additionalProperties: false
+  properties: {}
+output_schema:
+  type: object
+  required:
+  - status
+  - summary
+  - output_files
+  - warnings
+  properties:
+    status:
+      const: success
+    summary:
+      type: object
+    output_files:
+      type: array
+    warnings:
+      type: array
+handler:
+  adapter: python
+  entrypoint: scripts/entry.py
+  worker_pool: python
+runtime:
+  timeout_seconds: 600
+  memory_mb: 2048
+  concurrency_limit: 1
+  network_access: false
+risk:
+  level: read_only
+  requires_confirmation: false
+permissions:
+  run: finance_user
+  manage: skill_admin
+upstream:
+  repository: https://github.com/EvanLee2004/finance-skills
+  path: skills/compliance-spot-check

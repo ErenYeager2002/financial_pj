@@ -1,0 +1,50 @@
+schema_version: 1
+id: task-clarifier
+name: 财务任务澄清器
+version: 1.0.0
+status: disabled
+category: 基础能力
+description: 通过对话补齐输入、口径、输出和风险边界的 Agent 指南。
+tags:
+- Agent
+- 需求澄清
+file_inputs: []
+input_schema:
+  type: object
+  additionalProperties: true
+  properties: {}
+output_schema:
+  type: object
+  required:
+  - status
+  - summary
+  - output_files
+  - warnings
+  properties:
+    status:
+      const: success
+    summary:
+      type: object
+    output_files:
+      type: array
+    warnings:
+      type: array
+handler:
+  adapter: python
+  entrypoint: scripts/entry.py
+  worker_pool: python
+runtime:
+  timeout_seconds: 600
+  memory_mb: 2048
+  concurrency_limit: 1
+  network_access: false
+risk:
+  level: read_only
+  requires_confirmation: false
+permissions:
+  run: finance_user
+  manage: skill_admin
+upstream:
+  repository: https://github.com/EvanLee2004/finance-skills
+  path: skills/task-clarifier
+blocked_reason: 属于 Agent 行为指南，需要模型型执行适配器，不是独立 CLI。

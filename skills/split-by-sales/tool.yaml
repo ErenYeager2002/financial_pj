@@ -1,0 +1,67 @@
+schema_version: 1
+id: split-by-sales
+name: 应收按销售人员拆分
+version: 1.0.0
+status: published
+category: 应收管理
+description: 按照维护规则将应收 all 拆分成销售人员独立工作簿。
+tags:
+- Excel
+- 应收
+- 销售拆分
+- 离线
+file_inputs:
+- role: receivables
+  name: 应收 all
+  description: ''
+  required: true
+  multiple: false
+  min_files: 1
+  extensions:
+  - xlsx
+  - xls
+  max_size_mb: 100
+input_schema:
+  type: object
+  additionalProperties: false
+  properties:
+    date_label:
+      type: string
+      title: 文件日期标签
+      description: 可留空自动识别；手工填写时使用 MMDD。
+      pattern: ^$|^\d{4}$
+      default: ''
+output_schema:
+  type: object
+  required:
+  - status
+  - summary
+  - output_files
+  - warnings
+  properties:
+    status:
+      const: success
+    summary:
+      type: object
+    output_files:
+      type: array
+    warnings:
+      type: array
+handler:
+  adapter: python
+  entrypoint: scripts/entry.py
+  worker_pool: python
+runtime:
+  timeout_seconds: 600
+  memory_mb: 2048
+  concurrency_limit: 1
+  network_access: false
+risk:
+  level: read_only
+  requires_confirmation: false
+permissions:
+  run: finance_user
+  manage: skill_admin
+upstream:
+  repository: https://github.com/EvanLee2004/finance-skills
+  path: skills/split-by-sales

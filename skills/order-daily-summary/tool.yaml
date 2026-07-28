@@ -1,0 +1,76 @@
+schema_version: 1
+id: order-daily-summary
+name: 九点下单统计（离线）
+version: 1.0.0
+status: published
+category: 经营报表
+description: 使用九点导出的下单明细生成部门汇总和明细表；平台版不登录业务系统。
+tags:
+- Excel
+- 订单
+- 日报
+- 离线
+file_inputs:
+- role: orders
+  name: 九点下单明细
+  description: ''
+  required: true
+  multiple: false
+  min_files: 1
+  extensions:
+  - xlsx
+  - xls
+  max_size_mb: 100
+input_schema:
+  type: object
+  additionalProperties: false
+  properties:
+    today:
+      type: string
+      title: 统计运行日
+      description: 可留空使用当天；指定时填写 YYYY-MM-DD。
+      pattern: ^$|^\d{4}-\d{2}-\d{2}$
+      default: ''
+    include_detail:
+      type: boolean
+      title: 输出明细 Sheet
+      default: true
+    no_date_filter:
+      type: boolean
+      title: 不按日期二次过滤
+      description: 补断档或上传已筛选导出表时建议开启。
+      default: true
+output_schema:
+  type: object
+  required:
+  - status
+  - summary
+  - output_files
+  - warnings
+  properties:
+    status:
+      const: success
+    summary:
+      type: object
+    output_files:
+      type: array
+    warnings:
+      type: array
+handler:
+  adapter: python
+  entrypoint: scripts/entry.py
+  worker_pool: python
+runtime:
+  timeout_seconds: 600
+  memory_mb: 2048
+  concurrency_limit: 1
+  network_access: false
+risk:
+  level: read_only
+  requires_confirmation: false
+permissions:
+  run: finance_user
+  manage: skill_admin
+upstream:
+  repository: https://github.com/EvanLee2004/finance-skills
+  path: skills/order-daily-summary

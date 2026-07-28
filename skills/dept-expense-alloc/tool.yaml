@@ -1,0 +1,62 @@
+schema_version: 1
+id: dept-expense-alloc
+name: 部门费用归集分摊
+version: 1.0.0
+status: published
+category: 费用管理
+description: 读取费用材料并按配置规则归集、分摊到部门和科目。
+tags:
+- Excel
+- 费用
+- 部门
+- 分摊
+file_inputs:
+- role: materials
+  name: 费用分摊材料
+  description: 上传本次归集所需的全部材料。
+  required: true
+  multiple: true
+  min_files: 1
+  extensions:
+  - xlsx
+  - xls
+  - csv
+  max_size_mb: 100
+input_schema:
+  type: object
+  additionalProperties: false
+  properties: {}
+output_schema:
+  type: object
+  required:
+  - status
+  - summary
+  - output_files
+  - warnings
+  properties:
+    status:
+      const: success
+    summary:
+      type: object
+    output_files:
+      type: array
+    warnings:
+      type: array
+handler:
+  adapter: python
+  entrypoint: scripts/entry.py
+  worker_pool: python
+runtime:
+  timeout_seconds: 600
+  memory_mb: 2048
+  concurrency_limit: 1
+  network_access: false
+risk:
+  level: read_only
+  requires_confirmation: false
+permissions:
+  run: finance_user
+  manage: skill_admin
+upstream:
+  repository: https://github.com/EvanLee2004/finance-skills
+  path: skills/dept-expense-alloc

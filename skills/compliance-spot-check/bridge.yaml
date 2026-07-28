@@ -1,0 +1,16 @@
+name: 合规文件抽查建议
+command: vendor/scripts/recommend.py
+arguments:
+- kind: file
+  role: receivables
+  flag: --input
+- kind: file
+  role: history
+  flag: --history
+output:
+  type: file
+  flag: --out
+  path: 本周合规抽查建议.xlsx
+  additional_globs:
+  - '*.txt'
+success_message: 本周合规抽查建议已经生成。

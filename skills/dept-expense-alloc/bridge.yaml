@@ -1,0 +1,11 @@
+name: 部门费用归集分摊
+command: vendor/scripts/allocate.py
+arguments:
+- kind: input_dir
+  role: materials
+  flag: --input-dir
+output:
+  type: file
+  flag: --out
+  path: 部门费用归集分摊结果.xlsx
+success_message: 部门费用归集分摊表已经生成。

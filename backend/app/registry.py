@@ -18,6 +18,7 @@ class FileInputSpec(BaseModel):
     description: str = ""
     required: bool = True
     multiple: bool = False
+    min_files: int = Field(default=1, ge=0)
     extensions: list[str] = Field(default_factory=list)
     max_size_mb: int | None = None
 
@@ -117,13 +118,29 @@ def _git_commit(path: Path) -> str:
     return ""
 
 
+HASH_IGNORES = {
+    "__pycache__",
+    ".pytest_cache",
+    ".ruff_cache",
+    "工作区",
+    "output",
+    "node_modules",
+}
+
+
 def _hash_skill(manifest_path: Path, manifest: SkillManifest) -> str:
     digest = hashlib.sha256()
-    digest.update(manifest_path.read_bytes())
-    if manifest.handler.entrypoint:
-        entrypoint = (manifest_path.parent / manifest.handler.entrypoint).resolve()
-        if entrypoint.is_file() and entrypoint.is_relative_to(manifest_path.parent.resolve()):
-            digest.update(entrypoint.read_bytes())
+    skill_dir = manifest_path.parent.resolve()
+    for path in sorted(skill_dir.rglob("*"), key=lambda item: item.as_posix()):
+        if not path.is_file() or any(part in HASH_IGNORES for part in path.parts):
+            continue
+        resolved = path.resolve()
+        if not resolved.is_relative_to(skill_dir):
+            raise ValueError(f"Skill 文件超出目录边界：{path}")
+        digest.update(path.relative_to(skill_dir).as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
     return digest.hexdigest()
 
 

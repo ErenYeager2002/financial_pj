@@ -1,0 +1,17 @@
+name: 代扣代缴申报表批量重命名
+command: vendor/scripts/rename.py
+arguments:
+- kind: input_dir
+  role: reports
+  flag: --input
+- kind: static
+  values:
+  - --mode
+  - copy
+output:
+  type: directory
+  flag: --out-dir
+  path: 重命名结果
+  archive: true
+  archive_name: 代扣代缴申报表重命名结果.zip
+success_message: 规范命名的申报表副本已经打包。

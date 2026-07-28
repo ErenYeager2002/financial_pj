@@ -1,0 +1,16 @@
+name: 应收按销售人员拆分
+command: vendor/scripts/split.py
+arguments:
+- kind: file
+  role: receivables
+  flag: --input
+- kind: parameter
+  name: date_label
+  flag: --date
+output:
+  type: directory
+  flag: --out-dir
+  path: 拆分结果
+  archive: true
+  archive_name: 应收按销售拆分结果.zip
+success_message: 销售人员拆分文件已经打包。

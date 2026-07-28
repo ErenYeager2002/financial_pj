@@ -13,6 +13,7 @@ export interface FileInputSpec {
   description: string
   required: boolean
   multiple: boolean
+  min_files?: number
   extensions: string[]
   max_size_mb?: number
 }
@@ -35,6 +36,7 @@ export interface SkillManifest {
   status: 'draft' | 'published' | 'disabled'
   category: string
   description: string
+  blocked_reason?: string
   tags: string[]
   file_inputs: FileInputSpec[]
   input_schema: {

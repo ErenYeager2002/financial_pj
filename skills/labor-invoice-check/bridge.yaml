@@ -1,0 +1,14 @@
+name: 劳务发票核对
+command: vendor/scripts/check.py
+arguments:
+- kind: file
+  role: labor_list
+  flag: --list
+- kind: file
+  role: invoice_ledger
+  flag: --invoice
+output:
+  type: file
+  flag: --out
+  path: 劳务发票核对结果.xlsx
+success_message: 劳务发票核对结果已经生成。

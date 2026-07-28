@@ -1,0 +1,51 @@
+schema_version: 1
+id: jdy-cashflow-export
+name: 金蝶云现金流量调整导出
+version: 1.0.0
+status: draft
+category: RPA
+description: 登录金蝶云并逐项导出现金流量调整明细。
+tags:
+- RPA
+- 金蝶云
+- 现金流量
+file_inputs: []
+input_schema:
+  type: object
+  additionalProperties: true
+  properties: {}
+output_schema:
+  type: object
+  required:
+  - status
+  - summary
+  - output_files
+  - warnings
+  properties:
+    status:
+      const: success
+    summary:
+      type: object
+    output_files:
+      type: array
+    warnings:
+      type: array
+handler:
+  adapter: rpa
+  entrypoint: scripts/entry.py
+  worker_pool: rpa
+runtime:
+  timeout_seconds: 3600
+  memory_mb: 2048
+  concurrency_limit: 1
+  network_access: true
+risk:
+  level: external_action
+  requires_confirmation: true
+permissions:
+  run: finance_user
+  manage: skill_admin
+upstream:
+  repository: https://github.com/EvanLee2004/finance-skills
+  path: skills/jdy-cashflow-export
+blocked_reason: 需先接入独立凭据保管和受控浏览器会话，禁止把账号密码写入任务参数。

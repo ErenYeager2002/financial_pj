@@ -101,7 +101,13 @@ def start(port: int, open_browser: bool) -> int:
         env=environment,
     )
     worker = subprocess.Popen(
-        [sys.executable, "-m", "app.worker", "--pools", "python,http"],
+        [
+            sys.executable,
+            "-m",
+            "app.worker",
+            "--pools",
+            environment.get("FINANCIAL_WORKER_POOLS", "python,http"),
+        ],
         cwd=BACKEND_DIR,
         stdout=worker_out,
         stderr=worker_err,
