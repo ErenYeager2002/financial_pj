@@ -265,7 +265,9 @@ def _parse_date(value: str) -> date | None:
 
 
 def _date_label(value: str) -> str:
-    parsed = date.fromisoformat(value)
+    parsed = _parse_date(value)
+    if not parsed:
+        return "未确认"
     return f"{value}（周{WEEKDAYS[parsed.weekday()]}）"
 
 
@@ -312,13 +314,13 @@ def _queue_action(
 
 
 def _status_reply(workflow: WorkflowSession) -> str:
+    if workflow.stage == "awaiting_date_confirmation":
+        return f"当前核销日期是 {_date_label(workflow.reconciliation_date)}，请回复“确认”。"
+    if workflow.stage == "preparing":
+        return f"正在生成 {_date_label(workflow.reconciliation_date)} 的《核销日清》。"
     labels = {
         "awaiting_date": "请先告诉我核销日期。",
-        "awaiting_date_confirmation": (
-            f"当前核销日期是 {_date_label(workflow.reconciliation_date)}，请回复“确认”。"
-        ),
         "awaiting_files": "请上传智云导出和盈亏/流转表副本，传好后回复“上传好了”。",
-        "preparing": f"正在生成 {_date_label(workflow.reconciliation_date)} 的《核销日清》。",
         "awaiting_apply_confirmation": "《核销日清》已生成；请打开检查，确认后回复“确认”。",
         "applying": "正在执行确认后的写入和回读校验，请不要修改相关表格。",
         "completed": "本次核销已完成，结果文件可以下载。",

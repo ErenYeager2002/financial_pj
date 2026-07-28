@@ -113,6 +113,14 @@ def test_conversational_workflow_hard_gates(monkeypatch) -> None:
         workflow_id = created.json()["id"]
         assert created.json()["stage"] == "awaiting_date"
 
+        status_before_date = client.post(
+            f"/api/workflows/{workflow_id}/messages",
+            json={"content": "上传好了"},
+        )
+        assert status_before_date.status_code == 200
+        assert status_before_date.json()["stage"] == "awaiting_date"
+        assert status_before_date.json()["messages"][-1]["content"] == "请先告诉我核销日期。"
+
         dated = client.post(
             f"/api/workflows/{workflow_id}/messages",
             json={"content": "2026年7月24日"},

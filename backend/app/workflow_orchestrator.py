@@ -185,8 +185,11 @@ def decide_workflow_turn(
     message: str,
     reconciliation_date: str,
 ) -> WorkflowDecision:
+    local = _fallback_decision(stage, message)
+    if local.action != "show_status":
+        return local
     if config:
         decision = _llm_decision(config, stage, message, reconciliation_date)
         if decision:
             return decision
-    return _fallback_decision(stage, message)
+    return local
