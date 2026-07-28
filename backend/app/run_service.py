@@ -150,6 +150,11 @@ def create_run(db: Session, request: RunCreate, user: UserContext) -> RunRecord:
     skill = registry.get(request.skill_id)
     if not skill:
         raise HTTPException(status_code=404, detail="Skill 不存在或尚未发布。")
+    if skill.manifest.handler.adapter == "workflow":
+        raise HTTPException(
+            status_code=422,
+            detail="该 Skill 需要通过对话式工作流创建任务。",
+        )
     if request.idempotency_key:
         existing = db.scalar(
             select(RunRecord).where(

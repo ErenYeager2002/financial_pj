@@ -20,12 +20,16 @@ flowchart TD
 
     subgraph U["财务员工使用"]
         U1["选择已发布 Skill"] --> U2["上传文件并描述要求"]
-        U2 --> U3["模型只对当前 Skill 提取参数"]
-        U3 --> U4["员工检查参数与文件"]
+        U2 --> U3{"一次性或对话式"}
+        U3 -->|"一次性"| UP["模型只对当前 Skill 提取参数"]
+        U3 -->|"对话式"| UC["模型从阶段白名单选择动作"]
+        UC --> UG["后端状态机校验人工确认硬闸"]
+        UP --> U5["员工检查参数、文件或阶段产物"]
+        UG --> U5
     end
 
     P4 --> U1
-    U4 --> V["后端校验权限、Schema、文件归属、容差和幂等键"]
+    U5 --> V["后端校验权限、Schema、文件归属、容差和幂等键"]
     V --> S["保存 Skill 版本、哈希与运行快照"]
     S --> R{"是否需要确认"}
     R -->|"是"| C["员工确认具体动作"]
@@ -36,9 +40,11 @@ flowchart TD
     W --> WP["Python Worker"]
     W --> WR["RPA Worker"]
     W --> WH["HTTP Worker"]
+    W --> WW["Workflow Worker"]
     WP --> E["确定性 Skill 执行"]
     WR --> E
     WH --> E
+    WW --> E
     E --> O["输出统一 result.json 与结果文件"]
     O --> J["JSON Schema 校验、文件登记、哈希留存"]
     J --> L["SSE 实时进度与下载"]
@@ -62,7 +68,9 @@ waiting_confirmation
 
 - FastAPI：接口、权限、文件、任务与 SSE。
 - SQLite：第一期运行记录、文件元数据和事件；生产可切 PostgreSQL。
-- 独立 Worker：轮询数据库队列，按 `python`、`rpa`、`http` 池领取任务。
+- 独立 Worker：轮询数据库队列，按 `python`、`rpa`、`http`、`workflow` 池领取任务。
+- 对话式执行器：会话、消息和动作独立留痕；状态机限制每阶段可调用动作，
+  耗时动作由 `workflow` Worker 执行。
 - React：Skill 目录、参数解析、任务提交、实时进度、结果下载和管理员页面。
 - Skill Registry：扫描 `skills/*/tool.yaml`，也可配置外部 Git 工作树。
 - Model Connections：API Key 自动探测、加密保存、模型发现和任务级模型选择。

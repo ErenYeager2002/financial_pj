@@ -14,7 +14,7 @@
 
 - `backend/`：FastAPI、SQLAlchemy、SQLite、Registry、Orchestrator、Worker 与适配器。
 - `frontend/`：React + TypeScript + Vite。
-- `skills/`：平台托管 Skill；共登记 18 个，其中 9 个 published、2 个 draft、
+- `skills/`：平台托管 Skill；共登记 18 个，其中 10 个 published、1 个 draft、
   7 个 disabled。状态明细见 `docs/FINANCE_SKILLS_CATALOG.md`。
 - `data/`：上传、运行快照、输出、日志和数据库，不进入 Git。
 - `docs/`：架构与 Skill 接入协议。
@@ -66,4 +66,20 @@ npm run build
 - `ar-hexiao-daily`、金蝶 RPA 和文档/Agent 基础能力已登记但未伪装成可运行工具；
   其中现金流量核对需先修复“会计期间”分组口径。
 - Python 依赖新增 pandas、xlrd、pdfplumber、requests；本机已通过清华镜像安装。
-- RPA Worker 由 `FINANCIAL_WORKER_POOLS` 控制，默认仍只启用 `python,http`。
+- RPA Worker 由 `FINANCIAL_WORKER_POOLS` 控制；批量接入阶段未默认启用 RPA。
+
+## 2026-07-28 · 对话式工作流执行器
+
+- 新增 `WorkflowSession`、`WorkflowMessage` 和 `WorkflowAction`，会话、消息、
+  人工确认及后台动作均可审计。
+- `workflow` 适配器不接受一次性 `/api/runs` 调用；前端从 Skill 页面创建会话，
+  在专用对话页完成日期确认、文件上传、日清检查和写入确认。
+- 模型只在当前阶段的 Tool Calling 白名单内选择动作；模型不可生成命令、路径、
+  金额或客户明细，模型不可用时退回本地受限意图解析。
+- `ar-hexiao-daily` 已发布。日期确认和《核销日清》二次确认是后端硬闸；
+  未上传至少一份智云导出及两份财务工作簿时不能生成日清。
+- 工作流按任务固化 Skill 快照，固定执行原 Skill 的核验脚本链；真实写入前再次
+  校验阶段，并在完成后回读来源哈希。
+- 默认 Worker Pool 已改为 `python,http,workflow`；RPA 仍未默认启用。
+- 后端 6 项测试通过，包含完整对话状态机和越权确认测试；前端 typecheck/build
+  通过。

@@ -17,6 +17,7 @@ from .events import emit_event
 from .models import RunRecord
 from .registry import SkillManifest
 from .settings import settings
+from .workflow_service import run_workflow_action_once
 
 STOP = False
 
@@ -109,10 +110,10 @@ def run_once(pools: tuple[str, ...] | None = None) -> bool:
     pools = pools or settings.worker_pools
     with SessionLocal() as db:
         run = claim_next_run(db, pools)
-        if not run:
-            return False
-        execute_run(db, run)
-        return True
+        if run:
+            execute_run(db, run)
+            return True
+        return run_workflow_action_once(db, pools)
 
 
 def run_loop(pools: tuple[str, ...]) -> None:

@@ -36,6 +36,7 @@ export function SkillRun() {
   const [loadingRole, setLoadingRole] = useState('')
   const [interpreting, setInterpreting] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [startingWorkflow, setStartingWorkflow] = useState(false)
   const [error, setError] = useState('')
   const [notes, setNotes] = useState<string[]>([])
   const [modelConnections, setModelConnections] = useState<ModelConnection[]>([])
@@ -132,12 +133,107 @@ export function SkillRun() {
     }
   }
 
+  const startWorkflow = async () => {
+    if (!skill || !modelConnectionId) return
+    setStartingWorkflow(true)
+    setError('')
+    try {
+      const workflow = await api.createWorkflow(
+        skill.id,
+        modelConnectionId,
+        selectedModel,
+      )
+      navigate(`/workflows/${workflow.id}`)
+    } catch (reason) {
+      setError((reason as Error).message)
+    } finally {
+      setStartingWorkflow(false)
+    }
+  }
+
   if (!skill && !error) {
     return <div className="loading-screen" aria-live="polite"><LoaderCircle className="spin" />正在读取 Skill…</div>
   }
 
   if (!skill) {
     return <div className="alert alert-error" role="alert"><TriangleAlert size={18} />{error}</div>
+  }
+
+  if (skill.handler.adapter === 'workflow') {
+    return (
+      <div className="workflow-start page-stack">
+        <Link to="/skills" className="back-link"><ArrowLeft size={16} /> 返回工具列表</Link>
+        <section className="workflow-start-card">
+          <div className="workflow-start-icon"><Bot size={28} /></div>
+          <span className="skill-category">{skill.category}</span>
+          <h2>{skill.name}</h2>
+          <p>{skill.description}</p>
+          <div className="workflow-gates">
+            <span><Check size={16} /> 对话确认核销日期</span>
+            <span><Check size={16} /> 上传隔离副本并生成核销日清</span>
+            <span><LockKeyhole size={16} /> 人工确认前禁止写表</span>
+          </div>
+          {error && (
+            <div className="alert alert-error" role="alert">
+              <TriangleAlert size={18} />{error}
+            </div>
+          )}
+          {modelConnections.length ? (
+            <div className="task-model-selector">
+              <div className="task-model-icon"><Bot size={19} /></div>
+              <label className="field">
+                <span>模型服务</span>
+                <select
+                  value={modelConnectionId}
+                  onChange={(event) => {
+                    const connection = modelConnections.find(
+                      (item) => item.id === event.target.value,
+                    )
+                    setModelConnectionId(event.target.value)
+                    setSelectedModel(connection?.selected_model || '')
+                  }}
+                >
+                  {modelConnections.map((connection) => (
+                    <option key={connection.id} value={connection.id}>
+                      {connection.provider_name} · {connection.api_key_hint}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>对话模型</span>
+                <select
+                  value={selectedModel}
+                  onChange={(event) => setSelectedModel(event.target.value)}
+                >
+                  {(modelConnections.find((item) => item.id === modelConnectionId)?.models || [])
+                    .map((model) => <option key={model} value={model}>{model}</option>)}
+                </select>
+              </label>
+            </div>
+          ) : (
+            <div className="model-required">
+              <Bot size={18} />
+              <div>
+                <strong>需要先接入对话模型</strong>
+                <span>平台会使用模型理解你的回复，但所有财务计算仍由固定脚本完成。</span>
+              </div>
+              <Link to="/models">接入模型</Link>
+            </div>
+          )}
+          <button
+            type="button"
+            className="button button-primary workflow-start-button"
+            disabled={!modelConnectionId || startingWorkflow}
+            onClick={startWorkflow}
+          >
+            {startingWorkflow
+              ? <><LoaderCircle className="spin" size={17} /> 正在建立会话…</>
+              : <>开始对话式核销 <ArrowRight size={17} /></>}
+          </button>
+        </section>
+      </div>
+    )
   }
 
   return (

@@ -46,7 +46,7 @@ export interface SkillManifest {
   }
   output_schema: Record<string, unknown>
   handler: {
-    adapter: 'python' | 'rpa' | 'http'
+    adapter: 'python' | 'rpa' | 'http' | 'workflow'
     entrypoint?: string
     endpoint?: string
     worker_pool?: string
@@ -139,4 +139,50 @@ export interface RunEvent {
   message: string
   data: Record<string, unknown>
   created_at: string
+}
+
+export interface WorkflowMessage {
+  id: number
+  role: 'user' | 'assistant' | 'system'
+  content: string
+  data: Record<string, unknown>
+  created_at: string
+}
+
+export interface WorkflowAction {
+  id: string
+  name: string
+  state: string
+  error_message: string
+  created_at: string
+  finished_at?: string
+}
+
+export interface WorkflowFile {
+  file_id: string
+  name: string
+  size_bytes: number
+  sha256: string
+}
+
+export interface WorkflowRecord {
+  id: string
+  owner_id: string
+  skill_id: string
+  skill_name: string
+  skill_version: string
+  model_provider: string
+  model_name: string
+  state: string
+  stage: string
+  reconciliation_date: string
+  files: Record<string, WorkflowFile[]>
+  artifacts: RunResultFile[]
+  progress: number
+  progress_message: string
+  error_message: string
+  messages: WorkflowMessage[]
+  actions: WorkflowAction[]
+  created_at: string
+  updated_at: string
 }

@@ -42,9 +42,21 @@ from .schemas import (
     RunActionResponse,
     RunCreate,
     RunRead,
+    WorkflowCreate,
+    WorkflowFilesUpdate,
+    WorkflowMessageCreate,
+    WorkflowRead,
 )
 from .settings import settings
 from .storage import save_upload
+from .workflow_service import (
+    create_workflow,
+    get_workflow_or_404,
+    list_workflows,
+    send_workflow_message,
+    serialize_workflow,
+    update_workflow_files,
+)
 
 
 @asynccontextmanager
@@ -226,6 +238,55 @@ def new_run(
 ) -> RunRead:
     run = create_run(db, body, user)
     return serialize_run(run)
+
+
+@app.get("/api/workflows", response_model=list[WorkflowRead])
+def workflows(
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> list[WorkflowRead]:
+    return [serialize_workflow(item) for item in list_workflows(db, user, limit)]
+
+
+@app.post("/api/workflows", response_model=WorkflowRead)
+def new_workflow(
+    body: WorkflowCreate,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> WorkflowRead:
+    return serialize_workflow(create_workflow(db, body, user))
+
+
+@app.get("/api/workflows/{workflow_id}", response_model=WorkflowRead)
+def get_workflow(
+    workflow_id: str,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> WorkflowRead:
+    return serialize_workflow(get_workflow_or_404(db, workflow_id, user))
+
+
+@app.put("/api/workflows/{workflow_id}/files", response_model=WorkflowRead)
+def set_workflow_files(
+    workflow_id: str,
+    body: WorkflowFilesUpdate,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> WorkflowRead:
+    workflow = get_workflow_or_404(db, workflow_id, user)
+    return serialize_workflow(update_workflow_files(db, workflow, body.files, user))
+
+
+@app.post("/api/workflows/{workflow_id}/messages", response_model=WorkflowRead)
+def workflow_message(
+    workflow_id: str,
+    body: WorkflowMessageCreate,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> WorkflowRead:
+    workflow = get_workflow_or_404(db, workflow_id, user)
+    return serialize_workflow(send_workflow_message(db, workflow, body.content, user))
 
 
 @app.get("/api/runs", response_model=list[RunRead])

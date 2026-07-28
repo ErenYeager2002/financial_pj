@@ -2,17 +2,40 @@ schema_version: 1
 id: ar-hexiao-daily
 name: 应收核销日清
 version: 1.0.0
-status: draft
+status: published
 category: 应收管理
 description: 应收核销多阶段流程，包含取数、判定、人工确认、写副本和挂账重扫。
 tags:
 - 应收核销
 - 人在环
 - 多阶段
-file_inputs: []
+file_inputs:
+- role: zhiyun_exports
+  name: 智云核销导出
+  description: 回款记录、核销明细和订单明细等同一核销日导出文件。
+  required: true
+  multiple: true
+  min_files: 1
+  extensions:
+  - xlsx
+  - xls
+  - json
+  - csv
+  max_size_mb: 100
+- role: finance_workbooks
+  name: 盈亏与流转表副本
+  description: 至少上传盈亏核算表和到账流转表副本。
+  required: true
+  multiple: true
+  min_files: 2
+  extensions:
+  - xlsx
+  - xlsm
+  - xls
+  max_size_mb: 100
 input_schema:
   type: object
-  additionalProperties: true
+  additionalProperties: false
   properties: {}
 output_schema:
   type: object
@@ -31,11 +54,10 @@ output_schema:
     warnings:
       type: array
 handler:
-  adapter: python
-  entrypoint: scripts/entry.py
-  worker_pool: python
+  adapter: workflow
+  worker_pool: workflow
 runtime:
-  timeout_seconds: 600
+  timeout_seconds: 1800
   memory_mb: 2048
   concurrency_limit: 1
   network_access: false
@@ -48,4 +70,3 @@ permissions:
 upstream:
   repository: https://github.com/EvanLee2004/finance-skills
   path: skills/ar-hexiao-daily
-blocked_reason: 需实现多阶段工作流状态机和写前人工确认，不能包装成一次性脚本。

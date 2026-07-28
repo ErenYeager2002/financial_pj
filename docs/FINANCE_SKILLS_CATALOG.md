@@ -11,6 +11,7 @@
 | `reconcile-bank` | 银行流水与财务总账匹配 | Python |
 | `receivables-merge` | 合并本期应收台账并回填上一版 | Python 桥接 |
 | `split-by-sales` | 应收 all 按销售人员拆分 | Python 桥接 |
+| `ar-hexiao-daily` | 应收核销日清，写前双重人工确认 | 对话式工作流 |
 | `labor-invoice-check` | 劳务清单与发票台账核对 | Python 桥接 |
 | `withholding-report-rename` | 申报表 PDF 规范命名副本 | Python 桥接 |
 | `compliance-spot-check` | 生成本周合规抽查建议 | Python 桥接 |
@@ -22,7 +23,6 @@
 
 | Skill | 状态 | 阻断原因 |
 | --- | --- | --- |
-| `ar-hexiao-daily` | draft | 多阶段工作流包含写前人工确认，需要状态机，不能压成一次性脚本 |
 | `jdy-cashflow-export` | draft | 需要独立凭据保管与受控浏览器会话 |
 | `jdy-cashflow-reconcile` | disabled | 当前缺少会计期间维度，同号凭证跨月会被错误合并 |
 | `task-clarifier` | disabled | Agent 行为指南，不是独立 CLI |
@@ -39,4 +39,6 @@
 - 输入文件复制到本次任务工作区；文件名保留原名称信息，便于日期识别。
 - 旧 CLI 的产物必须写入本次任务输出目录，平台再登记下载链接。
 - 多文件输入可声明 `min_files`；例如进度对比至少需要两份工作簿。
+- 对话式工作流只能调用当前阶段白名单动作；`ar-hexiao-daily` 在确认日期后
+  才能生成日清，在员工检查并二次确认后才能写表。
 - RPA Worker 默认不开启，配置完凭据保管与浏览器隔离后才加入 `rpa` 池。

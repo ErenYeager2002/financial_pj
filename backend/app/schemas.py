@@ -90,3 +90,56 @@ class ModelConnectionRead(BaseModel):
     status: str
     last_checked_at: datetime
     created_at: datetime
+
+
+class WorkflowCreate(BaseModel):
+    skill_id: str
+    model_connection_id: str
+    model: str | None = None
+
+
+class WorkflowMessageCreate(BaseModel):
+    content: str = Field(min_length=1, max_length=4000)
+
+
+class WorkflowFilesUpdate(BaseModel):
+    files: dict[str, list[str]] = Field(default_factory=dict)
+
+
+class WorkflowMessageRead(BaseModel):
+    id: int
+    role: str
+    content: str
+    data: dict[str, Any]
+    created_at: datetime
+
+
+class WorkflowActionRead(BaseModel):
+    id: str
+    name: str
+    state: str
+    error_message: str
+    created_at: datetime
+    finished_at: datetime | None
+
+
+class WorkflowRead(BaseModel):
+    id: str
+    owner_id: str
+    skill_id: str
+    skill_name: str
+    skill_version: str
+    model_provider: str
+    model_name: str
+    state: str
+    stage: str
+    reconciliation_date: str
+    progress: int
+    progress_message: str
+    error_message: str
+    files: dict[str, Any]
+    artifacts: list[dict[str, Any]]
+    messages: list[WorkflowMessageRead]
+    actions: list[WorkflowActionRead]
+    created_at: datetime
+    updated_at: datetime

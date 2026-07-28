@@ -68,7 +68,9 @@ export function SkillList() {
           <article className="skill-card" key={skill.id}>
             <div className="skill-card-top">
               <div className="skill-icon">
-                {skill.handler.adapter === 'rpa' ? <Bot size={22} /> : <FileSpreadsheet size={22} />}
+                {['rpa', 'workflow'].includes(skill.handler.adapter)
+                  ? <Bot size={22} />
+                  : <FileSpreadsheet size={22} />}
               </div>
               <span className={`risk-chip risk-${skill.risk.level}`}>
                 {skill.risk.level === 'read_only' ? '只读' : '执行前确认'}

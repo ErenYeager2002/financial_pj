@@ -5,6 +5,7 @@ import type {
   UploadedFile,
   UserRole,
   UserSession,
+  WorkflowRecord,
 } from './types'
 
 const ROLE_KEY = 'financial-user-role'
@@ -129,6 +130,27 @@ export const api = {
   cancelRun: (id: string) =>
     request<{ id: string; state: string; message: string }>(`/api/runs/${id}/cancel`, {
       method: 'POST',
+    }),
+  createWorkflow: (skillId: string, modelConnectionId: string, model?: string) =>
+    request<WorkflowRecord>('/api/workflows', {
+      method: 'POST',
+      body: JSON.stringify({
+        skill_id: skillId,
+        model_connection_id: modelConnectionId,
+        model: model || null,
+      }),
+    }),
+  workflows: () => request<WorkflowRecord[]>('/api/workflows'),
+  workflow: (id: string) => request<WorkflowRecord>(`/api/workflows/${id}`),
+  updateWorkflowFiles: (id: string, files: Record<string, string[]>) =>
+    request<WorkflowRecord>(`/api/workflows/${id}/files`, {
+      method: 'PUT',
+      body: JSON.stringify({ files }),
+    }),
+  sendWorkflowMessage: (id: string, content: string) =>
+    request<WorkflowRecord>(`/api/workflows/${id}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({ content }),
     }),
   reloadRegistry: () =>
     request<{ skills: number; errors: Array<{ path: string; error: string }> }>(

@@ -24,7 +24,7 @@ class FileInputSpec(BaseModel):
 
 
 class HandlerSpec(BaseModel):
-    adapter: Literal["python", "rpa", "http"]
+    adapter: Literal["python", "rpa", "http", "workflow"]
     entrypoint: str | None = None
     endpoint: str | None = None
     worker_pool: str | None = None

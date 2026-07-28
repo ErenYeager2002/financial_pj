@@ -1,16 +1,21 @@
-import { ArrowRight, ListFilter } from 'lucide-react'
+import { ArrowRight, Bot, ListFilter } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api'
 import { StatusBadge } from '../components/StatusBadge'
-import type { RunRecord } from '../types'
+import type { RunRecord, WorkflowRecord } from '../types'
 
 export function RunList() {
   const [runs, setRuns] = useState<RunRecord[]>([])
+  const [workflows, setWorkflows] = useState<WorkflowRecord[]>([])
   const [filter, setFilter] = useState('all')
 
   useEffect(() => {
-    const load = () => api.runs().then(setRuns)
+    const load = () =>
+      Promise.all([api.runs(), api.workflows()]).then(([runData, workflowData]) => {
+        setRuns(runData)
+        setWorkflows(workflowData)
+      })
     load()
     const timer = window.setInterval(load, 3000)
     return () => window.clearInterval(timer)
@@ -26,6 +31,17 @@ export function RunList() {
               : run.state === filter,
           ),
     [filter, runs],
+  )
+  const filteredWorkflows = useMemo(
+    () =>
+      filter === 'all'
+        ? workflows
+        : workflows.filter((workflow) =>
+            filter === 'active'
+              ? ['active', 'running', 'waiting_confirmation'].includes(workflow.state)
+              : workflow.state === filter,
+          ),
+    [filter, workflows],
   )
 
   return (
@@ -50,6 +66,34 @@ export function RunList() {
           </button>
         ))}
       </div>
+      {filteredWorkflows.length > 0 && (
+        <section className="workflow-records">
+          <div className="section-heading">
+            <div><span className="eyebrow">人在环任务</span><h2>对话式工作流</h2></div>
+          </div>
+          <div className="workflow-record-grid">
+            {filteredWorkflows.map((workflow) => (
+              <Link
+                className="workflow-record-card"
+                to={`/workflows/${workflow.id}`}
+                key={workflow.id}
+              >
+                <div className="run-glyph"><Bot size={18} /></div>
+                <div>
+                  <strong>{workflow.skill_name}</strong>
+                  <span>{workflow.progress_message}</span>
+                  <small>
+                    {new Date(workflow.created_at).toLocaleString('zh-CN')}
+                    {' · '}{workflow.model_name}
+                  </small>
+                </div>
+                <StatusBadge state={workflow.state} />
+                <ArrowRight size={16} />
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
       <div className="table-panel">
         <table>
           <thead>
@@ -80,7 +124,7 @@ export function RunList() {
             ))}
           </tbody>
         </table>
-        {!filtered.length && (
+        {!filtered.length && !filteredWorkflows.length && (
           <div className="empty-state"><ListFilter size={28} /><h3>当前筛选下没有记录</h3></div>
         )}
       </div>

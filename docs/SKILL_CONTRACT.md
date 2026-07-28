@@ -62,6 +62,33 @@ python entry.py --request <运行目录/request.json> --result <运行目录/res
 
 输出文件只能位于本次运行目录。平台会重新计算 SHA-256、登记文件 ID，并把本地路径替换为受权限控制的下载地址。
 
+## 对话式工作流
+
+多阶段、人在环的 Skill 使用 `workflow` 适配器：
+
+```yaml
+handler:
+  adapter: workflow
+  worker_pool: workflow
+risk:
+  level: write
+  requires_confirmation: true
+```
+
+工作流由后端状态机控制。模型只从当前阶段允许的 Tool Calling 白名单中选择动作，
+不能提供脚本名、命令或路径。耗时动作写入 `WorkflowAction` 队列，由
+`workflow` Worker 执行固化 Skill 快照中的固定脚本。
+
+`ar-hexiao-daily` 的硬闸顺序为：
+
+```text
+确认核销日期 → 上传智云导出和两份财务工作簿 → 生成核销日清
+→ 员工下载检查并明确确认 → 写入盈亏明细和流转安全子集 → 回读校验
+```
+
+确认日清前禁止调用写入脚本；模型服务不可用时仅允许本地受限意图解析，
+不能绕过任何状态条件。
+
 ## Git 托管方式
 
 Skill 可以维护在私有 GitHub 仓库。生产运行时不直接执行浮动的 `main` 分支，而是：

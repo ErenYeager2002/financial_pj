@@ -74,11 +74,15 @@ def manifest(
         "file_inputs": file_inputs,
         "input_schema": input_schema,
         "output_schema": COMMON_OUTPUT_SCHEMA,
-        "handler": {
-            "adapter": adapter,
-            "entrypoint": "scripts/entry.py",
-            "worker_pool": "rpa" if adapter == "rpa" else "python",
-        },
+        "handler": (
+            {"adapter": "workflow", "worker_pool": "workflow"}
+            if adapter == "workflow"
+            else {
+                "adapter": adapter,
+                "entrypoint": "scripts/entry.py",
+                "worker_pool": "rpa" if adapter == "rpa" else "python",
+            }
+        ),
         "runtime": {
             "timeout_seconds": timeout,
             "memory_mb": 2048,
@@ -387,12 +391,29 @@ CATALOG_ONLY: dict[str, dict[str, Any]] = {
         "应收管理",
         "应收核销多阶段流程，包含取数、判定、人工确认、写副本和挂账重扫。",
         ["应收核销", "人在环", "多阶段"],
-        [],
-        {"type": "object", "additionalProperties": True, "properties": {}},
-        status="draft",
+        [
+            file_spec(
+                "zhiyun_exports",
+                "智云核销导出",
+                ["xlsx", "xls", "json", "csv"],
+                multiple=True,
+                description="回款记录、核销明细和订单明细等同一核销日导出文件。",
+            ),
+            file_spec(
+                "finance_workbooks",
+                "盈亏与流转表副本",
+                ["xlsx", "xlsm", "xls"],
+                multiple=True,
+                min_files=2,
+                description="至少上传盈亏核算表和到账流转表副本。",
+            ),
+        ],
+        {"type": "object", "additionalProperties": False, "properties": {}},
+        status="published",
+        adapter="workflow",
         risk="write",
         confirmation=True,
-        blocked_reason="需实现多阶段工作流状态机和写前人工确认，不能包装成一次性脚本。",
+        timeout=1800,
     ),
     "jdy-cashflow-export": manifest(
         "jdy-cashflow-export",
@@ -564,7 +585,7 @@ def sync_one(source_root: Path, skill_id: str, item: dict[str, Any], executable:
         if (source / name).is_file():
             shutil.copy2(source / name, target / name)
             normalize_text(target / name)
-    if executable:
+    if executable or skill_id == "ar-hexiao-daily":
         safe_copy_source(source, target / "vendor")
     write_yaml(target / "tool.yaml", item["manifest"] if executable else item)
     if executable:

@@ -32,7 +32,7 @@ class Settings:
     queue_poll_seconds: float = float(os.getenv("FINANCIAL_QUEUE_POLL_SECONDS", "1"))
     worker_pools: tuple[str, ...] = tuple(
         item.strip()
-        for item in os.getenv("FINANCIAL_WORKER_POOLS", "python,http").split(",")
+        for item in os.getenv("FINANCIAL_WORKER_POOLS", "python,http,workflow").split(",")
         if item.strip()
     )
     llm_base_url: str = os.getenv("FINANCIAL_LLM_BASE_URL", "").rstrip("/")
@@ -48,6 +48,10 @@ class Settings:
         return self.data_dir / "runs"
 
     @property
+    def workflow_dir(self) -> Path:
+        return self.data_dir / "workflows"
+
+    @property
     def log_dir(self) -> Path:
         return self.data_dir / "logs"
 
@@ -60,7 +64,13 @@ class Settings:
         return self.project_root / "frontend" / "dist"
 
     def ensure_directories(self) -> None:
-        for path in (self.data_dir, self.upload_dir, self.run_dir, self.log_dir):
+        for path in (
+            self.data_dir,
+            self.upload_dir,
+            self.run_dir,
+            self.workflow_dir,
+            self.log_dir,
+        ):
             path.mkdir(parents=True, exist_ok=True)
 
 

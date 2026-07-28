@@ -118,3 +118,74 @@ class RunModelAudit(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     run: Mapped[RunRecord] = relationship(back_populates="model_audit")
+
+
+class WorkflowSession(Base):
+    __tablename__ = "workflow_sessions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner_id: Mapped[str] = mapped_column(String(128), index=True)
+    owner_name: Mapped[str] = mapped_column(String(128), default="")
+    department_id: Mapped[str] = mapped_column(String(128), default="finance", index=True)
+    skill_id: Mapped[str] = mapped_column(String(128), index=True)
+    skill_name: Mapped[str] = mapped_column(String(255))
+    skill_version: Mapped[str] = mapped_column(String(64))
+    skill_hash: Mapped[str] = mapped_column(String(64))
+    skill_commit: Mapped[str] = mapped_column(String(64), default="")
+    model_connection_id: Mapped[str] = mapped_column(String(36), index=True)
+    model_provider: Mapped[str] = mapped_column(String(64))
+    model_name: Mapped[str] = mapped_column(String(255))
+    state: Mapped[str] = mapped_column(String(40), default="active", index=True)
+    stage: Mapped[str] = mapped_column(String(64), default="awaiting_date", index=True)
+    reconciliation_date: Mapped[str] = mapped_column(String(10), default="")
+    context_json: Mapped[str] = mapped_column(Text, default="{}")
+    files_json: Mapped[str] = mapped_column(Text, default="{}")
+    artifacts_json: Mapped[str] = mapped_column(Text, default="[]")
+    progress: Mapped[int] = mapped_column(Integer, default=0)
+    progress_message: Mapped[str] = mapped_column(Text, default="")
+    error_message: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+    messages: Mapped[list[WorkflowMessage]] = relationship(
+        back_populates="workflow", cascade="all, delete-orphan"
+    )
+    actions: Mapped[list[WorkflowAction]] = relationship(
+        back_populates="workflow", cascade="all, delete-orphan"
+    )
+
+
+class WorkflowMessage(Base):
+    __tablename__ = "workflow_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    workflow_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workflow_sessions.id"), index=True
+    )
+    role: Mapped[str] = mapped_column(String(24))
+    content: Mapped[str] = mapped_column(Text)
+    data_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    workflow: Mapped[WorkflowSession] = relationship(back_populates="messages")
+
+
+class WorkflowAction(Base):
+    __tablename__ = "workflow_actions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    workflow_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workflow_sessions.id"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(64), index=True)
+    state: Mapped[str] = mapped_column(String(32), default="queued", index=True)
+    input_json: Mapped[str] = mapped_column(Text, default="{}")
+    result_json: Mapped[str] = mapped_column(Text, default="{}")
+    error_message: Mapped[str] = mapped_column(Text, default="")
+    queued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    workflow: Mapped[WorkflowSession] = relationship(back_populates="actions")

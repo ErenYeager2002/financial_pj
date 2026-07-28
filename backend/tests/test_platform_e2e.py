@@ -52,6 +52,7 @@ def test_registry_and_admin_boundary() -> None:
             "compliance-spot-check",
             "reconcile-bank",
             "split-by-sales",
+            "ar-hexiao-daily",
             "receivables-merge",
             "dreame-ar-progress-diff",
             "withholding-report-rename",

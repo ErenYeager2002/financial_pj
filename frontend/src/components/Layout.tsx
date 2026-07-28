@@ -20,6 +20,7 @@ const TITLES: Record<string, string> = {
   '/': '工作概览',
   '/skills': '财务工具',
   '/runs': '运行记录',
+  '/workflows': '对话任务',
   '/models': '模型接入',
   '/admin': 'Skill 管理',
 }

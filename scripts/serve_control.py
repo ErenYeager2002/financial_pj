@@ -106,7 +106,7 @@ def start(port: int, open_browser: bool) -> int:
             "-m",
             "app.worker",
             "--pools",
-            environment.get("FINANCIAL_WORKER_POOLS", "python,http"),
+            environment.get("FINANCIAL_WORKER_POOLS", "python,http,workflow"),
         ],
         cwd=BACKEND_DIR,
         stdout=worker_out,
