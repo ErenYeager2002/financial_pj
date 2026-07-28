@@ -92,6 +92,18 @@ class ModelConnectionRead(BaseModel):
     created_at: datetime
 
 
+class ServiceCredentialWrite(BaseModel):
+    account: str = Field(min_length=1, max_length=255)
+    password: str = Field(min_length=1, max_length=512)
+
+
+class ServiceCredentialRead(BaseModel):
+    service: str
+    configured: bool
+    account_hint: str
+    updated_at: datetime | None
+
+
 class WorkflowCreate(BaseModel):
     skill_id: str
     model_connection_id: str

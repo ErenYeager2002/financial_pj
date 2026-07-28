@@ -20,6 +20,10 @@ from .model_service import resolve_runtime_config
 from .models import FileRecord, WorkflowAction, WorkflowMessage, WorkflowSession
 from .registry import RegisteredSkill, registry
 from .schemas import WorkflowCreate, WorkflowRead
+from .service_credential_service import (
+    has_service_credential,
+    resolve_service_credential,
+)
 from .settings import settings
 from .storage import safe_filename, sha256_file
 from .workflow_orchestrator import WorkflowDecision, decide_workflow_turn
@@ -28,7 +32,6 @@ WEEKDAYS = "一二三四五六日"
 CONFIRM_STAGES = {"awaiting_date_confirmation", "awaiting_apply_confirmation"}
 BUSY_STAGES = {"preparing", "applying"}
 FILE_ROLES = {
-    "zhiyun_exports": "01_智云导出",
     "finance_workbooks": "02_我的表副本",
 }
 CONFIRM_REPLIES = {"确认", "可以", "可以写", "按这个写", "没问题写吧", "写吧", "对", "是"}
@@ -320,7 +323,10 @@ def _status_reply(workflow: WorkflowSession) -> str:
         return f"正在生成 {_date_label(workflow.reconciliation_date)} 的《核销日清》。"
     labels = {
         "awaiting_date": "请先告诉我核销日期。",
-        "awaiting_files": "请上传智云导出和盈亏/流转表副本，传好后回复“上传好了”。",
+        "awaiting_files": (
+            "请安全保存智云账号，并上传盈亏表和到账流转表副本，"
+            "传好后回复“上传好了”。智云核销数据由平台自动获取。"
+        ),
         "awaiting_apply_confirmation": "《核销日清》已生成；请打开检查，确认后回复“确认”。",
         "applying": "正在执行确认后的写入和回读校验，请不要修改相关表格。",
         "completed": "本次核销已完成，结果文件可以下载。",
@@ -393,13 +399,13 @@ def _apply_decision(
             return
         workflow.stage = "awaiting_files"
         workflow.state = "active"
-        workflow.progress_message = "等待上传业务文件"
+        workflow.progress_message = "等待智云凭据和财务工作簿"
         _message(
             db,
             workflow,
             "assistant",
-            "日期已确认。请上传两组材料：① 智云导出的回款/核销/订单文件；"
-            "② 盈亏表和到账流转表副本。传好后回复“上传好了”。",
+            "日期已确认。请在右侧安全保存智云账号，并上传盈亏表和到账流转表副本。"
+            "智云回款、核销和订单数据会自动获取；准备好后回复“上传好了”。",
             source,
         )
         return
@@ -409,15 +415,27 @@ def _apply_decision(
             return
         ready, missing = _has_required_files(workflow)
         if not ready:
-            labels = {
-                "zhiyun_exports": "智云导出",
-                "finance_workbooks": "盈亏/流转表副本",
-            }
+            labels = {"finance_workbooks": "盈亏/流转表副本"}
             _message(
                 db,
                 workflow,
                 "assistant",
                 "还缺：" + "、".join(labels[item] for item in missing) + "。上传后再说“上传好了”。",
+                source,
+            )
+            return
+        if not has_service_credential(
+            db,
+            workflow.owner_id,
+            workflow.department_id,
+            "zhiyun",
+        ):
+            _message(
+                db,
+                workflow,
+                "assistant",
+                "还缺智云账号。请先在右侧“智云自动取数”中安全保存账号和密码，"
+                "再回复“上传好了”。",
                 source,
             )
             return
@@ -461,7 +479,13 @@ def _apply_decision(
             _message(db, workflow, "assistant", "当前动作还在执行，完成后才能重出清单。", source)
             return
         ready, _ = _has_required_files(workflow)
-        if not ready or not workflow.reconciliation_date:
+        has_credential = has_service_credential(
+            db,
+            workflow.owner_id,
+            workflow.department_id,
+            "zhiyun",
+        )
+        if not ready or not has_credential or not workflow.reconciliation_date:
             workflow.stage = "awaiting_files" if workflow.reconciliation_date else "awaiting_date"
             workflow.state = "active"
             _message(db, workflow, "assistant", _status_reply(workflow), source)
@@ -601,6 +625,8 @@ def _run_script(
     script_name: str,
     arguments: list[str],
     timeout: int = 900,
+    stdin_data: str | None = None,
+    sensitive_values: tuple[str, ...] = (),
 ) -> str:
     command = [sys.executable, str(script_dir / script_name), *arguments]
     env = os.environ.copy()
@@ -612,12 +638,20 @@ def _run_script(
         text=True,
         encoding="utf-8",
         errors="replace",
+        input=stdin_data,
         timeout=timeout,
         env=env,
         check=False,
     )
     if completed.returncode:
-        raise RuntimeError(f"{script_name} 执行失败（退出码 {completed.returncode}）")
+        details = (completed.stderr or completed.stdout).strip()
+        for value in sensitive_values:
+            if value:
+                details = details.replace(value, "[已隐藏]")
+        suffix = f"：{details[-1200:]}" if details else ""
+        raise RuntimeError(
+            f"{script_name} 执行失败（退出码 {completed.returncode}）{suffix}"
+        )
     return completed.stdout
 
 
@@ -691,6 +725,33 @@ def _prepare_worklist(
         raise RuntimeError("应收核销脚本包不完整。")
     workspace = str(business.resolve())
     hexiao_date = workflow.reconciliation_date
+    account, password = resolve_service_credential(
+        db,
+        workflow.owner_id,
+        workflow.department_id,
+        "zhiyun",
+    )
+    workflow.progress = 10
+    workflow.progress_message = "正在登录智云并按核销日期自动取数"
+    db.commit()
+    try:
+        _run_script(
+            script_dir,
+            "fetch_secure.py",
+            [],
+            timeout=600,
+            stdin_data=_json(
+                {
+                    "account": account,
+                    "password": password,
+                    "reconciliation_date": hexiao_date,
+                    "workspace": workspace,
+                }
+            ),
+            sensitive_values=(account, password),
+        )
+    finally:
+        password = ""
     steps = [
         ("inspect_inputs.py", ["--workspace", workspace]),
         ("verify_sources.py", ["snapshot", "--workspace", workspace]),
@@ -708,7 +769,7 @@ def _prepare_worklist(
         ),
     ]
     for index, (script, arguments) in enumerate(steps, start=1):
-        workflow.progress = 10 + index * 12
+        workflow.progress = 20 + index * 11
         workflow.progress_message = f"正在执行日清准备步骤 {index}/{len(steps) + 1}"
         db.commit()
         _run_script(script_dir, script, arguments)
@@ -814,7 +875,7 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
             else:
                 reply = (
                     f"✅ 核销日期 {_date_label(workflow.reconciliation_date)} 的核销判定完了，"
-                    "上传原件一个字节没动。\n"
+                    "财务工作簿原件一个字节没动；智云只做了查询取数。\n"
                     f"盈亏：今天要填 {summary.get('今天要填', 0)} 行；"
                     f"已填过·跳过 {summary.get('已填过·跳过', 0)} 行；"
                     f"冲突·需你定 {summary.get('冲突·需你定', 0)} 行；"
@@ -863,7 +924,7 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
             db,
             workflow,
             "assistant",
-            "这一步执行超时，上传原件没有被修改。请检查材料后回复“重出日清”。",
+            "这一步执行超时，财务工作簿原件没有被修改。请检查材料后回复“重出日清”。",
             {"kind": "action_failed"},
         )
     except Exception as exc:
@@ -878,7 +939,7 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
             db,
             workflow,
             "assistant",
-            f"这一步没有完成：{action.error_message}。上传原件没有被修改。"
+            f"这一步没有完成：{action.error_message}。财务工作簿原件没有被修改。"
             "请检查材料后回复“重出日清”。",
             {"kind": "action_failed"},
         )

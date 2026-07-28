@@ -2,6 +2,7 @@ import type {
   RunRecord,
   ModelConnection,
   SkillManifest,
+  ServiceCredential,
   UploadedFile,
   UserRole,
   UserSession,
@@ -76,6 +77,15 @@ export const api = {
     }),
   deleteModel: (connectionId: string) =>
     request<void>(`/api/model-connections/${connectionId}`, { method: 'DELETE' }),
+  serviceCredential: (service: string) =>
+    request<ServiceCredential>(`/api/service-credentials/${service}`),
+  saveServiceCredential: (service: string, account: string, password: string) =>
+    request<ServiceCredential>(`/api/service-credentials/${service}`, {
+      method: 'PUT',
+      body: JSON.stringify({ account, password }),
+    }),
+  deleteServiceCredential: (service: string) =>
+    request<void>(`/api/service-credentials/${service}`, { method: 'DELETE' }),
   upload: async (role: string, file: File) => {
     const data = new FormData()
     data.append('role', role)

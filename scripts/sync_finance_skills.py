@@ -11,6 +11,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PLATFORM_SKILLS = PROJECT_ROOT / "skills"
 BRIDGE_TEMPLATE = PROJECT_ROOT / "scripts" / "legacy_skill_bridge.py"
 UNAVAILABLE_TEMPLATE = PROJECT_ROOT / "scripts" / "unavailable_skill.py"
+ZHIYUN_FETCH_TEMPLATE = PROJECT_ROOT / "scripts" / "secure_zhiyun_fetch.py"
 
 COMMON_OUTPUT_SCHEMA = {
     "type": "object",
@@ -60,13 +61,15 @@ def manifest(
     risk: str = "read_only",
     confirmation: bool = False,
     timeout: int = 600,
+    network_access: bool = False,
+    version: str = "1.0.0",
     blocked_reason: str = "",
 ) -> dict[str, Any]:
     value = {
         "schema_version": 1,
         "id": skill_id,
         "name": name,
-        "version": "1.0.0",
+        "version": version,
         "status": status,
         "category": category,
         "description": description,
@@ -87,7 +90,7 @@ def manifest(
             "timeout_seconds": timeout,
             "memory_mb": 2048,
             "concurrency_limit": 1,
-            "network_access": adapter == "rpa",
+            "network_access": network_access or adapter == "rpa",
         },
         "risk": {"level": risk, "requires_confirmation": confirmation},
         "permissions": {"run": "finance_user", "manage": "skill_admin"},
@@ -389,16 +392,9 @@ CATALOG_ONLY: dict[str, dict[str, Any]] = {
         "ar-hexiao-daily",
         "应收核销日清",
         "应收管理",
-        "应收核销多阶段流程，包含取数、判定、人工确认、写副本和挂账重扫。",
+        "应收核销多阶段流程，自动登录智云取数，再判定、人工确认并写入副本。",
         ["应收核销", "人在环", "多阶段"],
         [
-            file_spec(
-                "zhiyun_exports",
-                "智云核销导出",
-                ["xlsx", "xls", "json", "csv"],
-                multiple=True,
-                description="回款记录、核销明细和订单明细等同一核销日导出文件。",
-            ),
             file_spec(
                 "finance_workbooks",
                 "盈亏与流转表副本",
@@ -414,6 +410,8 @@ CATALOG_ONLY: dict[str, dict[str, Any]] = {
         risk="write",
         confirmation=True,
         timeout=1800,
+        network_access=True,
+        version="1.1.0",
     ),
     "jdy-cashflow-export": manifest(
         "jdy-cashflow-export",
@@ -587,6 +585,11 @@ def sync_one(source_root: Path, skill_id: str, item: dict[str, Any], executable:
             normalize_text(target / name)
     if executable or skill_id == "ar-hexiao-daily":
         safe_copy_source(source, target / "vendor")
+    if skill_id == "ar-hexiao-daily":
+        shutil.copy2(
+            ZHIYUN_FETCH_TEMPLATE,
+            target / "vendor" / "scripts" / "fetch_secure.py",
+        )
     write_yaml(target / "tool.yaml", item["manifest"] if executable else item)
     if executable:
         shutil.copy2(BRIDGE_TEMPLATE, target / "scripts" / "entry.py")

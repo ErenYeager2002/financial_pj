@@ -50,6 +50,23 @@ class ModelConnection(Base):
     )
 
 
+class ServiceCredential(Base):
+    __tablename__ = "service_credentials"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner_id: Mapped[str] = mapped_column(String(128), index=True)
+    department_id: Mapped[str] = mapped_column(String(128), index=True)
+    service: Mapped[str] = mapped_column(String(64), index=True)
+    account_encrypted: Mapped[str] = mapped_column(Text)
+    password_encrypted: Mapped[str] = mapped_column(Text)
+    account_hint: Mapped[str] = mapped_column(String(64), default="")
+    status: Mapped[str] = mapped_column(String(32), default="configured")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
 class RunRecord(Base):
     __tablename__ = "runs"
 

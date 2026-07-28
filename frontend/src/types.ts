@@ -91,6 +91,13 @@ export interface ModelConnection {
   created_at: string
 }
 
+export interface ServiceCredential {
+  service: string
+  configured: boolean
+  account_hint: string
+  updated_at?: string
+}
+
 export interface RunResultFile {
   name: string
   file_id: string

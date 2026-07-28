@@ -42,10 +42,17 @@ from .schemas import (
     RunActionResponse,
     RunCreate,
     RunRead,
+    ServiceCredentialRead,
+    ServiceCredentialWrite,
     WorkflowCreate,
     WorkflowFilesUpdate,
     WorkflowMessageCreate,
     WorkflowRead,
+)
+from .service_credential_service import (
+    get_service_credential_status,
+    remove_service_credential,
+    save_service_credential,
 )
 from .settings import settings
 from .storage import save_upload
@@ -193,6 +200,40 @@ def delete_model(
     user: UserContext = Depends(get_current_user),
 ) -> None:
     remove_connection(db, user, connection_id)
+
+
+@app.get(
+    "/api/service-credentials/{service}",
+    response_model=ServiceCredentialRead,
+)
+def service_credential(
+    service: str,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> ServiceCredentialRead:
+    return get_service_credential_status(db, user, service)
+
+
+@app.put(
+    "/api/service-credentials/{service}",
+    response_model=ServiceCredentialRead,
+)
+def update_service_credential(
+    service: str,
+    body: ServiceCredentialWrite,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> ServiceCredentialRead:
+    return save_service_credential(db, user, service, body.account, body.password)
+
+
+@app.delete("/api/service-credentials/{service}", status_code=204)
+def delete_service_credential(
+    service: str,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> None:
+    remove_service_credential(db, user, service)
 
 
 @app.post("/api/files")

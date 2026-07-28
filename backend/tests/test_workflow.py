@@ -1,17 +1,18 @@
 from __future__ import annotations
 
+import json
+import uuid
 from io import BytesIO
 from types import SimpleNamespace
 
 import httpx
-from fastapi.testclient import TestClient
-from openpyxl import Workbook
-from sqlalchemy import select
-
 from app import model_service, workflow_orchestrator, workflow_service
 from app.database import SessionLocal
 from app.main import app
-from app.models import WorkflowAction
+from app.models import ServiceCredential, WorkflowAction
+from fastapi.testclient import TestClient
+from openpyxl import Workbook
+from sqlalchemy import select
 
 
 def workbook_bytes() -> bytes:
@@ -130,6 +131,81 @@ def test_questions_containing_action_words_do_not_execute() -> None:
     ).action == "show_status"
 
 
+def test_prepare_worklist_fetches_zhiyun_before_analysis(monkeypatch) -> None:
+    workflow_id = str(uuid.uuid4())
+    action_id = str(uuid.uuid4())
+    calls: list[tuple[str, list[str], str | None]] = []
+
+    def fake_copy_inputs(_db, _action, business):
+        ledgers = business / "02_我的表副本"
+        ledgers.mkdir(parents=True, exist_ok=True)
+        (business / "04_产出").mkdir(parents=True, exist_ok=True)
+        (ledgers / "测试盈亏表.xlsx").write_bytes(b"test")
+
+    def fake_run_script(
+        script_dir,
+        script_name,
+        arguments,
+        timeout=900,
+        stdin_data=None,
+        sensitive_values=(),
+    ):
+        del script_dir, timeout, sensitive_values
+        calls.append((script_name, arguments, stdin_data))
+        if script_name == "build_worklist.py":
+            business = workflow_service.settings.workflow_dir / workflow_id / "actions"
+            workspace = business / action_id / "工作区"
+            (workspace / "04_产出" / "核销日清_20260724.xlsx").write_bytes(b"worklist")
+            (workspace / "04_产出" / "写入计划_校验后.json").write_text(
+                "{}",
+                encoding="utf-8",
+            )
+        return ""
+
+    monkeypatch.setattr(workflow_service, "_copy_inputs", fake_copy_inputs)
+    monkeypatch.setattr(workflow_service, "_run_script", fake_run_script)
+    monkeypatch.setattr(
+        workflow_service,
+        "_register_artifact",
+        lambda *_: {"name": "核销日清_20260724.xlsx", "file_id": "output-test"},
+    )
+    monkeypatch.setattr(
+        workflow_service,
+        "resolve_service_credential",
+        lambda *_: ("test-account", "test-password"),
+    )
+
+    skill_scripts = (
+        workflow_service.settings.workflow_dir
+        / workflow_id
+        / "skill"
+        / "vendor"
+        / "scripts"
+    )
+    skill_scripts.mkdir(parents=True)
+    (skill_scripts / "classify_hexiao.py").write_text("", encoding="utf-8")
+    workflow = SimpleNamespace(
+        id=workflow_id,
+        owner_id="demo-user",
+        department_id="finance",
+        reconciliation_date="2026-07-24",
+        progress=0,
+        progress_message="",
+    )
+    action = SimpleNamespace(id=action_id)
+    db = SimpleNamespace(commit=lambda: None)
+
+    result = workflow_service._prepare_worklist(db, action, workflow)
+
+    assert calls[0][0] == "fetch_secure.py"
+    assert calls[0][1] == []
+    payload = json.loads(calls[0][2] or "{}")
+    assert payload["reconciliation_date"] == "2026-07-24"
+    assert payload["account"] == "test-account"
+    assert calls[1][0] == "inspect_inputs.py"
+    assert result["artifacts"][0]["file_id"] == "output-test"
+
+
 def test_conversational_workflow_hard_gates(monkeypatch) -> None:
     class FakeModelsResponse:
         def raise_for_status(self) -> None:
@@ -216,7 +292,6 @@ def test_conversational_workflow_hard_gates(monkeypatch) -> None:
         assert premature.json()["stage"] == "awaiting_files"
         assert premature.json()["actions"] == []
 
-        zhiyun_id = upload(client, "zhiyun_exports", "智云导出.xlsx")
         ledger_id = upload(client, "finance_workbooks", "盈亏表.xlsx")
         flow_id = upload(client, "finance_workbooks", "到账流转表.xlsx")
 
@@ -230,12 +305,45 @@ def test_conversational_workflow_hard_gates(monkeypatch) -> None:
             f"/api/workflows/{workflow_id}/files",
             json={
                 "files": {
-                    "zhiyun_exports": [zhiyun_id],
                     "finance_workbooks": [ledger_id, flow_id],
                 }
             },
         )
         assert attached.status_code == 200, attached.text
+
+        missing_credential = client.post(
+            f"/api/workflows/{workflow_id}/messages",
+            json={"content": "上传好了"},
+        )
+        assert missing_credential.json()["stage"] == "awaiting_files"
+        assert missing_credential.json()["actions"] == []
+        assert "还缺智云账号" in missing_credential.json()["messages"][-1]["content"]
+
+        test_account = "test-zhiyun-user"
+        test_password = "not-a-real-password"
+        saved = client.put(
+            "/api/service-credentials/zhiyun",
+            json={"account": test_account, "password": test_password},
+        )
+        assert saved.status_code == 200, saved.text
+        assert saved.json()["configured"] is True
+        assert test_account not in saved.text
+        assert test_password not in saved.text
+        status = client.get("/api/service-credentials/zhiyun")
+        assert status.status_code == 200
+        assert status.json()["configured"] is True
+        assert test_account not in status.text
+        assert test_password not in status.text
+        with SessionLocal() as db:
+            stored = db.scalar(
+                select(ServiceCredential).where(
+                    ServiceCredential.service == "zhiyun",
+                    ServiceCredential.owner_id == "demo-user",
+                )
+            )
+            assert stored is not None
+            assert test_account not in stored.account_encrypted
+            assert test_password not in stored.password_encrypted
 
         preparing = client.post(
             f"/api/workflows/{workflow_id}/messages",
@@ -243,6 +351,16 @@ def test_conversational_workflow_hard_gates(monkeypatch) -> None:
         )
         assert preparing.json()["stage"] == "preparing"
         assert preparing.json()["actions"][0]["name"] == "prepare_worklist"
+        with SessionLocal() as db:
+            queued = db.scalar(
+                select(WorkflowAction).where(
+                    WorkflowAction.workflow_id == workflow_id,
+                    WorkflowAction.state == "queued",
+                )
+            )
+            assert queued is not None
+            assert test_account not in queued.input_json
+            assert test_password not in queued.input_json
 
         execute_next_action(workflow_id)
         review = client.get(f"/api/workflows/{workflow_id}").json()

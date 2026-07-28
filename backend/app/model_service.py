@@ -2,23 +2,21 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import re
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
 import httpx
-from cryptography.fernet import Fernet
 from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .auth import UserContext
+from .credential_service import decrypt_secret, encrypt_secret
 from .models import ModelConnection
 from .orchestrator import LlmConfig
 from .schemas import ModelConnectionRead
-from .settings import settings
 
 
 @dataclass(frozen=True)
@@ -54,30 +52,6 @@ MODEL_PREFERENCE = (
     "qwen3.6-flash",
     "qwen-plus",
 )
-
-
-def _fernet() -> Fernet:
-    key_path = settings.credential_key_file
-    if not key_path.exists():
-        key_path.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            with key_path.open("xb") as handle:
-                handle.write(Fernet.generate_key())
-            try:
-                os.chmod(key_path, 0o600)
-            except OSError:
-                pass
-        except FileExistsError:
-            pass
-    return Fernet(key_path.read_bytes().strip())
-
-
-def _encrypt(api_key: str) -> str:
-    return _fernet().encrypt(api_key.encode("utf-8")).decode("ascii")
-
-
-def _decrypt(token: str) -> str:
-    return _fernet().decrypt(token.encode("ascii")).decode("utf-8")
 
 
 def _hint(api_key: str) -> str:
@@ -187,7 +161,7 @@ def connect_api_key(
             existing.selected_model = _default_model(models)
         existing.status = "connected"
         existing.last_checked_at = now
-        existing.api_key_encrypted = _encrypt(clean_key)
+        existing.api_key_encrypted = encrypt_secret(clean_key)
         connection = existing
     else:
         connection = ModelConnection(
@@ -197,7 +171,7 @@ def connect_api_key(
             provider=provider.id,
             provider_name=provider.name,
             base_url=provider.base_url,
-            api_key_encrypted=_encrypt(clean_key),
+            api_key_encrypted=encrypt_secret(clean_key),
             api_key_hint=_hint(clean_key),
             api_key_fingerprint=fingerprint,
             models_json=json.dumps(models, ensure_ascii=False),
@@ -253,7 +227,7 @@ def refresh_connection(
     if not provider:
         raise HTTPException(status_code=422, detail="当前模型供应商不再受支持。")
     try:
-        models = _probe(_decrypt(connection.api_key_encrypted), provider)
+        models = _probe(decrypt_secret(connection.api_key_encrypted), provider)
     except (httpx.HTTPError, ValueError) as exc:
         connection.status = "error"
         db.commit()
@@ -298,6 +272,6 @@ def resolve_runtime_config(
         provider=connection.provider,
         connection_id=connection.id,
         base_url=connection.base_url,
-        api_key=_decrypt(connection.api_key_encrypted),
+        api_key=decrypt_secret(connection.api_key_encrypted),
         model=model,
     )

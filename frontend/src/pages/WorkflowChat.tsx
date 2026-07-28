@@ -4,6 +4,7 @@ import {
   CalendarDays,
   Download,
   FileSpreadsheet,
+  KeyRound,
   LoaderCircle,
   Send,
   ShieldCheck,
@@ -13,7 +14,7 @@ import {
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api } from '../api'
-import type { SkillManifest, WorkflowRecord } from '../types'
+import type { ServiceCredential, SkillManifest, WorkflowRecord } from '../types'
 
 const BUSY_STAGES = new Set(['preparing', 'applying'])
 
@@ -40,6 +41,10 @@ export function WorkflowChat() {
   const [message, setMessage] = useState('')
   const [sending, setSending] = useState(false)
   const [uploadingRole, setUploadingRole] = useState('')
+  const [credential, setCredential] = useState<ServiceCredential | null>(null)
+  const [zhiyunAccount, setZhiyunAccount] = useState('')
+  const [zhiyunPassword, setZhiyunPassword] = useState('')
+  const [savingCredential, setSavingCredential] = useState(false)
   const [error, setError] = useState('')
 
   const refresh = async () => {
@@ -54,7 +59,12 @@ export function WorkflowChat() {
       .then(async (data) => {
         if (!active) return
         setWorkflow(data)
-        setSkill(await api.skill(data.skill_id))
+        const [nextSkill, nextCredential] = await Promise.all([
+          api.skill(data.skill_id),
+          api.serviceCredential('zhiyun'),
+        ])
+        setSkill(nextSkill)
+        setCredential(nextCredential)
       })
       .catch((reason: Error) => setError(reason.message))
     return () => {
@@ -118,6 +128,30 @@ export function WorkflowChat() {
       setError((reason as Error).message)
     } finally {
       setUploadingRole('')
+    }
+  }
+
+  const saveCredential = async () => {
+    if (!zhiyunAccount.trim() || !zhiyunPassword) {
+      setError('请输入智云账号和密码。')
+      return
+    }
+    setSavingCredential(true)
+    setError('')
+    try {
+      setCredential(
+        await api.saveServiceCredential(
+          'zhiyun',
+          zhiyunAccount.trim(),
+          zhiyunPassword,
+        ),
+      )
+      setZhiyunAccount('')
+      setZhiyunPassword('')
+    } catch (reason) {
+      setError((reason as Error).message)
+    } finally {
+      setSavingCredential(false)
     }
   }
 
@@ -220,6 +254,59 @@ export function WorkflowChat() {
         </main>
 
         <aside className="workflow-sidebar">
+          <section className="workflow-side-card">
+            <div className="workflow-side-title">
+              <KeyRound size={18} />
+              <div>
+                <h3>智云自动取数</h3>
+                <p>加密保存，模型和任务日志不可见</p>
+              </div>
+            </div>
+            <div className={`credential-status ${credential?.configured ? 'is-ready' : ''}`}>
+              {credential?.configured
+                ? `已配置：${credential.account_hint}`
+                : '尚未配置智云账号'}
+            </div>
+            <div className="credential-form">
+              <label>
+                <span>{credential?.configured ? '更新账号' : '智云账号'}</span>
+                <input
+                  value={zhiyunAccount}
+                  onChange={(event) => setZhiyunAccount(event.target.value)}
+                  autoComplete="username"
+                  placeholder="手机号或邮箱"
+                  disabled={savingCredential || BUSY_STAGES.has(workflow.stage)}
+                />
+              </label>
+              <label>
+                <span>{credential?.configured ? '更新密码' : '智云密码'}</span>
+                <input
+                  type="password"
+                  value={zhiyunPassword}
+                  onChange={(event) => setZhiyunPassword(event.target.value)}
+                  autoComplete="current-password"
+                  placeholder="仅在保存时提交"
+                  disabled={savingCredential || BUSY_STAGES.has(workflow.stage)}
+                />
+              </label>
+              <button
+                type="button"
+                className="button button-secondary button-full"
+                onClick={saveCredential}
+                disabled={
+                  savingCredential ||
+                  BUSY_STAGES.has(workflow.stage) ||
+                  !zhiyunAccount.trim() ||
+                  !zhiyunPassword
+                }
+              >
+                {savingCredential
+                  ? <><LoaderCircle className="spin" size={15} /> 正在加密保存…</>
+                  : <><KeyRound size={15} /> {credential?.configured ? '更新凭据' : '安全保存凭据'}</>}
+              </button>
+            </div>
+          </section>
+
           <section className="workflow-side-card">
             <div className="workflow-side-title">
               <UploadCloud size={18} />

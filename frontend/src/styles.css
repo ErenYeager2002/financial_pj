@@ -713,6 +713,23 @@ tbody tr:hover { background: #f7faff; }
   border-radius: 8px; cursor: pointer; font-size: 11px; font-weight: 700;
 }
 .workflow-upload-button input { display: none; }
+.credential-status {
+  margin-top: 13px; padding: 9px 10px; color: #8a5a16; background: #fff8e8;
+  border: 1px solid #f0ddb7; border-radius: 8px; font-size: 10px; font-weight: 700;
+}
+.credential-status.is-ready {
+  color: #17684f; background: #f0faf5; border-color: #ccebdd;
+}
+.credential-form { display: grid; gap: 9px; margin-top: 11px; }
+.credential-form label { display: grid; gap: 5px; }
+.credential-form label span { color: #64748b; font-size: 10px; font-weight: 700; }
+.credential-form input {
+  min-width: 0; width: 100%; min-height: 38px; padding: 0 10px; color: #2c3b50;
+  background: #fff; border: 1px solid #d5dfec; border-radius: 8px; font-size: 11px;
+}
+.credential-form input:focus {
+  outline: 3px solid rgba(37, 99, 235, .12); border-color: #6c96d5;
+}
 .workflow-meta { margin: 14px 0 0; }
 .workflow-meta div { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid var(--border-soft); }
 .workflow-meta dt { color: var(--muted); font-size: 10px; }
