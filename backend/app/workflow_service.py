@@ -335,10 +335,13 @@ def _is_explicit_confirmation(content: str, *, apply: bool) -> bool:
     if normalized in CONFIRM_REPLIES:
         return True
     if apply:
-        return any(
-            phrase in normalized
-            for phrase in ("确认写入", "确认回填", "可以写入", "同意写入")
-        )
+        return normalized in {
+            "确认写入",
+            "确认回填",
+            "可以写入",
+            "同意写入",
+            "我已检查核销日清，确认写入",
+        }
     return normalized in {"确认日期", "日期确认"}
 
 
@@ -349,6 +352,16 @@ def _apply_decision(
 ) -> None:
     action = decision.action
     source = {"decision_source": decision.source, "action": action}
+    if action == "reply":
+        content = str(decision.arguments.get("content", "")).strip()
+        _message(
+            db,
+            workflow,
+            "assistant",
+            content[:8000] if content else _status_reply(workflow),
+            source,
+        )
+        return
     if action == "set_date":
         value = str(decision.arguments.get("date", ""))
         parsed = _parse_date(value)
@@ -498,9 +511,21 @@ def send_workflow_message(
     content: str,
     user: UserContext,
 ) -> WorkflowSession:
-    if workflow.stage in {"completed", "cancelled"}:
-        raise HTTPException(status_code=409, detail="当前对话任务已经结束。")
     _message(db, workflow, "user", content)
+    db.flush()
+    recent = list(
+        db.scalars(
+            select(WorkflowMessage)
+            .where(WorkflowMessage.workflow_id == workflow.id)
+            .order_by(WorkflowMessage.id.desc())
+            .limit(20)
+        ).all()
+    )
+    history = [
+        {"role": item.role, "content": item.content}
+        for item in reversed(recent)
+        if item.role in {"user", "assistant"}
+    ]
     llm = resolve_runtime_config(
         db,
         user,
@@ -512,6 +537,7 @@ def send_workflow_message(
         workflow.stage,
         content,
         workflow.reconciliation_date,
+        history,
     )
     if decision.action == "confirm_date" and not _is_explicit_confirmation(
         content,

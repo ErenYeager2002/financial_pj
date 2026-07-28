@@ -71,11 +71,7 @@ export function WorkflowChat() {
   }, [workflow?.stage, workflowId])
 
   const actionText = workflow ? quickAction(workflow) : ''
-  const canSend = Boolean(
-    workflow
-    && !BUSY_STAGES.has(workflow.stage)
-    && !['completed', 'cancelled'].includes(workflow.stage),
-  )
+  const canSend = Boolean(workflow)
   const currentFiles = useMemo(
     () => workflow?.files || {},
     [workflow?.files],
@@ -209,7 +205,7 @@ export function WorkflowChat() {
               value={message}
               onChange={(event) => setMessage(event.target.value)}
               disabled={!canSend}
-              placeholder={canSend ? '回复日期、确认，或询问当前进度…' : '当前阶段暂不接收新指令'}
+              placeholder="可以正常对话，也可以要求推进当前工作…"
               rows={2}
             />
             <button

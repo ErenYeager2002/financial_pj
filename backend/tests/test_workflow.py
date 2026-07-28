@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from io import BytesIO
+from types import SimpleNamespace
 
 import httpx
 from fastapi.testclient import TestClient
@@ -54,6 +55,79 @@ def execute_next_action(workflow_id: str) -> None:
         db.commit()
         workflow_service.execute_workflow_action(db, action)
         db.commit()
+
+
+def test_qwen_workflow_supports_natural_multi_turn(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeChatResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": "到账日期是银行收款日，核销日期是销售关联订单的日期。",
+                        }
+                    }
+                ]
+            }
+
+    def fake_post(*_, **kwargs):
+        captured.update(kwargs["json"])
+        return FakeChatResponse()
+
+    monkeypatch.setattr(workflow_orchestrator.httpx, "post", fake_post)
+    decision = workflow_orchestrator.decide_workflow_turn(
+        SimpleNamespace(
+            provider="qwen",
+            model="qwen3.7-plus",
+            base_url="https://dashscope.example/v1",
+            api_key="test-key",
+        ),
+        "awaiting_date",
+        "核销日期和到账日期有什么区别？",
+        "",
+        [
+            {"role": "user", "content": "你好"},
+            {"role": "assistant", "content": "你好，需要一起处理什么财务工作？"},
+            {"role": "user", "content": "核销日期和到账日期有什么区别？"},
+        ],
+    )
+
+    assert decision.action == "reply"
+    assert "银行收款日" in decision.arguments["content"]
+    assert captured["tool_choice"] == "auto"
+    assert captured["enable_thinking"] is False
+    messages = captured["messages"]
+    assert isinstance(messages, list)
+    assert messages[-3:] == [
+        {"role": "user", "content": "你好"},
+        {"role": "assistant", "content": "你好，需要一起处理什么财务工作？"},
+        {"role": "user", "content": "核销日期和到账日期有什么区别？"},
+    ]
+
+
+def test_questions_containing_action_words_do_not_execute() -> None:
+    assert workflow_orchestrator._fallback_decision(
+        "awaiting_files",
+        "为什么还不能开始？",
+    ).action == "show_status"
+    assert workflow_orchestrator._fallback_decision(
+        "awaiting_apply_confirmation",
+        "确认写入是什么意思？",
+    ).action == "show_status"
+    assert workflow_orchestrator._fallback_decision(
+        "awaiting_date",
+        "2026-07-24 是星期几？",
+    ).action == "show_status"
+    assert workflow_orchestrator._fallback_decision(
+        "preparing",
+        "停止按钮有什么作用？",
+    ).action == "show_status"
 
 
 def test_conversational_workflow_hard_gates(monkeypatch) -> None:
@@ -208,3 +282,20 @@ def test_conversational_workflow_hard_gates(monkeypatch) -> None:
         completed = client.get(f"/api/workflows/{workflow_id}").json()
         assert completed["stage"] == "completed"
         assert completed["state"] == "succeeded"
+
+        monkeypatch.setattr(
+            workflow_service,
+            "decide_workflow_turn",
+            lambda *_, **__: workflow_orchestrator.WorkflowDecision(
+                "reply",
+                {"content": "任务已经完成，我还可以继续解释结果或回答问题。"},
+                "llm",
+            ),
+        )
+        continued = client.post(
+            f"/api/workflows/{workflow_id}/messages",
+            json={"content": "任务完成后还能继续聊吗？"},
+        )
+        assert continued.status_code == 200
+        assert continued.json()["stage"] == "completed"
+        assert "继续解释结果" in continued.json()["messages"][-1]["content"]
