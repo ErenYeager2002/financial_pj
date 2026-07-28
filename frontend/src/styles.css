@@ -701,12 +701,18 @@ tbody tr:hover { background: #f7faff; }
 .workflow-file-role strong { color: #3c495d; font-size: 11px; }
 .workflow-file-role > div:first-child span { color: #8b97a8; font-size: 9px; text-align: right; }
 .workflow-file {
-  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center;
   gap: 7px; margin-top: 8px; padding: 8px; color: #17684f; background: #f0faf5;
   border-radius: 7px; font-size: 10px;
 }
 .workflow-file span { min-width: 0; color: #466057; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .workflow-file small { color: #789086; }
+.workflow-file button {
+  width: 32px; height: 32px; display: grid; place-items: center; padding: 0;
+  color: #7b8797; background: transparent; border: 0; border-radius: 7px;
+}
+.workflow-file button:hover:not(:disabled) { color: #b52f3e; background: #fff0f2; }
+.workflow-file button:disabled { opacity: .42; cursor: not-allowed; }
 .workflow-upload-button {
   display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 9px;
   padding: 8px; color: #285d9e; background: #f0f6ff; border: 1px dashed #b8cde8;

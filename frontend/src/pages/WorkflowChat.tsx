@@ -10,6 +10,7 @@ import {
   ShieldCheck,
   TriangleAlert,
   UploadCloud,
+  X,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
@@ -17,6 +18,12 @@ import { api } from '../api'
 import type { ServiceCredential, SkillManifest, WorkflowRecord } from '../types'
 
 const BUSY_STAGES = new Set(['preparing', 'applying'])
+const FILE_EDITABLE_STAGES = new Set([
+  'awaiting_date',
+  'awaiting_date_confirmation',
+  'awaiting_files',
+  'failed',
+])
 
 function humanSize(size: number) {
   if (size < 1024 * 1024) return `${Math.ceil(size / 1024)} KB`
@@ -41,6 +48,7 @@ export function WorkflowChat() {
   const [message, setMessage] = useState('')
   const [sending, setSending] = useState(false)
   const [uploadingRole, setUploadingRole] = useState('')
+  const [deletingFileId, setDeletingFileId] = useState('')
   const [credential, setCredential] = useState<ServiceCredential | null>(null)
   const [zhiyunAccount, setZhiyunAccount] = useState('')
   const [zhiyunPassword, setZhiyunPassword] = useState('')
@@ -104,13 +112,8 @@ export function WorkflowChat() {
 
   const uploadFiles = async (role: string, selected: FileList | null) => {
     if (!workflow || !skill || !selected?.length) return
-    const spec = skill.file_inputs.find((item) => item.role === role)
     const chosen = Array.from(selected)
     const existing = currentFiles[role] || []
-    if (spec && existing.length + chosen.length < (spec.min_files || 1)) {
-      setError(`${spec.name}至少需要 ${spec.min_files || 1} 个文件，请一次选齐。`)
-      return
-    }
     setUploadingRole(role)
     setError('')
     try {
@@ -128,6 +131,25 @@ export function WorkflowChat() {
       setError((reason as Error).message)
     } finally {
       setUploadingRole('')
+    }
+  }
+
+  const removeWorkflowFile = async (role: string, fileId: string) => {
+    if (!workflow || !FILE_EDITABLE_STAGES.has(workflow.stage)) return
+    const remaining = (currentFiles[role] || [])
+      .filter((item) => item.file_id !== fileId)
+      .map((item) => item.file_id)
+    setDeletingFileId(fileId)
+    setError('')
+    try {
+      const next = await api.updateWorkflowFiles(workflow.id, { [role]: remaining })
+      setWorkflow(next)
+      await api.deleteFile(fileId)
+    } catch (reason) {
+      setError((reason as Error).message)
+      await refresh().catch(() => undefined)
+    } finally {
+      setDeletingFileId('')
     }
   }
 
@@ -327,6 +349,20 @@ export function WorkflowChat() {
                       <FileSpreadsheet size={15} />
                       <span>{file.name}</span>
                       <small>{humanSize(file.size_bytes)}</small>
+                      <button
+                        type="button"
+                        title="删除上传文件"
+                        aria-label={`删除${file.name}`}
+                        disabled={
+                          deletingFileId === file.file_id ||
+                          !FILE_EDITABLE_STAGES.has(workflow.stage)
+                        }
+                        onClick={() => removeWorkflowFile(spec.role, file.file_id)}
+                      >
+                        {deletingFileId === file.file_id
+                          ? <LoaderCircle className="spin" size={14} />
+                          : <X size={14} />}
+                      </button>
                     </div>
                   ))}
                   <label className="workflow-upload-button">
@@ -334,7 +370,10 @@ export function WorkflowChat() {
                       type="file"
                       multiple={spec.multiple}
                       accept={spec.extensions.map((item) => `.${item}`).join(',')}
-                      disabled={uploadingRole === spec.role || BUSY_STAGES.has(workflow.stage)}
+                      disabled={
+                        uploadingRole === spec.role ||
+                        !FILE_EDITABLE_STAGES.has(workflow.stage)
+                      }
                       onChange={(event) => uploadFiles(spec.role, event.target.files)}
                     />
                     {uploadingRole === spec.role

@@ -224,11 +224,6 @@ def update_workflow_files(
         spec = specs[role]
         if not spec.multiple and len(ids) > 1:
             raise HTTPException(status_code=422, detail=f"{spec.name}只能上传一个文件。")
-        if ids and len(ids) < spec.min_files:
-            raise HTTPException(
-                status_code=422,
-                detail=f"{spec.name}至少需要 {spec.min_files} 个文件。",
-            )
         records: list[dict[str, Any]] = []
         for file_id in ids:
             record = db.get(FileRecord, file_id)

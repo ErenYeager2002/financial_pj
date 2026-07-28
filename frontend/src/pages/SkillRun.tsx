@@ -34,6 +34,7 @@ export function SkillRun() {
   const [message, setMessage] = useState('')
   const [parameters, setParameters] = useState<Record<string, unknown>>({})
   const [loadingRole, setLoadingRole] = useState('')
+  const [deletingFileId, setDeletingFileId] = useState('')
   const [interpreting, setInterpreting] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [startingWorkflow, setStartingWorkflow] = useState(false)
@@ -85,6 +86,23 @@ export function SkillRun() {
       setError((reason as Error).message)
     } finally {
       setLoadingRole('')
+    }
+  }
+
+  const removeFile = async (role: string, file: UploadedFile) => {
+    setDeletingFileId(file.id)
+    setError('')
+    try {
+      await api.deleteFile(file.id)
+      setFiles((current) => {
+        const next = { ...current }
+        delete next[role]
+        return next
+      })
+    } catch (reason) {
+      setError((reason as Error).message)
+    } finally {
+      setDeletingFileId('')
     }
   }
 
@@ -287,17 +305,17 @@ export function SkillRun() {
                   {uploaded && (
                     <button
                       type="button"
-                      aria-label={`移除${spec.name}`}
+                      aria-label={`删除${uploaded.name}`}
+                      title="删除上传文件"
+                      disabled={deletingFileId === uploaded.id || submitting}
                       onClick={(event) => {
                         event.preventDefault()
-                        setFiles((current) => {
-                          const next = { ...current }
-                          delete next[spec.role]
-                          return next
-                        })
+                        removeFile(spec.role, uploaded)
                       }}
                     >
-                      <X size={16} />
+                      {deletingFileId === uploaded.id
+                        ? <LoaderCircle className="spin" size={16} />
+                        : <X size={16} />}
                     </button>
                   )}
                 </label>

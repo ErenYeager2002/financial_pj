@@ -1,19 +1,29 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import shutil
 import uuid
 from pathlib import Path
 
 from fastapi import HTTPException, UploadFile, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .auth import UserContext
-from .models import FileRecord
+from .models import FileRecord, RunRecord, WorkflowAction, WorkflowSession
 from .settings import settings
 
 SAFE_NAME_PATTERN = re.compile(r"[^0-9A-Za-z\u4e00-\u9fff._()（）-]+")
+ACTIVE_RUN_STATES = {
+    "created",
+    "parsing",
+    "waiting_confirmation",
+    "queued",
+    "running",
+    "cancelling",
+}
 
 
 def safe_filename(name: str) -> str:
@@ -102,3 +112,80 @@ def copy_input_to_workspace(source: Path, target_dir: Path, role: str) -> Path:
     target = target_dir / f"{safe_filename(role)}{suffix}"
     shutil.copy2(source, target)
     return target.resolve()
+
+
+def _contains_file_id(value: str, file_id: str) -> bool:
+    try:
+        payload = json.loads(value or "{}")
+    except json.JSONDecodeError:
+        return False
+
+    def contains(item: object) -> bool:
+        if isinstance(item, dict):
+            return any(contains(value) for value in item.values())
+        if isinstance(item, list):
+            return any(contains(value) for value in item)
+        return item == file_id
+
+    return contains(payload)
+
+
+def delete_upload(
+    db: Session,
+    file_id: str,
+    user: UserContext,
+) -> None:
+    record = db.get(FileRecord, file_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="上传文件不存在。")
+    if record.owner_id != user.user_id and not user.is_admin:
+        raise HTTPException(status_code=403, detail="无权删除其他员工上传的文件。")
+    if record.kind != "input":
+        raise HTTPException(status_code=409, detail="结果文件不能通过上传文件接口删除。")
+
+    active_runs = db.scalars(
+        select(RunRecord).where(
+            RunRecord.department_id == record.department_id,
+            RunRecord.state.in_(ACTIVE_RUN_STATES),
+        )
+    ).all()
+    active_workflows = db.scalars(
+        select(WorkflowSession).where(
+            WorkflowSession.department_id == record.department_id,
+            WorkflowSession.stage.in_(
+                (
+                    "awaiting_date",
+                    "awaiting_date_confirmation",
+                    "awaiting_files",
+                    "preparing",
+                    "awaiting_apply_confirmation",
+                    "applying",
+                    "failed",
+                )
+            ),
+        )
+    ).all()
+    active_actions = db.scalars(
+        select(WorkflowAction).where(WorkflowAction.state.in_(("queued", "running")))
+    ).all()
+    if (
+        any(_contains_file_id(item.files_json, file_id) for item in active_runs)
+        or any(_contains_file_id(item.files_json, file_id) for item in active_workflows)
+        or any(_contains_file_id(item.input_json, file_id) for item in active_actions)
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="文件仍被任务使用，请先从任务文件列表中移除。",
+        )
+
+    path = Path(record.stored_path).resolve()
+    upload_root = settings.upload_dir.resolve()
+    expected_folder = (upload_root / record.id).resolve()
+    if not path.is_relative_to(upload_root) or path.parent != expected_folder:
+        raise HTTPException(status_code=409, detail="上传文件存储路径异常，已拒绝删除。")
+    if path.exists():
+        path.unlink()
+    if expected_folder.exists():
+        expected_folder.rmdir()
+    db.delete(record)
+    db.commit()

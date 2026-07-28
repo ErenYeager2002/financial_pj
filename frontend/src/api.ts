@@ -92,6 +92,8 @@ export const api = {
     data.append('upload', file)
     return request<UploadedFile>('/api/files', { method: 'POST', body: data })
   },
+  deleteFile: (fileId: string) =>
+    request<void>(`/api/files/${fileId}`, { method: 'DELETE' }),
   interpret: (
     skillId: string,
     message: string,

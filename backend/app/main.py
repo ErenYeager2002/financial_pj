@@ -55,7 +55,7 @@ from .service_credential_service import (
     save_service_credential,
 )
 from .settings import settings
-from .storage import save_upload
+from .storage import delete_upload, save_upload
 from .workflow_service import (
     create_workflow,
     get_workflow_or_404,
@@ -269,6 +269,15 @@ def download_file(
     if not path.is_file():
         raise HTTPException(status_code=410, detail="文件已经不存在。")
     return FileResponse(path, filename=record.original_name, media_type=record.content_type)
+
+
+@app.delete("/api/files/{file_id}", status_code=204)
+def remove_uploaded_file(
+    file_id: str,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> None:
+    delete_upload(db, file_id, user)
 
 
 @app.post("/api/runs", response_model=RunRead)

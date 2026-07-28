@@ -3,13 +3,14 @@ from __future__ import annotations
 import json
 import uuid
 from io import BytesIO
+from pathlib import Path
 from types import SimpleNamespace
 
 import httpx
 from app import model_service, workflow_orchestrator, workflow_service
 from app.database import SessionLocal
 from app.main import app
-from app.models import ServiceCredential, WorkflowAction
+from app.models import FileRecord, ServiceCredential, WorkflowAction
 from fastapi.testclient import TestClient
 from openpyxl import Workbook
 from sqlalchemy import select
@@ -56,6 +57,29 @@ def execute_next_action(workflow_id: str) -> None:
         db.commit()
         workflow_service.execute_workflow_action(db, action)
         db.commit()
+
+
+def test_unbound_upload_can_be_deleted() -> None:
+    with TestClient(app) as client:
+        file_id = upload(client, "finance_workbooks", "待删除.xlsx")
+        with SessionLocal() as db:
+            record = db.get(FileRecord, file_id)
+            assert record is not None
+            stored_path = Path(record.stored_path)
+            assert stored_path.is_file()
+
+        denied = client.delete(
+            f"/api/files/{file_id}",
+            headers={"X-User-Id": "another-user"},
+        )
+        assert denied.status_code == 403
+        assert stored_path.is_file()
+
+        deleted = client.delete(f"/api/files/{file_id}")
+        assert deleted.status_code == 204
+        assert not stored_path.exists()
+        with SessionLocal() as db:
+            assert db.get(FileRecord, file_id) is None
 
 
 def test_qwen_workflow_supports_natural_multi_turn(monkeypatch) -> None:
@@ -299,7 +323,14 @@ def test_conversational_workflow_hard_gates(monkeypatch) -> None:
             f"/api/workflows/{workflow_id}/files",
             json={"files": {"finance_workbooks": [ledger_id]}},
         )
-        assert too_few.status_code == 422
+        assert too_few.status_code == 200
+        insufficient = client.post(
+            f"/api/workflows/{workflow_id}/messages",
+            json={"content": "上传好了"},
+        )
+        assert insufficient.json()["stage"] == "awaiting_files"
+        assert insufficient.json()["actions"] == []
+        assert "还缺" in insufficient.json()["messages"][-1]["content"]
 
         attached = client.put(
             f"/api/workflows/{workflow_id}/files",
@@ -310,6 +341,9 @@ def test_conversational_workflow_hard_gates(monkeypatch) -> None:
             },
         )
         assert attached.status_code == 200, attached.text
+        still_bound = client.delete(f"/api/files/{ledger_id}")
+        assert still_bound.status_code == 409
+        assert "仍被任务使用" in still_bound.text
 
         missing_credential = client.post(
             f"/api/workflows/{workflow_id}/messages",
