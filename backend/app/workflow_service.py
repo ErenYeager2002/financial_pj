@@ -37,6 +37,10 @@ FILE_ROLES = {
 CONFIRM_REPLIES = {"确认", "可以", "可以写", "按这个写", "没问题写吧", "写吧", "对", "是"}
 
 
+class PostWriteVerificationError(RuntimeError):
+    """The deterministic write completed, but its final baseline could not be verified."""
+
+
 def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
 
@@ -813,6 +817,9 @@ def _apply_confirmed(
     if not checked.is_file() or not ledger.is_file():
         raise RuntimeError("校验后计划或盈亏副本不存在，请重新生成日清。")
     workspace = str(business)
+    # The preparation snapshot is a pre-write guard. Verify it immediately before
+    # the confirmed mutation so a stale or externally changed workbook is rejected.
+    _run_script(script_dir, "verify_sources.py", ["verify", "--workspace", workspace])
     _run_script(
         script_dir,
         "apply_all.py",
@@ -828,7 +835,18 @@ def _apply_confirmed(
             "--flow-in-place",
         ],
     )
-    _run_script(script_dir, "verify_sources.py", ["verify", "--workspace", workspace])
+    try:
+        # apply_all performs deterministic planned-cell writes and readback checks.
+        # Commit both successful in-place writes as the new baseline; otherwise the
+        # intermediate snapshot made after the ledger write treats the subsequent
+        # flow write as an external modification.
+        _run_script(script_dir, "verify_sources.py", ["snapshot", "--workspace", workspace])
+        _run_script(script_dir, "verify_sources.py", ["verify", "--workspace", workspace])
+    except Exception as exc:
+        raise PostWriteVerificationError(
+            "计划内写入已完成，但写入后校验基线更新失败；请勿重复确认写入。"
+            f"原始错误：{exc}"
+        ) from exc
     candidates = [
         path
         for folder in (business / "02_我的表副本", business / "04_产出")
@@ -921,6 +939,22 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
             "assistant",
             "这一步执行超时，财务工作簿原件没有被修改。请检查材料后回复“重出日清”。",
             {"kind": "action_failed"},
+        )
+    except PostWriteVerificationError as exc:
+        action.state = "failed"
+        action.error_message = str(exc)[:500]
+        action.finished_at = datetime.now(UTC)
+        workflow.state = "failed"
+        workflow.stage = "failed"
+        workflow.error_message = action.error_message
+        workflow.progress_message = "写入已完成，等待恢复写入后校验"
+        _message(
+            db,
+            workflow,
+            "assistant",
+            "计划内写入已经完成，但写入后校验基线更新失败。请勿再次确认或重出日清，"
+            "以免重复写入；请联系管理员恢复本次校验。",
+            {"kind": "post_write_verification_failed"},
         )
     except Exception as exc:
         action.state = "failed"

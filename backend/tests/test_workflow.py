@@ -59,6 +59,76 @@ def execute_next_action(workflow_id: str) -> None:
         db.commit()
 
 
+def test_apply_confirmed_verifies_before_write_and_refreshes_final_baseline(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    workflow_id = str(uuid.uuid4())
+    workflow_root = tmp_path / workflow_id
+    workspace = workflow_root / "actions" / "prepare" / "工作区"
+    checked = workspace / "04_产出" / "写入计划_校验后.json"
+    ledger = workspace / "02_我的表副本" / "盈亏核算表.xlsx"
+    checked.parent.mkdir(parents=True)
+    ledger.parent.mkdir(parents=True)
+    checked.write_text("{}", encoding="utf-8")
+    ledger.write_bytes(workbook_bytes())
+    (workflow_root / "skill" / "vendor" / "scripts").mkdir(parents=True)
+
+    calls: list[tuple[str, list[str]]] = []
+
+    def fake_run_script(
+        script_dir: Path,
+        script_name: str,
+        arguments: list[str],
+        **_kwargs,
+    ) -> str:
+        calls.append((script_name, arguments))
+        return ""
+
+    monkeypatch.setattr(
+        workflow_service,
+        "settings",
+        SimpleNamespace(workflow_dir=tmp_path),
+    )
+    monkeypatch.setattr(workflow_service, "_run_script", fake_run_script)
+    monkeypatch.setattr(
+        workflow_service,
+        "_register_artifact",
+        lambda _db, _workflow, path, _action_id: {"name": path.name},
+    )
+    action = SimpleNamespace(
+        id="apply-action",
+        input_json=json.dumps(
+            {
+                "context": {
+                    "workspace": str(workspace),
+                    "checked_plan": str(checked),
+                    "ledger": str(ledger),
+                }
+            }
+        ),
+    )
+    workflow = SimpleNamespace(id=workflow_id)
+
+    result = workflow_service._apply_confirmed(
+        SimpleNamespace(),
+        action,
+        workflow,
+    )
+
+    assert result["workspace"] == str(workspace.resolve())
+    assert {item["name"] for item in result["artifacts"]} == {
+        "盈亏核算表.xlsx",
+        "写入计划_校验后.json",
+    }
+    assert [(name, args[0]) for name, args in calls] == [
+        ("verify_sources.py", "verify"),
+        ("apply_all.py", "--checked"),
+        ("verify_sources.py", "snapshot"),
+        ("verify_sources.py", "verify"),
+    ]
+
+
 def test_unbound_upload_can_be_deleted() -> None:
     with TestClient(app) as client:
         file_id = upload(client, "finance_workbooks", "待删除.xlsx")
