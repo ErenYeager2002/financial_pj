@@ -1,0 +1,70 @@
+schema_version: 1
+id: project-detail-to-ledger
+name: 项目明细补录
+version: 1.0.0
+status: published
+category: 经营报表
+description: 自动识别项目明细表和盈亏核算表，按固定字段映射追加到新副本；数量、单价和应收金额转为数字，并按 SO+SOD 跳过重复记录。
+tags:
+- Excel
+- 项目明细
+- 盈亏核算
+- 字段映射
+- 副本
+file_inputs:
+- role: project_detail
+  name: 项目明细表
+  description: 上传包含销售、客户、SO、SOD、下单数量、单价和交付额/本币等字段的项目明细表。
+  required: true
+  multiple: false
+  min_files: 1
+  extensions:
+  - xlsx
+  max_size_mb: 100
+- role: ledger
+  name: 盈亏核算表
+  description: 上传包含销售人员、客户名称、新智云单号、字数统计、价格、应收金额和实收金额等字段的盈亏核算表。
+  required: true
+  multiple: false
+  min_files: 1
+  extensions:
+  - xlsx
+  max_size_mb: 100
+input_schema:
+  type: object
+  additionalProperties: false
+  properties: {}
+output_schema:
+  type: object
+  required:
+  - status
+  - summary
+  - output_files
+  - warnings
+  properties:
+    status:
+      const: success
+    summary:
+      type: object
+    output_files:
+      type: array
+    warnings:
+      type: array
+handler:
+  adapter: python
+  entrypoint: scripts/entry.py
+  worker_pool: python
+runtime:
+  timeout_seconds: 600
+  memory_mb: 2048
+  concurrency_limit: 1
+  network_access: false
+risk:
+  level: read_only
+  requires_confirmation: false
+permissions:
+  run: finance_user
+  manage: skill_admin
+upstream:
+  repository: https://github.com/EvanLee2004/finance-skills
+  path: skills/project-detail-to-ledger

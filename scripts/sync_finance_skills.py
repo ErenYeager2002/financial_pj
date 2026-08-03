@@ -105,6 +105,42 @@ def manifest(
 
 
 EXECUTABLES: dict[str, dict[str, Any]] = {
+    "project-detail-to-ledger": {
+        "manifest": manifest(
+            "project-detail-to-ledger",
+            "项目明细补录",
+            "经营报表",
+            "自动识别项目明细表和盈亏核算表，按固定字段映射追加到新副本；数量、单价和应收金额转为数字，并按 SO+SOD 跳过重复记录。",
+            ["Excel", "项目明细", "盈亏核算", "字段映射", "副本"],
+            [
+                file_spec("project_detail", "项目明细表", ["xlsx"]),
+                file_spec("ledger", "盈亏核算表", ["xlsx"]),
+            ],
+            {"type": "object", "additionalProperties": False, "properties": {}},
+            status="published",
+            adapter="python",
+            risk="read_only",
+            confirmation=False,
+            timeout=600,
+            network_access=False,
+            version="1.0.0",
+        ),
+        "bridge": {
+            "name": "项目明细补录",
+            "command": "vendor/scripts/append_project_detail.py",
+            "arguments": [
+                {"kind": "file", "role": "project_detail", "flag": "--project"},
+                {"kind": "file", "role": "ledger", "flag": "--ledger"},
+            ],
+            "output": {
+                "type": "file",
+                "flag": "--output",
+                "path": "项目明细补录结果.xlsx",
+                "additional_globs": ["*_补录报告.json"],
+            },
+            "success_message": "项目明细已经映射追加，结果表和校验报告已生成。",
+        },
+    },
     "receivables-merge": {
         "manifest": manifest(
             "receivables-merge",

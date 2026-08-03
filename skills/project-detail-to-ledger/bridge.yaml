@@ -1,0 +1,16 @@
+name: 项目明细补录
+command: vendor/scripts/append_project_detail.py
+arguments:
+- kind: file
+  role: project_detail
+  flag: --project
+- kind: file
+  role: ledger
+  flag: --ledger
+output:
+  type: file
+  flag: --output
+  path: 项目明细补录结果.xlsx
+  additional_globs:
+  - '*_补录报告.json'
+success_message: 项目明细已经映射追加，结果表和校验报告已生成。
