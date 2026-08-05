@@ -47,10 +47,10 @@ STATUS = {
 HEADERS = [
     "单号", "状态", "怎么办",
     "SO", "到账号(AR)", "客户(打码)", "本次金额",
-    "应填_计提", "应填_回款明细", "应填_是否结账", "应填_收款时间", "应填_收款方式", "应填_实收SOD",
-    "当前_计提", "当前_回款明细", "当前_是否结账", "当前_收款时间", "当前_收款方式", "当前_实收SOD",
-    "差异(一眼扫)", "怎么找到这行", "这笔到账在流转表哪一行", "流转表单号列建议填",
-    "判定依据", "码",
+    "应填_计提", "应填_回款明细", "应填_业务值差异", "应填_是否结账", "应填_收款时间", "应填_收款方式", "应填_实收SOD",
+    "当前_计提", "当前_回款明细", "当前_业务值差异", "当前_是否结账", "当前_收款时间", "当前_收款方式", "当前_实收SOD",
+    "当前值与计划值的比较差异", "怎么找到这行", "这笔到账在流转表哪一行", "流转表单号列建议填",
+    "判定依据", "码", "警告码",
 ]
 
 FIVE = ["计提", "回款明细", "是否结账", "收款时间", "收款方式"]
@@ -68,7 +68,7 @@ def _norm(v) -> str:
         return s
 
 
-def _diff_text(five: dict, cur: dict) -> str:
+def _diff_text(five: dict, cur: dict, derived: dict) -> str:
     parts = []
     for k in FIVE + ["实收SOD"]:
         if five.get(k) is None:
@@ -76,16 +76,21 @@ def _diff_text(five: dict, cur: dict) -> str:
         a, b = _norm(cur.get(k)), _norm(five.get(k))
         if a != b:
             parts.append(f"{k}：表里={a or '(空)'} → 这次算={b}")
+    for k, want in derived.items():
+        a, b = _norm(cur.get(k)), _norm(want)
+        if a != b:
+            parts.append(f"{k}：表里={a or '(空)'} → 这次算={b}")
     return "；".join(parts)
 
 
 # 这些码的 reason 是**逐笔算出来的、自带操作指引**（插哪一行、候选 SOD 是哪几个…），
 # 比 config 里的通用建议有用得多 → 「怎么办」直接用 reason。
-SPECIFIC_CODES = {"E4", "E5", "E7", "E8"}
+SPECIFIC_CODES = {"E4", "E5", "E7", "E8", "E_SYSTEM_OVER_WRITEOFF_UNRESOLVED"}
 
 
 def _row(item: dict, status: str, codes: dict, action_override: str = "") -> List[Any]:
     five = item.get("five_cols") or {}
+    derived = item.get("derived_cols") or {}
     cur = item.get("current_values") or {}
     code = item.get("code") or ""
     info = codes.get(code) or {}
@@ -111,16 +116,17 @@ def _row(item: dict, status: str, codes: dict, action_override: str = "") -> Lis
         item.get("ar") or "",
         item.get("customer_masked") or "",
         five.get("回款明细"),
-        five.get("计提"), five.get("回款明细"), five.get("是否结账"),
+        five.get("计提"), five.get("回款明细"), derived.get("差异"), five.get("是否结账"),
         five.get("收款时间"), five.get("收款方式"), five.get("实收SOD"),
-        cur.get("计提"), cur.get("回款明细"), cur.get("是否结账"),
+        cur.get("计提"), cur.get("回款明细"), cur.get("差异"), cur.get("是否结账"),
         cur.get("收款时间"), cur.get("收款方式"), cur.get("实收SOD"),
-        _diff_text(five, cur) if status == "冲突·需你定" else "",
+        _diff_text(five, cur, derived),
         item.get("locate_hint") or "",
         item.get("flow_locate") or "",
         item.get("flow_order_suggest") or "",
         item.get("reason") or info.get("原因") or "",
         code,
+        "、".join(item.get("warning_codes") or []),
     ]
 
 
@@ -172,6 +178,16 @@ def build_workbook(
     fc = (flow_plan or {}).get("counts") or {}
     m_write = int(fc.get("write") or 0)
     m_hand = int(fc.get("hand") or 0)
+    coverage = result.get("source_coverage") or {}
+    duplicate_audits = result.get("duplicate_writeoff_audits") or {}
+    recovered_audits = [
+        audit for audit in duplicate_audits.values()
+        if audit.get("status") == "recovered"
+    ]
+    pending_shifted = {
+        day: info for day, info in (result.get("shifted_detail_dates") or {}).items()
+        if info.get("needs_rerun") and day != result.get("hexiao_date")
+    }
     # 日期抬头：她可能今天补跑上周三的批次，也可能隔天才回来确认。
     # 不把「这是哪一天的」印在最显眼的地方，她核对的就可能是另一天的账。
     hx = result.get("hexiao_date") or ""
@@ -182,26 +198,53 @@ def build_workbook(
         [f"  清单生成时间：{dt.datetime.now().strftime('%Y-%m-%d %H:%M')}"],
         [""],
         [f"这次一共 {result.get('payment_count', '?')} 笔到账，拆成 {counts.get('total', 0)} 个订单行。"],
+        [
+            f"来源完整性：AR/SO {coverage.get('produced_order_keys', '?')}/"
+            f"{coverage.get('expected_order_keys', '?')}；"
+            f"原始核销记录处置 {coverage.get('accounted_writeoff_rows', 0)}/"
+            f"{coverage.get('raw_writeoff_rows', 0)}；"
+            f"历史子核销还原 {coverage.get('historical_detail_rows', 0)} 行；"
+            f"SOD 回补交付额 {coverage.get('recovered_delivery_orders', 0)} 单。"
+        ],
+        [
+            "系统重复纠正："
+            f"父回款 {len(recovered_audits)} 笔；"
+            f"重复组 {sum(len(a.get('duplicate_groups') or []) for a in recovered_audits)} 个；"
+            f"忽略核销记录 {sum(int(a.get('ignored_record_count') or 0) for a in recovered_audits)} 条。"
+            + (
+                " 智云疑似系统重复核销，本次每组只按一次处理。"
+                if recovered_audits else ""
+            )
+        ],
+        [
+            "历史增补提醒：" + (
+                "；".join(
+                    f"{day} 尚缺 {len(info.get('missing_order_keys') or [])} 个 AR/SO"
+                    for day, info in pending_shifted.items()
+                )
+                if pending_shifted else "无"
+            )
+        ],
         [""],
         ["【盈亏明细】"],
-        [f"① 今天要填     {n.get('今天要填', 0):>4} 行  ← 确认后程序可写"],
+        [f"① 今天要填     {n.get('今天要填', 0):>4} 行  ← 校验通过后程序直接写"],
         [f"② 已填过·跳过  {n.get('已填过·跳过', 0):>4} 行  ← 不用管"],
         [f"③ 冲突·需你定  {n.get('冲突·需你定', 0):>4} 行  ← 你看一眼定个方向"],
         [f"④ 挂账待办     {n.get('挂账待办', 0):>4} 行  ← 今天填不了，看「怎么办」"],
         [f"⑤ 异常         {n.get('异常', 0):>4} 行  ← 数据不对劲，先别填"],
         [""],
         ["【到账流转】"],
-        [f"⑥ 确认后将自动写  {m_write:>4} 笔  ← 强三键唯一命中（单号+是否更新）"],
+        [f"⑥ 将自动写      {m_write:>4} 笔  ← 强三键唯一命中（单号+是否更新）"],
         [f"⑦ 须你手填      {m_hand:>4} 笔  ← 弱命中/对不上/多命中，见「流转表怎么填」"],
         [""],
         ["怎么用："],
         ["  1. 翻到《今日清单》，按「状态」列筛「今天要填」。"],
         ["  2. 一行一个单号。拿「怎么找到这行」去盈亏『明细』筛出那一行。"],
         ["  3. 照「应填_xxx」几列对照；冲突行看「差异」。"],
-        ["  4. 翻《流转表怎么填》：写入方式=自动 的确认后程序写；=手填 的你自己填。"],
-        ["  5. 都看完了跟我说「确认」，我再统一写：先盈亏明细，再流转可写笔。"],
+        ["  4. 翻《流转表怎么填》：写入方式=自动 的由程序直接写；=手填 的你自己填。"],
+        ["  5. 程序按这份日清统一写入：先盈亏明细，再流转可写笔。"],
         [""],
-        ["※ 这份只是清单，程序还没动你的任何表。"],
+        ["※ 生成这份清单时尚未写表；随后统一入口会先备份、再写入并逐格回读。"],
         ["※ 智云永远不写。"],
     ]
     for ln in lines:
@@ -269,7 +312,7 @@ def build_workbook(
                 pol.get("填法") or "", pol.get("公式策略") or "", pol.get("颜色标注") or "",
                 " ".join(s.get("待处理SO") or []),
                 s.get("flow_locate") or fp.get("flow_locate") or "",
-                fp.get("reason") or pol.get("人话") or ("确认后自动写" if mode == "自动" else "须手填"),
+                fp.get("reason") or pol.get("人话") or ("程序自动写" if mode == "自动" else "须手填"),
             ])
         wsum.freeze_panes = "A2"
 
@@ -348,7 +391,7 @@ def main(argv=None) -> int:
     print(f"核销日期：{common.date_cn(hexiao_date) if hexiao_date else '(未知·请核对取数)'}")
     print("《核销日清》已生成：" + " / ".join(f"{k} {v}" for k, v in tally.items()))
     print(
-        f"流转：确认后自动写 {fc.get('write', 0)} · 须手填 {fc.get('hand', 0)} · 跳过 {fc.get('skip', 0)}"
+        f"流转：自动写 {fc.get('write', 0)} · 须手填 {fc.get('hand', 0)} · 跳过 {fc.get('skip', 0)}"
     )
     print(f"结果: {out_path}")
 

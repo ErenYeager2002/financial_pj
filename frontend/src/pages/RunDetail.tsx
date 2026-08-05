@@ -96,7 +96,7 @@ export function RunDetail() {
             <StatusBadge state={run.state} />
           </div>
           <h2>{run.skill_name}</h2>
-          <p>任务号 {run.id}</p>
+          <p className="detail-record-id">任务 ID <code>{run.id}</code></p>
         </div>
         <div className="run-actions">
           <button className="button button-secondary" onClick={load}>

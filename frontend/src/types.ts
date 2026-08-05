@@ -183,6 +183,9 @@ export interface WorkflowRecord {
   state: string
   stage: string
   reconciliation_date: string
+  batch_id?: string
+  batch_sequence: number
+  requires_confirmation: boolean
   files: Record<string, WorkflowFile[]>
   artifacts: RunResultFile[]
   progress: number
@@ -192,4 +195,32 @@ export interface WorkflowRecord {
   actions: WorkflowAction[]
   created_at: string
   updated_at: string
+}
+
+export interface WorkflowBatchRecord {
+  id: string
+  owner_id: string
+  skill_id: string
+  skill_name: string
+  skill_version: string
+  model_provider: string
+  model_name: string
+  reconciliation_dates: string[]
+  state: string
+  progress: number
+  progress_message: string
+  error_message: string
+  workflows: WorkflowRecord[]
+  created_at: string
+  updated_at: string
+}
+
+export interface PlatformHealth {
+  status: string
+  name: string
+  environment: string
+  skills: number
+  registry_errors: Array<{ path: string; error: string }>
+  configured_workers: Record<string, number>
+  configured_execution_capacity: number
 }

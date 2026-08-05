@@ -212,6 +212,7 @@ def create_run(db: Session, request: RunCreate, user: UserContext) -> RunRecord:
         adapter=skill.manifest.handler.adapter,
         worker_pool=skill.manifest.handler.worker_pool
         or ("rpa" if skill.manifest.handler.adapter == "rpa" else skill.manifest.handler.adapter),
+        concurrency_limit=skill.manifest.runtime.concurrency_limit,
         state="waiting_confirmation" if confirmation else "queued",
         progress=0,
         progress_message="等待员工确认" if confirmation else "任务已进入队列",

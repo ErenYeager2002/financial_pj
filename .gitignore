@@ -23,3 +23,10 @@ data/*
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Local runtime state and Codex verification artifacts
+financial.db
+financial.db-shm
+financial.db-wal
+.codex/
+.skill-sync/

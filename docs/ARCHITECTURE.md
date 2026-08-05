@@ -68,9 +68,20 @@ waiting_confirmation
 
 - FastAPI：接口、权限、文件、任务与 SSE。
 - SQLite：第一期运行记录、文件元数据和事件；生产可切 PostgreSQL。
-- 独立 Worker：轮询数据库队列，按 `python`、`rpa`、`http`、`workflow` 池领取任务。
+- 独立 Worker：按 `python`、`rpa`、`http`、`workflow` 池分别启动多个进程并轮询
+  数据库队列。领取阶段由数据库全局调度锁串行化，执行阶段并行。
 - 对话式执行器：会话、消息和动作独立留痕；状态机限制每阶段可调用动作，
   耗时动作由 `workflow` Worker 执行。
+- 多日期批次：`WorkflowBatch` 保存日期集合和整体状态，每个日期仍对应一个
+  `WorkflowSession`。同一批次严格串行；成功子任务输出的两份工作副本通过受控
+  `FileRecord` 绑定传递给下一日。失败时不启动后续日期，准备阶段失败可从该日期继续。
+- 并发控制：任务快照保存 `runtime.concurrency_limit`，Worker 领取前统计同 Skill
+  有效租约；达到上限时跳过该任务并继续寻找其他 Skill。
+- 执行租约：Worker 领取时写入 `worker_id`、`attempt_count`、心跳和租约到期时间。
+  执行期间独立心跳续租；只读标准任务可在租约过期后有限重排，高风险写入和
+  Workflow Action 失败后必须人工检查，防止重复写入。
+- 本地 SQLite 使用 WAL、30 秒 busy timeout 和 `BEGIN IMMEDIATE` 完成原子领取；
+  PostgreSQL 使用 `scheduler_locks` 行锁。多机正式部署推荐 PostgreSQL。
 - 对话上下文：数据库保存完整消息；每次请求向模型发送稳定系统规则、结构化工作流
   状态和最近 20 条消息。模型可直接自然回复，只有明确推进任务时才调用当前阶段工具。
 - 自然语言中出现“开始、停止、确认写入”等词不会自动执行；本地确定性规则只接受

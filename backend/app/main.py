@@ -44,10 +44,13 @@ from .schemas import (
     RunRead,
     ServiceCredentialRead,
     ServiceCredentialWrite,
+    WorkflowBatchRead,
+    WorkflowBatchStart,
     WorkflowCreate,
     WorkflowFilesUpdate,
     WorkflowMessageCreate,
     WorkflowRead,
+    WorkflowStart,
 )
 from .service_credential_service import (
     get_service_credential_status,
@@ -58,10 +61,17 @@ from .settings import settings
 from .storage import delete_upload, save_upload
 from .workflow_service import (
     create_workflow,
+    get_workflow_batch_or_404,
     get_workflow_or_404,
+    list_workflow_batches,
     list_workflows,
+    reset_workflow,
+    retry_workflow_batch,
     send_workflow_message,
     serialize_workflow,
+    serialize_workflow_batch,
+    start_workflow,
+    start_workflow_batch,
     update_workflow_files,
 )
 
@@ -92,6 +102,8 @@ def health() -> dict[str, object]:
         "environment": settings.environment,
         "skills": len(registry.list(include_disabled=True)),
         "registry_errors": registry.errors,
+        "configured_workers": dict(settings.worker_counts),
+        "configured_execution_capacity": sum(count for _, count in settings.worker_counts),
     }
 
 
@@ -308,6 +320,52 @@ def new_workflow(
     return serialize_workflow(create_workflow(db, body, user))
 
 
+@app.post("/api/workflows/start", response_model=WorkflowRead)
+def start_workflow_session(
+    body: WorkflowStart,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> WorkflowRead:
+    return serialize_workflow(start_workflow(db, body, user))
+
+
+@app.get("/api/workflow-batches", response_model=list[WorkflowBatchRead])
+def workflow_batches(
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> list[WorkflowBatchRead]:
+    return [serialize_workflow_batch(item) for item in list_workflow_batches(db, user, limit)]
+
+
+@app.post("/api/workflow-batches/start", response_model=WorkflowBatchRead)
+def start_workflow_batch_session(
+    body: WorkflowBatchStart,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> WorkflowBatchRead:
+    return serialize_workflow_batch(start_workflow_batch(db, body, user))
+
+
+@app.get("/api/workflow-batches/{batch_id}", response_model=WorkflowBatchRead)
+def get_workflow_batch(
+    batch_id: str,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> WorkflowBatchRead:
+    return serialize_workflow_batch(get_workflow_batch_or_404(db, batch_id, user))
+
+
+@app.post("/api/workflow-batches/{batch_id}/retry", response_model=WorkflowBatchRead)
+def retry_workflow_batch_session(
+    batch_id: str,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> WorkflowBatchRead:
+    batch = get_workflow_batch_or_404(db, batch_id, user)
+    return serialize_workflow_batch(retry_workflow_batch(db, batch))
+
+
 @app.get("/api/workflows/{workflow_id}", response_model=WorkflowRead)
 def get_workflow(
     workflow_id: str,
@@ -337,6 +395,36 @@ def workflow_message(
 ) -> WorkflowRead:
     workflow = get_workflow_or_404(db, workflow_id, user)
     return serialize_workflow(send_workflow_message(db, workflow, body.content, user))
+
+
+@app.post("/api/workflows/{workflow_id}/confirm", response_model=WorkflowRead)
+def confirm_workflow_result(
+    workflow_id: str,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> WorkflowRead:
+    workflow = get_workflow_or_404(db, workflow_id, user)
+    return serialize_workflow(send_workflow_message(db, workflow, "我已检查核销日清，确认写入"))
+
+
+@app.post("/api/workflows/{workflow_id}/rebuild", response_model=WorkflowRead)
+def rebuild_workflow_result(
+    workflow_id: str,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> WorkflowRead:
+    workflow = get_workflow_or_404(db, workflow_id, user)
+    return serialize_workflow(send_workflow_message(db, workflow, "重新生成核销日清"))
+
+
+@app.post("/api/workflows/{workflow_id}/reset", response_model=WorkflowRead)
+def reset_workflow_session(
+    workflow_id: str,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> WorkflowRead:
+    workflow = get_workflow_or_404(db, workflow_id, user)
+    return serialize_workflow(reset_workflow(db, workflow))
 
 
 @app.get("/api/runs", response_model=list[RunRead])

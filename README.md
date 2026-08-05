@@ -18,11 +18,39 @@ Set-Location D:\BESTEASY\financial_pj
 .\scripts\start.ps1
 ```
 
-浏览器打开 `http://127.0.0.1:8000`。停止平台：
+本机浏览器打开 `http://127.0.0.1:8000`。平台默认监听
+`0.0.0.0`，完成 Windows 防火墙配置后，同一 Wi-Fi 的设备可以使用启动输出中的
+WLAN 地址访问，例如 `http://192.168.30.89:8000`。
+
+首次开启局域网访问时，请使用**管理员 PowerShell**执行：
+
+```powershell
+.\scripts\enable_lan_access.ps1
+```
+
+普通 PowerShell 也可以运行该脚本，系统会自动弹出管理员权限确认。
+脚本默认把 WLAN 设置为专用网络，并且只在 WLAN 接口上允许同一子网访问
+TCP 8000。请只在可信网络上启用；当前内部测试版尚未接入正式的用户登录鉴权，
+同一 Wi-Fi 中知道地址的访问者可能看到任务和文件。
+
+停止平台：
 
 ```powershell
 .\scripts\stop.ps1
 ```
+
+Linux 公网部署采用独立域名、HTTPS、Nginx 登录保护和 systemd 服务；完整步骤见
+[deploy/README.md](deploy/README.md)。部署包必须排除本机 `.env`、`data/`、
+`.venv/` 和历史财务文件。
+
+平台默认按执行池启动 6 个 Worker：Python 2、HTTP 2、Workflow 2。不同 Skill
+可以并行执行；同一个 Skill 的并发数由 `tool.yaml` 中
+`runtime.concurrency_limit` 控制。RPA 默认不启动，启用时建议保持 `rpa:1`。
+Worker 使用数据库原子领取、执行租约和心跳，避免重复领取；只读任务在 Worker
+异常退出且租约过期后最多自动重试一次，高风险写入和工作流动作不会自动重试。
+
+本地 SQLite 已启用 WAL 和忙等待，适用于部门内网的小规模并行。正式多机部署仍
+建议将 `FINANCIAL_DATABASE_URL` 切换为 PostgreSQL。
 
 本地 `.env` 已支持阿里云百炼 OpenAI-Compatible 接口，当前模型为
 `qwen3.7-plus`。模型只负责理解自然语言和生成受 Schema 约束的参数；
@@ -32,12 +60,13 @@ Set-Location D:\BESTEASY\financial_pj
 读取支持 Tool Calling 的模型，并允许在每次 Skill 运行时选择具体模型。
 API Key 使用服务端密钥加密保存，接口只返回脱敏后的末四位。
 
-`ar-hexiao-daily` 使用对话式工作流：先确认核销日期，在任务右侧一次性安全保存
-智云账号并上传两份财务工作簿；Worker 使用本机 Edge 自动登录智云，只读获取
-回款、核销和订单数据，再生成《核销日清》供员工下载检查。账号密码使用服务端
-密钥加密保存，不进入模型上下文、任务参数、命令行、环境变量或日志。只有员工
-在会话中再次明确确认，Worker 才能执行盈亏明细与流转安全子集写入。会话支持
-正常多轮问答，只有用户明确要求推进工作时才触发 Tool Calling。
+`ar-hexiao-daily` 使用表单式工作流：安全保存一次智云账号，上传两份财务工作簿，
+并选择 1～7 个核销日期。平台为多日期请求创建一个批次和多个单日任务，按日期
+从早到晚串行执行；前一天写入和回读成功后的工作副本会作为下一天输入。任一天
+失败时批次暂停，可从失败日期继续，已经成功的日期不会重复执行。Worker 使用
+本机 Edge 自动登录智云并只读取数；账号密码使用服务端密钥加密保存，不进入模型
+上下文、任务参数、命令行、环境变量或日志。日清与写前校验通过后，仅写隔离工作
+副本，并分别输出每日结果和订单差异表。
 
 ## 目录
 
@@ -64,6 +93,34 @@ financial_pj/
 历史输出、浏览器账号配置和本地凭据。同步后的 Skill 自包含在本仓库中，
 运行时不会直接执行远程 GitHub `main` 分支。
 
+### 从 Gitee 定时同步（Windows）
+
+自动同步使用独立检出目录 `.skill-sync\finance-skills`，每次更新前会备份
+`skills`，同步失败自动恢复；只有检测到新提交时才会重启正在运行的平台。
+如果远端缺少可执行 Skill，同步会中止；如果只缺少目录级 Skill，则保留平台现有版本并记录提示。
+先手动验证一次：
+
+```powershell
+.\scripts\sync_from_gitee.ps1
+```
+
+验证通过后，以当前用户权限创建每小时任务（任务计划程序也可以修改这个频率）：
+
+```powershell
+$action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument `
+  "-NoProfile -ExecutionPolicy Bypass -File D:\BESTEASY\financial_pj\scripts\sync_from_gitee.ps1"
+$trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(5) `
+  -RepetitionInterval (New-TimeSpan -Hours 1) `
+  -RepetitionDuration (New-TimeSpan -Days 3650)
+Register-ScheduledTask -TaskName "Finance Skill Gitee Sync" `
+  -Action $action -Trigger $trigger -Description "同步已审查的 finance-skills 到财务 Skill 平台" `
+  -RunLevel Limited
+```
+
+不要把 Gitee Token 或其他凭据写进脚本；当前仓库为公开仓库，若以后改为私有仓库，
+应使用 Windows 凭据管理器或 SSH Deploy Key。服务器端不要直接复用此任务，
+应在服务器上单独配置 systemd timer，并先完成本机验证。
+
 ## GitHub Skill
 
 Skill 可以存放在私有 GitHub 仓库，但平台运行的是经过批准的 tag/commit 和任务快照，不应在任务开始时直接执行远程 `main` 分支。可通过 `FINANCIAL_EXTERNAL_SKILL_DIR` 指向已经同步和审查的本地工作树。
@@ -76,4 +133,10 @@ Skill 可以存放在私有 GitHub 仓库，但平台运行的是经过批准的
 Set-Location frontend
 npm run typecheck
 npm run build
+```
+
+并行执行的隔离端到端检查：
+
+```powershell
+.\.venv\Scripts\python.exe .\.codex\parallel-runtime-check.py
 ```

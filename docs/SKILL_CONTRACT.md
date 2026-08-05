@@ -12,6 +12,10 @@ skill-id/
 
 `tool.yaml` 定义身份、文件角色、输入/输出 JSON Schema、执行适配器、超时、并发和风险等级。平台只向普通员工展示 `status: published` 的 Skill。
 
+`runtime.concurrency_limit` 是实际调度约束，不只是说明字段。多个 Worker 可以并行
+执行不同 Skill；同一 Skill 的有效运行租约达到该值时，后续任务保持 queued。
+涉及同一外部账号、正式文件或 RPA 浏览器会话的 Skill 应保持为 `1`。
+
 多文件输入可在文件角色中声明 `min_files`，后端会在任务排队前校验数量：
 
 ```yaml
@@ -64,7 +68,7 @@ python entry.py --request <运行目录/request.json> --result <运行目录/res
 
 ## 对话式工作流
 
-多阶段、人在环的 Skill 使用 `workflow` 适配器：
+多阶段工作流 Skill 使用 `workflow` 适配器：
 
 ```yaml
 handler:
@@ -79,15 +83,16 @@ risk:
 不能提供脚本名、命令或路径。耗时动作写入 `WorkflowAction` 队列，由
 `workflow` Worker 执行固化 Skill 快照中的固定脚本。
 
-`ar-hexiao-daily` 的硬闸顺序为：
+`ar-hexiao-daily` 当前声明 `requires_confirmation: false`，其单日硬闸顺序为：
 
 ```text
-确认核销日期 → 从加密凭据库读取账号并自动登录智云取数 → 上传两份财务工作簿 → 生成核销日清
-→ 员工下载检查并明确确认 → 写入盈亏明细和流转安全子集 → 回读校验
+核验日期、模型、凭据和两份财务工作簿 → 从加密凭据库读取账号并自动登录智云取数
+→ 生成核销日清 → 写前校验 → 写入隔离的盈亏与流转工作副本 → 回读校验与订单差异表
 ```
 
-确认日清前禁止调用写入脚本；模型服务不可用时仅允许本地受限意图解析，
-不能绕过任何状态条件。
+批量运行时，每个日期仍创建独立任务和 ID，按日期升序串行执行；只有前一日回读
+成功后才把其工作副本传给下一日。任何失败都会暂停后续日期。`requires_confirmation`
+为 `true` 的其他工作流仍必须经过人工确认，模型不能绕过任何状态条件。
 
 ## Git 托管方式
 

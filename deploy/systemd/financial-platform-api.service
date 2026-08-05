@@ -1,0 +1,25 @@
+[Unit]
+Description=Financial Skill Platform API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=financial-platform
+Group=financial-platform
+WorkingDirectory=/opt/financial-platform/backend
+EnvironmentFile=/etc/financial-platform/financial-platform.env
+ExecStart=/opt/financial-platform/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 18000 --proxy-headers --forwarded-allow-ips=127.0.0.1
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=30
+KillSignal=SIGTERM
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/financial-platform
+
+[Install]
+WantedBy=multi-user.target

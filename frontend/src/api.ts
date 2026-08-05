@@ -7,16 +7,14 @@ import type {
   UserRole,
   UserSession,
   WorkflowRecord,
+  WorkflowBatchRecord,
 } from './types'
 
-const ROLE_KEY = 'financial-user-role'
-
 export function getRole(): UserRole {
-  return (localStorage.getItem(ROLE_KEY) as UserRole) || 'finance_user'
-}
-
-export function setRole(role: UserRole): void {
-  localStorage.setItem(ROLE_KEY, role)
+  // The demo identity is intentionally derived from the URL. There is no
+  // client-side role switcher: normal pages are employee pages and the admin
+  // console is only reachable by explicitly entering /admin.
+  return window.location.pathname.startsWith('/admin') ? 'skill_admin' : 'finance_user'
 }
 
 export function authHeaders(): Record<string, string> {
@@ -56,6 +54,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export const api = {
   session: () => request<UserSession>('/api/session'),
+  health: () => request<import('./types').PlatformHealth>('/api/health'),
   skills: () => request<SkillManifest[]>('/api/skills'),
   skill: (id: string) => request<SkillManifest>(`/api/skills/${id}`),
   runs: () => request<RunRecord[]>('/api/runs'),
@@ -152,6 +151,44 @@ export const api = {
         model: model || null,
       }),
     }),
+  startWorkflow: (
+    skillId: string,
+    reconciliationDate: string,
+    files: Record<string, string[]>,
+    modelConnectionId: string,
+    model?: string,
+  ) =>
+    request<WorkflowRecord>('/api/workflows/start', {
+      method: 'POST',
+      body: JSON.stringify({
+        skill_id: skillId,
+        reconciliation_date: reconciliationDate,
+        files,
+        model_connection_id: modelConnectionId,
+        model: model || null,
+      }),
+    }),
+  startWorkflowBatch: (
+    skillId: string,
+    reconciliationDates: string[],
+    files: Record<string, string[]>,
+    modelConnectionId: string,
+    model?: string,
+  ) =>
+    request<WorkflowBatchRecord>('/api/workflow-batches/start', {
+      method: 'POST',
+      body: JSON.stringify({
+        skill_id: skillId,
+        reconciliation_dates: reconciliationDates,
+        files,
+        model_connection_id: modelConnectionId,
+        model: model || null,
+      }),
+    }),
+  workflowBatches: () => request<WorkflowBatchRecord[]>('/api/workflow-batches'),
+  workflowBatch: (id: string) => request<WorkflowBatchRecord>(`/api/workflow-batches/${id}`),
+  retryWorkflowBatch: (id: string) =>
+    request<WorkflowBatchRecord>(`/api/workflow-batches/${id}/retry`, { method: 'POST' }),
   workflows: () => request<WorkflowRecord[]>('/api/workflows'),
   workflow: (id: string) => request<WorkflowRecord>(`/api/workflows/${id}`),
   updateWorkflowFiles: (id: string, files: Record<string, string[]>) =>
@@ -163,6 +200,14 @@ export const api = {
     request<WorkflowRecord>(`/api/workflows/${id}/messages`, {
       method: 'POST',
       body: JSON.stringify({ content }),
+    }),
+  confirmWorkflow: (id: string) =>
+    request<WorkflowRecord>(`/api/workflows/${id}/confirm`, { method: 'POST' }),
+  rebuildWorkflow: (id: string) =>
+    request<WorkflowRecord>(`/api/workflows/${id}/rebuild`, { method: 'POST' }),
+  resetWorkflow: (id: string) =>
+    request<WorkflowRecord>(`/api/workflows/${id}/reset`, {
+      method: 'POST',
     }),
   reloadRegistry: () =>
     request<{ skills: number; errors: Array<{ path: string; error: string }> }>(

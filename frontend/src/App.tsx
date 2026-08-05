@@ -8,6 +8,7 @@ import { RunList } from './pages/RunList'
 import { SkillList } from './pages/SkillList'
 import { SkillRun } from './pages/SkillRun'
 import { WorkflowChat } from './pages/WorkflowChat'
+import { WorkflowBatch } from './pages/WorkflowBatch'
 
 export default function App() {
   return (
@@ -19,6 +20,7 @@ export default function App() {
         <Route path="runs" element={<RunList />} />
         <Route path="runs/:runId" element={<RunDetail />} />
         <Route path="workflows/:workflowId" element={<WorkflowChat />} />
+        <Route path="workflow-batches/:batchId" element={<WorkflowBatch />} />
         <Route path="models" element={<ModelSettings />} />
         <Route path="admin" element={<Admin />} />
         <Route path="*" element={<Navigate to="/" replace />} />

@@ -428,8 +428,8 @@ CATALOG_ONLY: dict[str, dict[str, Any]] = {
         "ar-hexiao-daily",
         "应收核销日清",
         "应收管理",
-        "应收核销多阶段流程，自动登录智云取数，再判定、人工确认并写入副本。",
-        ["应收核销", "人在环", "多阶段"],
+        "应收核销多阶段流程，自动登录智云取数，按核销记录身份审计并纠正可解释的系统重复核销；日清与写前校验通过后直接安全写入副本，并按真实单元格坐标归一化公式差异。",
+        ["应收核销", "自动写入", "多阶段"],
         [
             file_spec(
                 "finance_workbooks",
@@ -444,10 +444,10 @@ CATALOG_ONLY: dict[str, dict[str, Any]] = {
         status="published",
         adapter="workflow",
         risk="write",
-        confirmation=True,
+        confirmation=False,
         timeout=1800,
         network_access=True,
-        version="1.1.0",
+        version="1.5.0",
     ),
     "jdy-cashflow-export": manifest(
         "jdy-cashflow-export",
@@ -635,21 +635,36 @@ def sync_one(source_root: Path, skill_id: str, item: dict[str, Any], executable:
 
 
 def main() -> None:
+    global PLATFORM_SKILLS
     parser = argparse.ArgumentParser(description="将 finance-skills 安全同步到平台 Skill Registry")
     parser.add_argument("--source", type=Path, required=True, help="finance-skills/skills 目录")
+    parser.add_argument(
+        "--target",
+        type=Path,
+        default=PLATFORM_SKILLS,
+        help="目标 Skill 目录；默认写入平台 skills，自动同步时可指定隔离暂存目录",
+    )
     args = parser.parse_args()
     source_root = args.source.resolve()
     if not source_root.is_dir():
         raise FileNotFoundError(source_root)
+    PLATFORM_SKILLS = args.target.resolve()
+    PLATFORM_SKILLS.mkdir(parents=True, exist_ok=True)
 
     for skill_id, item in EXECUTABLES.items():
         sync_one(source_root, skill_id, item, True)
+    skipped = []
     for skill_id, item in CATALOG_ONLY.items():
+        if not (source_root / skill_id).is_dir():
+            skipped.append(skill_id)
+            continue
         sync_one(source_root, skill_id, item, False)
     print(
         f"已同步 {len(EXECUTABLES)} 个可执行 Skill、"
-        f"{len(CATALOG_ONLY)} 个目录级 Skill。"
+        f"{len(CATALOG_ONLY) - len(skipped)} 个目录级 Skill。"
     )
+    if skipped:
+        print("远端缺少目录级 Skill，已保留平台现有版本：" + ", ".join(skipped))
 
 
 if __name__ == "__main__":

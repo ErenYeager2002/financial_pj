@@ -12,6 +12,22 @@ def _env_path(name: str, default: Path) -> Path:
     return Path(value).expanduser().resolve() if value else default.resolve()
 
 
+def _worker_counts() -> tuple[tuple[str, int], ...]:
+    raw = os.getenv("FINANCIAL_WORKER_COUNTS", "python:2,http:2,workflow:2")
+    counts: list[tuple[str, int]] = []
+    for item in raw.split(","):
+        pool, separator, count = item.strip().partition(":")
+        if not separator or not pool.strip():
+            continue
+        try:
+            parsed = int(count.strip())
+        except ValueError:
+            continue
+        if parsed > 0:
+            counts.append((pool.strip(), parsed))
+    return tuple(counts) or (("python", 2), ("http", 2), ("workflow", 2))
+
+
 @dataclass(frozen=True)
 class Settings:
     app_name: str = os.getenv("FINANCIAL_APP_NAME", "财务 Skill 运行平台")
@@ -35,6 +51,12 @@ class Settings:
         for item in os.getenv("FINANCIAL_WORKER_POOLS", "python,http,workflow").split(",")
         if item.strip()
     )
+    worker_counts: tuple[tuple[str, int], ...] = _worker_counts()
+    worker_lease_seconds: int = max(15, int(os.getenv("FINANCIAL_WORKER_LEASE_SECONDS", "60")))
+    worker_heartbeat_seconds: int = max(
+        5, int(os.getenv("FINANCIAL_WORKER_HEARTBEAT_SECONDS", "15"))
+    )
+    worker_max_attempts: int = max(1, int(os.getenv("FINANCIAL_WORKER_MAX_ATTEMPTS", "2")))
     llm_base_url: str = os.getenv("FINANCIAL_LLM_BASE_URL", "").rstrip("/")
     llm_api_key: str = os.getenv("FINANCIAL_LLM_API_KEY", "")
     llm_model: str = os.getenv("FINANCIAL_LLM_MODEL", "")

@@ -2,20 +2,24 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import signal
+import socket
 import time
 from datetime import UTC, datetime
 
 from jsonschema import Draft202012Validator
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .adapters import ExecutionContext, get_adapter
 from .auth import UserContext
 from .database import SessionLocal, init_db
 from .events import emit_event
+from .leases import LeaseHeartbeat, lease_deadline
 from .models import RunRecord
 from .registry import SkillManifest
+from .scheduler import acquire_claim_lock, active_run_count, recover_expired_jobs
 from .settings import settings
 from .workflow_service import run_workflow_action_once
 
@@ -27,35 +31,52 @@ def _stop(*_: object) -> None:
     STOP = True
 
 
-def claim_next_run(db: Session, pools: tuple[str, ...]) -> RunRecord | None:
-    run_id = db.scalar(
-        select(RunRecord.id)
-        .where(RunRecord.state == "queued", RunRecord.worker_pool.in_(pools))
-        .order_by(RunRecord.queued_at.asc(), RunRecord.created_at.asc())
-        .limit(1)
-    )
-    if not run_id:
-        return None
+def claim_next_run(
+    db: Session,
+    pools: tuple[str, ...],
+    worker_id: str = "worker",
+) -> RunRecord | None:
+    acquire_claim_lock(db)
     now = datetime.now(UTC)
-    claimed = db.execute(
-        update(RunRecord)
-        .where(RunRecord.id == run_id, RunRecord.state == "queued")
-        .values(state="running", started_at=now, progress=1, progress_message="Worker 已领取任务")
+    recover_expired_jobs(db, now)
+    candidates = list(
+        db.scalars(
+            select(RunRecord.id)
+            .where(RunRecord.state == "queued", RunRecord.worker_pool.in_(pools))
+            .order_by(RunRecord.queued_at.asc(), RunRecord.created_at.asc())
+            .limit(100)
+        ).all()
     )
+    selected: RunRecord | None = None
+    for run_id in candidates:
+        run = db.get(RunRecord, run_id)
+        if not run:
+            continue
+        if active_run_count(db, run.skill_id, now) >= max(1, run.concurrency_limit):
+            continue
+        run.state = "running"
+        run.started_at = now
+        run.progress = 1
+        run.progress_message = "Worker 已领取任务"
+        run.worker_id = worker_id
+        run.attempt_count += 1
+        run.heartbeat_at = now
+        run.lease_expires_at = lease_deadline(now)
+        selected = run
+        break
     db.commit()
-    if claimed.rowcount != 1:
+    if not selected:
         return None
-    run = db.get(RunRecord, run_id)
-    if run:
-        emit_event(
-            db,
-            run,
-            event_type="state",
-            state="running",
-            progress=1,
-            message="Worker 已领取任务",
-        )
-    return run
+    emit_event(
+        db,
+        selected,
+        event_type="state",
+        state="running",
+        progress=1,
+        message="Worker 已领取任务",
+        data={"worker_id": worker_id, "attempt": selected.attempt_count},
+    )
+    return selected
 
 
 def execute_run(db: Session, run: RunRecord) -> None:
@@ -106,24 +127,35 @@ def execute_run(db: Session, run: RunRecord) -> None:
         emit_event(db, run, event_type="state", state="failed", message=str(exc))
 
 
-def run_once(pools: tuple[str, ...] | None = None) -> bool:
+def run_once(
+    pools: tuple[str, ...] | None = None,
+    worker_id: str | None = None,
+) -> bool:
     pools = pools or settings.worker_pools
+    identity = worker_id or f"{socket.gethostname()}:{os.getpid()}"
     with SessionLocal() as db:
-        run = claim_next_run(db, pools)
+        run = claim_next_run(db, pools, identity)
         if run:
-            execute_run(db, run)
+            with LeaseHeartbeat("run", run.id, identity):
+                execute_run(db, run)
+            run.heartbeat_at = datetime.now(UTC)
+            run.lease_expires_at = None
+            db.commit()
             return True
-        return run_workflow_action_once(db, pools)
+        return run_workflow_action_once(db, pools, identity)
 
 
-def run_loop(pools: tuple[str, ...]) -> None:
+def run_loop(pools: tuple[str, ...], worker_id: str) -> None:
     init_db()
     settings.ensure_directories()
     signal.signal(signal.SIGINT, _stop)
     signal.signal(signal.SIGTERM, _stop)
-    print(f"Financial worker started; pools={','.join(pools)}", flush=True)
+    print(
+        f"Financial worker started; id={worker_id}; pools={','.join(pools)}",
+        flush=True,
+    )
     while not STOP:
-        if not run_once(pools):
+        if not run_once(pools, worker_id):
             time.sleep(settings.queue_poll_seconds)
     print("Financial worker stopped", flush=True)
 
@@ -135,15 +167,20 @@ def main() -> None:
         default=",".join(settings.worker_pools),
         help="逗号分隔的 Worker Pool，例如 python,http 或 rpa",
     )
+    parser.add_argument(
+        "--worker-id",
+        default=f"{socket.gethostname()}:{os.getpid()}",
+        help="当前 Worker 的稳定标识",
+    )
     parser.add_argument("--once", action="store_true", help="最多处理一个任务后退出")
     args = parser.parse_args()
     pools = tuple(item.strip() for item in args.pools.split(",") if item.strip())
     if args.once:
         init_db()
         settings.ensure_directories()
-        run_once(pools)
+        run_once(pools, args.worker_id)
     else:
-        run_loop(pools)
+        run_loop(pools, args.worker_id)
 
 
 if __name__ == "__main__":

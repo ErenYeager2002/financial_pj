@@ -83,6 +83,13 @@ class RunRecord(Base):
     manifest_snapshot: Mapped[str] = mapped_column(Text)
     adapter: Mapped[str] = mapped_column(String(32))
     worker_pool: Mapped[str] = mapped_column(String(64), index=True)
+    concurrency_limit: Mapped[int] = mapped_column(Integer, default=1)
+    worker_id: Mapped[str] = mapped_column(String(128), default="", index=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
     state: Mapped[str] = mapped_column(String(40), default="created", index=True)
     progress: Mapped[int] = mapped_column(Integer, default=0)
     progress_message: Mapped[str] = mapped_column(Text, default="")
@@ -137,6 +144,35 @@ class RunModelAudit(Base):
     run: Mapped[RunRecord] = relationship(back_populates="model_audit")
 
 
+class WorkflowBatch(Base):
+    __tablename__ = "workflow_batches"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner_id: Mapped[str] = mapped_column(String(128), index=True)
+    owner_name: Mapped[str] = mapped_column(String(128), default="")
+    department_id: Mapped[str] = mapped_column(String(128), default="finance", index=True)
+    skill_id: Mapped[str] = mapped_column(String(128), index=True)
+    skill_name: Mapped[str] = mapped_column(String(255))
+    skill_version: Mapped[str] = mapped_column(String(64))
+    model_connection_id: Mapped[str] = mapped_column(String(36), index=True)
+    model_provider: Mapped[str] = mapped_column(String(64))
+    model_name: Mapped[str] = mapped_column(String(255))
+    reconciliation_dates_json: Mapped[str] = mapped_column(Text, default="[]")
+    files_json: Mapped[str] = mapped_column(Text, default="{}")
+    state: Mapped[str] = mapped_column(String(40), default="queued", index=True)
+    progress: Mapped[int] = mapped_column(Integer, default=0)
+    progress_message: Mapped[str] = mapped_column(Text, default="")
+    error_message: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+    workflows: Mapped[list[WorkflowSession]] = relationship(
+        back_populates="batch", cascade="all, delete-orphan"
+    )
+
+
 class WorkflowSession(Base):
     __tablename__ = "workflow_sessions"
 
@@ -149,12 +185,18 @@ class WorkflowSession(Base):
     skill_version: Mapped[str] = mapped_column(String(64))
     skill_hash: Mapped[str] = mapped_column(String(64))
     skill_commit: Mapped[str] = mapped_column(String(64), default="")
+    concurrency_limit: Mapped[int] = mapped_column(Integer, default=1)
     model_connection_id: Mapped[str] = mapped_column(String(36), index=True)
     model_provider: Mapped[str] = mapped_column(String(64))
     model_name: Mapped[str] = mapped_column(String(255))
     state: Mapped[str] = mapped_column(String(40), default="active", index=True)
     stage: Mapped[str] = mapped_column(String(64), default="awaiting_date", index=True)
     reconciliation_date: Mapped[str] = mapped_column(String(10), default="")
+    batch_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("workflow_batches.id"), nullable=True, index=True
+    )
+    batch_sequence: Mapped[int] = mapped_column(Integer, default=0)
+    previous_workflow_id: Mapped[str] = mapped_column(String(36), default="")
     context_json: Mapped[str] = mapped_column(Text, default="{}")
     files_json: Mapped[str] = mapped_column(Text, default="{}")
     artifacts_json: Mapped[str] = mapped_column(Text, default="[]")
@@ -172,6 +214,7 @@ class WorkflowSession(Base):
     actions: Mapped[list[WorkflowAction]] = relationship(
         back_populates="workflow", cascade="all, delete-orphan"
     )
+    batch: Mapped[WorkflowBatch | None] = relationship(back_populates="workflows")
 
 
 class WorkflowMessage(Base):
@@ -198,6 +241,12 @@ class WorkflowAction(Base):
     )
     name: Mapped[str] = mapped_column(String(64), index=True)
     state: Mapped[str] = mapped_column(String(32), default="queued", index=True)
+    worker_id: Mapped[str] = mapped_column(String(128), default="", index=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
     input_json: Mapped[str] = mapped_column(Text, default="{}")
     result_json: Mapped[str] = mapped_column(Text, default="{}")
     error_message: Mapped[str] = mapped_column(Text, default="")
@@ -206,3 +255,9 @@ class WorkflowAction(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     workflow: Mapped[WorkflowSession] = relationship(back_populates="actions")
+
+
+class SchedulerLock(Base):
+    __tablename__ = "scheduler_locks"
+
+    name: Mapped[str] = mapped_column(String(64), primary_key=True)

@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { api } from '../api'
+import { SelectMenu } from '../components/SelectMenu'
 import type { ModelConnection } from '../types'
 
 export function ModelSettings() {
@@ -202,15 +203,13 @@ export function ModelSettings() {
               </div>
               <label className="field">
                 <span>默认执行模型</span>
-                <select
+                <SelectMenu
                   value={connection.selected_model}
-                  onChange={(event) => updateModel(connection, event.target.value)}
+                  ariaLabel={`默认执行模型 ${connection.provider_name}`}
+                  onChange={(model) => updateModel(connection, model)}
+                  options={connection.models.map((model) => ({ value: model, label: model }))}
                   disabled={busyId === connection.id}
-                >
-                  {connection.models.map((model) => (
-                    <option key={model} value={model}>{model}</option>
-                  ))}
-                </select>
+                />
                 <small>
                   共 {connection.models.length} 个模型 · 最后验证{' '}
                   {new Date(connection.last_checked_at).toLocaleString('zh-CN')}

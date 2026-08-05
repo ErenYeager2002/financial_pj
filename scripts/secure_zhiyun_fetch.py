@@ -17,7 +17,10 @@ def _edge_login(
 
     try:
         with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(channel="msedge", headless=headless)
+            launch_options: dict[str, object] = {"headless": headless}
+            if sys.platform == "win32":
+                launch_options["channel"] = "msedge"
+            browser = playwright.chromium.launch(**launch_options)
             try:
                 context = browser.new_context(ignore_https_errors=True)
                 page = context.new_page()
@@ -68,7 +71,7 @@ def _edge_login(
         raise
     except Exception as exc:
         raise fetch_zhiyun.LoginError(
-            f"登录异常 {type(exc).__name__}，请检查内网和 Edge。"
+            f"登录异常 {type(exc).__name__}，请检查网络和浏览器运行环境。"
         ) from exc
 
 

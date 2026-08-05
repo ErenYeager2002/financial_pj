@@ -3,16 +3,15 @@ from __future__ import annotations
 from io import BytesIO
 from types import SimpleNamespace
 
-from fastapi.testclient import TestClient
-from openpyxl import Workbook, load_workbook
-from sqlalchemy import select
-
 from app import model_service, orchestrator
 from app.database import SessionLocal
 from app.main import app
 from app.models import ModelConnection
 from app.registry import registry
 from app.worker import run_once
+from fastapi.testclient import TestClient
+from openpyxl import Workbook, load_workbook
+from sqlalchemy import select
 
 
 def workbook_bytes(headers: list[str], rows: list[list[object]]) -> bytes:
@@ -57,6 +56,7 @@ def test_registry_and_admin_boundary() -> None:
             "dreame-ar-progress-diff",
             "withholding-report-rename",
             "order-daily-summary",
+            "project-detail-to-ledger",
             "dept-expense-alloc",
         ]
 
@@ -68,7 +68,7 @@ def test_registry_and_admin_boundary() -> None:
             headers={"X-User-Role": "skill_admin"},
         )
         assert allowed.status_code == 200
-        assert allowed.json()["skills"] == 18
+        assert allowed.json()["skills"] == 19
         assert allowed.json()["errors"] == []
 
 

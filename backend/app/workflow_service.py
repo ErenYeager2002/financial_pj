@@ -16,10 +16,28 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from .auth import UserContext
+from .leases import LeaseHeartbeat, lease_deadline
 from .model_service import resolve_runtime_config
-from .models import FileRecord, WorkflowAction, WorkflowMessage, WorkflowSession
+from .models import (
+    FileRecord,
+    WorkflowAction,
+    WorkflowBatch,
+    WorkflowMessage,
+    WorkflowSession,
+)
 from .registry import RegisteredSkill, registry
-from .schemas import WorkflowCreate, WorkflowRead
+from .scheduler import (
+    acquire_claim_lock,
+    active_workflow_count,
+    recover_expired_jobs,
+)
+from .schemas import (
+    WorkflowBatchRead,
+    WorkflowBatchStart,
+    WorkflowCreate,
+    WorkflowRead,
+    WorkflowStart,
+)
 from .service_credential_service import (
     has_service_credential,
     resolve_service_credential,
@@ -90,6 +108,7 @@ def _message(
 def serialize_workflow(workflow: WorkflowSession) -> WorkflowRead:
     messages = sorted(workflow.messages, key=lambda item: item.id)
     actions = sorted(workflow.actions, key=lambda item: item.queued_at)
+    context = _load(workflow.context_json, {})
     return WorkflowRead(
         id=workflow.id,
         owner_id=workflow.owner_id,
@@ -101,6 +120,9 @@ def serialize_workflow(workflow: WorkflowSession) -> WorkflowRead:
         state=workflow.state,
         stage=workflow.stage,
         reconciliation_date=workflow.reconciliation_date,
+        batch_id=workflow.batch_id,
+        batch_sequence=workflow.batch_sequence,
+        requires_confirmation=bool(context.get("requires_confirmation", True)),
         progress=workflow.progress,
         progress_message=workflow.progress_message,
         error_message=workflow.error_message,
@@ -130,6 +152,55 @@ def serialize_workflow(workflow: WorkflowSession) -> WorkflowRead:
         created_at=workflow.created_at,
         updated_at=workflow.updated_at,
     )
+
+
+def serialize_workflow_batch(batch: WorkflowBatch) -> WorkflowBatchRead:
+    workflows = sorted(batch.workflows, key=lambda item: item.batch_sequence)
+    progress = (
+        int(sum(item.progress for item in workflows) / len(workflows))
+        if workflows
+        else batch.progress
+    )
+    active = next((item for item in workflows if item.state == "running"), None)
+    progress_message = batch.progress_message
+    if active:
+        progress_message = (
+            f"第 {active.batch_sequence}/{len(workflows)} 天 · {active.progress_message}"
+        )
+    return WorkflowBatchRead(
+        id=batch.id,
+        owner_id=batch.owner_id,
+        skill_id=batch.skill_id,
+        skill_name=batch.skill_name,
+        skill_version=batch.skill_version,
+        model_provider=batch.model_provider,
+        model_name=batch.model_name,
+        reconciliation_dates=_load(batch.reconciliation_dates_json, []),
+        state=batch.state,
+        progress=progress,
+        progress_message=progress_message,
+        error_message=batch.error_message,
+        workflows=[serialize_workflow(item) for item in workflows],
+        created_at=batch.created_at,
+        updated_at=batch.updated_at,
+    )
+
+
+def _assert_batch_visible(batch: WorkflowBatch, user: UserContext) -> None:
+    if batch.department_id != user.department_id and not user.is_admin:
+        raise HTTPException(status_code=403, detail="无权查看其他部门的批次任务。")
+
+
+def get_workflow_batch_or_404(
+    db: Session,
+    batch_id: str,
+    user: UserContext,
+) -> WorkflowBatch:
+    batch = db.get(WorkflowBatch, batch_id)
+    if not batch:
+        raise HTTPException(status_code=404, detail="核销批次不存在。")
+    _assert_batch_visible(batch, user)
+    return batch
 
 
 def _snapshot_skill(skill: RegisteredSkill, workflow_id: str) -> Path:
@@ -172,6 +243,7 @@ def create_workflow(
         skill_version=skill.manifest.version,
         skill_hash=skill.skill_hash,
         skill_commit=skill.commit_sha,
+        concurrency_limit=skill.manifest.runtime.concurrency_limit,
         model_connection_id=llm.connection_id,
         model_provider=llm.provider,
         model_name=llm.model,
@@ -192,38 +264,254 @@ def create_workflow(
     return workflow
 
 
+def start_workflow(
+    db: Session,
+    request: WorkflowStart,
+    user: UserContext,
+) -> WorkflowSession:
+    """Start a workflow from a completed prerequisite form.
+
+    The web form supplies the date, model and uploaded file IDs in one request.
+    The worker still performs the deterministic financial processing and keeps
+    the existing human confirmation gate before any workbook write.
+    """
+    skill = registry.get(request.skill_id)
+    if not skill or skill.manifest.handler.adapter != "workflow":
+        raise HTTPException(status_code=404, detail="对话式 Skill 不存在或尚未发布。")
+    parsed_date = _parse_date(request.reconciliation_date)
+    if not parsed_date:
+        raise HTTPException(status_code=422, detail="核销日期无效，不能晚于今天。")
+    llm = resolve_runtime_config(db, user, request.model_connection_id, request.model)
+    if not llm:
+        raise HTTPException(status_code=422, detail="开始核销前必须选择一个大模型连接。")
+    if not has_service_credential(db, user.user_id, user.department_id, "zhiyun"):
+        raise HTTPException(status_code=422, detail="尚未配置智云登录凭据，请先安全保存账号密码。")
+
+    workflow_id = str(uuid.uuid4())
+    _snapshot_skill(skill, workflow_id)
+    workflow = WorkflowSession(
+        id=workflow_id,
+        owner_id=user.user_id,
+        owner_name=user.display_name,
+        department_id=user.department_id,
+        skill_id=skill.manifest.id,
+        skill_name=skill.manifest.name,
+        skill_version=skill.manifest.version,
+        skill_hash=skill.skill_hash,
+        skill_commit=skill.commit_sha,
+        concurrency_limit=skill.manifest.runtime.concurrency_limit,
+        model_connection_id=llm.connection_id,
+        model_provider=llm.provider,
+        model_name=llm.model,
+        state="active",
+        stage="awaiting_files",
+        reconciliation_date=parsed_date.isoformat(),
+        context_json=_json(
+            {
+                "started_from_form": True,
+                "requires_confirmation": skill.manifest.risk.requires_confirmation,
+            }
+        ),
+        progress_message="正在核验前置条件",
+    )
+    db.add(workflow)
+    db.flush()
+    # Reuse the same role, extension, ownership and minimum-count validation
+    # used by the legacy workflow form.
+    update_workflow_files(db, workflow, request.files, user)
+    ready, missing = _has_required_files(workflow)
+    if not ready:
+        raise HTTPException(
+            status_code=422,
+            detail=f"前置文件未上传完整：{'、'.join(missing)}。",
+        )
+    workflow.state = "running"
+    workflow.stage = "preparing"
+    workflow.progress = 5
+    workflow.progress_message = (
+        f"前置条件已核验，开始生成 {_date_label(workflow.reconciliation_date)} 的核销日清"
+    )
+    workflow.error_message = ""
+    _queue_action(db, workflow, "prepare_worklist")
+    _message(
+        db,
+        workflow,
+        "assistant",
+        f"前置条件已核验，已使用 {workflow.model_name} 开始执行"
+        f" {_date_label(workflow.reconciliation_date)} 的核销日清。",
+        {"kind": "direct_start", "reconciliation_date": workflow.reconciliation_date},
+    )
+    db.commit()
+    db.refresh(workflow)
+    return workflow
+
+
+def start_workflow_batch(
+    db: Session,
+    request: WorkflowBatchStart,
+    user: UserContext,
+) -> WorkflowBatch:
+    """Create an ordered multi-date batch without widening a child's write scope."""
+    skill = registry.get(request.skill_id)
+    if not skill or skill.manifest.handler.adapter != "workflow":
+        raise HTTPException(status_code=404, detail="对话式 Skill 不存在或尚未发布。")
+    if len(request.reconciliation_dates) > 7:
+        raise HTTPException(status_code=422, detail="单个批次最多选择 7 个核销日期。")
+
+    parsed_dates: list[str] = []
+    for value in request.reconciliation_dates:
+        parsed = _parse_date(value)
+        if not parsed:
+            raise HTTPException(status_code=422, detail=f"核销日期无效或晚于今天：{value}")
+        parsed_dates.append(parsed.isoformat())
+    parsed_dates = sorted(set(parsed_dates))
+    if not parsed_dates:
+        raise HTTPException(status_code=422, detail="请至少选择一个核销日期。")
+
+    llm = resolve_runtime_config(db, user, request.model_connection_id, request.model)
+    if not llm:
+        raise HTTPException(status_code=422, detail="开始核销前必须选择一个大模型连接。")
+    if not has_service_credential(db, user.user_id, user.department_id, "zhiyun"):
+        raise HTTPException(status_code=422, detail="尚未配置智云登录凭据，请先安全保存账号密码。")
+
+    normalized_files = _validate_file_bindings(db, skill, request.files, user)
+    missing = [
+        spec.name
+        for spec in skill.manifest.file_inputs
+        if spec.required and len(normalized_files.get(spec.role, [])) < spec.min_files
+    ]
+    if missing:
+        raise HTTPException(status_code=422, detail=f"前置文件未上传完整：{'、'.join(missing)}。")
+
+    batch_id = f"BAT-{date.today():%Y%m%d}-{uuid.uuid4().hex[:8].upper()}"
+    batch = WorkflowBatch(
+        id=batch_id,
+        owner_id=user.user_id,
+        owner_name=user.display_name,
+        department_id=user.department_id,
+        skill_id=skill.manifest.id,
+        skill_name=skill.manifest.name,
+        skill_version=skill.manifest.version,
+        model_connection_id=llm.connection_id,
+        model_provider=llm.provider,
+        model_name=llm.model,
+        reconciliation_dates_json=_json(parsed_dates),
+        files_json=_json(normalized_files),
+        state="running",
+        progress=0,
+        progress_message=f"已创建 {len(parsed_dates)} 天核销批次，等待第 1 天执行",
+    )
+    db.add(batch)
+    created_roots: list[Path] = []
+    previous_workflow_id = ""
+    try:
+        for sequence, reconciliation_date in enumerate(parsed_dates, start=1):
+            workflow_id = str(uuid.uuid4())
+            _snapshot_skill(skill, workflow_id)
+            created_roots.append((settings.workflow_dir / workflow_id).resolve())
+            is_first = sequence == 1
+            context = {
+                "started_from_form": True,
+                "batch_id": batch_id,
+                "requires_confirmation": skill.manifest.risk.requires_confirmation,
+            }
+            workflow = WorkflowSession(
+                id=workflow_id,
+                owner_id=user.user_id,
+                owner_name=user.display_name,
+                department_id=user.department_id,
+                skill_id=skill.manifest.id,
+                skill_name=skill.manifest.name,
+                skill_version=skill.manifest.version,
+                skill_hash=skill.skill_hash,
+                skill_commit=skill.commit_sha,
+                concurrency_limit=skill.manifest.runtime.concurrency_limit,
+                model_connection_id=llm.connection_id,
+                model_provider=llm.provider,
+                model_name=llm.model,
+                state="running" if is_first else "queued",
+                stage="preparing" if is_first else "queued",
+                reconciliation_date=reconciliation_date,
+                batch_id=batch_id,
+                batch_sequence=sequence,
+                previous_workflow_id=previous_workflow_id,
+                context_json=_json(context),
+                files_json=_json(normalized_files if is_first else {}),
+                progress=5 if is_first else 0,
+                progress_message=(
+                    f"正在执行第 {sequence}/{len(parsed_dates)} 天核销"
+                    if is_first
+                    else f"等待前一天完成后执行（{sequence}/{len(parsed_dates)}）"
+                ),
+            )
+            db.add(workflow)
+            db.flush()
+            if is_first:
+                _queue_action(db, workflow, "prepare_worklist")
+            _message(
+                db,
+                workflow,
+                "assistant",
+                (
+                    f"批次 {batch_id} 的第 {sequence}/{len(parsed_dates)} 个单日任务已创建："
+                    f"{_date_label(reconciliation_date)}。"
+                ),
+                {"kind": "batch_child_created", "batch_id": batch_id, "sequence": sequence},
+            )
+            previous_workflow_id = workflow_id
+        db.commit()
+    except Exception:
+        db.rollback()
+        for root in created_roots:
+            shutil.rmtree(root, ignore_errors=True)
+        raise
+    db.refresh(batch)
+    return batch
+
+
 def list_workflows(db: Session, user: UserContext, limit: int = 50) -> list[WorkflowSession]:
     query = (
         select(WorkflowSession)
-        .where(WorkflowSession.department_id == user.department_id)
+        .where(
+            WorkflowSession.department_id == user.department_id,
+            # Only sessions created by the completed prerequisite form belong
+            # in the task list. The legacy conversational bootstrap remains
+            # available for API compatibility/tests, but must not create a
+            # visible dashboard task before the user clicks 开始核销.
+            WorkflowSession.context_json.like('%"started_from_form": true%'),
+            WorkflowSession.batch_id.is_(None),
+        )
         .order_by(WorkflowSession.updated_at.desc())
         .limit(min(max(limit, 1), 200))
     )
     return list(db.scalars(query).all())
 
 
-def update_workflow_files(
+def list_workflow_batches(
     db: Session,
-    workflow: WorkflowSession,
+    user: UserContext,
+    limit: int = 50,
+) -> list[WorkflowBatch]:
+    query = (
+        select(WorkflowBatch)
+        .where(WorkflowBatch.department_id == user.department_id)
+        .order_by(WorkflowBatch.updated_at.desc())
+        .limit(min(max(limit, 1), 200))
+    )
+    return list(db.scalars(query).all())
+
+
+def _validate_file_bindings(
+    db: Session,
+    skill: RegisteredSkill,
     bindings: dict[str, list[str]],
     user: UserContext,
-) -> WorkflowSession:
-    editable_stages = {
-        "awaiting_date",
-        "awaiting_date_confirmation",
-        "awaiting_files",
-        "failed",
-    }
-    if workflow.stage not in editable_stages:
-        raise HTTPException(status_code=409, detail="当前阶段不能更换输入文件。")
-    skill = registry.get(workflow.skill_id)
-    if not skill:
-        raise HTTPException(status_code=409, detail="Skill 当前不可用。")
+) -> dict[str, list[dict[str, Any]]]:
     specs = {item.role: item for item in skill.manifest.file_inputs}
     unknown = set(bindings) - set(specs)
     if unknown:
         raise HTTPException(status_code=422, detail=f"未知文件角色：{sorted(unknown)}")
-    normalized = _load(workflow.files_json, {})
+    normalized: dict[str, list[dict[str, Any]]] = {}
     for role, ids in bindings.items():
         spec = specs[role]
         if not spec.multiple and len(ids) > 1:
@@ -251,8 +539,65 @@ def update_workflow_files(
                 }
             )
         normalized[role] = records
+    return normalized
+
+
+def update_workflow_files(
+    db: Session,
+    workflow: WorkflowSession,
+    bindings: dict[str, list[str]],
+    user: UserContext,
+) -> WorkflowSession:
+    editable_stages = {
+        "awaiting_date",
+        "awaiting_date_confirmation",
+        "awaiting_files",
+        "failed",
+    }
+    if workflow.stage not in editable_stages:
+        raise HTTPException(status_code=409, detail="当前阶段不能更换输入文件。")
+    skill = registry.get(workflow.skill_id)
+    if not skill:
+        raise HTTPException(status_code=409, detail="Skill 当前不可用。")
+    normalized = _load(workflow.files_json, {})
+    normalized.update(_validate_file_bindings(db, skill, bindings, user))
     workflow.files_json = _json(normalized)
     workflow.updated_at = datetime.now(UTC)
+    db.commit()
+    db.refresh(workflow)
+    return workflow
+
+
+def reset_workflow(
+    db: Session,
+    workflow: WorkflowSession,
+) -> WorkflowSession:
+    pending = db.scalar(
+        select(WorkflowAction.id).where(
+            WorkflowAction.workflow_id == workflow.id,
+            WorkflowAction.state.in_(("queued", "running")),
+        )
+    )
+    if pending or workflow.stage in BUSY_STAGES:
+        raise HTTPException(status_code=409, detail="当前动作正在执行，完成后才能重置任务。")
+
+    workflow.state = "active"
+    workflow.stage = "awaiting_date"
+    workflow.reconciliation_date = ""
+    workflow.context_json = "{}"
+    workflow.files_json = "{}"
+    workflow.artifacts_json = "[]"
+    workflow.progress = 0
+    workflow.progress_message = "任务已重置，等待确认核销日期"
+    workflow.error_message = ""
+    _message(
+        db,
+        workflow,
+        "assistant",
+        "任务已重置。已清空核销日期、文件绑定和本次输出列表；"
+        "历史记录及已经完成的写入不会撤销。请重新告诉我要跑的核销日期。",
+        {"kind": "workflow_reset"},
+    )
     db.commit()
     db.refresh(workflow)
     return workflow
@@ -299,6 +644,14 @@ def _queue_action(
     )
     if pending:
         raise HTTPException(status_code=409, detail="当前已有动作正在执行。")
+    return _new_action(db, workflow, name)
+
+
+def _new_action(
+    db: Session,
+    workflow: WorkflowSession,
+    name: str,
+) -> WorkflowAction:
     action = WorkflowAction(
         id=str(uuid.uuid4()),
         workflow_id=workflow.id,
@@ -433,8 +786,7 @@ def _apply_decision(
                 db,
                 workflow,
                 "assistant",
-                "还缺智云账号。请先在右侧“智云自动取数”中安全保存账号和密码，"
-                "再回复“上传好了”。",
+                "还缺智云账号。请先在右侧“智云自动取数”中安全保存账号和密码，再回复“上传好了”。",
                 source,
             )
             return
@@ -578,25 +930,44 @@ def send_workflow_message(
     return workflow
 
 
-def claim_next_workflow_action(db: Session, pools: tuple[str, ...]) -> WorkflowAction | None:
+def claim_next_workflow_action(
+    db: Session,
+    pools: tuple[str, ...],
+    worker_id: str = "workflow-worker",
+) -> WorkflowAction | None:
     if "workflow" not in pools:
         return None
-    action_id = db.scalar(
-        select(WorkflowAction.id)
-        .where(WorkflowAction.state == "queued")
-        .order_by(WorkflowAction.queued_at.asc())
-        .limit(1)
-    )
-    if not action_id:
-        return None
+    acquire_claim_lock(db)
     now = datetime.now(UTC)
-    claimed = db.execute(
-        update(WorkflowAction)
-        .where(WorkflowAction.id == action_id, WorkflowAction.state == "queued")
-        .values(state="running", started_at=now)
+    recover_expired_jobs(db, now)
+    candidates = list(
+        db.scalars(
+            select(WorkflowAction)
+            .where(WorkflowAction.state == "queued")
+            .order_by(WorkflowAction.queued_at.asc())
+            .limit(100)
+        ).all()
     )
+    selected: WorkflowAction | None = None
+    for action in candidates:
+        workflow = db.get(WorkflowSession, action.workflow_id)
+        if not workflow:
+            action.state = "failed"
+            action.error_message = "对话任务不存在。"
+            action.finished_at = now
+            continue
+        if active_workflow_count(db, workflow.skill_id, now) >= max(1, workflow.concurrency_limit):
+            continue
+        action.state = "running"
+        action.started_at = now
+        action.worker_id = worker_id
+        action.attempt_count += 1
+        action.heartbeat_at = now
+        action.lease_expires_at = lease_deadline(now)
+        selected = action
+        break
     db.commit()
-    return db.get(WorkflowAction, action_id) if claimed.rowcount == 1 else None
+    return selected
 
 
 def _copy_inputs(db: Session, action: WorkflowAction, business: Path) -> None:
@@ -648,9 +1019,7 @@ def _run_script(
             if value:
                 details = details.replace(value, "[已隐藏]")
         suffix = f"：{details[-1200:]}" if details else ""
-        raise RuntimeError(
-            f"{script_name} 执行失败（退出码 {completed.returncode}）{suffix}"
-        )
+        raise RuntimeError(f"{script_name} 执行失败（退出码 {completed.returncode}）{suffix}")
     return completed.stdout
 
 
@@ -844,19 +1213,177 @@ def _apply_confirmed(
         _run_script(script_dir, "verify_sources.py", ["verify", "--workspace", workspace])
     except Exception as exc:
         raise PostWriteVerificationError(
-            "计划内写入已完成，但写入后校验基线更新失败；请勿重复确认写入。"
-            f"原始错误：{exc}"
+            f"计划内写入已完成，但写入后校验基线更新失败；请勿重复确认写入。原始错误：{exc}"
         ) from exc
     candidates = [
         path
         for folder in (business / "02_我的表副本", business / "04_产出")
         for path in folder.glob("*")
         if path.is_file()
-        and path.suffix.lower() in {".xlsx", ".xlsm", ".json", ".txt"}
+        and path.suffix.lower() in {".xlsx", ".xlsm", ".xls", ".json", ".txt"}
         and ("备份" not in path.name)
     ]
-    artifacts = [_register_artifact(db, workflow, path, action.id) for path in candidates]
-    return {"workspace": str(business), "artifacts": artifacts}
+    artifacts: list[dict[str, Any]] = []
+    next_files: list[dict[str, Any]] = []
+    for path in candidates:
+        artifact = _register_artifact(db, workflow, path, action.id)
+        artifacts.append(artifact)
+        if (
+            getattr(workflow, "batch_id", None)
+            and path.parent.name == "02_我的表副本"
+            and path.suffix.lower()
+            in {
+                ".xlsx",
+                ".xlsm",
+                ".xls",
+            }
+        ):
+            next_files.append(
+                {
+                    "file_id": artifact["file_id"],
+                    "name": artifact["name"],
+                    "size_bytes": artifact["size_bytes"],
+                    "sha256": artifact["sha256"],
+                }
+            )
+    if getattr(workflow, "batch_id", None) and len(next_files) < 2:
+        raise PostWriteVerificationError(
+            "本日写入已完成，但没有找到可传递给下一日的两份工作副本；批次已暂停，"
+            "请勿重复执行本日任务。"
+        )
+    return {
+        "workspace": str(business),
+        "artifacts": artifacts,
+        "next_files": {"finance_workbooks": next_files},
+    }
+
+
+def _fail_batch(db: Session, workflow: WorkflowSession, message: str) -> None:
+    if not workflow.batch_id:
+        return
+    batch = db.get(WorkflowBatch, workflow.batch_id)
+    if not batch:
+        return
+    batch.state = "failed"
+    batch.error_message = message[:500]
+    batch.progress_message = (
+        f"第 {workflow.batch_sequence} 天（{workflow.reconciliation_date}）失败，后续日期已暂停"
+    )
+    batch.updated_at = datetime.now(UTC)
+
+
+def _advance_batch(
+    db: Session,
+    workflow: WorkflowSession,
+    result: dict[str, Any],
+) -> None:
+    if not workflow.batch_id:
+        return
+    batch = db.get(WorkflowBatch, workflow.batch_id)
+    if not batch:
+        raise RuntimeError("所属核销批次不存在。")
+    children = sorted(batch.workflows, key=lambda item: item.batch_sequence)
+    total = len(children)
+    completed = len([item for item in children if item.state == "succeeded"])
+    batch.progress = int(completed * 100 / max(total, 1))
+    batch.error_message = ""
+    next_workflow = next(
+        (item for item in children if item.batch_sequence == workflow.batch_sequence + 1),
+        None,
+    )
+    if not next_workflow:
+        batch.state = "succeeded"
+        batch.progress = 100
+        batch.progress_message = f"{total} 天核销全部完成"
+        batch.updated_at = datetime.now(UTC)
+        return
+
+    next_files = result.get("next_files", {})
+    if len(next_files.get("finance_workbooks", [])) < 2:
+        raise PostWriteVerificationError(
+            "本日写入已完成，但工作副本传递不完整；批次已暂停，请勿重复执行本日任务。"
+        )
+    next_workflow.files_json = _json(next_files)
+    next_workflow.state = "running"
+    next_workflow.stage = "preparing"
+    next_workflow.progress = 5
+    next_workflow.progress_message = (
+        f"前一天已完成，正在执行第 {next_workflow.batch_sequence}/{total} 天核销"
+    )
+    next_workflow.error_message = ""
+    _new_action(db, next_workflow, "prepare_worklist")
+    _message(
+        db,
+        next_workflow,
+        "assistant",
+        (
+            "已接收前一天核销完成后的工作副本，开始执行 "
+            f"{_date_label(next_workflow.reconciliation_date)}。"
+        ),
+        {
+            "kind": "batch_child_started",
+            "batch_id": batch.id,
+            "previous_workflow_id": workflow.id,
+        },
+    )
+    batch.state = "running"
+    batch.progress_message = (
+        f"已完成 {completed}/{total} 天，正在执行 {next_workflow.reconciliation_date}"
+    )
+    batch.updated_at = datetime.now(UTC)
+
+
+def retry_workflow_batch(
+    db: Session,
+    batch: WorkflowBatch,
+) -> WorkflowBatch:
+    if batch.state != "failed":
+        raise HTTPException(status_code=409, detail="只有失败并暂停的批次可以继续。")
+    children = sorted(batch.workflows, key=lambda item: item.batch_sequence)
+    failed = next((item for item in children if item.state == "failed"), None)
+    if not failed:
+        raise HTTPException(status_code=409, detail="没有找到可继续的失败日期。")
+    last_action = max(failed.actions, key=lambda item: item.queued_at, default=None)
+    if not last_action or last_action.name != "prepare_worklist":
+        raise HTTPException(
+            status_code=409,
+            detail="失败发生在写入阶段，不能自动重试；请先由管理员核对工作副本。",
+        )
+    pending = any(
+        action.state in {"queued", "running"} for child in children for action in child.actions
+    )
+    if pending:
+        raise HTTPException(status_code=409, detail="批次中仍有动作正在执行。")
+
+    context = _load(failed.context_json, {})
+    failed.context_json = _json(
+        {
+            "started_from_form": True,
+            "batch_id": batch.id,
+            "requires_confirmation": bool(context.get("requires_confirmation", False)),
+        }
+    )
+    failed.artifacts_json = "[]"
+    failed.state = "running"
+    failed.stage = "preparing"
+    failed.progress = 5
+    failed.progress_message = f"正在重新执行 {failed.reconciliation_date}"
+    failed.error_message = ""
+    _queue_action(db, failed, "prepare_worklist")
+    _message(
+        db,
+        failed,
+        "assistant",
+        "已从失败日期继续。之前成功的日期不会重复执行。",
+        {"kind": "batch_retry", "batch_id": batch.id},
+    )
+    batch.state = "running"
+    batch.error_message = ""
+    batch.progress_message = f"正在重新执行失败日期 {failed.reconciliation_date}"
+    batch.updated_at = datetime.now(UTC)
+    db.commit()
+    db.refresh(batch)
+    return batch
 
 
 def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
@@ -876,16 +1403,32 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
             artifacts.extend(result["artifacts"])
             workflow.artifacts_json = _json(artifacts)
             stop = bool(context.get("stop_after_action"))
-            workflow.stage = "cancelled" if stop else "awaiting_apply_confirmation"
-            workflow.state = "cancelled" if stop else "waiting_confirmation"
-            workflow.progress = 100
-            workflow.progress_message = (
-                "日清生成后按要求停止" if stop else "核销日清已生成，等待人工确认"
+            auto_apply = bool(context.get("started_from_form")) and not bool(
+                context.get("requires_confirmation", True)
             )
             summary = result.get("summary", {})
             if stop:
+                workflow.stage = "cancelled"
+                workflow.state = "cancelled"
+                workflow.progress = 100
+                workflow.progress_message = "日清生成后按要求停止"
                 reply = "《核销日清》已经生成，但按你的停止要求，本次不会进入写表阶段。"
+            elif auto_apply:
+                workflow.stage = "applying"
+                workflow.state = "running"
+                workflow.progress = 85
+                workflow.progress_message = "日清与写前校验已通过，正在安全写入工作副本"
+                _new_action(db, workflow, "apply_confirmed")
+                reply = (
+                    f"✅ 核销日期 {_date_label(workflow.reconciliation_date)} "
+                    "的日清与写前校验已通过，"
+                    "正在按 Skill 规则写入隔离工作副本并生成订单差异表。"
+                )
             else:
+                workflow.stage = "awaiting_apply_confirmation"
+                workflow.state = "waiting_confirmation"
+                workflow.progress = 100
+                workflow.progress_message = "核销日清已生成，等待人工确认"
                 reply = (
                     f"✅ 核销日期 {_date_label(workflow.reconciliation_date)} 的核销判定完了，"
                     "财务工作簿原件一个字节没动；智云只做了查询取数。\n"
@@ -910,15 +1453,16 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
             workflow.stage = "completed"
             workflow.state = "succeeded"
             workflow.progress = 100
-            workflow.progress_message = "盈亏和流转写入完成并通过回读校验"
+            workflow.progress_message = "盈亏和流转写入完成，订单差异表已生成"
             _message(
                 db,
                 workflow,
                 "assistant",
-                "统一写入完成：先盈亏明细、后流转安全子集，回读校验已通过。"
-                "结果文件已放到右侧下载区。",
+                "统一写入完成：先盈亏明细、生成《订单写入差异》，"
+                "再写流转安全子集；回读校验已通过。结果文件已放到右侧下载区。",
                 {"kind": "workflow_completed"},
             )
+            _advance_batch(db, workflow, result)
         else:
             raise RuntimeError(f"不支持的工作流动作：{action.name}")
         action.result_json = _json(result)
@@ -933,6 +1477,7 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
         workflow.stage = "failed"
         workflow.error_message = action.error_message
         workflow.progress_message = "动作执行超时"
+        _fail_batch(db, workflow, action.error_message)
         _message(
             db,
             workflow,
@@ -948,6 +1493,7 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
         workflow.stage = "failed"
         workflow.error_message = action.error_message
         workflow.progress_message = "写入已完成，等待恢复写入后校验"
+        _fail_batch(db, workflow, action.error_message)
         _message(
             db,
             workflow,
@@ -964,6 +1510,7 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
         workflow.stage = "failed"
         workflow.error_message = action.error_message
         workflow.progress_message = "动作没有完成"
+        _fail_batch(db, workflow, action.error_message)
         _message(
             db,
             workflow,
@@ -974,10 +1521,17 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
         )
 
 
-def run_workflow_action_once(db: Session, pools: tuple[str, ...]) -> bool:
-    action = claim_next_workflow_action(db, pools)
+def run_workflow_action_once(
+    db: Session,
+    pools: tuple[str, ...],
+    worker_id: str = "workflow-worker",
+) -> bool:
+    action = claim_next_workflow_action(db, pools, worker_id)
     if not action:
         return False
-    execute_workflow_action(db, action)
+    with LeaseHeartbeat("workflow_action", action.id, worker_id):
+        execute_workflow_action(db, action)
+    action.heartbeat_at = datetime.now(UTC)
+    action.lease_expires_at = None
     db.commit()
     return True

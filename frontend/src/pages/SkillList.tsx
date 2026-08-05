@@ -1,18 +1,23 @@
 import { ArrowRight, Bot, FileSpreadsheet, LoaderCircle, Search, ShieldCheck } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { api } from '../api'
 import type { SkillManifest } from '../types'
 
 export function SkillList() {
+  const [searchParams] = useSearchParams()
   const [skills, setSkills] = useState<SkillManifest[]>([])
-  const [query, setQuery] = useState('')
+  const [query, setQuery] = useState(() => searchParams.get('search') || '')
   const [category, setCategory] = useState('全部')
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     api.skills().then(setSkills).finally(() => setLoading(false))
   }, [])
+
+  useEffect(() => {
+    setQuery(searchParams.get('search') || '')
+  }, [searchParams])
 
   const categories = ['全部', ...new Set(skills.map((item) => item.category))]
   const filtered = useMemo(
@@ -49,6 +54,9 @@ export function SkillList() {
           {categories.map((item) => (
             <button
               key={item}
+              type="button"
+              role="tab"
+              aria-selected={category === item}
               className={category === item ? 'active' : ''}
               onClick={() => setCategory(item)}
             >

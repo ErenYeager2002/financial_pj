@@ -10,7 +10,13 @@ import httpx
 from app import model_service, workflow_orchestrator, workflow_service
 from app.database import SessionLocal
 from app.main import app
-from app.models import FileRecord, ServiceCredential, WorkflowAction
+from app.models import (
+    FileRecord,
+    ServiceCredential,
+    WorkflowAction,
+    WorkflowBatch,
+    WorkflowSession,
+)
 from fastapi.testclient import TestClient
 from openpyxl import Workbook
 from sqlalchemy import select
@@ -504,6 +510,7 @@ def test_conversational_workflow_hard_gates(monkeypatch) -> None:
         completed = client.get(f"/api/workflows/{workflow_id}").json()
         assert completed["stage"] == "completed"
         assert completed["state"] == "succeeded"
+        assert "订单写入差异" in completed["messages"][-1]["content"]
 
         monkeypatch.setattr(
             workflow_service,
@@ -521,3 +528,186 @@ def test_conversational_workflow_hard_gates(monkeypatch) -> None:
         assert continued.status_code == 200
         assert continued.json()["stage"] == "completed"
         assert "继续解释结果" in continued.json()["messages"][-1]["content"]
+
+
+def test_workflow_reset_clears_current_state_and_preserves_audit(monkeypatch) -> None:
+    class FakeModelsResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {"data": [{"id": "qwen3.7-plus"}]}
+
+    monkeypatch.setattr(
+        model_service.httpx,
+        "get",
+        lambda *_, **__: FakeModelsResponse(),
+    )
+
+    with TestClient(app) as client:
+        connection = client.post(
+            "/api/model-connections",
+            json={"api_key": "sk-workflow-reset-test"},
+        )
+        assert connection.status_code == 200, connection.text
+        created = client.post(
+            "/api/workflows",
+            json={
+                "skill_id": "ar-hexiao-daily",
+                "model_connection_id": connection.json()["id"],
+                "model": "qwen3.7-plus",
+            },
+        )
+        assert created.status_code == 200, created.text
+        workflow_id = created.json()["id"]
+
+        with SessionLocal() as db:
+            workflow = db.get(WorkflowSession, workflow_id)
+            assert workflow is not None
+            workflow.state = "failed"
+            workflow.stage = "failed"
+            workflow.reconciliation_date = "2026-07-24"
+            workflow.context_json = '{"workspace": "old"}'
+            workflow.files_json = '{"finance_workbooks": [{"file_id": "old"}]}'
+            workflow.artifacts_json = '[{"file_id": "output-old"}]'
+            workflow.progress = 77
+            workflow.progress_message = "旧任务失败"
+            workflow.error_message = "旧错误"
+            db.add(
+                WorkflowAction(
+                    id=str(uuid.uuid4()),
+                    workflow_id=workflow_id,
+                    name="prepare_worklist",
+                    state="failed",
+                    error_message="旧动作失败",
+                )
+            )
+            db.commit()
+
+        reset = client.post(f"/api/workflows/{workflow_id}/reset")
+        assert reset.status_code == 200, reset.text
+        body = reset.json()
+        assert body["id"] == workflow_id
+        assert body["state"] == "active"
+        assert body["stage"] == "awaiting_date"
+        assert body["reconciliation_date"] == ""
+        assert body["files"] == {}
+        assert body["artifacts"] == []
+        assert body["progress"] == 0
+        assert body["error_message"] == ""
+        assert len(body["actions"]) == 1
+        assert body["actions"][0]["state"] == "failed"
+        assert body["messages"][-1]["data"]["kind"] == "workflow_reset"
+        assert "已经完成的写入不会撤销" in body["messages"][-1]["content"]
+
+        with SessionLocal() as db:
+            workflow = db.get(WorkflowSession, workflow_id)
+            assert workflow is not None
+            db.add(
+                WorkflowAction(
+                    id=str(uuid.uuid4()),
+                    workflow_id=workflow_id,
+                    name="prepare_worklist",
+                    state="queued",
+                )
+            )
+            workflow.stage = "preparing"
+            workflow.state = "running"
+            db.commit()
+
+        blocked = client.post(f"/api/workflows/{workflow_id}/reset")
+        assert blocked.status_code == 409
+        assert "正在执行" in blocked.text
+
+
+def test_multi_date_batch_runs_children_in_order_and_chains_files(monkeypatch) -> None:
+    class FakeModelsResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {"data": [{"id": "qwen3.7-plus"}]}
+
+    monkeypatch.setattr(model_service.httpx, "get", lambda *_, **__: FakeModelsResponse())
+    monkeypatch.setattr(
+        workflow_service,
+        "_prepare_worklist",
+        lambda _db, _action, workflow: {
+            "workspace": f"isolated-{workflow.id}",
+            "checked_plan": "checked-plan.json",
+            "ledger": "ledger.xlsx",
+            "summary": {"今天要填": 1, "异常": 0},
+            "artifacts": [],
+        },
+    )
+
+    def fake_apply(_db, _action, workflow):
+        return {
+            "workspace": f"isolated-{workflow.id}",
+            "artifacts": [],
+            "next_files": json.loads(workflow.files_json),
+        }
+
+    monkeypatch.setattr(workflow_service, "_apply_confirmed", fake_apply)
+
+    with TestClient(app) as client:
+        connection = client.post(
+            "/api/model-connections",
+            json={"api_key": "sk-workflow-batch-test"},
+        )
+        assert connection.status_code == 200, connection.text
+        credential = client.put(
+            "/api/service-credentials/zhiyun",
+            json={"account": "batch-test-user", "password": "batch-test-password"},
+        )
+        assert credential.status_code == 200, credential.text
+        ledger_id = upload(client, "finance_workbooks", "盈亏表.xlsx")
+        flow_id = upload(client, "finance_workbooks", "到账流转表.xlsx")
+
+        started = client.post(
+            "/api/workflow-batches/start",
+            json={
+                "skill_id": "ar-hexiao-daily",
+                "model_connection_id": connection.json()["id"],
+                "model": "qwen3.7-plus",
+                "reconciliation_dates": ["2026-07-21", "2026-07-20"],
+                "files": {"finance_workbooks": [ledger_id, flow_id]},
+            },
+        )
+        assert started.status_code == 200, started.text
+        batch = started.json()
+        assert batch["id"].startswith("BAT-")
+        assert batch["reconciliation_dates"] == ["2026-07-20", "2026-07-21"]
+        assert [item["batch_sequence"] for item in batch["workflows"]] == [1, 2]
+        first, second = batch["workflows"]
+        assert first["stage"] == "preparing"
+        assert second["stage"] == "queued"
+        assert len(first["actions"]) == 1
+        assert second["actions"] == []
+
+        execute_next_action(first["id"])
+        after_prepare = client.get(f"/api/workflows/{first['id']}").json()
+        assert after_prepare["stage"] == "applying"
+        assert [item["name"] for item in after_prepare["actions"]] == [
+            "prepare_worklist",
+            "apply_confirmed",
+        ]
+        assert client.get(f"/api/workflows/{second['id']}").json()["stage"] == "queued"
+
+        execute_next_action(first["id"])
+        first_complete = client.get(f"/api/workflows/{first['id']}").json()
+        second_started = client.get(f"/api/workflows/{second['id']}").json()
+        assert first_complete["state"] == "succeeded"
+        assert second_started["stage"] == "preparing"
+        assert second_started["files"]["finance_workbooks"][0]["file_id"] == ledger_id
+
+        execute_next_action(second["id"])
+        execute_next_action(second["id"])
+        completed = client.get(f"/api/workflow-batches/{batch['id']}").json()
+        assert completed["state"] == "succeeded"
+        assert completed["progress"] == 100
+        assert all(item["state"] == "succeeded" for item in completed["workflows"])
+        with SessionLocal() as db:
+            stored = db.get(WorkflowBatch, batch["id"])
+            assert stored is not None
+            assert stored.state == "succeeded"

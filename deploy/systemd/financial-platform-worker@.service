@@ -1,0 +1,26 @@
+[Unit]
+Description=Financial Skill Platform Worker %i
+After=network-online.target financial-platform-api.service
+Wants=network-online.target
+Requires=financial-platform-api.service
+
+[Service]
+Type=simple
+User=financial-platform
+Group=financial-platform
+WorkingDirectory=/opt/financial-platform/backend
+EnvironmentFile=/etc/financial-platform/financial-platform.env
+ExecStart=/bin/bash /opt/financial-platform/deploy/run_worker.sh %i
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=30
+KillSignal=SIGTERM
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/financial-platform
+
+[Install]
+WantedBy=multi-user.target
