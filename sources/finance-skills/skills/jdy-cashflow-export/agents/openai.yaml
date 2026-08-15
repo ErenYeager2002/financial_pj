@@ -1,0 +1,4 @@
+interface:
+  display_name: "金蝶现金流量明细导出"
+  short_description: "自动登录金蝶并批量导出本期现金流量调整明细数据文件"
+  default_prompt: "使用 $jdy-cashflow-export 自动登录金蝶并导出本期现金流量调整明细。"

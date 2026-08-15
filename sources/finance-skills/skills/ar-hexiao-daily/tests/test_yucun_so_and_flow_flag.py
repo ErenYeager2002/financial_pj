@@ -1,0 +1,123 @@
+# -*- coding: utf-8 -*-
+"""取数落地：四张表读得对；流转空/部分=待办。"""
+import sys
+from pathlib import Path
+
+import openpyxl
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+
+import classify_hexiao as C  # noqa: E402
+import rescan_holds as R  # noqa: E402
+
+
+def test_flow_needs_update_empty_and_partial():
+    assert R.flow_needs_update(None) is True
+    assert R.flow_needs_update("") is True
+    assert R.flow_needs_update("  ") is True
+    assert R.flow_needs_update("部分") is True
+    assert R.flow_needs_update("部份") is True
+    assert R.flow_needs_update("是") is False
+    assert R.flow_needs_update("yes") is False
+
+
+def _write(path, headers, rows):
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(headers)
+    for r in rows:
+        ws.append(r)
+    wb.save(path)
+
+
+def _mk_exports(
+    root: Path, *, with_writeoff=True, with_sod=True,
+    with_order_written_off=True,
+):
+    exp = root / "01_智云导出"
+    exp.mkdir(parents=True, exist_ok=True)
+    _write(exp / "回款记录_test.xlsx",
+           ["回款记录ID", "核销日期", "到账日期", "到账金额/原币", "到账金额/本币",
+            "手续费/原币", "原币币种", "回款类型", "核销状态", "开票客户"],
+           [["AR26079999", "2026-07-22", "2026-07-17", 100, 100, 0,
+             "人民币CNY", "预存回款", "核销成功", "测试客户甲"]])
+    _write(exp / "订单交付_test.xlsx",
+           ["回款记录ID", "SO", "订单已核销金额", "交付额/原币", "汇率", "订单名称"],
+           [["AR26079999", "SO26070111",
+             100 if with_order_written_off else None, 250, 1, "某单"]])
+    if with_writeoff:
+        _write(exp / "核销明细_test.xlsx",
+               ["核销记录NUM", "rowid", "回款记录NUM", "核销日期",
+                "本次核销金额", "本次核销金额/本币", "币种", "汇率",
+                "SO", "订单名称", "是否已撤销"],
+               [["HX26070001", "", "AR26079999", "2026-07-22", 100, 100,
+                 "人民币CNY", 1, "SO26070111", "某单", "否"]])
+    if with_sod:
+        _write(exp / "订单明细_test.xlsx",
+               ["SO", "SOD", "交付额/原币"],
+               [["SO26070111", "SOD26070222", 60],
+                ["SO26070111", "SOD26070221", 40],
+                ["SO26070111", "SOD26070220", 150]])
+    return exp
+
+
+def test_load_exports_reads_four_tables(tmp_path):
+    _mk_exports(tmp_path)
+    pays = C.load_exports(tmp_path)
+    assert len(pays) == 1
+    p = pays[0]
+    assert p["ar"] == "AR26079999"
+    order = p["orders"][0]
+    assert order["so"] == "SO26070111"
+    assert order["written_off"] == 100.0
+    assert order["written_off_present"] is True
+    assert order["deliver"] == 250.0
+    assert order["rate"] == 1.0
+    # 当前核销记录按物理记录号保留。
+    assert p["writeoffs"] == {"SO26070111": 100.0}
+    assert len(p["sod_lines"]["SO26070111"]) == 3
+
+
+def test_expand_uses_sod_subset(tmp_path):
+    _mk_exports(tmp_path)
+    pays = C.load_exports(tmp_path)
+    recs = C.expand_payments(pays, {})
+    # 本次核销 100 = SOD…222(60) + SOD…221(40)，SOD…220(150) 不动
+    assert {r["sod"] for r in recs} == {"SOD26070222", "SOD26070221"}
+    assert sum(r["amount_orig"] for r in recs) == 100.0
+
+
+def test_whole_payment_without_order_written_off_uses_delivery_fallback(tmp_path):
+    """整笔回款全部缺订单已核销金额时，按完整交付额形成逐SO金额。"""
+    _mk_exports(
+        tmp_path,
+        with_writeoff=False,
+        with_order_written_off=False,
+    )
+    # 到账额改成 250 才等于交付额
+    _write(tmp_path / "01_智云导出" / "回款记录_test.xlsx",
+           ["回款记录ID", "核销日期", "到账日期", "到账金额/原币", "到账金额/本币",
+            "手续费/原币", "原币币种", "回款类型", "核销状态", "开票客户"],
+           [["AR26079999", "2026-07-22", "2026-07-21", 250, 250, 0,
+             "人民币CNY", "整笔回款", "手动核销", "测试客户甲"]])
+    recs = C.expand_payments(C.load_exports(tmp_path), {})
+    assert {rec["sod"] for rec in recs} == {
+        "SOD26070222", "SOD26070221", "SOD26070220"
+    }
+    assert sum(rec["amount_orig"] for rec in recs) == 250
+    assert all(
+        "W_WHOLE_PAYMENT_DELIVERY_FALLBACK" in rec["warning_codes"]
+        for rec in recs
+    )
+
+
+def test_missing_order_table_is_hard_error(tmp_path):
+    """缺「订单交付」→ 报错退出并指路重新取数，不拿旧对账表凑合。"""
+    import pytest
+
+    exp = tmp_path / "01_智云导出"
+    exp.mkdir(parents=True)
+    _write(exp / "回款记录_test.xlsx", ["回款记录ID", "核销日期"], [["AR1", "2026-07-22"]])
+    with pytest.raises(C.InputError) as ei:
+        C.load_exports(tmp_path)
+    assert "订单交付" in str(ei.value)

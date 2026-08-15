@@ -1,0 +1,41 @@
+# ===== 真实批量财务数据不进库（源台账/回填源/成品等）=====
+*.xlsx
+*.xls
+*.csv
+*.pdf
+*.zip
+# 例外：各 skill 的 config 维护表/模板（可长期维护的配置，私有库内保留）
+!skills/*/config/*.xlsx
+
+# ===== 各 skill 工作区运行数据 =====
+skills/*/工作区/input/*
+skills/*/工作区/output/*
+!**/.gitkeep
+
+
+# ===== 密钥 / 凭证 / 本地配置 =====
+.env
+.env.*
+*.key
+*.pem
+secrets.*
+*.local.json
+*.playwright-state.json
+
+# ===== 运行 / 缓存 / 系统 =====
+.DS_Store
+__pycache__/
+*.pyc
+.venv/
+venv/
+node_modules/
+*.log
+
+# ===== ar-hexiao-daily / 各 skill 整份工作区（运行产物与验收证据）=====
+skills/*/工作区/**
+!skills/*/工作区/**/.gitkeep
+
+# ===== order-daily-summary 凭据与运行产物 =====
+skills/order-daily-summary/config.local.json
+skills/order-daily-summary/工作区/
+**/md_pss_id*

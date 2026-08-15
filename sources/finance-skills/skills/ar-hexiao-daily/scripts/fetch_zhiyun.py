@@ -1,0 +1,1137 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+第 1 步：智云只读取数 → 工作区 01_智云导出/
+
+取数架构（2026-07-23 明妹当面口径 + Claude 接口实调重写，v2）
+────────────────────────────────────────────────────────────
+**入口只有一个**：财务管理 →「回款记录」，**只筛一个条件：核销日期 = T-1**。
+然后把每笔回款记录**点进去的明细页**原样抓下来——这正是明妹手工在做的事：
+
+  回款记录（1 笔到账）
+    ├─ 关联「下单」            → 这笔到账关联了哪几个 SO + 每个 SO 的交付额
+    │   └─ 下单为空时回查「结算」→ 从结算关联补找 SO，再继续取 SOD/交付额
+    ├─ 关联「订单同币种核销明细信息」→ 逐 SO 的本次核销金额
+    │                            **0 行 = 全额核销**（明妹原话：没有这张就说明到账=交付）
+    └─ 由 SO 去「订单明细」表   → 每个 SO 下的 SOD + 逐 SOD 交付额
+                                 （SOD 的唯一来源；她盈亏表一行 = 一个 SOD）
+
+**已废弃**：按核销日期单独筛「回款核销对账」表。原因（2026-07-23 实调）：
+  1. 它对预存/预收类返回 0 行，靠"按回款类型走不同通道"来补，而通道路由正是
+     2026-07-22 那次**3 笔到账 6.5 万静默消失**的根因（预收类既被踢出对账通道、
+     又在明细子表拿不到行，两头落空还不报错）。
+  2. 它拿不到 SOD 与逐 SOD 交付额，判不出"一个 SO 拆 N 个 SOD"这个 45% 的主场景。
+  3. 它是独立筛的第二张表，与回款记录可能不同步；关联读法天然同步。
+
+红线：只读（GetFilterRows / getRowRelationRows / getWorksheetInfo，无任何写接口）；
+      账号密码每次运行时提供，绝不写进代码 / config / git。
+
+用法：
+  export ZHIYUN_USER='你的智云账号'
+  export ZHIYUN_PASS   # 在 shell 里 export，勿写进任何文件；用完 unset
+  python3 scripts/fetch_zhiyun.py --date 2026-07-22 --workspace 工作区/
+
+  或交互（推荐，密码不回显、不落盘）：
+  python3 scripts/fetch_zhiyun.py --date yesterday --workspace 工作区/
+
+依赖：playwright（登录）+ requests（取数）+ openpyxl（写出 xlsx）
+  pip install playwright requests openpyxl && playwright install chromium
+"""
+from __future__ import annotations
+
+import argparse
+import getpass
+import json
+import os
+import sys
+from datetime import date, datetime, timedelta
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Sequence, Tuple
+
+# ── 常量（表 ID / 字段 ID 来自 2026-07-09/22/23 勘探，非密钥）────────────────
+BASE_DEFAULT = "http://192.168.10.167:18880"
+
+
+def _assert_platform_network_url(url: str) -> None:
+    if os.environ.get("FINANCIAL_NETWORK_POLICY_REQUIRED") != "1":
+        return
+    from urllib.parse import urlsplit
+
+    host = (urlsplit(url).hostname or "").encode("idna").decode("ascii").lower()
+    allowed = {
+        item.strip().lower()
+        for item in os.environ.get("FINANCIAL_NETWORK_ALLOWLIST", "").split(",")
+        if item.strip()
+    }
+    if os.environ.get("FINANCIAL_NETWORK_ACCESS") != "1" or host not in allowed:
+        raise RuntimeError("网络目标不在平台批准的精确域名白名单中。")
+APP_ID = "6ff4fb2e-e68c-4ee9-83a0-836de8f72c11"
+EXPORT_SCHEMA_VERSION = "2026-08-13-flow-sales-name-v4"
+CREDENTIAL_SERVICE = "codex.ar-hexiao-daily.zhiyun"
+
+WS_HUIKUAN = "6555d2b1f9460e517040ba6c"  # 回款记录（唯一入口）
+
+# 回款记录字段（只保留新架构真正用到的）
+F_HK = {
+    "arrival_date": "6555d2b1f9460e517040ba70",
+    "amount_orig": "6555d2b1f9460e517040ba71",
+    "currency": "663c495f4a2483fd86249c90",
+    "ar": "663c4b8a4a2483fd86249ca8",
+    "amount_local": "663c4d354a2483fd86249cbb",
+    "status": "663ca2204a2483fd8624a107",
+    "hexiao_date": "664c571b4a2483fd86250fa5",
+    "huikuan_type": "66b1f6986429811e5f304a0b",
+    "fee": "675119ab327314202700730a",
+    "customer_rel": "676a3314327314202700e7fc",
+    "customer_txt": "676b6d01327314202700ed59",
+}
+
+# 关联字段按**中文名**取（controlId 会随配置变，名字不会）
+REL_XIADAN = "下单"
+REL_JIESUAN = "结算"
+REL_HEXIAO_MINGXI = "订单同币种核销明细信息"
+REL_SODLINE = "订单明细"  # 只借它的 dataSource 定位「订单明细」表
+
+# 关联子表里要取的列（按中文名，取不到就空，不猜）
+XIADAN_COLS = [
+    "SO", "订单NUM", "订单号", "新智云单号",
+    "订单已核销金额", "订单已核销金额/本币",
+    "交付额/原币", "汇率", "结算币种", "订单名称", "项目交付日期",
+]
+# ⚠「同币种核销明细信息」表里**没有**叫 SO 的字段，SO 藏在关联字段「订单NUM」的 name 里
+#   （2026-07-23 实调：该表字段 = 核销记录NUM/回款记录NUM/订单NUM/本次核销金额/…）。
+#   旧版靠"按金额跟下单栏配对"猜 SO，金额一撞就配错；这一版直接从订单NUM读，不猜。
+MINGXI_COLS = [
+    "核销记录NUM", "回款记录NUM", "订单NUM", "本次核销金额", "本次核销金额本币", "核销日期",
+    "币种", "汇率", "订单名称", "是否已撤销",
+]
+SODLINE_COLS = ["SO", "SOD", "交付额/原币", "币种", "项目状态"]
+
+
+class LoginError(RuntimeError):
+    pass
+
+
+class FetchError(RuntimeError):
+    pass
+
+
+def _repair_mojibake(s: str) -> str:
+    """修复智云部分选项标签按 GBK 字节误解成 Latin-1 的文本。"""
+    try:
+        repaired = s.encode("latin1").decode("gbk")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return s
+    has_cjk = any("\u4e00" <= ch <= "\u9fff" for ch in repaired)
+    original_has_cjk = any("\u4e00" <= ch <= "\u9fff" for ch in s)
+    return repaired if has_cjk and not original_has_cjk else s
+
+
+def _plain(v: Any, options: Optional[Dict[str, str]] = None) -> str:
+    """明道云单元格 → 纯文本。"""
+    if v is None:
+        return ""
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        return str(v)
+    s = str(v).strip()
+    if not s:
+        return ""
+    if s.startswith("["):
+        try:
+            arr = json.loads(s)
+        except ValueError:
+            return s
+        out: List[str] = []
+        for item in arr:
+            if isinstance(item, dict):
+                out.append(
+                    item.get("name")
+                    or item.get("fullname")
+                    or item.get("sourcevalue")
+                    or item.get("departmentName")
+                    or ""
+                )
+            elif options and str(item) in options:
+                out.append(options[str(item)])
+            else:
+                out.append(str(item))
+        return _repair_mojibake("、".join(x for x in out if x))
+    if options and s in options:
+        return _repair_mojibake(options[s])
+    return _repair_mojibake(s)
+
+
+def extract_so(text: str) -> str:
+    """从 'ZG SO26060433' / 'SO26060433' / '[{...name:SO...}]' 里抠出 SO 号。"""
+    s = _plain(text)
+    for token in s.replace("\n", " ").replace("、", " ").replace(",", " ").split():
+        t = token.strip().upper()
+        if t.startswith("SO") and not t.startswith("SOD") and len(t) >= 8:
+            return token.strip()
+    return ""
+
+
+def extract_ar(text: str) -> str:
+    """从关联字段文本中提取 AR 号。"""
+    s = _plain(text)
+    for token in s.replace("\n", " ").replace("、", " ").replace(",", " ").split():
+        t = token.strip().upper()
+        if t.startswith("AR") and len(t) >= 8:
+            return token.strip()
+    return ""
+
+
+def resolve_date(s: str) -> str:
+    """
+    把 --date 解析成具体某一天。**这里指的永远是「核销日期」**
+    （销售哪天在智云把钱核到订单上），不是钱哪天到银行的「到账日期」——
+    明妹口径：两者没有固定隔天关系，天然可能差好几天。
+
+    另外：`yesterday` 是相对**运行那一刻**算的，她晚上跑和第二天早上跑不是同一天。
+    所以调用方（SKILL / main）必须把解析结果**复述给她确认**，别让相对说法飘着。
+    """
+    s = (s or "").strip().lower()
+    if s in ("yesterday", "t-1", "昨天"):
+        return (date.today() - timedelta(days=1)).isoformat()
+    if s in ("today", "今天"):
+        return date.today().isoformat()
+    if s in ("last-workday", "上个工作日", "上一个工作日"):
+        cur = date.today() - timedelta(days=1)
+        while cur.weekday() >= 5:
+            cur -= timedelta(days=1)
+        return cur.isoformat()
+    datetime.strptime(s, "%Y-%m-%d")
+    return s
+
+
+def login_with_password(
+    base_url: str, username: str, password: str, headless: bool = True
+) -> Tuple[str, Optional[str]]:
+    """账号密码 → (md_pss_id, account_id)。不落盘。"""
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError as e:
+        raise LoginError(
+            "未安装 playwright。请: pip install playwright && playwright install chromium"
+        ) from e
+
+    account_sel = "#txtMobilePhone"
+    password_sel = "input[type=password]"
+    btn_sels = ["text=登 录", "text=登录", ".loginBtn"]
+
+    try:
+        with sync_playwright() as p:
+            br = p.chromium.launch(headless=headless)
+            try:
+                ctx = br.new_context(ignore_https_errors=True)
+                pg = ctx.new_page()
+                pg.goto(base_url, wait_until="networkidle", timeout=45000)
+                pg.fill(account_sel, username)
+                pg.fill(password_sel, password)
+                clicked = False
+                for sel in btn_sels:
+                    try:
+                        pg.click(sel, timeout=2500)
+                        clicked = True
+                        break
+                    except Exception:
+                        continue
+                if not clicked:
+                    pg.keyboard.press("Enter")
+                pg.wait_for_timeout(7000)
+                token = None
+                for c in ctx.cookies():
+                    if c.get("name") == "md_pss_id" and c.get("value"):
+                        token = c["value"]
+                        break
+                if not token:
+                    raise LoginError(
+                        f"登录后未拿到 md_pss_id（url={pg.url}）。账号密码可能错误或页面结构变了。"
+                    )
+                acct = None
+                try:
+                    acct = pg.evaluate(
+                        "() => { try { return (md && md.global && md.global.Account && "
+                        "md.global.Account.accountId) || null; } catch(e) { return null; } }"
+                    )
+                except Exception:
+                    acct = None
+                return token, acct
+            finally:
+                br.close()
+    except LoginError:
+        raise
+    except Exception as e:
+        raise LoginError(f"登录异常 {type(e).__name__}: {e}") from e
+
+
+class ZhiyunClient:
+    def __init__(self, base: str, cookie: str, account_id: str = "", page_size: int = 200):
+        import requests
+
+        self.base = base.rstrip("/")
+        self.page_size = page_size
+        self.session = requests.Session()
+        self.headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"md_pss_id {cookie}",
+            "X-Requested-With": "XMLHttpRequest",
+        }
+        if account_id:
+            self.headers["AccountId"] = account_id
+        self._tpl_cache: Dict[str, List[dict]] = {}
+
+    def post(self, path: str, body: dict, timeout: int = 90) -> dict:
+        url = f"{self.base}/wwwapi/{path.lstrip('/')}"
+        _assert_platform_network_url(url)
+        r = self.session.post(
+            url,
+            headers=self.headers,
+            json=body,
+            timeout=timeout,
+            allow_redirects=False,
+        )
+        r.raise_for_status()
+        j = r.json()
+        if isinstance(j, dict) and "data" in j:
+            return j["data"] if j["data"] is not None else {}
+        return j
+
+    # ── 模板 / 字段 ──────────────────────────────────────────────
+    def controls(self, worksheet_id: str) -> List[dict]:
+        if worksheet_id in self._tpl_cache:
+            return self._tpl_cache[worksheet_id]
+        info = self.post(
+            "worksheet/getWorksheetInfo",
+            {"worksheetId": worksheet_id, "appId": APP_ID, "getTemplate": True},
+        )
+        ctrls = (info.get("template") or {}).get("controls") or info.get("controls") or []
+        self._tpl_cache[worksheet_id] = ctrls
+        return ctrls
+
+    @staticmethod
+    def name_map(controls: Sequence[dict]) -> Dict[str, str]:
+        """controlId → 中文名。"""
+        return {
+            (c.get("controlId") or c.get("id") or ""): (c.get("controlName") or c.get("name") or "")
+            for c in controls
+        }
+
+    @staticmethod
+    def id_by_name(controls: Sequence[dict], name: str) -> str:
+        for c in controls:
+            if (c.get("controlName") or c.get("name") or "") == name:
+                return c.get("controlId") or c.get("id") or ""
+        return ""
+
+    @staticmethod
+    def option_maps(controls: Sequence[dict]) -> Dict[str, Dict[str, str]]:
+        """controlId → {optionKey: 显示值}。"""
+        out: Dict[str, Dict[str, str]] = {}
+        for c in controls:
+            opts = c.get("options") or []
+            if opts:
+                cid = c.get("controlId") or c.get("id") or ""
+                out[cid] = {str(o.get("key")): str(o.get("value")) for o in opts}
+        return out
+
+    def datasource_of(self, worksheet_id: str, control_name: str) -> str:
+        for c in self.controls(worksheet_id):
+            if (c.get("controlName") or c.get("name") or "") == control_name:
+                return c.get("dataSource") or ""
+        return ""
+
+    # ── 取行 ────────────────────────────────────────────────────
+    def filter_rows_by_date(
+        self, worksheet_id: str, date_control_id: str, day: str, page_size: Optional[int] = None
+    ) -> Tuple[List[dict], int]:
+        """按日期字段筛单日（filterType 11 + dateRange 18 已实测）。**只此一个条件。**"""
+        ps = page_size or self.page_size
+        rows: List[dict] = []
+        page = 1
+        total = 0
+        while True:
+            d = self.post(
+                "worksheet/getFilterRows",
+                {
+                    "worksheetId": worksheet_id,
+                    "appId": APP_ID,
+                    "pageSize": ps,
+                    "pageIndex": page,
+                    "status": 1,
+                    "sortControls": [],
+                    "notGetTotal": False,
+                    "searchType": 1,
+                    "keyWords": "",
+                    "filterControls": [
+                        {
+                            "controlId": date_control_id,
+                            "dataType": 30,
+                            "spliceType": 1,
+                            "filterType": 11,
+                            "dateRange": 18,
+                            "minValue": day,
+                            "maxValue": day,
+                            "value": "",
+                            "values": [],
+                        }
+                    ],
+                    "fastFilters": [],
+                    "navGroupFilters": [],
+                },
+            )
+            batch = d.get("data") if isinstance(d, dict) else d
+            batch = batch if isinstance(batch, list) else []
+            if isinstance(d, dict):
+                total = int(d.get("count") or total or 0)
+            rows.extend(batch)
+            if not batch or (total and len(rows) >= total) or len(batch) < ps:
+                break
+            page += 1
+            if page > 500:
+                raise FetchError(f"翻页超过 500，worksheet={worksheet_id}")
+        return rows, total or len(rows)
+
+    def search_rows(self, worksheet_id: str, keyword: str, page_size: int = 200) -> List[dict]:
+        """全文检索（用于按 SO 找订单明细）。调用方必须再做精确过滤。"""
+        rows: List[dict] = []
+        page = 1
+        while page <= 20:
+            d = self.post(
+                "worksheet/getFilterRows",
+                {
+                    "worksheetId": worksheet_id,
+                    "appId": APP_ID,
+                    "pageSize": page_size,
+                    "pageIndex": page,
+                    "status": 1,
+                    "sortControls": [],
+                    "notGetTotal": False,
+                    "searchType": 1,
+                    "keyWords": keyword,
+                    "filterControls": [],
+                    "fastFilters": [],
+                    "navGroupFilters": [],
+                },
+            )
+            batch = d.get("data") if isinstance(d, dict) else d
+            batch = batch if isinstance(batch, list) else []
+            rows.extend(batch)
+            if len(batch) < page_size:
+                break
+            page += 1
+        return rows
+
+    def relation_rows(
+        self, worksheet_id: str, row_id: str, control_id: str, page_size: int = 100
+    ) -> Tuple[List[dict], List[dict]]:
+        """返回 (行列表, 目标表 controls)。"""
+        rows: List[dict] = []
+        controls: List[dict] = []
+        page = 1
+        while page <= 50:
+            d = self.post(
+                "worksheet/getRowRelationRows",
+                {
+                    "worksheetId": worksheet_id,
+                    "rowId": row_id,
+                    "controlId": control_id,
+                    "pageIndex": page,
+                    "pageSize": page_size,
+                    "appId": APP_ID,
+                    "getWorksheet": page == 1,
+                },
+            )
+            batch: Any = []
+            if isinstance(d, dict):
+                batch = d.get("data") or d.get("rows") or []
+                if isinstance(batch, dict):
+                    batch = batch.get("data") or []
+                if page == 1:
+                    w = d.get("worksheet") or {}
+                    controls = (w.get("template") or {}).get("controls") or w.get("controls") or []
+            batch = batch if isinstance(batch, list) else []
+            rows.extend(batch)
+            if len(batch) < page_size:
+                break
+            page += 1
+        return rows, controls
+
+
+def pick_named(
+    row: dict, names: Dict[str, str], opts: Dict[str, Dict[str, str]], wanted: Sequence[str]
+) -> Dict[str, str]:
+    """按中文列名从原始行取值 → {列名: 纯文本}。取不到的列留空，不猜。"""
+    by_name = {v: k for k, v in names.items() if v}
+    out: Dict[str, str] = {}
+    for w in wanted:
+        cid = by_name.get(w, "")
+        out[w] = _plain(row.get(cid), opts.get(cid)) if cid else ""
+    return out
+
+
+def extract_related_orders(
+    rows: Sequence[dict], controls: Sequence[dict], source: str
+) -> List[dict]:
+    """从“下单”或“结算”关联行提取订单；SO 可位于 SO 或订单NUM。"""
+    names = ZhiyunClient.name_map(controls)
+    opts = ZhiyunClient.option_maps(controls)
+    out: List[dict] = []
+    for row in rows:
+        values = pick_named(row, names, opts, XIADAN_COLS)
+        so = extract_so(
+            values.get("SO") or values.get("订单NUM")
+            or values.get("订单号") or values.get("新智云单号") or ""
+        )
+        if not so:
+            candidates = {
+                extract_so(_plain(row.get(cid), opts.get(cid)))
+                for cid in names
+            } - {""}
+            if len(candidates) == 1:
+                so = next(iter(candidates))
+        if not so:
+            continue
+        out.append({
+            "so": so,
+            "written_off": values.get("订单已核销金额"),
+            "written_off_local": values.get("订单已核销金额/本币"),
+            "deliver": values.get("交付额/原币"),
+            "rate": values.get("汇率"),
+            "currency": values.get("结算币种"),
+            "name": values.get("订单名称"),
+            "delivery_date": values.get("项目交付日期"),
+            "delivery_date_status": "关联下单明确值" if values.get("项目交付日期") else "",
+            "source": source,
+        })
+    return out
+
+
+def lookup_order_delivery_date(
+    client: ZhiyunClient,
+    worksheet_id: str,
+    controls: Sequence[dict],
+    so: str,
+) -> Tuple[str, str]:
+    """从智云“下单”订单详情按 SO 精确回读项目交付日期；缺失或冲突都不猜。"""
+    if not worksheet_id:
+        return "", "项目交付日期缺失：无法定位下单数据源"
+    names = client.name_map(controls)
+    opts = client.option_maps(controls)
+    try:
+        hits = client.search_rows(worksheet_id, so)
+    except Exception as e:
+        return "", f"项目交付日期回读失败：{type(e).__name__}"
+    dates = set()
+    for row in hits:
+        values = pick_named(row, names, opts, XIADAN_COLS)
+        found_so = extract_so(
+            values.get("SO") or values.get("订单NUM")
+            or values.get("订单号") or values.get("新智云单号") or ""
+        )
+        if found_so != so:
+            continue
+        raw = str(values.get("项目交付日期") or "").strip()
+        if raw:
+            dates.add(raw)
+    if len(dates) == 1:
+        return next(iter(dates)), "订单详情明确值"
+    if len(dates) > 1:
+        return "", "项目交付日期冲突：订单详情存在多个不同日期"
+    return "", "项目交付日期缺失：订单详情没有明确值"
+
+
+def write_xlsx(path: Path, headers: List[str], rows: List[List[Any]]) -> None:
+    from openpyxl import Workbook
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    wb = Workbook()
+    ws = wb.active
+    assert ws is not None
+    ws.title = "Sheet1"
+    ws.append(headers)
+    for r in rows:
+        ws.append(r)
+    wb.save(str(path))
+
+
+def historical_writeoffs_for_sos(
+    client: ZhiyunClient,
+    worksheet_id: str,
+    sos: Sequence[str],
+    target_day: str,
+) -> List[List[Any]]:
+    """
+    从全局“订单同币种核销明细信息”补取本批 SO 在目标日前的历史核销。
+
+    关联父回款只会给出当前父 AR 自己的子明细；同一 SO 的首款、尾款若分别落在
+    不同 AR，单靠当前父记录会漏掉历史回款。这里按 SO 精确检索全局明细，且只补
+    `核销日期 < target_day` 的原始行（含撤销行供审计）；目标日当前行仍由父回款关联子表提供。
+    """
+    if not worksheet_id or not sos:
+        return []
+    ctrls = client.controls(worksheet_id)
+    names, opts = client.name_map(ctrls), client.option_maps(ctrls)
+    out: List[List[Any]] = []
+    seen_record_ids = set()
+    for wanted_so in sorted({str(x or "").strip() for x in sos if str(x or "").strip()}):
+        try:
+            hits = client.search_rows(worksheet_id, wanted_so)
+        except Exception as exc:
+            raise FetchError(
+                f"全局核销明细检索失败 SO={wanted_so}: {type(exc).__name__}"
+            ) from exc
+        for row in hits:
+            v = pick_named(row, names, opts, MINGXI_COLS)
+            so = extract_so(v.get("订单NUM") or "")
+            if so != wanted_so:
+                continue
+            hx_day = (v.get("核销日期") or "").strip()[:10]
+            if not hx_day or hx_day >= target_day:
+                continue
+            ar = extract_ar(v.get("回款记录NUM") or "")
+            if not ar:
+                raise FetchError(
+                    f"全局核销明细读不到父回款号：SO={wanted_so} 核销日期={hx_day}"
+                )
+            record_id = (v.get("核销记录NUM") or "").strip()
+            if record_id:
+                if record_id in seen_record_ids:
+                    continue
+                seen_record_ids.add(record_id)
+            out.append([
+                record_id,
+                row.get("rowid") or "",
+                ar,
+                hx_day,
+                v.get("本次核销金额"),
+                v.get("本次核销金额本币"),
+                v.get("币种"),
+                v.get("汇率"),
+                so,
+                v.get("订单名称"),
+                v.get("是否已撤销"),
+            ])
+    return out
+
+
+def fetch_day(client: ZhiyunClient, day: str, out_dir: Path) -> dict:
+    """拉一天的四张表 + 摘要 json。返回计数摘要（无客户名/金额明细）。"""
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    hk_ctrls = client.controls(WS_HUIKUAN)
+    hk_opts = client.option_maps(hk_ctrls)
+    sales_cid = client.id_by_name(hk_ctrls, "销售")
+    cid_xiadan = client.id_by_name(hk_ctrls, REL_XIADAN)
+    cid_jiesuan = client.id_by_name(hk_ctrls, REL_JIESUAN)
+    cid_mingxi = client.id_by_name(hk_ctrls, REL_HEXIAO_MINGXI)
+    ws_xiadan = client.datasource_of(WS_HUIKUAN, REL_XIADAN)
+    ws_mingxi = client.datasource_of(WS_HUIKUAN, REL_HEXIAO_MINGXI)
+    ws_sodline = client.datasource_of(WS_HUIKUAN, REL_SODLINE)
+    if not cid_xiadan:
+        raise FetchError(f"回款记录里找不到「{REL_XIADAN}」关联字段——智云表结构变了，停下别猜")
+
+    hk_rows, hk_total = client.filter_rows_by_date(WS_HUIKUAN, F_HK["hexiao_date"], day)
+
+    # ── ① 回款记录 ────────────────────────────────────────────
+    hk_headers = [
+        "回款记录ID", "核销日期", "到账日期", "到账金额/原币", "到账金额/本币",
+        "手续费/原币", "原币币种", "回款类型", "核销状态", "开票客户", "销售名称", "rowid",
+        "仅历史累计父记录",
+    ]
+    hk_out: List[List[Any]] = []
+    type_counts: Dict[str, int] = {}
+    payments: List[dict] = []
+    for row in hk_rows:
+        ar = _plain(row.get(F_HK["ar"]))
+        htype = _plain(row.get(F_HK["huikuan_type"]), hk_opts.get(F_HK["huikuan_type"]))
+        type_counts[htype or "(空)"] = type_counts.get(htype or "(空)", 0) + 1
+        rec = {
+            "ar": ar,
+            "hexiao_date": _plain(row.get(F_HK["hexiao_date"])),
+            "arrival_date": _plain(row.get(F_HK["arrival_date"])),
+            "amount_orig": _plain(row.get(F_HK["amount_orig"])),
+            "amount_local": _plain(row.get(F_HK["amount_local"])),
+            "fee": _plain(row.get(F_HK["fee"])),
+            "currency": _plain(row.get(F_HK["currency"]), hk_opts.get(F_HK["currency"])),
+            "huikuan_type": htype,
+            "status": _plain(row.get(F_HK["status"]), hk_opts.get(F_HK["status"])),
+            "customer": _plain(row.get(F_HK["customer_txt"])) or _plain(row.get(F_HK["customer_rel"])),
+            "sales_name": _plain(row.get(sales_cid), hk_opts.get(sales_cid)) if sales_cid else "",
+            "rowid": row.get("rowid") or "",
+        }
+        payments.append(rec)
+        hk_out.append([rec[k] for k in (
+            "ar", "hexiao_date", "arrival_date", "amount_orig", "amount_local",
+            "fee", "currency", "huikuan_type", "status", "customer", "sales_name", "rowid")] + ["否"])
+
+    day_tag = day.replace("-", "")
+    # ── ② 下单栏（每笔 → SO + 交付额）+ ③ 同币种核销明细 ───────
+    xd_out: List[List[Any]] = []
+    mx_out: List[List[Any]] = []
+    mx_seen_record_ids = set()
+    all_so: List[str] = []
+    ars_without_orders: List[str] = []
+    settlement_recovered_ars: List[str] = []
+    settlement_rows_used = 0
+    delivery_date_cache: Dict[str, Tuple[str, str]] = {}
+    xiadan_ctrls = client.controls(ws_xiadan) if ws_xiadan else []
+
+    for rec in payments:
+        rid = str(rec.get("rowid") or "")
+        if not rid:
+            ars_without_orders.append(rec["ar"])
+            continue
+
+        xd_rows, xd_ctrls = client.relation_rows(WS_HUIKUAN, rid, cid_xiadan)
+        related = extract_related_orders(xd_rows, xd_ctrls, REL_XIADAN)
+        if not related and cid_jiesuan:
+            js_rows, js_ctrls = client.relation_rows(WS_HUIKUAN, rid, cid_jiesuan)
+            related = extract_related_orders(js_rows, js_ctrls, REL_JIESUAN)
+            if related:
+                settlement_recovered_ars.append(rec["ar"])
+                settlement_rows_used += len(related)
+        for v in related:
+            so = v["so"]
+            if so not in all_so:
+                all_so.append(so)
+            if not str(v.get("delivery_date") or "").strip():
+                if so not in delivery_date_cache:
+                    delivery_date_cache[so] = lookup_order_delivery_date(
+                        client, ws_xiadan, xiadan_ctrls, so
+                    )
+                v["delivery_date"], v["delivery_date_status"] = delivery_date_cache[so]
+            xd_out.append([
+                rec["ar"], so, v.get("written_off"), v.get("written_off_local"),
+                v.get("deliver"), v.get("rate"),
+                v.get("currency"), v.get("name"), v.get("delivery_date"),
+                v.get("delivery_date_status"), v.get("source"),
+            ])
+        if not related:
+            ars_without_orders.append(rec["ar"])
+
+        if cid_mingxi:
+            mx_rows, mx_ctrls = client.relation_rows(WS_HUIKUAN, rid, cid_mingxi)
+            mx_names, mx_opts = client.name_map(mx_ctrls), client.option_maps(mx_ctrls)
+            for r in mx_rows:
+                v = pick_named(r, mx_names, mx_opts, MINGXI_COLS)
+                so = extract_so(v.get("订单NUM") or "")
+                if not so:
+                    print(
+                        "WARN: 核销明细有一行读不出 SO；判定会把对应父回款挂起，不会猜测",
+                        file=sys.stderr,
+                    )
+                if so and so not in all_so:
+                    all_so.append(so)
+                out_row = [
+                    v.get("核销记录NUM"),
+                    r.get("rowid") or "",
+                    rec["ar"], v.get("核销日期") or rec["hexiao_date"],
+                    v.get("本次核销金额"), v.get("本次核销金额本币"),
+                    v.get("币种") or rec["currency"], v.get("汇率"), so,
+                    v.get("订单名称"), v.get("是否已撤销"),
+                ]
+                record_id = str(v.get("核销记录NUM") or "").strip()
+                if record_id:
+                    if record_id in mx_seen_record_ids:
+                        continue
+                    mx_seen_record_ids.add(record_id)
+                mx_out.append(out_row)
+
+    if all_so and not ws_mingxi:
+        raise FetchError(
+            "回款记录里找不到「订单同币种核销明细信息」的全局数据源，"
+            "无法按 SO 补取跨父回款历史核销，停下别猜累计回款"
+        )
+    historical_rows = historical_writeoffs_for_sos(
+        client, ws_mingxi, all_so, day
+    )
+    # 跨父AR历史核销也必须能按各自父到账额做超核销审计；把仅用于累计的
+    # 历史父记录一并保存，但分类器不会把它当目标日任务。
+    current_ars = {str(rec.get("ar") or "").strip() for rec in payments}
+    historical_ars = sorted({
+        str(row[2] or "").strip() for row in historical_rows
+        if str(row[2] or "").strip() and str(row[2] or "").strip() not in current_ars
+    })
+    for historical_ar in historical_ars:
+        hits = client.search_rows(WS_HUIKUAN, historical_ar)
+        exact = [
+            row for row in hits
+            if _plain(row.get(F_HK["ar"])) == historical_ar
+        ]
+        if len(exact) != 1:
+            raise FetchError(
+                f"历史核销父回款 {historical_ar} 无法唯一回读到账金额，"
+                "不能安全计算系统重复核销差额"
+            )
+        row = exact[0]
+        hk_out.append([
+            historical_ar,
+            _plain(row.get(F_HK["hexiao_date"])),
+            _plain(row.get(F_HK["arrival_date"])),
+            _plain(row.get(F_HK["amount_orig"])),
+            _plain(row.get(F_HK["amount_local"])),
+            _plain(row.get(F_HK["fee"])),
+            _plain(row.get(F_HK["currency"]), hk_opts.get(F_HK["currency"])),
+            _plain(row.get(F_HK["huikuan_type"]), hk_opts.get(F_HK["huikuan_type"])),
+            _plain(row.get(F_HK["status"]), hk_opts.get(F_HK["status"])),
+            _plain(row.get(F_HK["customer_txt"])) or _plain(row.get(F_HK["customer_rel"])),
+            _plain(row.get(sales_cid), hk_opts.get(sales_cid)) if sales_cid else "",
+            row.get("rowid") or "",
+            "是",
+        ])
+    historical_added = 0
+    for out_row in historical_rows:
+        record_id = str(out_row[0] or "").strip()
+        if record_id:
+            if record_id in mx_seen_record_ids:
+                continue
+            mx_seen_record_ids.add(record_id)
+        mx_out.append(out_row)
+        historical_added += 1
+
+    write_xlsx(out_dir / f"回款记录_{day_tag}.xlsx", hk_headers, hk_out)
+
+    write_xlsx(
+        out_dir / f"订单交付_{day_tag}.xlsx",
+        ["回款记录ID", "SO", "订单已核销金额", "订单已核销金额/本币",
+         "交付额/原币", "汇率", "结算币种", "订单名称", "项目交付日期",
+         "交付日期取数状态", "单号来源"],
+        xd_out,
+    )
+    write_xlsx(
+        out_dir / f"核销明细_{day_tag}.xlsx",
+        ["核销记录NUM", "rowid", "回款记录NUM", "核销日期", "本次核销金额",
+         "本次核销金额/本币", "币种", "汇率", "SO", "订单名称", "是否已撤销"],
+        mx_out,
+    )
+
+    # ── ④ 订单明细（SO → SOD + 逐 SOD 交付额）─────────────────
+    sod_out: List[List[Any]] = []
+    so_without_sod: List[str] = []
+    if ws_sodline and all_so:
+        sl_ctrls = client.controls(ws_sodline)
+        sl_names, sl_opts = client.name_map(sl_ctrls), client.option_maps(sl_ctrls)
+        for so in all_so:
+            try:
+                hits = client.search_rows(ws_sodline, so)
+            except Exception as e:
+                print(f"WARN: 订单明细检索失败 SO={so}: {type(e).__name__}", file=sys.stderr)
+                hits = []
+            n = 0
+            for r in hits:
+                v = pick_named(r, sl_names, sl_opts, SODLINE_COLS)
+                # 全文检索会带出订单名里含该串的别的单 → 必须精确过滤
+                if extract_so(v.get("SO") or "") != so:
+                    continue
+                sod = (v.get("SOD") or "").strip()
+                if not sod:
+                    continue
+                n += 1
+                sod_out.append([so, sod, v.get("交付额/原币"), v.get("币种"), v.get("项目状态")])
+            if n == 0:
+                so_without_sod.append(so)
+    elif all_so:
+        print(f"WARN: 找不到「{REL_SODLINE}」表，SOD 取不到", file=sys.stderr)
+        so_without_sod = list(all_so)
+
+    write_xlsx(
+        out_dir / f"订单明细_{day_tag}.xlsx",
+        ["SO", "SOD", "交付额/原币", "币种", "项目状态"],
+        sod_out,
+    )
+
+    summary = {
+        "day": day,
+        "export_schema_version": EXPORT_SCHEMA_VERSION,
+        "business_amount_policy": "ignore_fee_conditional_duplicate_writeoff_correction",
+        "架构": "单入口(回款记录·核销日期=T-1)+关联子表",
+        "回款记录笔数": len(hk_rows),
+        "回款记录_接口报总数": hk_total,
+        "下单行数": len(xd_out),
+        "结算回查行数": settlement_rows_used,
+        "从结算找回单号的AR数": len(set(settlement_recovered_ars)),
+        "涉及SO数": len(all_so),
+        "核销明细行数": len(mx_out),
+        "跨父回款历史核销补取行数": historical_added,
+        "订单明细SOD行数": len(sod_out),
+        "缺项目交付日期的SO": sorted({
+            str(row[1] or "").strip() for row in xd_out
+            if str(row[1] or "").strip() and not str(row[8] or "").strip()
+        }),
+        "回款类型分布": type_counts,
+        "无下单行的AR": ars_without_orders,
+        "查不到SOD的SO": so_without_sod,
+        "files": [
+            f"回款记录_{day_tag}.xlsx",
+            f"订单交付_{day_tag}.xlsx",
+            f"核销明细_{day_tag}.xlsx",
+            f"订单明细_{day_tag}.xlsx",
+        ],
+        "read_only": True,
+    }
+    (out_dir / f"取数摘要_{day_tag}.json").write_text(
+        json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    return summary
+
+
+def already_fetched(
+    out_dir: Path,
+    day: str,
+    *,
+    accept_unversioned: bool = False,
+) -> List[str]:
+    """
+    这天的智云四件套是否齐全且带当前取数版本标记。
+
+    默认不接受无版本摘要或旧版本摘要，避免代码更新后继续复用旧核销明细。
+    明确确认是本次新手导文件时，调用方可设置 accept_unversioned=True。
+    """
+    stamp = day.replace("-", "")
+    need = ("回款记录", "订单交付", "核销明细", "订单明细")
+    if not out_dir.is_dir():
+        return []
+    got = []
+    for key in need:
+        for p in out_dir.glob("*.xlsx"):
+            if p.name.startswith("~$"):
+                continue
+            if key in p.name and (stamp in p.name or day in p.name):
+                got.append(p.name)
+                break
+    if len(got) != 4:
+        return got
+
+    summary_path = out_dir / f"取数摘要_{stamp}.json"
+    if not summary_path.is_file():
+        return got if accept_unversioned else []
+    try:
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return got if accept_unversioned else []
+    if summary.get("export_schema_version") != EXPORT_SCHEMA_VERSION:
+        return got if accept_unversioned else []
+    return got
+
+
+def _saved_credentials() -> Tuple[str, str]:
+    """从 Windows 凭据库读取本机保存的智云测试账号。"""
+    try:
+        import keyring
+
+        user = (keyring.get_password(CREDENTIAL_SERVICE, "__default_username__") or "").strip()
+        pwd = (keyring.get_password(CREDENTIAL_SERVICE, user) or "").strip() if user else ""
+        return user, pwd
+    except Exception:
+        return "", ""
+
+
+def resolve_credentials(args) -> Tuple[str, str]:
+    user = (args.user or os.environ.get("ZHIYUN_USER") or "").strip()
+    pwd = (args.password or os.environ.get("ZHIYUN_PASS") or "").strip()
+    if args.cookie_only:
+        return "", ""
+    saved_user, saved_pwd = _saved_credentials()
+    if not user:
+        user = saved_user
+    if not pwd and user == saved_user:
+        pwd = saved_pwd
+    try:
+        if not user:
+            user = input("智云账号（邮箱/手机）: ").strip()
+        if not pwd:
+            pwd = getpass.getpass("智云密码（不回显）: ")
+    except (EOFError, KeyboardInterrupt):
+        raise SystemExit(
+            "ERROR: 没有可用的智云登录凭据。请先把测试账号保存到 Windows 凭据库，"
+            "或在交互终端输入一次。"
+        )
+    if not user or not pwd:
+        raise SystemExit("ERROR: 需要账号和密码（或改用 --cookie-only + MD_PSS_ID）")
+    return user, pwd
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    ap = argparse.ArgumentParser(
+        description="智云只读取数（单入口：回款记录按核销日期 + 关联子表）"
+    )
+    ap.add_argument(
+        "--date", "--hexiao-date", dest="date", default="yesterday",
+        help="**核销日期** YYYY-MM-DD / yesterday / last-workday（不是到账日期）",
+    )
+    ap.add_argument(
+        "--skip-gap-check", action="store_true",
+        help="不查漏天（默认会查：有从没跑过的核销日就先报出来）",
+    )
+    ap.add_argument(
+        "--force", action="store_true",
+        help="这天的四件套已在 01_智云导出/ 里也强制重新取一遍",
+    )
+    ap.add_argument(
+        "--accept-unversioned-existing",
+        action="store_true",
+        help="明确接受没有当前取数版本标记的手工四件套；默认禁止复用旧取数文件",
+    )
+    ap.add_argument("--workspace", default="", help="技能工作区根（含 01_智云导出）")
+    ap.add_argument("--out", default="", help="直接指定导出目录（优先于 workspace）")
+    ap.add_argument("--base-url", default=os.environ.get("ZHIYUN_BASE", BASE_DEFAULT))
+    ap.add_argument("--user", default="", help="账号；也可用环境变量 ZHIYUN_USER")
+    ap.add_argument(
+        "--password", default="",
+        help="密码（不推荐写在命令行历史）；优先用 ZHIYUN_PASS 或交互 getpass",
+    )
+    ap.add_argument("--cookie-only", action="store_true", help="不登录，只用 MD_PSS_ID")
+    ap.add_argument("--account-id", default=os.environ.get("ZHIYUN_ACCOUNT_ID", ""))
+    ap.add_argument("--headed", action="store_true", help="有头浏览器登录（调试）")
+    args = ap.parse_args(argv)
+
+    day = resolve_date(args.date)
+    if args.out:
+        out_dir = Path(args.out)
+    elif args.workspace:
+        out_dir = Path(args.workspace) / "01_智云导出"
+    else:
+        out_dir = Path(__file__).resolve().parent.parent / "工作区" / "01_智云导出"
+
+    # ① 把"跑哪天"说死了再登录取数（相对说法解析成具体日期，供 agent 复述给她确认）
+    print(f"★ 本次取的是**核销日期 = {day}** 的到账（销售在这一天核销的；不是到账日期）")
+
+    # ② 漏天检查：`--date yesterday` 只看昨天，她请假/周末/系统故障跳过的那几天
+    #    没有任何机制发现。漏一天 = 那天的到账永远不会回填，而且事后看不出来。
+    workspace = out_dir.parent
+    if not args.skip_gap_check:
+        try:
+            sys.path.insert(0, str(Path(__file__).resolve().parent))
+            import batch_ledger
+            import common as _c
+
+            info = batch_ledger.find_gaps(workspace, through=_c.norm_date(day))
+            gaps = [g for g in info["gaps"] if g.isoformat() != day]
+            if gaps:
+                print("⚠ 这几个核销日**从来没跑过**（会漏掉那天的到账）：")
+                for g in gaps[:10]:
+                    print(f"     · {_c.date_cn(g)}")
+                if len(gaps) > 10:
+                    print(f"     …另有 {len(gaps) - 10} 天")
+                print("   → 一天一批补，从最早那天开始：--date <那天>。别几天合成一批。")
+        except Exception as e:
+            print(f"WARN: 漏天检查跳过（{type(e).__name__}）", file=sys.stderr)
+
+    # ③ 只有当前版本四件套才跳过；旧版/无版本文件默认重新抓取。
+    existing_any_version = already_fetched(
+        out_dir,
+        day,
+        accept_unversioned=True,
+    )
+    have = already_fetched(
+        out_dir,
+        day,
+        accept_unversioned=args.accept_unversioned_existing,
+    )
+    if (
+        len(existing_any_version) == 4
+        and len(have) != 4
+        and not args.accept_unversioned_existing
+    ):
+        print(
+            f"⚠ {day} 已有四件套，但没有当前取数版本 "
+            f"{EXPORT_SCHEMA_VERSION}；本次禁止复用，立即重新抓取。"
+        )
+    if len(have) == 4 and not args.force:
+        print(
+            f"✅ {day} 的智云四件套已经在 {out_dir} 里了，**不用再取数**：\n   "
+            + "\n   ".join(have)
+            + "\n👉 直接往下跑判定即可（要强制重取加 --force）"
+        )
+        return 0
+    if have:
+        print(f"注意：{out_dir} 里已有 {len(have)}/4 份该日文件，缺的那几份会重新取。")
+
+    cookie = (os.environ.get("MD_PSS_ID") or "").strip()
+    account_id = (args.account_id or "").strip()
+
+    if not cookie:
+        user, pwd = resolve_credentials(args)
+        print(f"正在登录智云 {args.base_url} …（密码不打印）")
+        try:
+            cookie, acct = login_with_password(args.base_url, user, pwd, headless=not args.headed)
+        except LoginError as e:
+            print(f"ERROR: 登录失败 — {e}", file=sys.stderr)
+            return 2
+        if acct and not account_id:
+            account_id = acct
+        del pwd
+        print("登录成功，开始只读取数…")
+
+    try:
+        client = ZhiyunClient(args.base_url, cookie, account_id=account_id)
+        try:
+            client.controls(WS_HUIKUAN)
+        except Exception as e:
+            print(f"ERROR: 取字段失败（内网不通/无权限？）: {e}", file=sys.stderr)
+            return 2
+        summary = fetch_day(client, day, out_dir)
+    finally:
+        cookie = ""
+        del cookie
+
+    print("✅ 智云只读取数完成（未写系统）")
+    print(f"📁 核销日期: {day}   目录: {out_dir.resolve()}")
+
+    # 空批要说明白：「那天销售一笔都没核销」和「取数取失败了」看着都是 0 笔，
+    # 但一个是收工、一个是事故。不区分她会以为跑过了就不管了。
+    if not summary["回款记录笔数"]:
+        print(
+            f"ℹ️ {day} 这天**一笔核销都没有**（不是出错）。常见于周末、假期、"
+            "或销售当天没来得及核。这天就算处理完了，已记进跑批台账。"
+        )
+        try:
+            sys.path.insert(0, str(Path(__file__).resolve().parent))
+            import batch_ledger
+            import common as _c
+
+            batch_ledger.record(
+                out_dir.parent, _c.norm_date(day), "classified", payments=0,
+                note="空批：那天没有任何核销",
+            )
+        except Exception:
+            pass
+        return 0
+
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import batch_ledger
+        import common as _c
+
+        batch_ledger.record(
+            out_dir.parent, _c.norm_date(day), "fetched",
+            payments=summary["回款记录笔数"],
+        )
+    except Exception:
+        pass
+    print(
+        f"   回款记录 {summary['回款记录笔数']} 笔 · 订单关联 {summary['下单行数']} 行"
+        f"（结算回查 {summary.get('结算回查行数', 0)} 行）"
+        f"（{summary['涉及SO数']} 个 SO）· 核销明细 {summary['核销明细行数']} 行"
+        f" · 订单明细 {summary['订单明细SOD行数']} 个 SOD"
+    )
+    if summary.get("跨父回款历史核销补取行数"):
+        print(
+            f"   历史累计：跨父回款补取 "
+            f"{summary['跨父回款历史核销补取行数']} 行"
+        )
+    print(f"   回款类型分布: {summary['回款类型分布']}")
+    if summary["无下单行的AR"]:
+        print(f"   ⚠ 有 {len(summary['无下单行的AR'])} 笔到账在下单和结算中都没抓到单号，判定会报异常不会漏")
+    if summary["查不到SOD的SO"]:
+        print(f"   ⚠ 有 {len(summary['查不到SOD的SO'])} 个 SO 查不到 SOD，将退化成按 SO 匹配")
+    print(
+        f"👉 下一步：把盈亏/流转表副本放进 02_我的表副本/，"
+        f"再跑判定（核销日期 {day}）"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
