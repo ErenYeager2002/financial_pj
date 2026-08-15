@@ -6,6 +6,7 @@ import { DayPicker, getDefaultClassNames, type DayButton, type Locale } from 're
 import { cn } from '@/lib/utils';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { IconChevronLeft, IconChevronRight, IconChevronDown } from '@tabler/icons-react';
+import { zhCN } from 'date-fns/locale';
 
 function Calendar({
   className,
@@ -13,7 +14,7 @@ function Calendar({
   showOutsideDays = true,
   captionLayout = 'label',
   buttonVariant = 'ghost',
-  locale,
+  locale = zhCN,
   formatters,
   components,
   ...props

@@ -16,10 +16,10 @@ import { Separator } from '@/components/ui/separator';
 // --- Schema ---
 
 const productFormSchema = z.object({
-  name: z.string().min(2, 'Product name must be at least 2 characters'),
-  category: z.string().min(1, 'Please select a category'),
-  price: z.number({ error: 'Price is required' }).min(0.01, 'Price must be greater than 0'),
-  description: z.string().min(10, 'Description must be at least 10 characters')
+  name: z.string().min(2, '产品名称至少需要 2 个字符。'),
+  category: z.string().min(1, '请选择产品分类。'),
+  price: z.number({ error: '请输入价格。' }).min(0.01, '价格必须大于 0。'),
+  description: z.string().min(10, '产品描述至少需要 10 个字符。')
 });
 
 const stepSchemas = [
@@ -32,10 +32,10 @@ const stepSchemas = [
 ];
 
 const categoryOptions = [
-  { value: 'beauty', label: 'Beauty Products' },
-  { value: 'electronics', label: 'Electronics' },
-  { value: 'home', label: 'Home & Garden' },
-  { value: 'sports', label: 'Sports & Outdoors' }
+  { value: 'beauty', label: '美妆产品' },
+  { value: 'electronics', label: '电子产品' },
+  { value: 'home', label: '家居园艺' },
+  { value: 'sports', label: '户外运动' }
 ];
 
 // --- Review summary (reads form values) ---
@@ -55,19 +55,21 @@ function ReviewSummary({
       <Separator />
       <div className='grid gap-3'>
         <div>
-          <p className='text-muted-foreground text-xs font-medium uppercase'>Name</p>
+          <p className='text-muted-foreground text-xs font-medium uppercase'>名称</p>
           <p className='text-sm'>{values.name || '—'}</p>
         </div>
         <div>
-          <p className='text-muted-foreground text-xs font-medium uppercase'>Category</p>
-          <p className='text-sm capitalize'>{values.category || '—'}</p>
+          <p className='text-muted-foreground text-xs font-medium uppercase'>分类</p>
+          <p className='text-sm capitalize'>
+            {categoryOptions.find((option) => option.value === values.category)?.label || '—'}
+          </p>
         </div>
         <div>
-          <p className='text-muted-foreground text-xs font-medium uppercase'>Price</p>
+          <p className='text-muted-foreground text-xs font-medium uppercase'>价格</p>
           <p className='text-sm'>{values.price != null ? `$${values.price}` : '—'}</p>
         </div>
         <div>
-          <p className='text-muted-foreground text-xs font-medium uppercase'>Description</p>
+          <p className='text-muted-foreground text-xs font-medium uppercase'>描述</p>
           <p className='text-sm'>{values.description || '—'}</p>
         </div>
       </div>
@@ -107,7 +109,7 @@ export default function MultiStepProductForm() {
       onDynamicAsyncDebounceMs: 500
     },
     onSubmit: () => {
-      toast.success('Product created successfully!');
+      toast.success('产品创建成功！');
     }
   });
 
@@ -136,7 +138,7 @@ export default function MultiStepProductForm() {
       <div className='flex flex-col gap-2 pt-3'>
         <div className='flex flex-col items-center justify-start gap-1'>
           <span className='text-muted-foreground text-sm'>
-            Step {currentStep} of {totalSteps}
+            第 {currentStep} 步，共 {totalSteps} 步
           </span>
           <Progress value={(currentStep / totalSteps) * 100} />
         </div>
@@ -152,17 +154,13 @@ export default function MultiStepProductForm() {
           >
             {currentStep === 1 && (
               <FieldGroup className='space-y-4'>
-                <h3 className='text-lg font-semibold'>Basic Info</h3>
-                <FieldDescription>Enter the product name, category, and price.</FieldDescription>
+                <h3 className='text-lg font-semibold'>基本信息</h3>
+                <FieldDescription>填写产品名称、分类和价格。</FieldDescription>
 
                 <form.AppField
                   name='name'
                   children={(field) => (
-                    <field.TextField
-                      label='Product Name'
-                      required
-                      placeholder='Enter product name'
-                    />
+                    <field.TextField label='产品名称' required placeholder='请输入产品名称' />
                   )}
                 />
 
@@ -170,10 +168,10 @@ export default function MultiStepProductForm() {
                   name='category'
                   children={(field) => (
                     <field.SelectField
-                      label='Category'
+                      label='产品分类'
                       required
                       options={categoryOptions}
-                      placeholder='Select category'
+                      placeholder='请选择分类'
                     />
                   )}
                 />
@@ -182,12 +180,12 @@ export default function MultiStepProductForm() {
                   name='price'
                   children={(field) => (
                     <field.TextField
-                      label='Price'
+                      label='价格'
                       required
                       type='number'
                       min={0}
                       step={0.01}
-                      placeholder='Enter price'
+                      placeholder='请输入价格'
                     />
                   )}
                 />
@@ -196,16 +194,16 @@ export default function MultiStepProductForm() {
 
             {currentStep === 2 && (
               <FieldGroup className='space-y-4'>
-                <h3 className='text-lg font-semibold'>Details</h3>
-                <FieldDescription>Add a detailed product description.</FieldDescription>
+                <h3 className='text-lg font-semibold'>详细信息</h3>
+                <FieldDescription>填写产品的详细描述。</FieldDescription>
 
                 <form.AppField
                   name='description'
                   children={(field) => (
                     <field.TextareaField
-                      label='Description'
+                      label='产品描述'
                       required
-                      placeholder='Enter product description'
+                      placeholder='请输入产品描述'
                       maxLength={500}
                       rows={5}
                     />
@@ -216,8 +214,8 @@ export default function MultiStepProductForm() {
 
             {currentStep === 3 && (
               <div className='space-y-4'>
-                <h3 className='text-lg font-semibold'>Review & Submit</h3>
-                <FieldDescription>Review the details below before submitting.</FieldDescription>
+                <h3 className='text-lg font-semibold'>确认并提交</h3>
+                <FieldDescription>提交前请核对以下信息。</FieldDescription>
                 <ReviewSummary values={formValues} />
               </div>
             )}
@@ -232,7 +230,7 @@ export default function MultiStepProductForm() {
             disabled={isFirstStep}
             onClick={() => handleCancelOrBack({ onBack: () => {} })}
           >
-            <Icons.chevronLeft /> Previous
+            <Icons.chevronLeft /> 上一步
           </Button>
           <div className='flex w-full items-center justify-end gap-3 pt-3'>
             {!isDefault && (
@@ -243,14 +241,14 @@ export default function MultiStepProductForm() {
                 variant='outline'
                 size='sm'
               >
-                Reset
+                重置
               </Button>
             )}
             {step.isCompleted ? (
-              <Button type='submit'>Submit</Button>
+              <Button type='submit'>提交</Button>
             ) : (
               <Button size='sm' variant='ghost' type='button' onClick={() => void handleNext()}>
-                Next <Icons.chevronRight />
+                下一步 <Icons.chevronRight />
               </Button>
             )}
           </div>

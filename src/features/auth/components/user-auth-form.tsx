@@ -5,10 +5,9 @@ import { useAppForm } from '@/lib/form';
 import { useTransition } from 'react';
 import { toast } from 'sonner';
 import * as z from 'zod';
-import GithubSignInButton from './github-auth-button';
 
 const formSchema = z.object({
-  email: z.string().email({ message: 'Enter a valid email address' })
+  email: z.string().email({ message: '请输入有效的邮箱地址。' })
 });
 
 export default function UserAuthForm() {
@@ -23,7 +22,7 @@ export default function UserAuthForm() {
     },
     onSubmit: () => {
       startTransition(() => {
-        toast.success('Signed In Successfully!');
+        toast.success('登录成功！');
       });
     }
   });
@@ -42,16 +41,16 @@ export default function UserAuthForm() {
             name='email'
             children={(field) => (
               <field.TextField
-                label='Email'
+                label='邮箱'
                 type='email'
-                placeholder='Enter your email...'
+                placeholder='请输入邮箱地址...'
                 disabled={loading}
               />
             )}
           />
         </FieldGroup>
         <LoadingButton loading={loading} type='submit' className='mt-2 ml-auto w-full'>
-          Continue With Email
+          使用邮箱继续
         </LoadingButton>
       </form>
       <div className='relative'>
@@ -59,10 +58,9 @@ export default function UserAuthForm() {
           <span className='w-full border-t' />
         </div>
         <div className='relative flex justify-center text-xs uppercase'>
-          <span className='bg-background text-muted-foreground px-2'>Or continue with</span>
+          <span className='bg-background text-muted-foreground px-2'>其他登录方式</span>
         </div>
       </div>
-      <GithubSignInButton />
     </>
   );
 }

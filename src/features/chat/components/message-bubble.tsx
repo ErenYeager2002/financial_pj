@@ -22,7 +22,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
       transition={{ duration: 0.28, ease: 'easeOut' }}
       className='flex flex-col gap-1'
       role='group'
-      aria-label={message.author + ' at ' + message.timestamp}
+      aria-label={`${message.author}，${message.timestamp}`}
     >
       <div
         className={cn(

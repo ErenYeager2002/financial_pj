@@ -141,7 +141,7 @@ export function DataTableSliderFilter<TData>({ column, title }: DataTableSliderF
           </p>
           <div className='flex items-center gap-4'>
             <Label htmlFor={`${id}-from`} className='sr-only'>
-              From
+              从
             </Label>
             <div className='relative'>
               <Input
@@ -165,7 +165,7 @@ export function DataTableSliderFilter<TData>({ column, title }: DataTableSliderF
               )}
             </div>
             <Label htmlFor={`${id}-to`} className='sr-only'>
-              to
+              到
             </Label>
             <div className='relative'>
               <Input
@@ -190,7 +190,7 @@ export function DataTableSliderFilter<TData>({ column, title }: DataTableSliderF
             </div>
           </div>
           <Label htmlFor={`${id}-slider`} className='sr-only'>
-            {title} slider
+            {title}范围滑块
           </Label>
           <Slider
             id={`${id}-slider`}
@@ -201,8 +201,8 @@ export function DataTableSliderFilter<TData>({ column, title }: DataTableSliderF
             onValueChange={onSliderValueChange}
           />
         </div>
-        <Button aria-label={`Clear ${title} filter`} variant='outline' size='sm' onClick={onReset}>
-          Clear
+        <Button aria-label={`清除${title ?? ''}筛选`} variant='outline' size='sm' onClick={onReset}>
+          清除
         </Button>
       </PopoverContent>
     </Popover>

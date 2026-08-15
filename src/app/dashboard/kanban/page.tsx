@@ -1,7 +1,7 @@
 import KanbanViewPage from '@/features/kanban/components/kanban-view-page';
 
 export const metadata = {
-  title: 'Dashboard : Kanban view'
+  title: '任务看板'
 };
 
 export default function page() {

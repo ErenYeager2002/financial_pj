@@ -84,12 +84,12 @@ const getFormattedFileType = (fileType: string, fileName: string): string => {
 
   if (fileType.includes('msword') || fileType.includes('wordprocessing')) return 'DOC';
 
-  if (fileType.includes('spreadsheet') || fileType.includes('excel')) return 'SPREADSHEET';
+  if (fileType.includes('spreadsheet') || fileType.includes('excel')) return '表格';
 
   const typePart = fileType.split('/')[1];
 
   if (!typePart || typePart === 'octet-stream') {
-    return ext || 'FILE';
+    return ext || '文件';
   }
 
   const cleanType = typePart
@@ -144,7 +144,7 @@ export const FilePreview: FC<FilePreviewProps> = ({
                   'scale-75 opacity-0 transition-all duration-150 group-hover/file:scale-100 group-hover/file:opacity-100',
                   'bg-muted-foreground/60 hover:bg-muted-foreground/80 cursor-pointer'
                 )}
-                aria-label={`Remove ${file.name}`}
+                aria-label={`移除 ${file.name}`}
               >
                 <Icons.close size={10} className='text-white' />
               </button>

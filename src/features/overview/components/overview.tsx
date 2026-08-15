@@ -21,23 +21,23 @@ export default function OverViewPage() {
     <PageContainer>
       <div className='flex flex-1 flex-col space-y-2'>
         <div className='flex items-center justify-between space-y-2'>
-          <h2 className='text-2xl font-bold tracking-tight'>Hi, Welcome back 👋</h2>
+          <h2 className='text-2xl font-bold tracking-tight'>欢迎回来 👋</h2>
           <div className='hidden items-center space-x-2 md:flex'>
-            <Button>Download</Button>
+            <Button>下载报表</Button>
           </div>
         </div>
         <Tabs defaultValue='overview' className='space-y-4'>
           <TabsList>
-            <TabsTrigger value='overview'>Overview</TabsTrigger>
+            <TabsTrigger value='overview'>概览</TabsTrigger>
             <TabsTrigger value='analytics' disabled>
-              Analytics
+              数据分析
             </TabsTrigger>
           </TabsList>
           <TabsContent value='overview' className='space-y-4'>
             <div className='*:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card dark:*:data-[slot=card]:bg-card grid grid-cols-1 gap-4 px-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:shadow-xs lg:px-6 @xl/main:grid-cols-2 @5xl/main:grid-cols-4'>
               <Card className='@container/card'>
                 <CardHeader>
-                  <CardDescription>Total Revenue</CardDescription>
+                  <CardDescription>总收入</CardDescription>
                   <CardTitle className='text-2xl font-semibold tabular-nums @[250px]/card:text-3xl'>
                     $1,250.00
                   </CardTitle>
@@ -50,14 +50,14 @@ export default function OverViewPage() {
                 </CardHeader>
                 <CardFooter className='flex-col items-start gap-1.5 text-sm'>
                   <div className='line-clamp-1 flex gap-2 font-medium'>
-                    Trending up this month <Icons.trendingUp className='size-4' />
+                    本月收入持续增长 <Icons.trendingUp className='size-4' />
                   </div>
-                  <div className='text-muted-foreground'>Visitors for the last 6 months</div>
+                  <div className='text-muted-foreground'>最近 6 个月的访问情况</div>
                 </CardFooter>
               </Card>
               <Card className='@container/card'>
                 <CardHeader>
-                  <CardDescription>New Customers</CardDescription>
+                  <CardDescription>新增客户</CardDescription>
                   <CardTitle className='text-2xl font-semibold tabular-nums @[250px]/card:text-3xl'>
                     1,234
                   </CardTitle>
@@ -70,14 +70,14 @@ export default function OverViewPage() {
                 </CardHeader>
                 <CardFooter className='flex-col items-start gap-1.5 text-sm'>
                   <div className='line-clamp-1 flex gap-2 font-medium'>
-                    Down 20% this period <Icons.trendingDown className='size-4' />
+                    本周期下降 20% <Icons.trendingDown className='size-4' />
                   </div>
-                  <div className='text-muted-foreground'>Acquisition needs attention</div>
+                  <div className='text-muted-foreground'>需要关注客户获取情况</div>
                 </CardFooter>
               </Card>
               <Card className='@container/card'>
                 <CardHeader>
-                  <CardDescription>Active Accounts</CardDescription>
+                  <CardDescription>活跃账号</CardDescription>
                   <CardTitle className='text-2xl font-semibold tabular-nums @[250px]/card:text-3xl'>
                     45,678
                   </CardTitle>
@@ -90,14 +90,14 @@ export default function OverViewPage() {
                 </CardHeader>
                 <CardFooter className='flex-col items-start gap-1.5 text-sm'>
                   <div className='line-clamp-1 flex gap-2 font-medium'>
-                    Strong user retention <Icons.trendingUp className='size-4' />
+                    用户留存表现良好 <Icons.trendingUp className='size-4' />
                   </div>
-                  <div className='text-muted-foreground'>Engagement exceed targets</div>
+                  <div className='text-muted-foreground'>活跃度超过预期目标</div>
                 </CardFooter>
               </Card>
               <Card className='@container/card'>
                 <CardHeader>
-                  <CardDescription>Growth Rate</CardDescription>
+                  <CardDescription>增长率</CardDescription>
                   <CardTitle className='text-2xl font-semibold tabular-nums @[250px]/card:text-3xl'>
                     4.5%
                   </CardTitle>
@@ -110,9 +110,9 @@ export default function OverViewPage() {
                 </CardHeader>
                 <CardFooter className='flex-col items-start gap-1.5 text-sm'>
                   <div className='line-clamp-1 flex gap-2 font-medium'>
-                    Steady performance increase <Icons.trendingUp className='size-4' />
+                    业务表现稳步提升 <Icons.trendingUp className='size-4' />
                   </div>
-                  <div className='text-muted-foreground'>Meets growth projections</div>
+                  <div className='text-muted-foreground'>达到预期增长目标</div>
                 </CardFooter>
               </Card>
             </div>

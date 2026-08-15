@@ -7,7 +7,7 @@ import { IconChevronRight, IconDots } from '@tabler/icons-react';
 
 function Breadcrumb({ className, ...props }: React.ComponentProps<'nav'>) {
   return (
-    <nav aria-label='breadcrumb' data-slot='breadcrumb' className={cn(className)} {...props} />
+    <nav aria-label='面包屑导航' data-slot='breadcrumb' className={cn(className)} {...props} />
   );
 }
 
@@ -87,7 +87,7 @@ function BreadcrumbEllipsis({ className, ...props }: React.ComponentProps<'span'
       {...props}
     >
       <IconDots />
-      <span className='sr-only'>More</span>
+      <span className='sr-only'>更多</span>
     </span>
   );
 }

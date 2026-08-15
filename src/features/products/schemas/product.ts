@@ -6,16 +6,16 @@ const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/web
 export const productSchema = z.object({
   image: z
     .any()
-    .refine((files) => files?.length == 1, 'Image is required.')
-    .refine((files) => files?.[0]?.size <= MAX_FILE_SIZE, 'Max file size is 5MB.')
+    .refine((files) => files?.length == 1, '请上传产品图片。')
+    .refine((files) => files?.[0]?.size <= MAX_FILE_SIZE, '文件大小不能超过 5 MB。')
     .refine(
       (files) => ACCEPTED_IMAGE_TYPES.includes(files?.[0]?.type),
-      '.jpg, .jpeg, .png and .webp files are accepted.'
+      '仅支持 .jpg、.jpeg、.png 和 .webp 格式。'
     ),
-  name: z.string().min(2, 'Product name must be at least 2 characters.'),
-  category: z.string().min(1, 'Please select a category'),
-  price: z.number({ message: 'Price is required' }),
-  description: z.string().min(10, 'Description must be at least 10 characters.')
+  name: z.string().min(2, '产品名称至少需要 2 个字符。'),
+  category: z.string().min(1, '请选择产品分类。'),
+  price: z.number({ message: '请输入价格。' }),
+  description: z.string().min(10, '产品描述至少需要 10 个字符。')
 });
 
 export type ProductFormValues = {

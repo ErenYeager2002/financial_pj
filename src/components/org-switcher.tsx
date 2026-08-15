@@ -75,8 +75,8 @@ export function OrgSwitcher() {
                   : 'visible max-w-full opacity-100'
               }`}
             >
-              <span className='truncate font-medium'>Loading...</span>
-              <span className='text-muted-foreground truncate text-xs'>Organizations</span>
+              <span className='truncate font-medium'>加载中...</span>
+              <span className='text-muted-foreground truncate text-xs'>企业空间</span>
             </div>
           </SidebarMenuButton>
         </SidebarMenuItem>
@@ -104,8 +104,8 @@ export function OrgSwitcher() {
                   : 'visible max-w-full opacity-100'
               }`}
             >
-              <span className='truncate font-medium'>Create organization</span>
-              <span className='text-muted-foreground truncate text-xs'>Get started</span>
+              <span className='truncate font-medium'>创建企业空间</span>
+              <span className='text-muted-foreground truncate text-xs'>开始使用</span>
             </div>
             <Icons.chevronsUpDown
               className={`ml-auto transition-all duration-200 ease-in-out ${
@@ -162,7 +162,7 @@ export function OrgSwitcher() {
               <span className='truncate font-medium'>{displayOrganization.name}</span>
               <span className='text-muted-foreground truncate text-xs'>
                 {userMemberships.data.find((m) => m.organization.id === displayOrganization.id)
-                  ?.role || 'Organization'}
+                  ?.role || '企业空间'}
               </span>
             </div>
             <Icons.chevronsUpDown
@@ -181,7 +181,7 @@ export function OrgSwitcher() {
           >
             <DropdownMenuGroup>
               <DropdownMenuLabel className='text-muted-foreground text-xs'>
-                Organizations
+                企业空间
               </DropdownMenuLabel>
             </DropdownMenuGroup>
             <DropdownMenuGroup>
@@ -224,7 +224,7 @@ export function OrgSwitcher() {
                 <div className='flex size-6 items-center justify-center rounded-md border bg-transparent'>
                   <Icons.add className='size-4' />
                 </div>
-                <div className='text-muted-foreground font-medium'>Add organization</div>
+                <div className='text-muted-foreground font-medium'>添加企业空间</div>
               </DropdownMenuItem>
             </DropdownMenuGroup>
           </DropdownMenuContent>

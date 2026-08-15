@@ -26,22 +26,22 @@ export default function ProductForm({
   const createMutation = useMutation({
     ...createProductMutation,
     onSuccess: () => {
-      toast.success('Product created');
+      toast.success('产品已创建');
       router.push('/dashboard/product');
     },
     onError: () => {
-      toast.error("Couldn't create product. Try again.");
+      toast.error('产品创建失败，请重试。');
     }
   });
 
   const updateMutation = useMutation({
     ...updateProductMutation,
     onSuccess: () => {
-      toast.success('Product updated');
+      toast.success('产品已更新');
       router.push('/dashboard/product');
     },
     onError: () => {
-      toast.error("Couldn't update product. Try again.");
+      toast.error('产品更新失败，请重试。');
     }
   });
 
@@ -92,8 +92,8 @@ export default function ProductForm({
               name='image'
               children={(field) => (
                 <field.FileUploadField
-                  label='Product Image'
-                  description='Upload a product image'
+                  label='产品图片'
+                  description='上传产品图片'
                   maxSize={5 * 1024 * 1024}
                   maxFiles={4}
                 />
@@ -104,7 +104,7 @@ export default function ProductForm({
               <form.AppField
                 name='name'
                 children={(field) => (
-                  <field.TextField label='Product Name' required placeholder='Enter product name' />
+                  <field.TextField label='产品名称' required placeholder='请输入产品名称' />
                 )}
               />
 
@@ -112,10 +112,10 @@ export default function ProductForm({
                 name='category'
                 children={(field) => (
                   <field.SelectField
-                    label='Category'
+                    label='产品分类'
                     required
                     options={categoryOptions}
-                    placeholder='Select category'
+                    placeholder='请选择分类'
                   />
                 )}
               />
@@ -124,12 +124,12 @@ export default function ProductForm({
                 name='price'
                 children={(field) => (
                   <field.TextField
-                    label='Price'
+                    label='价格'
                     required
                     type='number'
                     min={0}
                     step={0.01}
-                    placeholder='Enter price'
+                    placeholder='请输入价格'
                   />
                 )}
               />
@@ -139,9 +139,9 @@ export default function ProductForm({
               name='description'
               children={(field) => (
                 <field.TextareaField
-                  label='Description'
+                  label='产品描述'
                   required
-                  placeholder='Enter product description'
+                  placeholder='请输入产品描述'
                   maxLength={500}
                   rows={4}
                 />
@@ -151,10 +151,10 @@ export default function ProductForm({
 
           <div className='flex justify-end gap-2'>
             <Button type='button' variant='outline' onClick={() => router.back()}>
-              Cancel
+              取消
             </Button>
             <LoadingButton loading={isPending} type='submit'>
-              {isEdit ? 'Update Product' : 'Add Product'}
+              {isEdit ? '更新产品' : '新增产品'}
             </LoadingButton>
           </div>
         </form>

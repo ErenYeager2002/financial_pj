@@ -22,19 +22,19 @@ export const THEMES = [
     value: 'vercel'
   },
   {
-    name: 'Mono',
+    name: '单色',
     value: 'mono'
   },
   {
-    name: 'Notebook',
+    name: '笔记本',
     value: 'notebook'
   },
   {
-    name: 'Light Green',
+    name: '浅绿色',
     value: 'light-green'
   },
   {
-    name: 'Zen',
+    name: '简约',
     value: 'zen'
   },
   {

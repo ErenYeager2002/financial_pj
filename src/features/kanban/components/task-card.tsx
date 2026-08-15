@@ -29,7 +29,7 @@ export function TaskCard({ task, ...props }: TaskCardProps) {
             }
             className='pointer-events-none h-5 rounded-sm px-1.5 text-[11px] capitalize'
           >
-            {task.priority}
+            {task.priority === 'high' ? '高' : task.priority === 'medium' ? '中' : '低'}
           </Badge>
         </div>
         <div className='text-muted-foreground flex items-center justify-between text-xs'>

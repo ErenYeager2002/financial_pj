@@ -22,15 +22,15 @@ export type DemoUIMessage = UIMessage<unknown, Record<string, never>, Tools>;
  * script shows off reasoning, a tool call, and streamed text across two turns.
  */
 export const demoChat = createChat<unknown, Record<string, never>, Tools>()
-  .user('How did revenue do last month, and what should I focus on next?')
+  .user('上个月的收入表现如何？接下来应该重点关注什么？')
   .sleep(500)
   .assistant(({ writer }) => {
     writer.reasoning(
-      "The user is asking two things — last month's revenue trend and a recommendation. I'll pull the numbers from the metrics tool first, then base the suggestion on what the data shows."
+      '用户询问上月收入趋势和后续建议。我先从指标工具获取数据，再根据结果给出建议。'
     );
     writer
       .tool('getRevenue', {
-        title: 'Fetching revenue metrics',
+        title: '正在获取收入指标',
         input: { period: 'last-month' }
       })
       .sleep(900)
@@ -38,21 +38,19 @@ export const demoChat = createChat<unknown, Record<string, never>, Tools>()
         period: 'last-month',
         revenue: 1250,
         changePct: 12.5,
-        topDriver: 'returning customers'
+        topDriver: '回头客'
       });
-    writer.text(
-      'Last month you brought in $1,250 — up 12.5% from the month before, so revenue is clearly trending up. '
-    );
-    writer.text('Most of that growth came from returning customers.');
+    writer.text('上个月收入为 1,250 美元，较前一个月增长 12.5%，收入保持上升趋势。');
+    writer.text('主要增长来自回头客。');
   })
-  .user('Great. Where should I put my energy next?')
+  .user('很好，接下来应该把精力放在哪里？')
   .sleep(500)
   .assistant(({ writer }) => {
     writer.reasoning(
-      "Revenue is healthy and driven by retention, so the weak spot is acquisition. I'll point them there with a concrete, low-lift action."
+      '收入状况良好，增长主要由留存客户推动，目前短板是新客户获取。我会给出一项具体且易于执行的建议。'
     );
     writer.text(
-      "Since returning customers are carrying growth, I'd shift focus to new-customer acquisition — it slipped about 20% this period. A referral incentive or a small targeted campaign would rebalance the funnel without much lift."
+      '回头客在推动增长，因此建议重点改善新客户获取。本期新客户减少约 20%，可以尝试推荐奖励或小规模定向活动，以较低成本改善获客情况。'
     );
   });
 

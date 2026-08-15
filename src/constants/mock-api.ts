@@ -2,7 +2,7 @@
 // 🛑 Nothing in here has anything to do with Nextjs, it's just a fake database
 ////////////////////////////////////////////////////////////////////////////////
 
-import { faker } from '@faker-js/faker';
+import { fakerZH_CN as faker } from '@faker-js/faker';
 import { matchSorter } from 'match-sorter'; // For filtering
 
 export const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -30,11 +30,24 @@ function generateRandomProductData(id: number): Product {
     'Jewelry',
     'Beauty Products'
   ];
+  const productNames = [
+    '无线降噪耳机',
+    '人体工学办公椅',
+    '纯棉圆领短袖',
+    '儿童积木套装',
+    '精品咖啡豆',
+    '效率管理手册',
+    '简约银色项链',
+    '保湿修护面霜',
+    '便携蓝牙音箱',
+    '实木床头柜'
+  ];
+  const name = productNames[(id - 1) % productNames.length];
 
   return {
     id,
-    name: faker.commerce.productName(),
-    description: faker.commerce.productDescription(),
+    name,
+    description: `${name}，适合日常使用，支持企业采购和库存管理。`,
     created_at: faker.date.between({ from: '2022-01-01', to: '2023-12-31' }).toISOString(),
     price: parseFloat(faker.commerce.price({ min: 5, max: 500, dec: 2 })),
     photo_url: `https://api.slingacademy.com/public/sample-products/${id}.png`,
@@ -140,7 +153,7 @@ export const fakeProducts = {
     return {
       success: true,
       time: currentTime,
-      message: 'Sample data for testing and learning purposes',
+      message: '用于测试和学习的示例数据',
       total_products: totalProducts,
       offset,
       limit,
@@ -189,7 +202,7 @@ export const fakeProducts = {
 
     return {
       success: true,
-      message: 'Product created successfully',
+      message: '产品创建成功',
       product: newProduct
     };
   },
@@ -218,7 +231,7 @@ export const fakeProducts = {
 
     return {
       success: true,
-      message: 'Product updated successfully',
+      message: '产品更新成功',
       product: this.records[index]
     };
   },
@@ -237,7 +250,7 @@ export const fakeProducts = {
 
     return {
       success: true,
-      message: 'Product deleted successfully'
+      message: '产品删除成功'
     };
   }
 };

@@ -3,8 +3,8 @@ import type { Conversation } from './types';
 export const initialConversations: Conversation[] = [
   {
     id: 'billing-issue',
-    name: 'Alex from Support',
-    title: 'Billing Issue #4821',
+    name: '客服 Alex',
+    title: '账单问题 #4821',
     status: 'online',
     unread: 2,
     initials: 'AS',
@@ -13,39 +13,35 @@ export const initialConversations: Conversation[] = [
         id: 'billing-1',
         sender: 'contact',
         author: 'Alex',
-        text: "Hi there! I can see you were charged twice for the Pro plan this month. I've already initiated a refund for the duplicate charge.",
+        text: '你好！系统显示你本月的专业版套餐被重复扣费，我已经为重复款项发起退款。',
         timestamp: '10:02'
       },
       {
         id: 'billing-2',
         sender: 'user',
-        author: 'You',
-        text: 'Thanks for catching that. How long will the refund take to process?',
+        author: '你',
+        text: '谢谢。退款大概需要多久才能到账？',
         timestamp: '10:05'
       },
       {
         id: 'billing-3',
         sender: 'contact',
         author: 'Alex',
-        text: 'Typically 3-5 business days depending on your bank. You should see a pending credit within 24 hours though. Is there anything else I can help with?',
+        text: '通常需要 3 至 5 个工作日，具体取决于银行。你应该会在 24 小时内看到一笔待入账退款。还有其他需要协助的吗？',
         timestamp: '10:08'
       }
     ],
-    quickReplies: [
-      "That's perfect, thank you!",
-      'Can I get a receipt for the refund?',
-      'I also have a question about upgrading.'
-    ],
+    quickReplies: ['好的，谢谢！', '可以提供退款凭证吗？', '我还想咨询套餐升级。'],
     autoReplies: [
-      "You're welcome! I've also applied a 10% discount on your next billing cycle as an apology for the inconvenience.",
-      'Absolutely — I just emailed the refund confirmation to your registered address.',
-      "Of course! I'd be happy to walk you through the available plans."
+      '不客气。针对这次问题，我已为你的下一个账单周期申请 10% 优惠。',
+      '可以，退款确认邮件已发送到你的注册邮箱。',
+      '当然可以，我来介绍目前可用的套餐。'
     ]
   },
   {
     id: 'api-integration',
-    name: 'Priya from Engineering',
-    title: 'API Integration Help',
+    name: '工程师 Priya',
+    title: 'API 集成协助',
     status: 'online',
     unread: 0,
     initials: 'PE',
@@ -53,47 +49,43 @@ export const initialConversations: Conversation[] = [
       {
         id: 'api-1',
         sender: 'user',
-        author: 'You',
-        text: "I'm getting a 429 rate limit error when calling the /api/products endpoint. We're only making about 50 requests per minute.",
+        author: '你',
+        text: '调用 /api/products 接口时出现 429 限流错误，我们每分钟大约只发出 50 个请求。',
         timestamp: '09:15'
       },
       {
         id: 'api-2',
         sender: 'contact',
         author: 'Priya',
-        text: "I checked your API key — it's on the Starter tier which has a 30 req/min limit. You'll need the Growth plan for 200 req/min. Would you like me to upgrade it?",
+        text: '我检查了你的 API 密钥。当前入门版限制为每分钟 30 个请求，增长版支持每分钟 200 个请求。需要升级吗？',
         timestamp: '09:18'
       },
       {
         id: 'api-3',
         sender: 'user',
-        author: 'You',
-        text: 'Yes please. Also, is there a way to implement retry logic that respects the Retry-After header?',
+        author: '你',
+        text: '请帮我升级。另外，如何实现遵循 Retry-After 响应头的重试逻辑？',
         timestamp: '09:22'
       },
       {
         id: 'api-4',
         sender: 'contact',
         author: 'Priya',
-        text: "Great question — our SDK handles this automatically if you enable `autoRetry: true` in the config. I'll send you a code snippet.",
+        text: '在配置中启用 autoRetry: true 后，SDK 会自动处理。我发一段示例代码给你。',
         timestamp: '09:25'
       }
     ],
-    quickReplies: [
-      'That would be very helpful.',
-      'Can you also share the rate limit docs?',
-      "We're also seeing timeouts on the webhook endpoint."
-    ],
+    quickReplies: ['这会很有帮助。', '也可以发一下限流文档吗？', 'Webhook 接口也出现了超时。'],
     autoReplies: [
-      "Here's the code snippet — just add `autoRetry: true` and `maxRetries: 3` to your client config.",
-      "Sure! I've shared the rate limiting guide in your inbox. It covers burst limits too.",
-      "Let me check the webhook logs for your account. Can you share the endpoint URL you're using?"
+      '示例代码已发送，只需在客户端配置中添加 autoRetry: true 和 maxRetries: 3。',
+      '限流指南已发送到你的收件箱，其中也介绍了突发请求限制。',
+      '我来检查你账号的 Webhook 日志。请提供当前使用的接口地址。'
     ]
   },
   {
     id: 'account-access',
-    name: 'Jordan from Security',
-    title: 'Account Access Request',
+    name: '安全专员 Jordan',
+    title: '账号访问请求',
     status: 'offline',
     unread: 1,
     initials: 'JS',
@@ -102,26 +94,22 @@ export const initialConversations: Conversation[] = [
         id: 'access-1',
         sender: 'contact',
         author: 'Jordan',
-        text: "We noticed a login attempt from an unrecognized device in São Paulo. Was this you? We've temporarily locked the session as a precaution.",
-        timestamp: 'Yesterday'
+        text: '我们发现有陌生设备从圣保罗尝试登录。请确认是否为你的操作。出于安全考虑，该会话已被暂时锁定。',
+        timestamp: '昨天'
       },
       {
         id: 'access-2',
         sender: 'user',
-        author: 'You',
-        text: "No, that wasn't me. I'm based in New York. Can you revoke that session and enable 2FA on my account?",
-        timestamp: 'Yesterday'
+        author: '你',
+        text: '不是我操作的，我在纽约。请撤销该会话，并为我的账号启用双重验证。',
+        timestamp: '昨天'
       }
     ],
-    quickReplies: [
-      'Can I also see a list of all active sessions?',
-      'Please reset my password as well.',
-      'Has any data been accessed from that session?'
-    ],
+    quickReplies: ['可以查看所有活跃会话吗？', '也请重置我的密码。', '该会话是否访问过数据？'],
     autoReplies: [
-      "I've revoked all sessions except your current one and enabled 2FA. You'll get an email with the setup QR code.",
-      "Done — you'll receive a password reset link shortly. Make sure to use a unique password.",
-      'No data was accessed — the session was blocked before any API calls were made. Your account is secure.'
+      '除当前会话外，其他会话均已撤销，双重验证也已启用。设置二维码会通过邮件发送。',
+      '密码重置链接稍后会发送给你，请设置一个未在其他网站使用过的密码。',
+      '该会话在发出任何 API 请求前已被拦截，没有访问数据。'
     ]
   }
 ];

@@ -76,29 +76,29 @@ export function NavUser({
             <DropdownMenuGroup>
               <DropdownMenuItem>
                 <Icons.sparkles className='mr-2 h-4 w-4' />
-                Upgrade to Pro
+                升级高级版
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
               <DropdownMenuItem>
                 <Icons.circleCheck className='mr-2 h-4 w-4' />
-                Account
+                账号设置
               </DropdownMenuItem>
               <DropdownMenuItem>
                 <Icons.creditCard className='mr-2 h-4 w-4' />
-                Billing
+                账单管理
               </DropdownMenuItem>
               <DropdownMenuItem>
                 <Icons.notification className='mr-2 h-4 w-4' />
-                Notifications
+                消息通知
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
               <DropdownMenuItem>
                 <Icons.logout className='mr-2 h-4 w-4' />
-                Log out
+                退出登录
               </DropdownMenuItem>
             </DropdownMenuGroup>
           </DropdownMenuContent>

@@ -33,12 +33,12 @@ export function NavProjects({
 
   return (
     <SidebarGroup className='group-data-[collapsible=icon]:hidden'>
-      <SidebarGroupLabel>Projects</SidebarGroupLabel>
+      <SidebarGroupLabel>项目</SidebarGroupLabel>
       <SidebarMenu>
         {projects.length === 0 && (
           <SidebarMenuItem>
             <p className='text-sidebar-foreground/70 px-2 py-1.5 text-xs'>
-              No projects yet. Create one to see it here.
+              暂无项目，创建后会显示在这里。
             </p>
           </SidebarMenuItem>
         )}
@@ -51,7 +51,7 @@ export function NavProjects({
             <DropdownMenu>
               <DropdownMenuTrigger render={<SidebarMenuAction showOnHover />}>
                 <Icons.dots />
-                <span className='sr-only'>More</span>
+                <span className='sr-only'>更多</span>
               </DropdownMenuTrigger>
               <DropdownMenuContent
                 className='w-48 rounded-lg'
@@ -61,18 +61,18 @@ export function NavProjects({
                 <DropdownMenuGroup>
                   <DropdownMenuItem>
                     <Icons.workspace className='text-muted-foreground mr-2 h-4 w-4' />
-                    <span>View Project</span>
+                    <span>查看项目</span>
                   </DropdownMenuItem>
                   <DropdownMenuItem>
                     <Icons.share className='text-muted-foreground mr-2 h-4 w-4' />
-                    <span>Share Project</span>
+                    <span>分享项目</span>
                   </DropdownMenuItem>
                 </DropdownMenuGroup>
                 <DropdownMenuSeparator />
                 <DropdownMenuGroup>
                   <DropdownMenuItem>
                     <Icons.trash className='text-muted-foreground mr-2 h-4 w-4' />
-                    <span>Delete Project</span>
+                    <span>删除项目</span>
                   </DropdownMenuItem>
                 </DropdownMenuGroup>
               </DropdownMenuContent>
@@ -82,7 +82,7 @@ export function NavProjects({
         <SidebarMenuItem>
           <SidebarMenuButton className='text-sidebar-foreground/70'>
             <Icons.dots className='text-sidebar-foreground/70' />
-            <span>More</span>
+            <span>更多</span>
           </SidebarMenuButton>
         </SidebarMenuItem>
       </SidebarMenu>

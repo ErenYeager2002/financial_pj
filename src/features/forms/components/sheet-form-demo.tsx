@@ -32,22 +32,22 @@ import { Icons } from '@/components/icons';
 // ---------------------------------------------------------------------------
 
 const sheetFormSchema = z.object({
-  name: z.string().min(2, 'Product name must be at least 2 characters'),
-  category: z.string().min(1, 'Please select a category'),
-  price: z.number({ error: 'Price is required' }).min(0.01, 'Price must be greater than 0'),
-  description: z.string().min(10, 'Description must be at least 10 characters')
+  name: z.string().min(2, '产品名称至少需要 2 个字符。'),
+  category: z.string().min(1, '请选择产品分类。'),
+  price: z.number({ error: '请输入价格。' }).min(0.01, '价格必须大于 0。'),
+  description: z.string().min(10, '产品描述至少需要 10 个字符。')
 });
 
 const dialogFormSchema = z.object({
   rating: z.number().min(0).max(10),
-  feedback: z.string().min(5, 'Feedback must be at least 5 characters')
+  feedback: z.string().min(5, '反馈内容至少需要 5 个字符。')
 });
 
 const categoryOptions = [
-  { value: 'beauty', label: 'Beauty Products' },
-  { value: 'electronics', label: 'Electronics' },
-  { value: 'home', label: 'Home & Garden' },
-  { value: 'sports', label: 'Sports & Outdoors' }
+  { value: 'beauty', label: '美妆产品' },
+  { value: 'electronics', label: '电子产品' },
+  { value: 'home', label: '家居园艺' },
+  { value: 'sports', label: '户外运动' }
 ];
 
 // ---------------------------------------------------------------------------
@@ -68,8 +68,8 @@ function SheetFormSection() {
       onSubmit: sheetFormSchema
     },
     onSubmit: ({ value }) => {
-      toast.success('Product created successfully!', {
-        description: `${value.name} has been added.`
+      toast.success('产品创建成功！', {
+        description: `${value.name} 已添加。`
       });
       setOpen(false);
       form.reset();
@@ -79,25 +79,22 @@ function SheetFormSection() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Sheet Form</CardTitle>
+        <CardTitle>侧边面板表单</CardTitle>
         <CardDescription>
-          A product creation form inside a Sheet. The submit button lives in the SheetFooter,
-          outside the form element, connected via the HTML{' '}
-          <code className='bg-muted rounded px-1 text-sm'>form</code> attribute.
+          在侧边面板中创建产品。提交按钮位于表单元素之外，通过 HTML{' '}
+          <code className='bg-muted rounded px-1 text-sm'>form</code> 属性与表单关联。
         </CardDescription>
       </CardHeader>
       <CardContent>
         <Sheet open={open} onOpenChange={setOpen}>
           <SheetTrigger render={<Button />}>
             <Icons.add className='mr-2 h-4 w-4' />
-            Add Product
+            新增产品
           </SheetTrigger>
           <SheetContent className='flex flex-col'>
             <SheetHeader>
-              <SheetTitle>New Product</SheetTitle>
-              <SheetDescription>
-                Fill in the details below to create a new product.
-              </SheetDescription>
+              <SheetTitle>新增产品</SheetTitle>
+              <SheetDescription>填写以下信息以创建产品。</SheetDescription>
             </SheetHeader>
 
             <form
@@ -112,11 +109,7 @@ function SheetFormSection() {
                 <form.AppField
                   name='name'
                   children={(field) => (
-                    <field.TextField
-                      label='Product Name'
-                      required
-                      placeholder='Enter product name'
-                    />
+                    <field.TextField label='产品名称' required placeholder='请输入产品名称' />
                   )}
                 />
 
@@ -124,10 +117,10 @@ function SheetFormSection() {
                   name='category'
                   children={(field) => (
                     <field.SelectField
-                      label='Category'
+                      label='产品分类'
                       required
                       options={categoryOptions}
-                      placeholder='Select a category'
+                      placeholder='请选择分类'
                     />
                   )}
                 />
@@ -136,7 +129,7 @@ function SheetFormSection() {
                   name='price'
                   children={(field) => (
                     <field.TextField
-                      label='Price'
+                      label='价格'
                       required
                       type='number'
                       min={0}
@@ -150,9 +143,9 @@ function SheetFormSection() {
                   name='description'
                   children={(field) => (
                     <field.TextareaField
-                      label='Description'
+                      label='产品描述'
                       required
-                      placeholder='Enter product description'
+                      placeholder='请输入产品描述'
                       maxLength={500}
                       rows={4}
                     />
@@ -163,10 +156,10 @@ function SheetFormSection() {
 
             <SheetFooter className='pt-4'>
               <Button type='button' variant='outline' onClick={() => setOpen(false)}>
-                Cancel
+                取消
               </Button>
               <Button type='submit' form='sheet-form-id'>
-                Create Product
+                创建产品
               </Button>
             </SheetFooter>
           </SheetContent>
@@ -192,8 +185,8 @@ function DialogFormSection() {
       onSubmit: dialogFormSchema
     },
     onSubmit: ({ value }) => {
-      toast.success('Feedback submitted!', {
-        description: `Rating: ${value.rating}/10. Thank you!`
+      toast.success('反馈已提交！', {
+        description: `评分：${value.rating}/10，谢谢！`
       });
       setOpen(false);
       form.reset();
@@ -203,21 +196,19 @@ function DialogFormSection() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Dialog Form</CardTitle>
-        <CardDescription>
-          A quick feedback form inside a Dialog with the submit button in the DialogFooter.
-        </CardDescription>
+        <CardTitle>对话框表单</CardTitle>
+        <CardDescription>在对话框中填写快速反馈，提交按钮位于对话框底部。</CardDescription>
       </CardHeader>
       <CardContent>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger render={<Button variant='outline' />}>
             <Icons.send className='mr-2 h-4 w-4' />
-            Send Feedback
+            提交反馈
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Quick Feedback</DialogTitle>
-              <DialogDescription>Rate your experience and leave a comment.</DialogDescription>
+              <DialogTitle>快速反馈</DialogTitle>
+              <DialogDescription>请为使用体验评分并填写意见。</DialogDescription>
             </DialogHeader>
 
             <form
@@ -233,8 +224,8 @@ function DialogFormSection() {
                   name='rating'
                   children={(field) => (
                     <field.SliderField
-                      label='Rating'
-                      description='Rate your experience (0-10)'
+                      label='评分'
+                      description='请为使用体验评分（0 至 10 分）'
                       min={0}
                       max={10}
                       step={1}
@@ -246,9 +237,9 @@ function DialogFormSection() {
                   name='feedback'
                   children={(field) => (
                     <field.TextareaField
-                      label='Feedback'
+                      label='反馈内容'
                       required
-                      placeholder='Tell us what you think...'
+                      placeholder='请输入你的意见...'
                       maxLength={300}
                       rows={3}
                     />
@@ -259,10 +250,10 @@ function DialogFormSection() {
 
             <DialogFooter>
               <Button type='button' variant='outline' onClick={() => setOpen(false)}>
-                Cancel
+                取消
               </Button>
               <Button type='submit' form='dialog-form-id'>
-                Submit Feedback
+                提交反馈
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -280,43 +271,41 @@ function ToastDemoSection() {
   return (
     <Card className='md:col-span-2'>
       <CardHeader>
-        <CardTitle>Toast Notifications</CardTitle>
-        <CardDescription>
-          Trigger different toast variants to preview notification styles.
-        </CardDescription>
+        <CardTitle>消息提示</CardTitle>
+        <CardDescription>触发不同类型的消息提示，查看显示效果。</CardDescription>
       </CardHeader>
       <CardContent className='flex flex-wrap gap-2'>
-        <Button variant='outline' onClick={() => toast('Default toast notification')}>
-          Default
+        <Button variant='outline' onClick={() => toast('默认消息提示')}>
+          默认
         </Button>
-        <Button variant='outline' onClick={() => toast.success('Action completed successfully!')}>
+        <Button variant='outline' onClick={() => toast.success('操作成功！')}>
           <Icons.circleCheck className='mr-2 h-4 w-4' />
-          Success
+          成功
         </Button>
-        <Button variant='outline' onClick={() => toast.error('Something went wrong.')}>
+        <Button variant='outline' onClick={() => toast.error('操作失败。')}>
           <Icons.circleX className='mr-2 h-4 w-4' />
-          Error
+          错误
         </Button>
-        <Button variant='outline' onClick={() => toast.warning('Please review before continuing.')}>
+        <Button variant='outline' onClick={() => toast.warning('请确认后再继续。')}>
           <Icons.warning className='mr-2 h-4 w-4' />
-          Warning
+          警告
         </Button>
-        <Button variant='outline' onClick={() => toast.info('Here is some useful information.')}>
+        <Button variant='outline' onClick={() => toast.info('这是一条说明信息。')}>
           <Icons.info className='mr-2 h-4 w-4' />
-          Info
+          信息
         </Button>
         <Button
           variant='outline'
           onClick={() =>
             toast.promise(new Promise((resolve) => setTimeout(resolve, 2000)), {
-              loading: 'Loading...',
-              success: 'Data loaded!',
-              error: 'Failed to load.'
+              loading: '正在加载...',
+              success: '数据加载完成！',
+              error: '数据加载失败。'
             })
           }
         >
           <Icons.spinner className='mr-2 h-4 w-4' />
-          Promise
+          异步状态
         </Button>
       </CardContent>
     </Card>

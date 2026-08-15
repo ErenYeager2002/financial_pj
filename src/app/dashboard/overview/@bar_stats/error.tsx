@@ -25,21 +25,21 @@ export default function BarStatsError({ error, reset }: { error: Error; reset: (
 
   return (
     <StatsErrorAlert
-      message={`Failed to load statistics: ${error.message}`}
+      message={`柱状图统计加载失败：${error.message}`}
       action={
         <>
           <Button variant='outline' size='sm' onClick={retry} disabled={isPending}>
             {isPending ? (
               <>
                 <Icons.spinner className='mr-2 h-4 w-4 animate-spin' aria-hidden='true' />
-                Retrying...
+                正在重试...
               </>
             ) : (
-              'Try again'
+              '重试'
             )}
           </Button>
           <span role='status' aria-live='polite' className='sr-only'>
-            {isPending ? 'Retrying' : ''}
+            {isPending ? '正在重试' : ''}
           </span>
         </>
       }

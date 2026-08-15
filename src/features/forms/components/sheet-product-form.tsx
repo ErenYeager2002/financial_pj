@@ -17,17 +17,17 @@ import { Icons } from '@/components/icons';
 import { useState } from 'react';
 
 const productSchema = z.object({
-  name: z.string().min(2, 'Product name must be at least 2 characters'),
-  category: z.string().min(1, 'Please select a category'),
-  price: z.number({ error: 'Price is required' }).min(0.01, 'Price must be greater than 0'),
-  description: z.string().min(10, 'Description must be at least 10 characters')
+  name: z.string().min(2, '产品名称至少需要 2 个字符。'),
+  category: z.string().min(1, '请选择产品分类。'),
+  price: z.number({ error: '请输入价格。' }).min(0.01, '价格必须大于 0。'),
+  description: z.string().min(10, '产品描述至少需要 10 个字符。')
 });
 
 const categoryOptions = [
-  { value: 'beauty', label: 'Beauty Products' },
-  { value: 'electronics', label: 'Electronics' },
-  { value: 'home', label: 'Home & Garden' },
-  { value: 'sports', label: 'Sports & Outdoors' }
+  { value: 'beauty', label: '美妆产品' },
+  { value: 'electronics', label: '电子产品' },
+  { value: 'home', label: '家居园艺' },
+  { value: 'sports', label: '户外运动' }
 ];
 
 export default function SheetProductForm() {
@@ -44,7 +44,7 @@ export default function SheetProductForm() {
       onSubmit: productSchema
     },
     onSubmit: () => {
-      alert('Product created successfully!');
+      alert('产品创建成功！');
       setOpen(false);
       form.reset();
     }
@@ -54,12 +54,12 @@ export default function SheetProductForm() {
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger render={<Button />}>
         <Icons.add className='mr-2 h-4 w-4' />
-        Add Product
+        新增产品
       </SheetTrigger>
       <SheetContent className='flex flex-col'>
         <SheetHeader>
-          <SheetTitle>New Product</SheetTitle>
-          <SheetDescription>Fill in the details to create a new product.</SheetDescription>
+          <SheetTitle>新增产品</SheetTitle>
+          <SheetDescription>填写以下信息以创建产品。</SheetDescription>
         </SheetHeader>
 
         <div className='flex-1 overflow-auto'>
@@ -75,7 +75,7 @@ export default function SheetProductForm() {
               <form.AppField
                 name='name'
                 children={(field) => (
-                  <field.TextField label='Product Name' required placeholder='Enter product name' />
+                  <field.TextField label='产品名称' required placeholder='请输入产品名称' />
                 )}
               />
 
@@ -83,10 +83,10 @@ export default function SheetProductForm() {
                 name='category'
                 children={(field) => (
                   <field.SelectField
-                    label='Category'
+                    label='产品分类'
                     required
                     options={categoryOptions}
-                    placeholder='Select category'
+                    placeholder='请选择分类'
                   />
                 )}
               />
@@ -95,12 +95,12 @@ export default function SheetProductForm() {
                 name='price'
                 children={(field) => (
                   <field.TextField
-                    label='Price'
+                    label='价格'
                     required
                     type='number'
                     min={0}
                     step='0.01'
-                    placeholder='Enter price'
+                    placeholder='请输入价格'
                   />
                 )}
               />
@@ -109,9 +109,9 @@ export default function SheetProductForm() {
                 name='description'
                 children={(field) => (
                   <field.TextareaField
-                    label='Description'
+                    label='产品描述'
                     required
-                    placeholder='Enter product description'
+                    placeholder='请输入产品描述'
                     maxLength={500}
                     rows={4}
                     showCount
@@ -124,10 +124,10 @@ export default function SheetProductForm() {
 
         <SheetFooter>
           <Button type='button' variant='outline' onClick={() => setOpen(false)}>
-            Cancel
+            取消
           </Button>
           <Button type='submit' form='sheet-product-form'>
-            Create Product
+            创建产品
           </Button>
         </SheetFooter>
       </SheetContent>

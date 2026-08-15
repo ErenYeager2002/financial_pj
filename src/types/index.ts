@@ -23,6 +23,7 @@ export interface NavItem {
 }
 
 export interface NavGroup {
+  id?: string;
   label: string;
   items: NavItem[];
 }

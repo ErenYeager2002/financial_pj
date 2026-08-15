@@ -2,7 +2,7 @@
 // 🛑 Nothing in here has anything to do with Nextjs, it's just a fake database
 ////////////////////////////////////////////////////////////////////////////////
 
-import { faker } from '@faker-js/faker';
+import { fakerZH_CN as faker } from '@faker-js/faker';
 import { matchSorter } from 'match-sorter';
 
 export const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -79,7 +79,7 @@ export const fakeUsers = {
 
     return {
       success: true,
-      message: 'User created successfully',
+      message: '用户创建成功',
       user: newUser
     };
   },
@@ -101,7 +101,7 @@ export const fakeUsers = {
 
     return {
       success: true,
-      message: 'User updated successfully',
+      message: '用户更新成功',
       user: this.records[index]
     };
   },
@@ -119,7 +119,7 @@ export const fakeUsers = {
 
     return {
       success: true,
-      message: 'User deleted successfully'
+      message: '用户删除成功'
     };
   },
 
@@ -179,7 +179,7 @@ export const fakeUsers = {
     return {
       success: true,
       time: new Date().toISOString(),
-      message: 'Sample data for testing and learning purposes',
+      message: '用于测试和学习的示例数据',
       total_users: totalUsers,
       offset,
       limit,

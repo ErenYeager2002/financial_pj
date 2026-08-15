@@ -1,10 +1,10 @@
 export const CATEGORY_OPTIONS = [
-  { value: 'Electronics', label: 'Electronics' },
-  { value: 'Furniture', label: 'Furniture' },
-  { value: 'Clothing', label: 'Clothing' },
-  { value: 'Toys', label: 'Toys' },
-  { value: 'Groceries', label: 'Groceries' },
-  { value: 'Books', label: 'Books' },
-  { value: 'Jewelry', label: 'Jewelry' },
-  { value: 'Beauty Products', label: 'Beauty Products' }
+  { value: 'Electronics', label: '电子产品' },
+  { value: 'Furniture', label: '家具' },
+  { value: 'Clothing', label: '服装' },
+  { value: 'Toys', label: '玩具' },
+  { value: 'Groceries', label: '食品杂货' },
+  { value: 'Books', label: '图书' },
+  { value: 'Jewelry', label: '珠宝首饰' },
+  { value: 'Beauty Products', label: '美妆产品' }
 ];

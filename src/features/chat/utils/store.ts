@@ -38,14 +38,14 @@ export const useChatStore = create<ChatState>()(
 
     sendMessage: (text, attachments) => {
       const state = get();
-      const timestamp = new Date().toLocaleTimeString('en-US', {
+      const timestamp = new Date().toLocaleTimeString('zh-CN', {
         hour: '2-digit',
         minute: '2-digit'
       });
       const outgoing: Message = {
         id: 'outgoing-' + Date.now().toString(),
         sender: 'user',
-        author: 'You',
+        author: '你',
         text: text.trim(),
         timestamp,
         attachments: attachments?.length ? attachments : undefined

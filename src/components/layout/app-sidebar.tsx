@@ -25,24 +25,26 @@ import {
   SidebarRail
 } from '@/components/ui/sidebar';
 import { UserAvatarProfile } from '@/components/user-avatar-profile';
-import { navGroups } from '@/config/nav-config';
 import { useMediaQuery } from '@/hooks/use-media-query';
-import { useClerk, useOrganization, useUser } from '@clerk/nextjs';
-import { useFilteredNavGroups } from '@/hooks/use-nav';
+import type { NavGroup } from '@/types';
+import { useClerk, useUser } from '@clerk/nextjs';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import * as React from 'react';
 import { Icons } from '../icons';
 import { OrgSwitcher } from '../org-switcher';
 
-export default function AppSidebar() {
+interface AppSidebarProps {
+  navGroups: NavGroup[];
+}
+
+export default function AppSidebar({ navGroups }: AppSidebarProps): React.JSX.Element {
   const pathname = usePathname();
   const { isOpen } = useMediaQuery();
   const { user } = useUser();
-  const { organization } = useOrganization();
   const { signOut } = useClerk();
   const router = useRouter();
-  const filteredGroups = useFilteredNavGroups(navGroups);
+  const accountItems = navGroups.find((group) => group.id === 'account')?.items ?? [];
 
   React.useEffect(() => {
     // Side effects based on sidebar state changes
@@ -54,7 +56,7 @@ export default function AppSidebar() {
         <OrgSwitcher />
       </SidebarHeader>
       <SidebarContent className='overflow-x-hidden'>
-        {filteredGroups.map((group) => (
+        {navGroups.map((group) => (
           <SidebarGroup key={group.label || 'ungrouped'} className='py-0'>
             {group.label && <SidebarGroupLabel>{group.label}</SidebarGroupLabel>}
             <SidebarMenu>
@@ -144,26 +146,21 @@ export default function AppSidebar() {
                 <DropdownMenuSeparator />
 
                 <DropdownMenuGroup>
-                  <DropdownMenuItem onClick={() => router.push('/dashboard/profile')}>
-                    <Icons.account className='mr-2 h-4 w-4' />
-                    Profile
-                  </DropdownMenuItem>
-                  {organization && (
-                    <DropdownMenuItem onClick={() => router.push('/dashboard/billing')}>
-                      <Icons.creditCard className='mr-2 h-4 w-4' />
-                      Billing
-                    </DropdownMenuItem>
-                  )}
-                  <DropdownMenuItem onClick={() => router.push('/dashboard/notifications')}>
-                    <Icons.notification className='mr-2 h-4 w-4' />
-                    Notifications
-                  </DropdownMenuItem>
+                  {accountItems.map((item) => {
+                    const AccountIcon = item.icon ? Icons[item.icon] : Icons.account;
+                    return (
+                      <DropdownMenuItem key={item.url} onClick={() => router.push(item.url)}>
+                        <AccountIcon className='mr-2 h-4 w-4' />
+                        {item.title}
+                      </DropdownMenuItem>
+                    );
+                  })}
                 </DropdownMenuGroup>
                 <DropdownMenuSeparator />
                 <DropdownMenuGroup>
                   <DropdownMenuItem onClick={() => signOut({ redirectUrl: '/auth/sign-in' })}>
                     <Icons.logout aria-hidden className='mr-2 h-4 w-4' />
-                    Sign out
+                    退出登录
                   </DropdownMenuItem>
                 </DropdownMenuGroup>
               </DropdownMenuContent>

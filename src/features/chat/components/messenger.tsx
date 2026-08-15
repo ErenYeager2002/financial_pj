@@ -72,7 +72,7 @@ export function Messenger() {
       const delay = shouldReduceMotion ? 0 : 900;
 
       replyTimeoutRef.current = window.setTimeout(() => {
-        const timestamp = new Date().toLocaleTimeString('en-US', {
+        const timestamp = new Date().toLocaleTimeString('zh-CN', {
           hour: '2-digit',
           minute: '2-digit'
         });

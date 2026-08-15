@@ -16,7 +16,7 @@ export function TagsField({
   label,
   description,
   required,
-  placeholder = 'Type and press Enter...'
+  placeholder = '输入内容后按回车键...'
 }: BaseFieldProps & { placeholder?: string }) {
   const field = useFieldContext<string[]>();
   const isInvalid = useFieldInvalid();
@@ -48,12 +48,12 @@ export function TagsField({
             }
           }}
           placeholder={placeholder}
-          aria-label={`Add a ${label.toLowerCase().replace(/ \*$/, '')}`}
+          aria-label={`添加${label.replace(/ \*$/, '')}`}
           aria-invalid={isInvalid}
           aria-describedby={isInvalid ? `${field.name}-error` : undefined}
         />
         <Button type='button' variant='secondary' onClick={addTag}>
-          Add
+          添加
         </Button>
       </div>
       {values.length > 0 && (
@@ -64,7 +64,7 @@ export function TagsField({
               <button
                 type='button'
                 onClick={() => field.removeValue(idx)}
-                aria-label={`Remove ${tag}`}
+                aria-label={`移除 ${tag}`}
                 className='hover:text-destructive ml-0.5'
               >
                 <Icons.close className='h-3 w-3' />

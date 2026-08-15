@@ -6,7 +6,6 @@ import {
   IconBell,
   IconBold,
   IconBox,
-  IconBrandGithub,
   IconBrandTwitter,
   IconBrightness,
   IconCalendar,
@@ -138,7 +137,6 @@ export const Icons = {
   teams: IconUsers,
 
   // Brand
-  github: IconBrandGithub,
   twitter: IconBrandTwitter,
   logo: IconCommand,
 

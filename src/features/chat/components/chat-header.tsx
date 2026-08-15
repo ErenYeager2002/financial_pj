@@ -30,7 +30,7 @@ export function ChatHeader({ conversation }: ChatHeaderProps) {
               'border-background absolute right-0 bottom-0 inline-flex h-3 w-3 rounded-full border-2 sm:h-3.5 sm:w-3.5',
               statusDotColor[conversation.status]
             )}
-            aria-label={conversation.status === 'online' ? 'Online' : 'Offline'}
+            aria-label={conversation.status === 'online' ? '在线' : '离线'}
           />
         </div>
         <div>
@@ -45,7 +45,7 @@ export function ChatHeader({ conversation }: ChatHeaderProps) {
           variant='ghost'
           size='icon'
           className='border-border/40 bg-background/60 text-muted-foreground hover:bg-muted/60 focus-visible:ring-primary/40 focus-visible:ring-offset-background size-8 rounded-full border transition focus-visible:ring-2 focus-visible:ring-offset-2 sm:size-10'
-          aria-label='Start audio call'
+          aria-label='发起语音通话'
         >
           <Icons.phone className='h-3.5 w-3.5 sm:h-4 sm:w-4' />
         </Button>
@@ -54,7 +54,7 @@ export function ChatHeader({ conversation }: ChatHeaderProps) {
           variant='ghost'
           size='icon'
           className='border-border/40 bg-background/60 text-muted-foreground hover:bg-muted/60 focus-visible:ring-primary/40 focus-visible:ring-offset-background size-8 rounded-full border transition focus-visible:ring-2 focus-visible:ring-offset-2 sm:size-10'
-          aria-label='Start video call'
+          aria-label='发起视频通话'
         >
           <Icons.video className='h-3.5 w-3.5 sm:h-4 sm:w-4' />
         </Button>
@@ -63,7 +63,7 @@ export function ChatHeader({ conversation }: ChatHeaderProps) {
           variant='ghost'
           size='icon'
           className='border-border/40 bg-background/60 text-muted-foreground hover:bg-muted/60 focus-visible:ring-primary/40 focus-visible:ring-offset-background size-8 rounded-full border transition focus-visible:ring-2 focus-visible:ring-offset-2 sm:size-10'
-          aria-label='Open conversation menu'
+          aria-label='打开会话菜单'
         >
           <Icons.ellipsis className='h-3.5 w-3.5 sm:h-4 sm:w-4' />
         </Button>

@@ -20,31 +20,28 @@ export const metadata: Metadata = {
     ? { metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL) }
     : {}),
   title: {
-    default: 'Shadcn Dashboard - Next.js Admin Dashboard Template',
-    template: '%s | Shadcn Dashboard'
+    default: '企业管理后台',
+    template: '%s | 企业管理后台'
   },
-  description:
-    'Free, open source admin dashboard starter built with Next.js 16, shadcn/ui, Tailwind CSS, and TypeScript.',
+  description: '基于 Next.js、shadcn/ui 和 TypeScript 构建的企业管理后台。',
   openGraph: {
-    title: 'Shadcn Dashboard - Next.js Admin Dashboard Template',
-    description:
-      'Free, open source admin dashboard starter built with Next.js 16, shadcn/ui, Tailwind CSS, and TypeScript.',
-    siteName: 'Shadcn Dashboard',
+    title: '企业管理后台',
+    description: '基于 Next.js、shadcn/ui 和 TypeScript 构建的企业管理后台。',
+    siteName: '企业管理后台',
     type: 'website',
     images: [
       {
         url: '/shadcn-dashboard.png',
         width: 3200,
         height: 1600,
-        alt: 'Shadcn Dashboard overview page'
+        alt: '企业管理后台概览页'
       }
     ]
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Shadcn Dashboard - Next.js Admin Dashboard Template',
-    description:
-      'Free, open source admin dashboard starter built with Next.js 16, shadcn/ui, Tailwind CSS, and TypeScript.',
+    title: '企业管理后台',
+    description: '基于 Next.js、shadcn/ui 和 TypeScript 构建的企业管理后台。',
     images: ['/shadcn-dashboard.png']
   }
 };
@@ -60,8 +57,15 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const themeToApply = isValidTheme ? activeThemeValue! : DEFAULT_THEME;
 
   return (
-    <html lang='en' suppressHydrationWarning data-theme={themeToApply}>
+    <html
+      lang='zh-CN'
+      translate='no'
+      className='notranslate'
+      suppressHydrationWarning
+      data-theme={themeToApply}
+    >
       <head>
+        <meta name='google' content='notranslate' />
         <script
           dangerouslySetInnerHTML={{
             __html: `

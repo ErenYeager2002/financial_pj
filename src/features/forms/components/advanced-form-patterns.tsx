@@ -37,26 +37,26 @@ type AdvancedFormValues = {
 
 const countryStateMap: Record<string, { value: string; label: string }[]> = {
   us: [
-    { value: 'ca', label: 'California' },
-    { value: 'ny', label: 'New York' },
-    { value: 'tx', label: 'Texas' }
+    { value: 'ca', label: '加利福尼亚州' },
+    { value: 'ny', label: '纽约州' },
+    { value: 'tx', label: '得克萨斯州' }
   ],
   uk: [
-    { value: 'ldn', label: 'London' },
-    { value: 'mnc', label: 'Manchester' },
-    { value: 'brm', label: 'Birmingham' }
+    { value: 'ldn', label: '伦敦' },
+    { value: 'mnc', label: '曼彻斯特' },
+    { value: 'brm', label: '伯明翰' }
   ],
   au: [
-    { value: 'nsw', label: 'New South Wales' },
-    { value: 'vic', label: 'Victoria' },
-    { value: 'qld', label: 'Queensland' }
+    { value: 'nsw', label: '新南威尔士州' },
+    { value: 'vic', label: '维多利亚州' },
+    { value: 'qld', label: '昆士兰州' }
   ]
 };
 
 const countryOptions = [
-  { value: 'us', label: 'United States' },
-  { value: 'uk', label: 'United Kingdom' },
-  { value: 'au', label: 'Australia' }
+  { value: 'us', label: '美国' },
+  { value: 'uk', label: '英国' },
+  { value: 'au', label: '澳大利亚' }
 ];
 
 // ---------------------------------------------------------------------------
@@ -64,24 +64,24 @@ const countryOptions = [
 // ---------------------------------------------------------------------------
 
 const advancedSchema = z.object({
-  username: z.string().min(3, 'Username must be at least 3 characters'),
-  email: z.string().email('Invalid email'),
-  password: z.string().min(8, 'Must be at least 8 characters'),
-  confirmPassword: z.string().min(1, 'Please confirm your password'),
+  username: z.string().min(3, '用户名至少需要 3 个字符。'),
+  email: z.string().email('请输入有效的邮箱地址。'),
+  password: z.string().min(8, '密码至少需要 8 个字符。'),
+  confirmPassword: z.string().min(1, '请再次输入密码。'),
   team: z.object({
-    name: z.string().min(2, 'Team name must be at least 2 characters'),
-    size: z.number().min(1, 'At least 1 member').max(100, 'Max 100 members')
+    name: z.string().min(2, '团队名称至少需要 2 个字符。'),
+    size: z.number().min(1, '团队至少需要 1 名成员。').max(100, '团队最多 100 名成员。')
   }),
   members: z
     .array(
       z.object({
-        name: z.string().min(1, 'Member name is required'),
-        role: z.string().min(1, 'Role is required')
+        name: z.string().min(1, '请输入成员姓名。'),
+        role: z.string().min(1, '请输入成员角色。')
       })
     )
-    .min(1, 'Add at least one member'),
-  country: z.string().min(1, 'Select a country'),
-  state: z.string().min(1, 'Select a state')
+    .min(1, '请至少添加一名成员。'),
+  country: z.string().min(1, '请选择国家。'),
+  state: z.string().min(1, '请选择州或地区。')
 });
 
 // ---------------------------------------------------------------------------
@@ -107,7 +107,7 @@ export default function AdvancedFormPatterns() {
       onSubmit: advancedSchema
     },
     onSubmit: () => {
-      toast.success('Team registered successfully!');
+      toast.success('团队注册成功！');
     }
   });
 
@@ -118,10 +118,9 @@ export default function AdvancedFormPatterns() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className='text-2xl font-bold'>Team Registration</CardTitle>
+        <CardTitle className='text-2xl font-bold'>团队注册</CardTitle>
         <p className='text-muted-foreground'>
-          Demonstrates async validation, linked fields, nested objects, dynamic arrays, and listener
-          side effects.
+          演示异步验证、关联字段、嵌套对象、动态数组和字段监听。
         </p>
       </CardHeader>
       <CardContent>
@@ -134,8 +133,8 @@ export default function AdvancedFormPatterns() {
         >
           {/* ─── Section 1: Account ─── */}
           <div className='space-y-1'>
-            <h3 className='text-lg font-semibold'>Account</h3>
-            <p className='text-muted-foreground text-sm'>Async validation, linked fields</p>
+            <h3 className='text-lg font-semibold'>账号信息</h3>
+            <p className='text-muted-foreground text-sm'>异步验证和关联字段</p>
           </div>
 
           <FieldGroup className='grid grid-cols-1 gap-4 md:grid-cols-2'>
@@ -148,25 +147,20 @@ export default function AdvancedFormPatterns() {
                   if (!value || value.length < 3) return undefined;
                   await new Promise((r) => setTimeout(r, 500));
                   if (value === 'admin' || value === 'test') {
-                    return { message: 'Username is taken' };
+                    return { message: '该用户名已被占用。' };
                   }
                   return undefined;
                 }
               }}
               children={(field) => (
-                <field.TextField label='Username' required placeholder='Choose a username' />
+                <field.TextField label='用户名' required placeholder='请输入用户名' />
               )}
             />
 
             <form.AppField
               name='email'
               children={(field) => (
-                <field.TextField
-                  label='Email'
-                  required
-                  type='email'
-                  placeholder='you@example.com'
-                />
+                <field.TextField label='邮箱' required type='email' placeholder='you@example.com' />
               )}
             />
 
@@ -174,10 +168,10 @@ export default function AdvancedFormPatterns() {
               name='password'
               children={(field) => (
                 <field.TextField
-                  label='Password'
+                  label='密码'
                   required
                   type='password'
-                  placeholder='Min 8 characters'
+                  placeholder='至少 8 个字符'
                 />
               )}
             />
@@ -190,17 +184,17 @@ export default function AdvancedFormPatterns() {
                 onChange: ({ value, fieldApi }) => {
                   const password = fieldApi.form.getFieldValue('password');
                   if (value && value !== password) {
-                    return { message: 'Passwords do not match' };
+                    return { message: '两次输入的密码不一致。' };
                   }
                   return undefined;
                 }
               }}
               children={(field) => (
                 <field.TextField
-                  label='Confirm Password'
+                  label='确认密码'
                   required
                   type='password'
-                  placeholder='Confirm password'
+                  placeholder='请再次输入密码'
                 />
               )}
             />
@@ -210,22 +204,22 @@ export default function AdvancedFormPatterns() {
 
           {/* ─── Section 2: Team Info (nested objects) ─── */}
           <div className='space-y-1'>
-            <h3 className='text-lg font-semibold'>Team Info</h3>
-            <p className='text-muted-foreground text-sm'>Nested objects with dot-notation paths</p>
+            <h3 className='text-lg font-semibold'>团队信息</h3>
+            <p className='text-muted-foreground text-sm'>使用点路径处理嵌套对象</p>
           </div>
 
           <FieldGroup className='grid grid-cols-1 gap-4 md:grid-cols-2'>
             <form.AppField
               name='team.name'
               children={(field) => (
-                <field.TextField label='Team Name' required placeholder='e.g. Alpha Squad' />
+                <field.TextField label='团队名称' required placeholder='例如：Alpha 团队' />
               )}
             />
             <form.AppField
               name='team.size'
               children={(field) => (
                 <field.TextField
-                  label='Team Size'
+                  label='团队人数'
                   required
                   type='number'
                   min={1}
@@ -240,8 +234,8 @@ export default function AdvancedFormPatterns() {
 
           {/* ─── Section 3: Members (dynamic array rows — raw form.Field) ─── */}
           <div className='space-y-1'>
-            <h3 className='text-lg font-semibold'>Members</h3>
-            <p className='text-muted-foreground text-sm'>Dynamic array rows with add / remove</p>
+            <h3 className='text-lg font-semibold'>团队成员</h3>
+            <p className='text-muted-foreground text-sm'>动态添加或移除成员</p>
           </div>
 
           <form.Field
@@ -261,11 +255,11 @@ export default function AdvancedFormPatterns() {
                             <Input
                               id={`member-name-${i}`}
                               name={subField.name}
-                              placeholder='Member name'
+                              placeholder='成员姓名'
                               value={subField.state.value}
                               onChange={(e) => subField.handleChange(e.target.value)}
                               onBlur={subField.handleBlur}
-                              aria-label={`Member ${i + 1} name`}
+                              aria-label={`第 ${i + 1} 名成员姓名`}
                               aria-invalid={isSubInvalid}
                               aria-describedby={isSubInvalid ? `member-name-${i}-error` : undefined}
                             />
@@ -289,11 +283,11 @@ export default function AdvancedFormPatterns() {
                             <Input
                               id={`member-role-${i}`}
                               name={subField.name}
-                              placeholder='Role'
+                              placeholder='成员角色'
                               value={subField.state.value}
                               onChange={(e) => subField.handleChange(e.target.value)}
                               onBlur={subField.handleBlur}
-                              aria-label={`Member ${i + 1} role`}
+                              aria-label={`第 ${i + 1} 名成员角色`}
                               aria-invalid={isSubInvalid}
                               aria-describedby={isSubInvalid ? `member-role-${i}-error` : undefined}
                             />
@@ -312,7 +306,7 @@ export default function AdvancedFormPatterns() {
                       variant='ghost'
                       size='icon'
                       onClick={() => field.removeValue(i)}
-                      aria-label={`Remove member ${i + 1}`}
+                      aria-label={`移除第 ${i + 1} 名成员`}
                     >
                       <Icons.close className='h-4 w-4' />
                     </Button>
@@ -324,7 +318,7 @@ export default function AdvancedFormPatterns() {
                   size='sm'
                   onClick={() => field.pushValue({ name: '', role: '' })}
                 >
-                  <Icons.add className='mr-2 h-4 w-4' /> Add Member
+                  <Icons.add className='mr-2 h-4 w-4' /> 添加成员
                 </Button>
                 {field.state.value.length > 0 && (
                   <div className='flex flex-wrap gap-1'>
@@ -346,10 +340,8 @@ export default function AdvancedFormPatterns() {
 
           {/* ─── Section 4: Preferences (listeners / side effects) ─── */}
           <div className='space-y-1'>
-            <h3 className='text-lg font-semibold'>Preferences</h3>
-            <p className='text-muted-foreground text-sm'>
-              Listener side effects — country resets state
-            </p>
+            <h3 className='text-lg font-semibold'>地区设置</h3>
+            <p className='text-muted-foreground text-sm'>切换国家后自动清空州或地区</p>
           </div>
 
           <FieldGroup className='grid grid-cols-1 gap-4 md:grid-cols-2'>
@@ -362,10 +354,10 @@ export default function AdvancedFormPatterns() {
               }}
               children={(field) => (
                 <field.SelectField
-                  label='Country'
+                  label='国家'
                   required
                   options={countryOptions}
-                  placeholder='Select a country'
+                  placeholder='请选择国家'
                 />
               )}
             />
@@ -373,10 +365,10 @@ export default function AdvancedFormPatterns() {
               name='state'
               children={(field) => (
                 <field.SelectField
-                  label='State / Region'
+                  label='州或地区'
                   required
                   options={stateOptions}
-                  placeholder={selectedCountry ? 'Select state' : 'Select a country first'}
+                  placeholder={selectedCountry ? '请选择州或地区' : '请先选择国家'}
                 />
               )}
             />
@@ -387,10 +379,10 @@ export default function AdvancedFormPatterns() {
           {/* ─── Submit ─── */}
           <div className='flex gap-4 pt-2'>
             <Button type='button' variant='outline' onClick={() => form.reset()} className='flex-1'>
-              Reset
+              重置
             </Button>
             <form.AppForm>
-              <form.SubmitButton className='flex-1'>Register Team</form.SubmitButton>
+              <form.SubmitButton className='flex-1'>注册团队</form.SubmitButton>
             </form.AppForm>
           </div>
         </form>

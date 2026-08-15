@@ -28,11 +28,11 @@ export function CellAction({ data }: CellActionProps) {
   const deleteMutation = useMutation({
     ...deleteProductMutation,
     onSuccess: () => {
-      toast.success('Product deleted successfully');
+      toast.success('产品已删除');
       setOpen(false);
     },
     onError: () => {
-      toast.error('Failed to delete product');
+      toast.error('产品删除失败');
     }
   });
 
@@ -46,19 +46,19 @@ export function CellAction({ data }: CellActionProps) {
       />
       <DropdownMenu modal={false}>
         <DropdownMenuTrigger render={<Button variant='ghost' className='h-8 w-8 p-0' />}>
-          <span className='sr-only'>Open menu</span>
+          <span className='sr-only'>打开操作菜单</span>
           <Icons.ellipsis className='h-4 w-4' />
         </DropdownMenuTrigger>
         <DropdownMenuContent align='end'>
           <DropdownMenuGroup>
-            <DropdownMenuLabel>Actions</DropdownMenuLabel>
+            <DropdownMenuLabel>操作</DropdownMenuLabel>
           </DropdownMenuGroup>
           <DropdownMenuGroup>
             <DropdownMenuItem onClick={() => router.push(`/dashboard/product/${data.id}`)}>
-              <Icons.edit className='mr-2 h-4 w-4' /> Update
+              <Icons.edit className='mr-2 h-4 w-4' /> 编辑
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setOpen(true)}>
-              <Icons.trash className='mr-2 h-4 w-4' /> Delete
+              <Icons.trash className='mr-2 h-4 w-4' /> 删除
             </DropdownMenuItem>
           </DropdownMenuGroup>
         </DropdownMenuContent>

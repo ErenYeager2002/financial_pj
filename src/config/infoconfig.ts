@@ -1,49 +1,49 @@
 import type { InfobarContent } from '@/components/ui/infobar';
 
 export const workspacesInfoContent: InfobarContent = {
-  title: 'Workspaces Management',
+  title: '企业空间管理',
   sections: [
     {
-      title: 'Overview',
+      title: '功能说明',
       description:
-        'The Workspaces page allows you to manage your workspaces and switch between them. This feature is powered by Clerk Organizations, which enables multi-tenant workspace management. You can view all available workspaces, create new ones, and switch your active workspace.',
+        '企业空间页面用于查看、新建和切换企业空间。该功能由 Clerk Organizations 提供多租户组织管理能力。',
       links: [
         {
-          title: 'Clerk Organizations Documentation',
+          title: 'Clerk Organizations 文档',
           url: 'https://clerk.com/docs/organizations/overview'
         }
       ]
     },
     {
-      title: 'Creating Workspaces',
+      title: '创建企业空间',
       description:
-        'To create a new workspace, click the "Create Organization" button. You will be prompted to enter a workspace name and configure initial settings. Once created, you can switch to the new workspace and start managing it.',
+        '点击创建组织按钮，填写企业空间名称并完成初始设置。创建后可以切换到该空间并进行管理。',
       links: [
         {
-          title: 'Multi-tenant Authentication Guide',
+          title: '多租户身份验证指南',
           url: 'https://clerk.com/blog/how-to-build-multitenant-authentication-with-clerk'
         }
       ]
     },
     {
-      title: 'Switching Workspaces',
+      title: '切换企业空间',
       description:
-        'You can switch between workspaces by clicking on a workspace in the list. The selected workspace becomes your active organization context, and all organization-specific features will use this workspace.',
+        '点击列表中的企业空间即可切换。选中的空间会成为当前组织上下文，组织相关功能都将使用该空间。',
       links: []
     },
     {
-      title: 'Workspace Features',
+      title: '空间隔离',
       description:
-        'Each workspace operates independently with its own team members, roles, permissions, and billing. This allows you to manage multiple projects or teams within a single account while keeping their data and settings separate.',
+        '每个企业空间独立管理成员、角色、权限和账单，可在同一账号下管理多个团队，并保持数据和设置相互隔离。',
       links: []
     },
     {
-      title: 'Server-Side Permission Checks',
+      title: '服务端权限检查',
       description:
-        "This application follows Clerk's recommended patterns for multi-tenant authentication. Server-side permission checks ensure that users can only access resources for their active organization.",
+        '应用按照 Clerk 推荐方式实现多租户身份验证。服务端权限检查确保用户只能访问当前企业空间的资源。',
       links: [
         {
-          title: 'Clerk Organizations Documentation',
+          title: 'Clerk Organizations 文档',
           url: 'https://clerk.com/docs/organizations/overview'
         }
       ]
@@ -52,189 +52,182 @@ export const workspacesInfoContent: InfobarContent = {
 };
 
 export const teamInfoContent: InfobarContent = {
-  title: 'Team Management',
+  title: '团队管理',
   sections: [
     {
-      title: 'Overview',
+      title: '功能说明',
       description:
-        "The Team Management page allows you to manage your workspace team, including members, roles, security settings, and more. This page provides comprehensive organization management through Clerk's OrganizationProfile component.",
+        '团队管理页面通过 Clerk OrganizationProfile 组件管理企业空间的成员、角色和安全设置。',
       links: [
         {
-          title: 'Clerk Organizations Documentation',
+          title: 'Clerk Organizations 文档',
           url: 'https://clerk.com/docs/organizations/overview'
         }
       ]
     },
     {
-      title: 'Managing Team Members',
-      description:
-        'You can add, remove, and manage team members from this page. Invite new members by email, assign roles, and control their access levels. Each member can have different permissions based on their role.',
+      title: '管理团队成员',
+      description: '可以添加、移除和管理团队成员，通过邮箱邀请新成员，并为成员分配角色和访问权限。',
       links: []
     },
     {
-      title: 'Roles and Permissions',
+      title: '角色和权限',
       description:
-        'Configure default roles and permissions in the Clerk Dashboard under Organizations settings. Roles define what actions team members can perform within the workspace. Common roles include admin, member, and custom roles you define.',
+        '在 Clerk 控制台的 Organizations 设置中配置默认角色和权限。角色决定成员可以在企业空间内执行的操作。',
       links: [
         {
-          title: 'Clerk Organizations Documentation',
+          title: 'Clerk Organizations 文档',
           url: 'https://clerk.com/docs/organizations/overview'
         }
       ]
     },
     {
-      title: 'Security Settings',
-      description:
-        "Manage security settings for your workspace, including authentication requirements, session management, and access controls. These settings help protect your organization's data and resources.",
+      title: '安全设置',
+      description: '管理身份验证要求、会话和访问控制等安全设置，保护企业空间的数据和资源。',
       links: []
     },
     {
-      title: 'Organization Settings',
-      description:
-        'Configure general organization settings such as name, logo, and other workspace preferences. These settings apply to the entire workspace and affect all team members.',
+      title: '组织设置',
+      description: '配置组织名称、标志和其他偏好。这些设置应用于整个企业空间及其全部成员。',
       links: []
     },
     {
-      title: 'Navigation RBAC System',
+      title: '导航权限控制',
       description:
-        'The application includes a fully client-side navigation filtering system using the `useNav` hook. It supports `requireOrg`, `permission`, and `role` checks for instant access control. Navigation items are configured in `src/config/nav-config.ts` with `access` properties.',
+        '应用通过 useNav 钩子在客户端过滤导航项，支持 requireOrg、permission 和 role 检查。导航权限在 src/config/nav-config.ts 的 access 属性中配置。',
       links: []
     }
   ]
 };
 
 export const billingInfoContent: InfobarContent = {
-  title: 'Billing & Plans',
+  title: '账单与套餐',
   sections: [
     {
-      title: 'Overview',
+      title: '功能说明',
       description:
-        "The Billing page allows you to manage your organization's subscription and usage limits. Plans and subscriptions are managed through Clerk Billing for B2B, which provides organization-level subscription management with integrated Stripe payment processing.",
+        '账单页面用于管理企业空间的订阅和用量限制。Clerk Billing 为组织级订阅提供管理能力，并集成 Stripe 处理付款。',
       links: [
         {
-          title: 'Clerk Billing Documentation',
+          title: 'Clerk Billing 文档',
           url: 'https://clerk.com/docs/billing/overview'
         }
       ]
     },
     {
-      title: 'Available Plans',
+      title: '可选套餐',
       description:
-        'View and subscribe to available plans through the pricing table. Plans are created and managed in the Clerk Dashboard. Toggle "Publicly available" on plans to show them in the pricing table. Common plans include free, pro, and team tiers.',
+        '通过价格表查看和订阅套餐。套餐在 Clerk 控制台中创建和管理，启用公开可用后会显示在价格表中。',
       links: [
         {
-          title: 'Clerk Dashboard - Plans',
+          title: 'Clerk 控制台 - 套餐',
           url: 'https://dashboard.clerk.com/~/billing/plans'
         }
       ]
     },
     {
-      title: 'Plan Features',
+      title: '套餐功能',
       description:
-        'Each plan can include specific features that unlock functionality in the application. Features are added to plans in the Clerk Dashboard and can be checked in code using the `has()` function with `feature` checks.',
+        '每个套餐可以包含不同功能。功能在 Clerk 控制台中添加，并可在代码中通过 has() 函数检查。',
       links: []
     },
     {
-      title: 'Access Control',
+      title: '访问控制',
       description:
-        'Plans and features are used for access control throughout the application. Server-side checks use the `has()` function to verify plan or feature access. Client-side protection uses the `<Show>` component to conditionally render content based on subscription status.',
+        '套餐和功能用于控制应用访问。服务端使用 has() 检查套餐或功能权限，客户端使用 Show 组件根据订阅状态显示内容。',
       links: []
     },
     {
-      title: 'Billing Cost Structure',
+      title: '计费费用',
       description:
-        "Clerk Billing costs 0.7% per transaction, plus transaction fees paid directly to Stripe. Clerk Billing is not the same as Stripe Billing - plans and pricing are managed through the Clerk Dashboard and won't sync with existing Stripe products. Clerk uses Stripe only for payment processing.",
+        'Clerk Billing 每笔交易收取 0.7% 的费用，Stripe 交易费另计。套餐和定价在 Clerk 控制台中管理，不会与已有 Stripe 产品同步；Stripe 仅用于处理付款。',
       links: []
     },
     {
-      title: 'Setup Requirements',
+      title: '启用要求',
       description:
-        "To enable billing, navigate to Billing Settings in the Clerk Dashboard and enable billing for your application. Choose between Clerk's development gateway (for testing) or your own Stripe account (for production). Note: A Stripe account created for development cannot be used for production.",
+        '请在 Clerk 控制台的 Billing Settings 中启用账单功能。测试时可使用 Clerk 开发网关，生产环境需连接自己的 Stripe 账号；开发环境创建的 Stripe 账号不能用于生产环境。',
       links: [
         {
-          title: 'Billing Settings',
+          title: '账单设置',
           url: 'https://dashboard.clerk.com/~/billing/settings'
         }
       ]
     },
     {
-      title: 'Beta Status',
+      title: '测试版状态',
       description:
-        'Billing is currently in Beta and its APIs are experimental and may undergo breaking changes. To mitigate potential disruptions, we recommend pinning your SDK and `clerk-js` package versions.',
+        'Billing 当前仍处于测试阶段，API 可能发生不兼容变更。建议固定 SDK 和 clerk-js 的版本。',
       links: []
     }
   ]
 };
 
 export const productInfoContent: InfobarContent = {
-  title: 'Product Management',
+  title: '产品管理',
   sections: [
     {
-      title: 'Overview',
+      title: '功能说明',
       description:
-        'The Products page allows you to manage your product catalog. You can view all products in a table format with server-side functionality including sorting, filtering, pagination, and search capabilities. Use the "Add New" button to create new products.',
+        '产品页面用于管理产品目录。列表支持服务端排序、筛选、分页和搜索，点击新增按钮可以创建产品。',
       links: [
         {
-          title: 'Product Management Guide',
+          title: '产品管理指南',
           url: '#'
         }
       ]
     },
     {
-      title: 'Adding Products',
-      description:
-        'To add a new product, click the "Add New" button in the page header. You will be taken to a form where you can enter product details including name, description, price, category, and upload product images.',
+      title: '新增产品',
+      description: '点击页面标题区域的新增按钮，填写产品名称、描述、价格和分类，并可上传产品图片。',
       links: [
         {
-          title: 'Adding Products Documentation',
+          title: '新增产品说明',
           url: '#'
         }
       ]
     },
     {
-      title: 'Editing Products',
-      description:
-        'You can edit existing products by clicking on a product row in the table. This will open the product edit form where you can modify any product information. Changes are saved automatically when you submit the form.',
+      title: '编辑产品',
+      description: '点击列表中的产品可打开编辑表单。修改产品信息并提交后保存。',
       links: [
         {
-          title: 'Editing Products Guide',
+          title: '编辑产品指南',
           url: '#'
         }
       ]
     },
     {
-      title: 'Deleting Products',
-      description:
-        'Products can be deleted from the product listing table. Click the delete action for the product you want to remove. You will be asked to confirm the deletion before the product is permanently removed from your catalog.',
+      title: '删除产品',
+      description: '在产品列表中选择删除操作，确认后产品会从目录中永久移除。',
       links: [
         {
-          title: 'Product Deletion Policy',
+          title: '产品删除说明',
           url: '#'
         }
       ]
     },
     {
-      title: 'Table Features',
-      description:
-        'The product table includes several powerful features to help you manage large product catalogs efficiently. You can sort columns by clicking on column headers, filter products using the filter controls, navigate through pages using pagination, and quickly find products using the search functionality.',
+      title: '列表功能',
+      description: '产品列表支持点击表头排序、按条件筛选、分页浏览和关键词搜索。',
       links: [
         {
-          title: 'Table Features Documentation',
+          title: '列表功能说明',
           url: '#'
         },
         {
-          title: 'Sorting and Filtering Guide',
+          title: '排序和筛选指南',
           url: '#'
         }
       ]
     },
     {
-      title: 'Product Fields',
+      title: '产品字段',
       description:
-        'Each product can have the following fields: Name (required), Description (optional text), Price (numeric value), Category (for organizing products), and Image Upload (for product photos). All fields can be edited when creating or updating a product.',
+        '产品包含名称（必填）、描述、价格、分类和图片。创建或更新产品时可以编辑这些字段。',
       links: [
         {
-          title: 'Product Fields Specification',
+          title: '产品字段说明',
           url: '#'
         }
       ]

@@ -28,11 +28,11 @@ export function CellAction({ data }: CellActionProps) {
   const deleteMutation = useMutation({
     ...deleteUserMutation,
     onSuccess: () => {
-      toast.success('User deleted successfully');
+      toast.success('用户已删除');
       setDeleteOpen(false);
     },
     onError: () => {
-      toast.error('Failed to delete user');
+      toast.error('用户删除失败');
     }
   });
 
@@ -47,19 +47,19 @@ export function CellAction({ data }: CellActionProps) {
       <UserFormSheet user={data} open={editOpen} onOpenChange={setEditOpen} />
       <DropdownMenu modal={false}>
         <DropdownMenuTrigger render={<Button variant='ghost' className='h-8 w-8 p-0' />}>
-          <span className='sr-only'>Open menu</span>
+          <span className='sr-only'>打开操作菜单</span>
           <Icons.ellipsis className='h-4 w-4' />
         </DropdownMenuTrigger>
         <DropdownMenuContent align='end'>
           <DropdownMenuGroup>
-            <DropdownMenuLabel>Actions</DropdownMenuLabel>
+            <DropdownMenuLabel>操作</DropdownMenuLabel>
           </DropdownMenuGroup>
           <DropdownMenuGroup>
             <DropdownMenuItem onClick={() => setEditOpen(true)}>
-              <Icons.edit className='mr-2 h-4 w-4' /> Update
+              <Icons.edit className='mr-2 h-4 w-4' /> 编辑
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setDeleteOpen(true)}>
-              <Icons.trash className='mr-2 h-4 w-4' /> Delete
+              <Icons.trash className='mr-2 h-4 w-4' /> 删除
             </DropdownMenuItem>
           </DropdownMenuGroup>
         </DropdownMenuContent>

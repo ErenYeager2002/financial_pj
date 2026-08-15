@@ -2,14 +2,14 @@ import PageContainer from '@/components/layout/page-container';
 import SheetFormDemo from '@/features/forms/components/sheet-form-demo';
 
 export const metadata = {
-  title: 'Dashboard: Sheet Form'
+  title: '侧边面板与对话框表单'
 };
 
 export default function Page() {
   return (
     <PageContainer
-      pageTitle='Sheet & Dialog Forms'
-      pageDescription='Form patterns inside sheets and dialogs with external submit buttons.'
+      pageTitle='侧边面板与对话框表单'
+      pageDescription='演示在侧边面板和对话框中使用表单及外部提交按钮'
     >
       <SheetFormDemo />
     </PageContainer>

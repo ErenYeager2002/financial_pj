@@ -30,7 +30,7 @@ export default function NewTaskDialog() {
 
     if (typeof title !== 'string' || typeof description !== 'string') return;
     if (!title.trim()) {
-      setTitleError('Please enter a task title.');
+      setTitleError('请输入任务标题。');
       return;
     }
     setTitleError(null);
@@ -47,21 +47,19 @@ export default function NewTaskDialog() {
         if (!next) setTitleError(null);
       }}
     >
-      <DialogTrigger render={<Button variant='secondary' size='sm' />}>
-        + Add New Task
-      </DialogTrigger>
+      <DialogTrigger render={<Button variant='secondary' size='sm' />}>+ 新增任务</DialogTrigger>
       <DialogContent className='sm:max-w-[425px]'>
         <DialogHeader>
-          <DialogTitle>Add New Task</DialogTitle>
-          <DialogDescription>What do you want to get done today?</DialogDescription>
+          <DialogTitle>新增任务</DialogTitle>
+          <DialogDescription>填写需要完成的任务。</DialogDescription>
         </DialogHeader>
         <form id='task-form' className='grid gap-4 py-4' onSubmit={handleSubmit}>
           <div className='grid grid-cols-4 items-center gap-4'>
             <Input
               id='title'
               name='title'
-              placeholder='Task title...'
-              aria-label='Task title'
+              placeholder='任务标题...'
+              aria-label='任务标题'
               required
               aria-invalid={!!titleError}
               aria-describedby={titleError ? 'task-title-error' : undefined}
@@ -77,15 +75,15 @@ export default function NewTaskDialog() {
             <Textarea
               id='description'
               name='description'
-              placeholder='Description...'
-              aria-label='Task description'
+              placeholder='任务描述（选填）...'
+              aria-label='任务描述'
               className='col-span-4'
             />
           </div>
         </form>
         <DialogFooter>
           <Button type='submit' size='sm' form='task-form'>
-            Add Task
+            添加任务
           </Button>
         </DialogFooter>
       </DialogContent>

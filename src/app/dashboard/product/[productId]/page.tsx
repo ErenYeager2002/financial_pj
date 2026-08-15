@@ -5,7 +5,7 @@ import PageContainer from '@/components/layout/page-container';
 import ProductViewPage from '@/features/products/components/product-view-page';
 
 export const metadata = {
-  title: 'Dashboard : Product View'
+  title: '产品详情'
 };
 
 type PageProps = { params: Promise<{ productId: string }> };

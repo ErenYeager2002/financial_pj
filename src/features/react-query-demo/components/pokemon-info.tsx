@@ -17,6 +17,48 @@ import { Progress } from '@/components/ui/progress';
 
 const POKEMON_IDS = [25, 1, 4, 7, 6, 150, 133, 39, 143, 94];
 
+const POKEMON_NAMES: Record<number, string> = {
+  1: '妙蛙种子',
+  4: '小火龙',
+  6: '喷火龙',
+  7: '杰尼龟',
+  25: '皮卡丘',
+  39: '胖丁',
+  94: '耿鬼',
+  133: '伊布',
+  143: '卡比兽',
+  150: '超梦'
+};
+
+const TYPE_NAMES: Record<string, string> = {
+  bug: '虫',
+  dragon: '龙',
+  electric: '电',
+  fairy: '妖精',
+  fighting: '格斗',
+  fire: '火',
+  flying: '飞行',
+  ghost: '幽灵',
+  grass: '草',
+  ground: '地面',
+  ice: '冰',
+  normal: '一般',
+  poison: '毒',
+  psychic: '超能力',
+  rock: '岩石',
+  steel: '钢',
+  water: '水'
+};
+
+const STAT_NAMES: Record<string, string> = {
+  hp: '生命值',
+  attack: '攻击',
+  defense: '防御',
+  'special-attack': '特攻',
+  'special-defense': '特防',
+  speed: '速度'
+};
+
 export function PokemonInfo() {
   const [pokemonId, setPokemonId] = useState(25);
   const { data } = useSuspenseQuery(pokemonOptions(pokemonId));
@@ -26,10 +68,10 @@ export function PokemonInfo() {
       {/* Pokemon selector */}
       <Card>
         <CardHeader>
-          <CardTitle>Pick a Pokemon</CardTitle>
+          <CardTitle>选择宝可梦</CardTitle>
           <CardDescription>
-            Each selection triggers <code>useSuspenseQuery</code> — cached results are instant, new
-            fetches show the Suspense fallback.
+            每次选择都会触发 <code>useSuspenseQuery</code>
+            。缓存结果会立即显示，获取新数据时显示加载占位内容。
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -52,17 +94,17 @@ export function PokemonInfo() {
       <Card>
         <CardHeader>
           <div className='flex items-center gap-3'>
-            <CardTitle className='capitalize'>{data.name}</CardTitle>
+            <CardTitle>{POKEMON_NAMES[pokemonId] ?? data.name}</CardTitle>
             <div className='flex gap-1'>
               {data.types.map(({ type }) => (
                 <Badge key={type.name} variant='secondary'>
-                  {type.name}
+                  {TYPE_NAMES[type.name] ?? type.name}
                 </Badge>
               ))}
             </div>
           </div>
           <CardDescription>
-            Height: {data.height / 10}m &middot; Weight: {data.weight / 10}kg
+            身高：{data.height / 10} 米 &middot; 体重：{data.weight / 10} 千克
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -79,7 +121,9 @@ export function PokemonInfo() {
               {data.stats.map((s) => (
                 <div key={s.stat.name} className='space-y-1'>
                   <div className='flex justify-between text-sm'>
-                    <span className='text-muted-foreground capitalize'>{s.stat.name}</span>
+                    <span className='text-muted-foreground'>
+                      {STAT_NAMES[s.stat.name] ?? s.stat.name}
+                    </span>
                     <span className='font-medium'>{s.base_stat}</span>
                   </div>
                   <Progress value={Math.min(s.base_stat, 150) / 1.5} />
@@ -90,7 +134,7 @@ export function PokemonInfo() {
         </CardContent>
         <CardFooter>
           <p className='text-muted-foreground text-xs'>
-            Data from PokeAPI &middot; Prefetched on server, hydrated on client
+            数据来自 PokeAPI &middot; 服务端预取，客户端注水
           </p>
         </CardFooter>
       </Card>

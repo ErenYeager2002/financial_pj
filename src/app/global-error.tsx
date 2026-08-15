@@ -17,7 +17,7 @@ export default function GlobalError({
   }, [error]);
 
   return (
-    <html lang='en'>
+    <html lang='zh-CN'>
       <body
         style={{
           margin: 0,
@@ -29,10 +29,8 @@ export default function GlobalError({
         }}
       >
         <div style={{ textAlign: 'center', padding: '1rem' }}>
-          <h1 style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>Something went wrong</h1>
-          <p style={{ color: '#6b7280', marginBottom: '1.25rem' }}>
-            An unexpected error occurred. Please try again.
-          </p>
+          <h1 style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>页面出现错误</h1>
+          <p style={{ color: '#6b7280', marginBottom: '1.25rem' }}>发生了意外错误，请重试。</p>
           <button
             onClick={() => reset()}
             style={{
@@ -44,7 +42,7 @@ export default function GlobalError({
               cursor: 'pointer'
             }}
           >
-            Try again
+            重试
           </button>
         </div>
       </body>

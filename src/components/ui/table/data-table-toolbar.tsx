@@ -46,14 +46,14 @@ export function DataTableToolbar<TData>({
         ))}
         {isFiltered && (
           <Button
-            aria-label='Reset filters'
+            aria-label='重置筛选'
             variant='outline'
             size='sm'
             className='border-dashed'
             onClick={onReset}
           >
             <Icons.close />
-            Reset
+            重置
           </Button>
         )}
       </div>
@@ -80,7 +80,7 @@ function DataTableToolbarFilter<TData>({ column }: DataTableToolbarFilterProps<T
           return (
             <Input
               placeholder={columnMeta.placeholder ?? columnMeta.label}
-              aria-label={columnMeta.label ?? 'Filter'}
+              aria-label={columnMeta.label ?? '筛选'}
               value={(column.getFilterValue() as string) ?? ''}
               onChange={(event) => column.setFilterValue(event.target.value)}
               className='h-8 w-40 lg:w-56'
@@ -94,7 +94,7 @@ function DataTableToolbarFilter<TData>({ column }: DataTableToolbarFilterProps<T
                 type='number'
                 inputMode='numeric'
                 placeholder={columnMeta.placeholder ?? columnMeta.label}
-                aria-label={columnMeta.label ?? 'Filter'}
+                aria-label={columnMeta.label ?? '筛选'}
                 value={(column.getFilterValue() as string) ?? ''}
                 onChange={(event) => column.setFilterValue(event.target.value)}
                 className={cn('h-8 w-[120px]', columnMeta.unit && 'pr-8')}

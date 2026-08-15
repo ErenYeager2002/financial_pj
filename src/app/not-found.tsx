@@ -12,14 +12,14 @@ export default function NotFound() {
       <span className='from-foreground bg-linear-to-b to-transparent bg-clip-text text-[10rem] leading-none font-extrabold text-transparent'>
         404
       </span>
-      <h2 className='font-heading my-2 text-2xl font-bold'>Something&apos;s missing</h2>
-      <p>Sorry, the page you are looking for doesn&apos;t exist or has been moved.</p>
+      <h2 className='font-heading my-2 text-2xl font-bold'>页面不存在</h2>
+      <p>你访问的页面不存在或已被移动。</p>
       <div className='mt-8 flex justify-center gap-2'>
         <Button onClick={() => router.back()} variant='default' size='lg'>
-          Go back
+          返回上一页
         </Button>
         <Button onClick={() => router.push('/dashboard')} variant='ghost' size='lg'>
-          Back to Home
+          返回首页
         </Button>
       </div>
     </div>

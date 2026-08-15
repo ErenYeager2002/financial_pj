@@ -11,7 +11,7 @@ import { CATEGORY_OPTIONS } from './options';
 export const columns: ColumnDef<Product>[] = [
   {
     accessorKey: 'photo_url',
-    header: 'IMAGE',
+    header: '图片',
     cell: ({ row }) => {
       return (
         <div className='relative aspect-square'>
@@ -30,12 +30,12 @@ export const columns: ColumnDef<Product>[] = [
     id: 'name',
     accessorKey: 'name',
     header: ({ column }: { column: Column<Product, unknown> }) => (
-      <DataTableColumnHeader column={column} title='Name' />
+      <DataTableColumnHeader column={column} title='名称' />
     ),
     cell: ({ cell }) => <div>{cell.getValue<Product['name']>()}</div>,
     meta: {
-      label: 'Name',
-      placeholder: 'Search products...',
+      label: '名称',
+      placeholder: '搜索产品...',
       variant: 'text',
       icon: Icons.text
     },
@@ -46,7 +46,7 @@ export const columns: ColumnDef<Product>[] = [
     accessorKey: 'category',
     enableSorting: false,
     header: ({ column }: { column: Column<Product, unknown> }) => (
-      <DataTableColumnHeader column={column} title='Category' />
+      <DataTableColumnHeader column={column} title='分类' />
     ),
     cell: ({ cell }) => {
       const status = cell.getValue<Product['category']>();
@@ -55,24 +55,24 @@ export const columns: ColumnDef<Product>[] = [
       return (
         <Badge variant='outline' className='capitalize'>
           <Icon />
-          {status}
+          {CATEGORY_OPTIONS.find((option) => option.value === status)?.label ?? status}
         </Badge>
       );
     },
     enableColumnFilter: true,
     meta: {
-      label: 'categories',
+      label: '分类',
       variant: 'multiSelect',
       options: CATEGORY_OPTIONS
     }
   },
   {
     accessorKey: 'price',
-    header: 'PRICE'
+    header: '价格'
   },
   {
     accessorKey: 'description',
-    header: 'DESCRIPTION'
+    header: '描述'
   },
 
   {

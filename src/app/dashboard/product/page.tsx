@@ -9,7 +9,7 @@ import { SearchParams } from 'nuqs/server';
 import { productInfoContent } from '@/config/infoconfig';
 
 export const metadata = {
-  title: 'Dashboard: Products'
+  title: '产品管理'
 };
 
 type pageProps = {
@@ -22,8 +22,8 @@ export default async function Page(props: pageProps) {
 
   return (
     <PageContainer
-      pageTitle='Products'
-      pageDescription='Manage products (React Query + nuqs table pattern.)'
+      pageTitle='产品管理'
+      pageDescription='查看、新增、编辑和删除产品'
       infoContent={productInfoContent}
       pageHeaderAction={
         <Link href='/dashboard/product/new' className={cn(buttonVariants(), 'text-xs md:text-sm')}>

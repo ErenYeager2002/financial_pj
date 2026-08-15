@@ -37,12 +37,12 @@ const formatDate = (date: string | Date): string => {
   const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
-  if (diffMins < 1) return 'Just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
+  if (diffMins < 1) return '刚刚';
+  if (diffMins < 60) return `${diffMins} 分钟前`;
+  if (diffHours < 24) return `${diffHours} 小时前`;
+  if (diffDays < 7) return `${diffDays} 天前`;
 
-  return d.toLocaleDateString('en-US', {
+  return d.toLocaleDateString('zh-CN', {
     month: 'short',
     day: 'numeric'
   });
@@ -123,7 +123,7 @@ export const NotificationCard: FC<NotificationCardProps> = ({
                 'rounded-lg p-1.5 transition-colors',
                 'text-muted-foreground hover:bg-accent hover:text-foreground'
               )}
-              aria-label='Mark as read'
+              aria-label='标记为已读'
             >
               <Icons.check size={16} />
             </button>

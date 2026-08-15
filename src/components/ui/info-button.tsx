@@ -41,11 +41,11 @@ export function InfoButton({
       size={size}
       className={cn('shrink-0', className)}
       onClick={handleClick}
-      aria-label='Show information'
+      aria-label='查看说明'
       {...props}
     >
       <Icons.info className='h-4 w-4' />
-      <span className='sr-only'>Show information</span>
+      <span className='sr-only'>查看说明</span>
     </Button>
   );
 }
