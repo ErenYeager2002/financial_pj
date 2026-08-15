@@ -1,47 +1,33 @@
 param(
-    [int]$Port = 8000,
-    [string]$HostAddress = "127.0.0.1",
-    [string]$LanInterfaceAlias = "WLAN",
-    [switch]$NoBrowser
+    [switch]$Build
 )
 
 $ErrorActionPreference = "Stop"
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
-$env:PYTHONIOENCODING = "utf-8"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
-$Python = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
-$Frontend = Join-Path $ProjectRoot "frontend\dist\index.html"
+$ComposeFile = Join-Path $ProjectRoot "deploy\production\compose.yaml"
+$EnvFile = Join-Path $ProjectRoot "deploy\production\.env"
 
-if (-not (Test-Path -LiteralPath $Python)) {
-    throw "没有找到项目虚拟环境，请先运行 scripts\bootstrap.ps1。"
-}
-if (-not (Test-Path -LiteralPath $Frontend)) {
-    throw "前端尚未构建，请先运行 scripts\bootstrap.ps1。"
+if (-not (Test-Path -LiteralPath $EnvFile)) {
+    throw "缺少生产环境配置。请先运行 .\.venv\Scripts\python.exe scripts\prepare_production_env.py。"
 }
 
-$Arguments = @(
-    "$PSScriptRoot\serve_control.py",
-    "start",
-    "--port",
-    $Port,
-    "--host",
-    $HostAddress
-)
-if ($NoBrowser) {
-    $Arguments += "--no-browser"
-}
-
-& $Python @Arguments
-$ExitCode = $LASTEXITCODE
-if ($ExitCode -eq 0 -and $HostAddress -in @("0.0.0.0", "::")) {
-    $LanAddress = Get-NetIPAddress `
-        -InterfaceAlias $LanInterfaceAlias `
-        -AddressFamily IPv4 `
-        -ErrorAction SilentlyContinue |
-        Where-Object { $_.IPAddress -notlike "169.254.*" } |
-        Select-Object -First 1 -ExpandProperty IPAddress
-    if ($LanAddress) {
-        Write-Host "局域网访问地址：http://${LanAddress}:$Port"
+$ComposeArgs = @("compose", "--env-file", $EnvFile, "-f", $ComposeFile)
+if ($Build) {
+    & docker @ComposeArgs build
+    if ($LASTEXITCODE -ne 0) {
+        throw "容器镜像构建失败。"
     }
 }
-exit $ExitCode
+
+& docker @ComposeArgs up -d
+if ($LASTEXITCODE -ne 0) {
+    throw "平台启动失败。"
+}
+
+& docker @ComposeArgs ps
+if ($LASTEXITCODE -ne 0) {
+    throw "平台状态检查失败。"
+}
+
+Write-Host "平台地址：https://localhost:8443"

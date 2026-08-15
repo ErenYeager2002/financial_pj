@@ -20,7 +20,12 @@ from app.network_policy import (  # noqa: E402
     normalize_network_target,
 )
 
-NEXT_ROOT = Path(os.getenv("NEXT_APP_DIR", r"D:\anything\next-shadcn-dashboard-starter"))
+
+def default_next_root(project_root: Path = PROJECT_ROOT) -> Path:
+    return project_root / "web"
+
+
+NEXT_ROOT = Path(os.getenv("NEXT_APP_DIR", str(default_next_root())))
 OUTPUT = PROJECT_ROOT / "deploy" / "production" / ".env"
 LOCAL_CADDYFILE = PROJECT_ROOT / "deploy" / "production" / "Caddyfile"
 LOCAL_TLS_DIR = PROJECT_ROOT / "deploy" / "production" / "tls"

@@ -9,6 +9,7 @@ import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PLATFORM_SKILLS = PROJECT_ROOT / "skills"
+SOURCE_SKILLS = PROJECT_ROOT / "sources" / "finance-skills" / "skills"
 BRIDGE_TEMPLATE = PROJECT_ROOT / "scripts" / "legacy_skill_bridge.py"
 UNAVAILABLE_TEMPLATE = PROJECT_ROOT / "scripts" / "unavailable_skill.py"
 ZHIYUN_FETCH_TEMPLATE = PROJECT_ROOT / "scripts" / "secure_zhiyun_fetch.py"
@@ -714,7 +715,12 @@ def sync_one(source_root: Path, skill_id: str, item: dict[str, Any], executable:
 def main() -> None:
     global PLATFORM_SKILLS
     parser = argparse.ArgumentParser(description="将 finance-skills 安全同步到平台 Skill Registry")
-    parser.add_argument("--source", type=Path, required=True, help="finance-skills/skills 目录")
+    parser.add_argument(
+        "--source",
+        type=Path,
+        default=SOURCE_SKILLS,
+        help="finance-skills/skills 目录；默认使用仓库内 sources/finance-skills/skills",
+    )
     parser.add_argument(
         "--target",
         type=Path,

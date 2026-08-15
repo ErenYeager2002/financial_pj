@@ -191,7 +191,7 @@ def test_release_lifecycle_publish_without_rollback() -> None:
                 f"/api/admin/skill-releases/{baseline['id']}/rollback",
                 json={"confirmation": f"回退 {skill_id} {original_version}"},
             )
-            assert removed.status_code == 405
+            assert removed.status_code == 404
 
     with SessionLocal() as db:
         actions = {item.action for item in db.query(AuditEvent).all()}

@@ -14,11 +14,11 @@ backend/.coverage
 backend/htmlcov/
 backend/*.egg-info/
 
-frontend/node_modules/
-frontend/dist/
-frontend/*.tsbuildinfo
-frontend/vite.config.js
-frontend/vite.config.d.ts
+legacy/vite-frontend/node_modules/
+legacy/vite-frontend/dist/
+legacy/vite-frontend/*.tsbuildinfo
+legacy/vite-frontend/vite.config.js
+legacy/vite-frontend/vite.config.d.ts
 
 data/*
 !data/.gitkeep

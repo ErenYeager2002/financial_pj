@@ -3,7 +3,7 @@ name: financial-platform
 x-backend: &backend
   image: financial-platform-backend:stage10
   build:
-    context: ${FINANCIAL_PLATFORM_DIR}
+    context: ${FINANCIAL_PLATFORM_DIR:-../..}
     dockerfile: deploy/docker/Dockerfile
   restart: unless-stopped
   read_only: true
@@ -80,7 +80,7 @@ services:
   egress-proxy:
     image: financial-platform-backend:stage10
     build:
-      context: ${FINANCIAL_PLATFORM_DIR}
+      context: ${FINANCIAL_PLATFORM_DIR:-../..}
       dockerfile: deploy/docker/Dockerfile
     restart: unless-stopped
     read_only: true
@@ -179,7 +179,7 @@ services:
   next:
     image: financial-platform-next:stage10
     build:
-      context: ${NEXT_APP_DIR}
+      context: ${NEXT_APP_DIR:-../../web}
       dockerfile: Dockerfile
       args:
         NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}

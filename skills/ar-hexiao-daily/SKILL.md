@@ -295,7 +295,7 @@ python3 scripts/build_task_reports.py --date-from "<开始日期>" --date-to "<�
 python3 scripts/verify_sources.py verify
 ```
 
-多日任务中，`classify_hexiao.py`、`validate_plan.py`、`build_flow_plan.py`、`build_worklist.py` 必须传入当前日期对应的显式输入和输出路径，不得依赖“最新文件”猜测。长期工作副本保留内部公式和历史外链公式；便携版只把历史外链公式转换为缓存值，并按剩余公式重建计算链。交付的所有 Excel 逐个运行 `python D:\BESTEASY\03_tools\scripts\xlsx_lightweight_audit.py <文件路径> --strict`。
+多日任务中，`classify_hexiao.py`、`validate_plan.py`、`build_flow_plan.py`、`build_worklist.py` 必须传入当前日期对应的显式输入和输出路径，不得依赖“最新文件”猜测。长期工作副本保留内部公式和历史外链公式；便携版只把历史外链公式转换为缓存值，并按剩余公式重建计算链。交付的所有 Excel 逐个运行 `python D:\BESTEASY\financial_pj\tools\xlsx_lightweight_audit.py <文件路径> --strict`。
 
 `--confirmed` 仅为旧命令兼容参数，不再是写入条件。她明确说“只出清单/不要写”时不得 apply。
 

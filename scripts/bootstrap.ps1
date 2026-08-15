@@ -3,11 +3,16 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $VenvPython = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
+$WebRoot = Join-Path $ProjectRoot "web"
 
 if (-not (Test-Path -LiteralPath $VenvPython)) {
     & $PythonCommand -m venv (Join-Path $ProjectRoot ".venv")
+    if ($LASTEXITCODE -ne 0) {
+        throw "Python 虚拟环境创建失败。"
+    }
 }
 
 & $VenvPython -m pip install -e "$ProjectRoot\backend[dev]" `
@@ -16,38 +21,16 @@ if ($LASTEXITCODE -ne 0) {
     throw "Python 依赖安装失败。"
 }
 
-# 数据库备份与版本化迁移：既有数据库先备份，再由应用统一入口识别并接管旧库。
-if (Test-Path -LiteralPath (Join-Path $ProjectRoot "data\financial.db")) {
-    & $VenvPython (Join-Path $PSScriptRoot "backup_database.py") --label bootstrap
-    if ($LASTEXITCODE -ne 0) {
-        throw "数据库备份失败，已停止迁移。"
-    }
-}
-Push-Location (Join-Path $ProjectRoot "backend")
+Push-Location $WebRoot
 try {
-    & $VenvPython -c "from app.database import init_db; init_db()"
+    corepack prepare pnpm@10.15.1 --activate
+    corepack pnpm install --frozen-lockfile
     if ($LASTEXITCODE -ne 0) {
-        throw "数据库迁移失败，请查看迁移输出。"
+        throw "Next.js 依赖安装失败。"
     }
 }
 finally {
     Pop-Location
 }
 
-Push-Location (Join-Path $ProjectRoot "frontend")
-try {
-    npm install --proxy=null --https-proxy=null `
-        --registry="https://registry.npmmirror.com"
-    if ($LASTEXITCODE -ne 0) {
-        throw "前端依赖安装失败。"
-    }
-    npm run build
-    if ($LASTEXITCODE -ne 0) {
-        throw "前端构建失败。"
-    }
-}
-finally {
-    Pop-Location
-}
-
-Write-Host "初始化完成。运行 scripts\start.ps1 启动平台。"
+Write-Host "开发依赖已安装。生产部署请运行 scripts\start.ps1。"

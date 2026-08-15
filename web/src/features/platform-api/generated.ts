@@ -4,2896 +4,2896 @@
  */
 
 export interface paths {
-  '/api/admin/approvals': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/admin/approvals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin List Approvals */
+        get: operations["admin_list_approvals_api_admin_approvals_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Admin List Approvals */
-    get: operations['admin_list_approvals_api_admin_approvals_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/admin/approvals/{approval_id}/decision': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/admin/approvals/{approval_id}/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Admin Decide Approval */
+        post: operations["admin_decide_approval_api_admin_approvals__approval_id__decision_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /** Admin Decide Approval */
-    post: operations['admin_decide_approval_api_admin_approvals__approval_id__decision_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/admin/assistant-profile': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/admin/assistant-profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Admin Profile */
+        get: operations["get_admin_profile_api_admin_assistant_profile_get"];
+        /** Put Admin Profile */
+        put: operations["put_admin_profile_api_admin_assistant_profile_put"];
+        post?: never;
+        /** Delete Admin Profile */
+        delete: operations["delete_admin_profile_api_admin_assistant_profile_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Get Admin Profile */
-    get: operations['get_admin_profile_api_admin_assistant_profile_get'];
-    /** Put Admin Profile */
-    put: operations['put_admin_profile_api_admin_assistant_profile_put'];
-    post?: never;
-    /** Delete Admin Profile */
-    delete: operations['delete_admin_profile_api_admin_assistant_profile_delete'];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/admin/audit-events': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/admin/audit-events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Audit Events */
+        get: operations["list_audit_events_api_admin_audit_events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** List Audit Events */
-    get: operations['list_audit_events_api_admin_audit_events_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/admin/observability/summary': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/admin/observability/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin Observability Summary */
+        get: operations["admin_observability_summary_api_admin_observability_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Admin Observability Summary */
-    get: operations['admin_observability_summary_api_admin_observability_summary_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/admin/registry/reload': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/admin/registry/reload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reload Registry */
+        post: operations["reload_registry_api_admin_registry_reload_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /** Reload Registry */
-    post: operations['reload_registry_api_admin_registry_reload_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/admin/skill-releases': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/admin/skill-releases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin List Skill Releases */
+        get: operations["admin_list_skill_releases_api_admin_skill_releases_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Admin List Skill Releases */
-    get: operations['admin_list_skill_releases_api_admin_skill_releases_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/admin/skill-releases/import': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/admin/skill-releases/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Admin Import Skill Release */
+        post: operations["admin_import_skill_release_api_admin_skill_releases_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /** Admin Import Skill Release */
-    post: operations['admin_import_skill_release_api_admin_skill_releases_import_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/admin/skill-releases/inbox': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/admin/skill-releases/inbox": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin List Release Inbox */
+        get: operations["admin_list_release_inbox_api_admin_skill_releases_inbox_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Admin List Release Inbox */
-    get: operations['admin_list_release_inbox_api_admin_skill_releases_inbox_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/admin/skill-releases/{release_id}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/admin/skill-releases/{release_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Admin Update Skill Release */
+        patch: operations["admin_update_skill_release_api_admin_skill_releases__release_id__patch"];
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    /** Admin Update Skill Release */
-    patch: operations['admin_update_skill_release_api_admin_skill_releases__release_id__patch'];
-    trace?: never;
-  };
-  '/api/admin/skill-releases/{release_id}/publish': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/admin/skill-releases/{release_id}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Admin Publish Skill Release */
+        post: operations["admin_publish_skill_release_api_admin_skill_releases__release_id__publish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /** Admin Publish Skill Release */
-    post: operations['admin_publish_skill_release_api_admin_skill_releases__release_id__publish_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/admin/skill-releases/{release_id}/review': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/admin/skill-releases/{release_id}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Admin Review Skill Release */
+        post: operations["admin_review_skill_release_api_admin_skill_releases__release_id__review_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /** Admin Review Skill Release */
-    post: operations['admin_review_skill_release_api_admin_skill_releases__release_id__review_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/admin/users': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/admin/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin List Users */
+        get: operations["admin_list_users_api_admin_users_get"];
+        put?: never;
+        /** Admin Create User */
+        post: operations["admin_create_user_api_admin_users_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Admin List Users */
-    get: operations['admin_list_users_api_admin_users_get'];
-    put?: never;
-    /** Admin Create User */
-    post: operations['admin_create_user_api_admin_users_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/admin/users/{user_id}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/admin/users/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Admin Update User */
+        patch: operations["admin_update_user_api_admin_users__user_id__patch"];
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    /** Admin Update User */
-    patch: operations['admin_update_user_api_admin_users__user_id__patch'];
-    trace?: never;
-  };
-  '/api/admin/users/{user_id}/skill-permissions': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/admin/users/{user_id}/skill-permissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Admin Replace Skill Permissions */
+        put: operations["admin_replace_skill_permissions_api_admin_users__user_id__skill_permissions_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    /** Admin Replace Skill Permissions */
-    put: operations['admin_replace_skill_permissions_api_admin_users__user_id__skill_permissions_put'];
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/admin/workflow-definitions': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/admin/workflow-definitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin List Workflow Definitions */
+        get: operations["admin_list_workflow_definitions_api_admin_workflow_definitions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Admin List Workflow Definitions */
-    get: operations['admin_list_workflow_definitions_api_admin_workflow_definitions_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/assistant/prepare': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/assistant/prepare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Prepare */
+        post: operations["prepare_api_assistant_prepare_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /** Prepare */
-    post: operations['prepare_api_assistant_prepare_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/assistant/status': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/assistant/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Assistant Status */
+        get: operations["get_assistant_status_api_assistant_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Get Assistant Status */
-    get: operations['get_assistant_status_api_assistant_status_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/auth/change-password': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/auth/change-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Auth Change Password */
+        post: operations["auth_change_password_api_auth_change_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /** Auth Change Password */
-    post: operations['auth_change_password_api_auth_change_password_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/auth/login': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Auth Login */
+        post: operations["auth_login_api_auth_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /** Auth Login */
-    post: operations['auth_login_api_auth_login_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/auth/logout': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Auth Logout */
+        post: operations["auth_logout_api_auth_logout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /** Auth Logout */
-    post: operations['auth_logout_api_auth_logout_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/auth/session': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/auth/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Auth Session */
+        get: operations["auth_session_api_auth_session_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Auth Session */
-    get: operations['auth_session_api_auth_session_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/catalog/skills': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/catalog/skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Catalog Skills
+         * @description 返回员工安全视图；管理员访问时也不暴露执行入口和来源路径。
+         */
+        get: operations["list_catalog_skills_api_catalog_skills_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /**
-     * List Catalog Skills
-     * @description 返回员工安全视图；管理员访问时也不暴露执行入口和来源路径。
-     */
-    get: operations['list_catalog_skills_api_catalog_skills_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/catalog/skills/{skill_id}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/catalog/skills/{skill_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Catalog Skill */
+        get: operations["get_catalog_skill_api_catalog_skills__skill_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Get Catalog Skill */
-    get: operations['get_catalog_skill_api_catalog_skills__skill_id__get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/files': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Files */
+        get: operations["list_files_api_files_get"];
+        put?: never;
+        /** Upload File */
+        post: operations["upload_file_api_files_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** List Files */
-    get: operations['list_files_api_files_get'];
-    put?: never;
-    /** Upload File */
-    post: operations['upload_file_api_files_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/files/{file_id}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/files/{file_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get File */
+        get: operations["get_file_api_files__file_id__get"];
+        put?: never;
+        post?: never;
+        /** Remove Uploaded File */
+        delete: operations["remove_uploaded_file_api_files__file_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Get File */
-    get: operations['get_file_api_files__file_id__get'];
-    put?: never;
-    post?: never;
-    /** Remove Uploaded File */
-    delete: operations['remove_uploaded_file_api_files__file_id__delete'];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/files/{file_id}/download': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/files/{file_id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download File */
+        get: operations["download_file_api_files__file_id__download_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Download File */
-    get: operations['download_file_api_files__file_id__download_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/health': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Health */
+        get: operations["health_api_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Health */
-    get: operations['health_api_health_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/model-connections': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/model-connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Model Connections */
+        get: operations["model_connections_api_model_connections_get"];
+        put?: never;
+        /** Connect Model */
+        post: operations["connect_model_api_model_connections_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Model Connections */
-    get: operations['model_connections_api_model_connections_get'];
-    put?: never;
-    /** Connect Model */
-    post: operations['connect_model_api_model_connections_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/model-connections/{connection_id}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/model-connections/{connection_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Model */
+        delete: operations["delete_model_api_model_connections__connection_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Model */
+        patch: operations["update_model_api_model_connections__connection_id__patch"];
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    post?: never;
-    /** Delete Model */
-    delete: operations['delete_model_api_model_connections__connection_id__delete'];
-    options?: never;
-    head?: never;
-    /** Update Model */
-    patch: operations['update_model_api_model_connections__connection_id__patch'];
-    trace?: never;
-  };
-  '/api/model-connections/{connection_id}/refresh': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/model-connections/{connection_id}/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refresh Model */
+        post: operations["refresh_model_api_model_connections__connection_id__refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /** Refresh Model */
-    post: operations['refresh_model_api_model_connections__connection_id__refresh_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/model-providers': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/model-providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Model Providers */
+        get: operations["model_providers_api_model_providers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Model Providers */
-    get: operations['model_providers_api_model_providers_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/runs': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Runs */
+        get: operations["list_runs_api_runs_get"];
+        put?: never;
+        /** New Run */
+        post: operations["new_run_api_runs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** List Runs */
-    get: operations['list_runs_api_runs_get'];
-    put?: never;
-    /** New Run */
-    post: operations['new_run_api_runs_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/runs/{run_id}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Run */
+        get: operations["get_run_api_runs__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Get Run */
-    get: operations['get_run_api_runs__run_id__get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/runs/{run_id}/approvals': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/runs/{run_id}/approvals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Run Approvals */
+        get: operations["get_run_approvals_api_runs__run_id__approvals_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Get Run Approvals */
-    get: operations['get_run_approvals_api_runs__run_id__approvals_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/runs/{run_id}/cancel': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/runs/{run_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel */
+        post: operations["cancel_api_runs__run_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /** Cancel */
-    post: operations['cancel_api_runs__run_id__cancel_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/runs/{run_id}/confirm': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/runs/{run_id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm */
+        post: operations["confirm_api_runs__run_id__confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /** Confirm */
-    post: operations['confirm_api_runs__run_id__confirm_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/runs/{run_id}/events': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/runs/{run_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Run Events */
+        get: operations["run_events_api_runs__run_id__events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Run Events */
-    get: operations['run_events_api_runs__run_id__events_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/runs/{run_id}/retry': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/runs/{run_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry */
+        post: operations["retry_api_runs__run_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /** Retry */
-    post: operations['retry_api_runs__run_id__retry_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/runs/{run_id}/steps': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/runs/{run_id}/steps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Run Steps */
+        get: operations["get_run_steps_api_runs__run_id__steps_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Get Run Steps */
-    get: operations['get_run_steps_api_runs__run_id__steps_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/service-credentials/{service}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/service-credentials/{service}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Service Credential */
+        get: operations["service_credential_api_service_credentials__service__get"];
+        /** Update Service Credential */
+        put: operations["update_service_credential_api_service_credentials__service__put"];
+        post?: never;
+        /** Delete Service Credential */
+        delete: operations["delete_service_credential_api_service_credentials__service__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Service Credential */
-    get: operations['service_credential_api_service_credentials__service__get'];
-    /** Update Service Credential */
-    put: operations['update_service_credential_api_service_credentials__service__put'];
-    post?: never;
-    /** Delete Service Credential */
-    delete: operations['delete_service_credential_api_service_credentials__service__delete'];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/session': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Session */
+        get: operations["session_api_session_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Session */
-    get: operations['session_api_session_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/skills': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Skills */
+        get: operations["list_skills_api_skills_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** List Skills */
-    get: operations['list_skills_api_skills_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/skills/{skill_id}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/skills/{skill_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Skill */
+        get: operations["get_skill_api_skills__skill_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Get Skill */
-    get: operations['get_skill_api_skills__skill_id__get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/skills/{skill_id}/interpret': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/skills/{skill_id}/interpret": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Interpret */
+        post: operations["interpret_api_skills__skill_id__interpret_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /** Interpret */
-    post: operations['interpret_api_skills__skill_id__interpret_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/task-drafts/{draft_id}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/task-drafts/{draft_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Draft */
+        get: operations["get_draft_api_task_drafts__draft_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Draft */
+        delete: operations["delete_draft_api_task_drafts__draft_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Draft */
+        patch: operations["update_draft_api_task_drafts__draft_id__patch"];
+        trace?: never;
     };
-    /** Get Draft */
-    get: operations['get_draft_api_task_drafts__draft_id__get'];
-    put?: never;
-    post?: never;
-    /** Delete Draft */
-    delete: operations['delete_draft_api_task_drafts__draft_id__delete'];
-    options?: never;
-    head?: never;
-    /** Update Draft */
-    patch: operations['update_draft_api_task_drafts__draft_id__patch'];
-    trace?: never;
-  };
-  '/api/task-drafts/{draft_id}/confirm': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/task-drafts/{draft_id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm Draft */
+        post: operations["confirm_draft_api_task_drafts__draft_id__confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /** Confirm Draft */
-    post: operations['confirm_draft_api_task_drafts__draft_id__confirm_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/workbench': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/workbench": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Workbench */
+        get: operations["workbench_api_workbench_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Workbench */
-    get: operations['workbench_api_workbench_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/workflow-batches': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/workflow-batches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Workflow Batches */
+        get: operations["workflow_batches_api_workflow_batches_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Workflow Batches */
-    get: operations['workflow_batches_api_workflow_batches_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/workflow-batches/start': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/workflow-batches/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start Workflow Batch Session */
+        post: operations["start_workflow_batch_session_api_workflow_batches_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /** Start Workflow Batch Session */
-    post: operations['start_workflow_batch_session_api_workflow_batches_start_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/workflow-batches/{batch_id}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/workflow-batches/{batch_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Workflow Batch */
+        get: operations["get_workflow_batch_api_workflow_batches__batch_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Get Workflow Batch */
-    get: operations['get_workflow_batch_api_workflow_batches__batch_id__get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/workflow-batches/{batch_id}/retry': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/workflow-batches/{batch_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry Workflow Batch Session */
+        post: operations["retry_workflow_batch_session_api_workflow_batches__batch_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /** Retry Workflow Batch Session */
-    post: operations['retry_workflow_batch_session_api_workflow_batches__batch_id__retry_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/workflows': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/workflows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Workflows */
+        get: operations["workflows_api_workflows_get"];
+        put?: never;
+        /** New Workflow */
+        post: operations["new_workflow_api_workflows_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Workflows */
-    get: operations['workflows_api_workflows_get'];
-    put?: never;
-    /** New Workflow */
-    post: operations['new_workflow_api_workflows_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/workflows/start': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/workflows/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start Workflow Session */
+        post: operations["start_workflow_session_api_workflows_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /** Start Workflow Session */
-    post: operations['start_workflow_session_api_workflows_start_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/workflows/{workflow_id}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/workflows/{workflow_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Workflow */
+        get: operations["get_workflow_api_workflows__workflow_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Get Workflow */
-    get: operations['get_workflow_api_workflows__workflow_id__get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/workflows/{workflow_id}/confirm': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/workflows/{workflow_id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm Workflow Result */
+        post: operations["confirm_workflow_result_api_workflows__workflow_id__confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /** Confirm Workflow Result */
-    post: operations['confirm_workflow_result_api_workflows__workflow_id__confirm_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/workflows/{workflow_id}/files': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/workflows/{workflow_id}/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set Workflow Files */
+        put: operations["set_workflow_files_api_workflows__workflow_id__files_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    /** Set Workflow Files */
-    put: operations['set_workflow_files_api_workflows__workflow_id__files_put'];
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/workflows/{workflow_id}/messages': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/workflows/{workflow_id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Workflow Message */
+        post: operations["workflow_message_api_workflows__workflow_id__messages_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /** Workflow Message */
-    post: operations['workflow_message_api_workflows__workflow_id__messages_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/workflows/{workflow_id}/rebuild': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/workflows/{workflow_id}/rebuild": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rebuild Workflow Result */
+        post: operations["rebuild_workflow_result_api_workflows__workflow_id__rebuild_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /** Rebuild Workflow Result */
-    post: operations['rebuild_workflow_result_api_workflows__workflow_id__rebuild_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/workflows/{workflow_id}/reset': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/workflows/{workflow_id}/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reset Workflow Session */
+        post: operations["reset_workflow_session_api_workflows__workflow_id__reset_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /** Reset Workflow Session */
-    post: operations['reset_workflow_session_api_workflows__workflow_id__reset_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
-  schemas: {
-    /** AdminAssistantProfile */
-    AdminAssistantProfile: {
-      /**
-       * Api Key Hint
-       * @default
-       */
-      api_key_hint: string;
-      /** Configured */
-      configured: boolean;
-      /**
-       * Connection Id
-       * @default
-       */
-      connection_id: string;
-      /**
-       * Model
-       * @default
-       */
-      model: string;
-      /**
-       * Provider Name
-       * @default
-       */
-      provider_name: string;
-      /**
-       * Updated At
-       * @default null
-       */
-      updated_at: string | null;
-    };
-    /** AdminAssistantProfileWrite */
-    AdminAssistantProfileWrite: {
-      /** Connection Id */
-      connection_id: string;
-      /** Model */
-      model: string;
-    };
-    /**
-     * AdminSkillDetail
-     * @description 管理员 Skill DTO；员工接口不得返回这些执行和来源字段。
-     */
-    AdminSkillDetail: {
-      /**
-       * Category
-       * @default 其他
-       */
-      category: string;
-      /**
-       * Commit Sha
-       * @default
-       */
-      commit_sha: string;
-      /** Description */
-      description: string;
-      /** File Inputs */
-      file_inputs?: components['schemas']['FileInputSpec'][];
-      handler: components['schemas']['HandlerSpec'];
-      /** Id */
-      id: string;
-      /** Input Schema */
-      input_schema?: {
-        [key: string]: unknown;
-      };
-      /** Name */
-      name: string;
-      /** Output Schema */
-      output_schema?: {
-        [key: string]: unknown;
-      };
-      permissions?: components['schemas']['PermissionSpec'];
-      /** Progress Stages */
-      progress_stages?: components['schemas']['ProgressStageSpec'][];
-      result_presentation?: components['schemas']['ResultPresentationSpec'];
-      risk?: components['schemas']['RiskSpec'];
-      runtime?: components['schemas']['RuntimeSpec'];
-      /** Safety Constraints */
-      safety_constraints?: {
-        [key: string]: components['schemas']['SafetyConstraintSpec'];
-      };
-      /**
-       * Schema Version
-       * @default 1
-       */
-      schema_version: number;
-      /** Skill Hash */
-      skill_hash: string;
-      /** Source */
-      source: string;
-      /**
-       * Status
-       * @default draft
-       * @enum {string}
-       */
-      status: 'draft' | 'published' | 'disabled';
-      /** Tags */
-      tags?: string[];
-      /** @default null */
-      ui: components['schemas']['SkillUiSpec'] | null;
-      /** Version */
-      version: string;
-    } & {
-      [key: string]: unknown;
-    };
-    /** AdminUserCreate */
-    AdminUserCreate: {
-      /**
-       * Department Id
-       * @default finance
-       */
-      department_id: string;
-      /** Display Name */
-      display_name: string;
-      /** Initial Password */
-      initial_password: string;
-      /**
-       * Role
-       * @default finance_user
-       * @enum {string}
-       */
-      role: 'finance_user' | 'skill_admin';
-      /** Username */
-      username: string;
-    };
-    /** AdminUserRead */
-    AdminUserRead: {
-      /** Clerk Organization Id */
-      clerk_organization_id: string | null;
-      /** Clerk User Id */
-      clerk_user_id: string | null;
-      /**
-       * Created At
-       * Format: date-time
-       */
-      created_at: string;
-      /** Department Id */
-      department_id: string;
-      /** Display Name */
-      display_name: string;
-      /** Id */
-      id: string;
-      /** Must Change Password */
-      must_change_password: boolean;
-      /** Permissions */
-      permissions: components['schemas']['SkillPermissionRead'][];
-      /** Role */
-      role: string;
-      /** Status */
-      status: string;
-      /** Username */
-      username: string;
-    };
-    /** AdminUserUpdate */
-    AdminUserUpdate: {
-      /** Clerk Organization Id */
-      clerk_organization_id?: string | null;
-      /** Clerk User Id */
-      clerk_user_id?: string | null;
-      /** Display Name */
-      display_name?: string | null;
-      /** Role */
-      role?: ('finance_user' | 'skill_admin') | null;
-      /** Status */
-      status?: ('active' | 'disabled') | null;
-    };
-    /** ApprovalDecisionRequest */
-    ApprovalDecisionRequest: {
-      /**
-       * Decision
-       * @enum {string}
-       */
-      decision: 'approve' | 'reject';
-      /** Reason */
-      reason: string;
-    };
-    /** ApprovalRecord */
-    ApprovalRecord: {
-      /**
-       * Created At
-       * Format: date-time
-       */
-      created_at: string;
-      /**
-       * Decided At
-       * @default null
-       */
-      decided_at: string | null;
-      /**
-       * Decided By
-       * @default
-       */
-      decided_by: string;
-      /**
-       * Decided By Name
-       * @default
-       */
-      decided_by_name: string;
-      /**
-       * Execution Action Id
-       * @default
-       */
-      execution_action_id: string;
-      /**
-       * Expires At
-       * @default null
-       */
-      expires_at: string | null;
-      /** Id */
-      id: string;
-      /** Preview */
-      preview?: {
-        [key: string]: unknown;
-      };
-      /** Preview Sha256 */
-      preview_sha256: string;
-      /**
-       * Reason
-       * @default
-       */
-      reason: string;
-      /** Requested By */
-      requested_by: string;
-      /**
-       * Requested By Name
-       * @default
-       */
-      requested_by_name: string;
-      /** Resource Id */
-      resource_id: string;
-      /**
-       * Resource Type
-       * @enum {string}
-       */
-      resource_type: 'run' | 'workflow';
-      /**
-       * Run Id
-       * @default null
-       */
-      run_id: string | null;
-      /** Skill Id */
-      skill_id: string;
-      /** Snapshot Sha256 */
-      snapshot_sha256: string;
-      /**
-       * Status
-       * @enum {string}
-       */
-      status: 'pending' | 'approved' | 'rejected' | 'expired' | 'revoked';
-      /**
-       * Workflow Id
-       * @default null
-       */
-      workflow_id: string | null;
-    };
-    /** AssistantPrepareRequest */
-    AssistantPrepareRequest: {
-      /** File Ids */
-      file_ids?: string[];
-      /** Message */
-      message: string;
-    };
-    /** AssistantStatus */
-    AssistantStatus: {
-      /** Configured */
-      configured: boolean;
-    };
-    /** AuditEventRead */
-    AuditEventRead: {
-      /** Action */
-      action: string;
-      /** Actor Id */
-      actor_id: string;
-      /** Actor Role */
-      actor_role: string;
-      /**
-       * Created At
-       * Format: date-time
-       */
-      created_at: string;
-      /** Details */
-      details?: {
-        [key: string]: unknown;
-      };
-      /** Id */
-      id: number;
-      /** Outcome */
-      outcome: string;
-      /** Resource Id */
-      resource_id: string;
-      /** Resource Type */
-      resource_type: string;
-    };
-    /** Body_upload_file_api_files_post */
-    Body_upload_file_api_files_post: {
-      /**
-       * Role
-       * @default
-       */
-      role: string;
-      /** Upload */
-      upload: string;
-    };
-    /** ChangePasswordRequest */
-    ChangePasswordRequest: {
-      /** Current Password */
-      current_password: string;
-      /** New Password */
-      new_password: string;
-    };
-    /** FileInputSpec */
-    FileInputSpec: {
-      /**
-       * Description
-       * @default
-       */
-      description: string;
-      /** Extensions */
-      extensions?: string[];
-      /**
-       * Max Size Mb
-       * @default null
-       */
-      max_size_mb: number | null;
-      /**
-       * Min Files
-       * @default 1
-       */
-      min_files: number;
-      /**
-       * Multiple
-       * @default false
-       */
-      multiple: boolean;
-      /** Name */
-      name: string;
-      /**
-       * Required
-       * @default true
-       */
-      required: boolean;
-      /** Role */
-      role: string;
-    };
-    /** HTTPValidationError */
-    HTTPValidationError: {
-      /** Detail */
-      detail?: components['schemas']['ValidationError'][];
-    };
-    /** HandlerSpec */
-    HandlerSpec: {
-      /**
-       * Adapter
-       * @enum {string}
-       */
-      adapter: 'python' | 'rpa' | 'http' | 'workflow';
-      /**
-       * Endpoint
-       * @default null
-       */
-      endpoint: string | null;
-      /**
-       * Entrypoint
-       * @default null
-       */
-      entrypoint: string | null;
-      /**
-       * Worker Pool
-       * @default null
-       */
-      worker_pool: string | null;
-    };
-    /** InterpretRequest */
-    InterpretRequest: {
-      /**
-       * Message
-       * @default
-       */
-      message: string;
-      /** Model */
-      model?: string | null;
-      /** Model Connection Id */
-      model_connection_id?: string | null;
-      /** Parameters */
-      parameters?: {
-        [key: string]: unknown;
-      };
-    };
-    /** InterpretResponse */
-    InterpretResponse: {
-      /** Missing */
-      missing: string[];
-      /** Notes */
-      notes?: string[];
-      /** Parameters */
-      parameters: {
-        [key: string]: unknown;
-      };
-      /** Source */
-      source: string;
-    };
-    /** LoginRequest */
-    LoginRequest: {
-      /** Password */
-      password: string;
-      /** Username */
-      username: string;
-    };
-    /** ModelConnectRequest */
-    ModelConnectRequest: {
-      /** Api Key */
-      api_key: string;
-      /** Base Url */
-      base_url?: string | null;
-      /** Model */
-      model?: string | null;
-      /** Provider Id */
-      provider_id?: string | null;
-    };
-    /** ModelConnectionRead */
-    ModelConnectionRead: {
-      /** Api Key Hint */
-      api_key_hint: string;
-      /**
-       * Created At
-       * Format: date-time
-       */
-      created_at: string;
-      /** Id */
-      id: string;
-      /**
-       * Last Checked At
-       * Format: date-time
-       */
-      last_checked_at: string;
-      /** Models */
-      models: string[];
-      /** Provider */
-      provider: string;
-      /** Provider Name */
-      provider_name: string;
-      /** Selected Model */
-      selected_model: string;
-      /** Status */
-      status: string;
-    };
-    /** ModelProviderRead */
-    ModelProviderRead: {
-      /**
-       * Admin Only
-       * @default false
-       */
-      admin_only: boolean;
-      /** Allow Manual Model */
-      allow_manual_model: boolean;
-      /** Discovery Mode */
-      discovery_mode: string;
-      /** Id */
-      id: string;
-      /** Name */
-      name: string;
-    };
-    /** ModelSelectRequest */
-    ModelSelectRequest: {
-      /** Selected Model */
-      selected_model: string;
-    };
-    /** ModelUsageRead */
-    ModelUsageRead: {
-      /**
-       * Average Duration Ms
-       * @default 0
-       */
-      average_duration_ms: number;
-      /**
-       * Failed Count
-       * @default 0
-       */
-      failed_count: number;
-      /**
-       * Fallback Count
-       * @default 0
-       */
-      fallback_count: number;
-      /**
-       * Input Tokens
-       * @default 0
-       */
-      input_tokens: number;
-      /** Model */
-      model: string;
-      /**
-       * Output Tokens
-       * @default 0
-       */
-      output_tokens: number;
-      /** Provider */
-      provider: string;
-      /** Request Count */
-      request_count: number;
-    };
-    /** ObservabilitySummary */
-    ObservabilitySummary: {
-      /** Approval Count */
-      approval_count: number;
-      /** Average Queue Seconds */
-      average_queue_seconds: number;
-      /** Average Run Seconds */
-      average_run_seconds: number;
-      /** Failed Run Count */
-      failed_run_count: number;
-      /** Failure Rate */
-      failure_rate: number;
-      /** Manual Intervention Count */
-      manual_intervention_count: number;
-      /** Model Usage */
-      model_usage?: components['schemas']['ModelUsageRead'][];
-      /** Retry Count */
-      retry_count: number;
-      /** Run Count */
-      run_count: number;
-      /** Step Metrics */
-      step_metrics?: components['schemas']['StepMetricRead'][];
-      /** Window Hours */
-      window_hours: number;
-    };
-    /** PermissionSpec */
-    PermissionSpec: {
-      /**
-       * Manage
-       * @default skill_admin
-       */
-      manage: string;
-      /**
-       * Run
-       * @default finance_user
-       */
-      run: string;
-    };
-    /** PlatformFile */
-    PlatformFile: {
-      /**
-       * Can Delete
-       * @default false
-       */
-      can_delete: boolean;
-      /**
-       * Content Type
-       * @default application/octet-stream
-       */
-      content_type: string;
-      /**
-       * Created At
-       * @default null
-       */
-      created_at: string | null;
-      /**
-       * Delete Block Reason
-       * @default
-       */
-      delete_block_reason: string;
-      /** Download Url */
-      download_url: string;
-      /**
-       * Expires At
-       * @default null
-       */
-      expires_at: string | null;
-      /** Id */
-      id: string;
-      /** Kind */
-      kind: ('input' | 'output') | string;
-      /** Name */
-      name: string;
-      /**
-       * Role
-       * @default
-       */
-      role: string;
-      /**
-       * Run Id
-       * @default null
-       */
-      run_id: string | null;
-      /** Sha256 */
-      sha256: string;
-      /** Size Bytes */
-      size_bytes: number;
-    };
-    /** PlatformFileDetail */
-    PlatformFileDetail: {
-      /**
-       * Can Delete
-       * @default false
-       */
-      can_delete: boolean;
-      /**
-       * Content Type
-       * @default application/octet-stream
-       */
-      content_type: string;
-      /**
-       * Created At
-       * @default null
-       */
-      created_at: string | null;
-      /**
-       * Delete Block Reason
-       * @default
-       */
-      delete_block_reason: string;
-      /** Download Url */
-      download_url: string;
-      /**
-       * Expires At
-       * @default null
-       */
-      expires_at: string | null;
-      /** Id */
-      id: string;
-      /** Kind */
-      kind: ('input' | 'output') | string;
-      /** Name */
-      name: string;
-      /** Referenced Run Ids */
-      referenced_run_ids?: string[];
-      /** Referenced Workflow Ids */
-      referenced_workflow_ids?: string[];
-      /**
-       * Role
-       * @default
-       */
-      role: string;
-      /**
-       * Run Id
-       * @default null
-       */
-      run_id: string | null;
-      /** Sha256 */
-      sha256: string;
-      /** Size Bytes */
-      size_bytes: number;
-    };
-    /** PlatformFilePage */
-    PlatformFilePage: {
-      /** Items */
-      items?: components['schemas']['PlatformFile'][];
-      /** Page */
-      page: number;
-      /** Page Size */
-      page_size: number;
-      /** Pages */
-      pages: number;
-      /** Total */
-      total: number;
-    };
-    /** PlatformHealth */
-    PlatformHealth: {
-      /** Configured Execution Capacity */
-      configured_execution_capacity: number;
-      /** Configured Workers */
-      configured_workers: {
-        [key: string]: number;
-      };
-      /** Environment */
-      environment: string;
-      /** Name */
-      name: string;
-      /** Registry Errors */
-      registry_errors?: components['schemas']['RegistryError'][];
-      /** Skills */
-      skills: number;
-      /** Status */
-      status: string;
-    };
-    /** PlatformUser */
-    PlatformUser: {
-      /**
-       * Auth Provider
-       * @default session
-       * @enum {string}
-       */
-      auth_provider: 'session' | 'clerk';
-      /** Department Id */
-      department_id: string;
-      /** Display Name */
-      display_name: string;
-      /**
-       * Must Change Password
-       * @default false
-       */
-      must_change_password: boolean;
-      /**
-       * Role
-       * @enum {string}
-       */
-      role: 'finance_user' | 'skill_admin';
-      /** User Id */
-      user_id: string;
-      /** Username */
-      username: string;
-    };
-    /** ProgressStageSpec */
-    ProgressStageSpec: {
-      /** Key */
-      key: string;
-      /** Label */
-      label: string;
-    };
-    /** RegistryError */
-    RegistryError: {
-      /** Error */
-      error: string;
-      /** Path */
-      path: string;
-    };
-    /** RegistryReloadResponse */
-    RegistryReloadResponse: {
-      /** Errors */
-      errors?: components['schemas']['RegistryError'][];
-      /** Skills */
-      skills: number;
-    };
-    /** ResultMetricSpec */
-    ResultMetricSpec: {
-      /** Key */
-      key: string;
-      /** Label */
-      label: string;
-    };
-    /** ResultPresentationSpec */
-    ResultPresentationSpec: {
-      /** Metrics */
-      metrics?: components['schemas']['ResultMetricSpec'][];
-    };
-    /** RiskSpec */
-    RiskSpec: {
-      /**
-       * Level
-       * @default read_only
-       * @enum {string}
-       */
-      level: 'read_only' | 'write' | 'external_action';
-      /**
-       * Modifies Uploaded Files
-       * @default false
-       */
-      modifies_uploaded_files: boolean;
-      /**
-       * Requires Approval
-       * @default false
-       */
-      requires_approval: boolean;
-      /**
-       * Requires Change Review
-       * @default false
-       */
-      requires_change_review: boolean;
-      /**
-       * Requires Confirmation
-       * @default false
-       */
-      requires_confirmation: boolean;
-    };
-    /** RunActionResponse */
-    RunActionResponse: {
-      /** Id */
-      id: string;
-      /** Message */
-      message: string;
-      /** State */
-      state: string;
-    };
-    /** RunApprovalRead */
-    RunApprovalRead: {
-      /**
-       * Created At
-       * Format: date-time
-       */
-      created_at: string;
-      /** Decided At */
-      decided_at?: string | null;
-      /**
-       * Decided By Name
-       * @default
-       */
-      decided_by_name: string;
-      /** Expires At */
-      expires_at?: string | null;
-      /** Id */
-      id: string;
-      /** Preview */
-      preview?: {
-        [key: string]: unknown;
-      };
-      /**
-       * Reason
-       * @default
-       */
-      reason: string;
-      /**
-       * Requested By Name
-       * @default
-       */
-      requested_by_name: string;
-      /**
-       * Status
-       * @enum {string}
-       */
-      status: 'pending' | 'approved' | 'rejected' | 'expired' | 'revoked';
-    };
-    /** RunCreate */
-    RunCreate: {
-      /** Files */
-      files?: {
-        [key: string]: string | string[];
-      };
-      /** Idempotency Key */
-      idempotency_key?: string | null;
-      /**
-       * Message
-       * @default
-       */
-      message: string;
-      /** Model */
-      model?: string | null;
-      /** Model Connection Id */
-      model_connection_id?: string | null;
-      /** Parameters */
-      parameters?: {
-        [key: string]: unknown;
-      };
-      /** Skill Id */
-      skill_id: string;
-    };
-    /** RunDetail */
-    RunDetail: {
-      /**
-       * Attempt Count
-       * @default 0
-       */
-      attempt_count: number;
-      /**
-       * Can Retry
-       * @default false
-       */
-      can_retry: boolean;
-      /** Cancel Requested */
-      cancel_requested: boolean;
-      /** Confirmation Required */
-      confirmation_required: boolean;
-      /** Confirmed By */
-      confirmed_by: string;
-      /**
-       * Created At
-       * Format: date-time
-       */
-      created_at: string;
-      /** Error Message */
-      error_message: string;
-      /** Files */
-      files?: {
-        [key: string]: unknown;
-      };
-      /** Finished At */
-      finished_at: string | null;
-      /** Id */
-      id: string;
-      /** Message */
-      message: string;
-      /** Model Name */
-      model_name: string;
-      /** Model Provider */
-      model_provider: string;
-      /** Owner Id */
-      owner_id: string;
-      /** Owner Name */
-      owner_name: string;
-      /** Parameters */
-      parameters?: {
-        [key: string]: unknown;
-      };
-      /** Progress */
-      progress: number;
-      /** Progress Message */
-      progress_message: string;
-      /** Queued At */
-      queued_at: string | null;
-      /** Result */
-      result?: {
-        [key: string]: unknown;
-      };
-      /**
-       * Retry Block Reason
-       * @default
-       */
-      retry_block_reason: string;
-      /** Skill Commit */
-      skill_commit: string;
-      /** Skill Id */
-      skill_id: string;
-      /** Skill Name */
-      skill_name: string;
-      /** Skill Version */
-      skill_version: string;
-      /** Started At */
-      started_at: string | null;
-      /** State */
-      state: string;
-    };
-    /** RunEventRead */
-    RunEventRead: {
-      /**
-       * Created At
-       * Format: date-time
-       */
-      created_at: string;
-      /** Data */
-      data?: {
-        [key: string]: unknown;
-      };
-      /** Id */
-      id: number;
-      /** Message */
-      message: string;
-      /** Progress */
-      progress: number | null;
-      /** State */
-      state: string;
-      /** Type */
-      type: string;
-    };
-    /** RunPage */
-    RunPage: {
-      /** Items */
-      items?: components['schemas']['RunSummary'][];
-      /** Page */
-      page: number;
-      /** Page Size */
-      page_size: number;
-      /** Pages */
-      pages: number;
-      /** Total */
-      total: number;
-    };
-    /** RunSummary */
-    RunSummary: {
-      /**
-       * Attempt Count
-       * @default 0
-       */
-      attempt_count: number;
-      /**
-       * Can Retry
-       * @default false
-       */
-      can_retry: boolean;
-      /** Cancel Requested */
-      cancel_requested: boolean;
-      /** Confirmation Required */
-      confirmation_required: boolean;
-      /** Confirmed By */
-      confirmed_by: string;
-      /**
-       * Created At
-       * Format: date-time
-       */
-      created_at: string;
-      /** Error Message */
-      error_message: string;
-      /** Files */
-      files?: {
-        [key: string]: unknown;
-      };
-      /** Finished At */
-      finished_at: string | null;
-      /** Id */
-      id: string;
-      /** Owner Id */
-      owner_id: string;
-      /** Owner Name */
-      owner_name: string;
-      /** Progress */
-      progress: number;
-      /** Progress Message */
-      progress_message: string;
-      /** Queued At */
-      queued_at: string | null;
-      /**
-       * Retry Block Reason
-       * @default
-       */
-      retry_block_reason: string;
-      /** Skill Id */
-      skill_id: string;
-      /** Skill Name */
-      skill_name: string;
-      /** Skill Version */
-      skill_version: string;
-      /** Started At */
-      started_at: string | null;
-      /** State */
-      state: string;
-    };
-    /** RuntimeSpec */
-    RuntimeSpec: {
-      /**
-       * Concurrency Limit
-       * @default 1
-       */
-      concurrency_limit: number;
-      /**
-       * Memory Mb
-       * @default 1024
-       */
-      memory_mb: number;
-      /**
-       * Network Access
-       * @default false
-       */
-      network_access: boolean;
-      /** Network Allowlist */
-      network_allowlist?: string[];
-      /** Network Targets */
-      network_targets?: string[];
-      /**
-       * Timeout Seconds
-       * @default 300
-       */
-      timeout_seconds: number;
-    };
-    /** SafetyConstraintSpec */
-    SafetyConstraintSpec: {
-      /**
-       * Maximum
-       * @default null
-       */
-      maximum: number | null;
-      /**
-       * Minimum
-       * @default null
-       */
-      minimum: number | null;
-    };
-    /** ServiceCredentialRead */
-    ServiceCredentialRead: {
-      /** Account Hint */
-      account_hint: string;
-      /** Configured */
-      configured: boolean;
-      /** Service */
-      service: string;
-      /** Updated At */
-      updated_at: string | null;
-    };
-    /** ServiceCredentialWrite */
-    ServiceCredentialWrite: {
-      /** Account */
-      account: string;
-      /** Password */
-      password: string;
-    };
-    /**
-     * SessionRead
-     * @description 兼容旧 Cookie 登录接口；公开会话契约名称为 PlatformUser。
-     */
-    SessionRead: {
-      /**
-       * Auth Provider
-       * @default session
-       * @enum {string}
-       */
-      auth_provider: 'session' | 'clerk';
-      /** Department Id */
-      department_id: string;
-      /** Display Name */
-      display_name: string;
-      /**
-       * Must Change Password
-       * @default false
-       */
-      must_change_password: boolean;
-      /**
-       * Role
-       * @enum {string}
-       */
-      role: 'finance_user' | 'skill_admin';
-      /** User Id */
-      user_id: string;
-      /** Username */
-      username: string;
-    };
-    /** SkillDetail */
-    SkillDetail: {
-      /** Action Label */
-      action_label: string;
-      /** Categories */
-      categories: string[];
-      /** Description */
-      description: string;
-      /** Estimated Minutes */
-      estimated_minutes: number;
-      /**
-       * Execution Mode
-       * @default standard
-       * @enum {string}
-       */
-      execution_mode: 'standard' | 'guided_workflow';
-      /** File Inputs */
-      file_inputs?: components['schemas']['FileInputSpec'][];
-      /** Id */
-      id: string;
-      /** Input Schema */
-      input_schema?: {
-        [key: string]: unknown;
-      };
-      /** Name */
-      name: string;
-      /** Output Summary */
-      output_summary: string;
-      /**
-       * Popular
-       * @default false
-       */
-      popular: boolean;
-      /** Progress Stages */
-      progress_stages?: components['schemas']['ProgressStageSpec'][];
-      result_presentation?: components['schemas']['ResultPresentationSpec'];
-      risk: components['schemas']['SkillRiskSummary'];
-      /**
-       * Status
-       * @enum {string}
-       */
-      status: 'draft' | 'published' | 'disabled';
-      /** Tags */
-      tags?: string[];
-      /** Version */
-      version: string;
-    };
-    /** SkillPermissionRead */
-    SkillPermissionRead: {
-      /**
-       * Can Create Draft
-       * @default true
-       */
-      can_create_draft: boolean;
-      /**
-       * Can Run
-       * @default true
-       */
-      can_run: boolean;
-      /**
-       * Can Upload
-       * @default true
-       */
-      can_upload: boolean;
-      /**
-       * Requires Approval
-       * @default false
-       */
-      requires_approval: boolean;
-      /** Skill Id */
-      skill_id: string;
-    };
-    /** SkillPermissionWrite */
-    SkillPermissionWrite: {
-      /**
-       * Can Create Draft
-       * @default true
-       */
-      can_create_draft: boolean;
-      /**
-       * Can Run
-       * @default true
-       */
-      can_run: boolean;
-      /**
-       * Can Upload
-       * @default true
-       */
-      can_upload: boolean;
-      /**
-       * Requires Approval
-       * @default false
-       */
-      requires_approval: boolean;
-      /** Skill Id */
-      skill_id: string;
-    };
-    /** SkillPermissionsReplace */
-    SkillPermissionsReplace: {
-      /** Permissions */
-      permissions?: components['schemas']['SkillPermissionWrite'][];
-    };
-    /** SkillReleaseImportRequest */
-    SkillReleaseImportRequest: {
-      /** Package Name */
-      package_name: string;
-    };
-    /** SkillReleaseInboxItem */
-    SkillReleaseInboxItem: {
-      /** Package Name */
-      package_name: string;
-      /** Sha256 */
-      sha256: string;
-      /** Size Bytes */
-      size_bytes: number;
-    };
-    /** SkillReleaseMetadataUpdate */
-    SkillReleaseMetadataUpdate: {
-      /** Category */
-      category?: string | null;
-      /** Description */
-      description?: string | null;
-      /** Name */
-      name?: string | null;
-      /** Progress Stages */
-      progress_stages?: components['schemas']['ProgressStageSpec'][] | null;
-      result_presentation?: components['schemas']['ResultPresentationSpec'] | null;
-      /** Tags */
-      tags?: string[] | null;
-      ui?: components['schemas']['SkillUiSpec'] | null;
-    };
-    /** SkillReleasePublishRequest */
-    SkillReleasePublishRequest: {
-      /** Confirmation */
-      confirmation: string;
-    };
-    /** SkillReleaseRead */
-    SkillReleaseRead: {
-      /**
-       * Created At
-       * Format: date-time
-       */
-      created_at: string;
-      /** Id */
-      id: string;
-      /** Imported By */
-      imported_by: string;
-      manifest: components['schemas']['AdminSkillDetail'];
-      /** Package Sha256 */
-      package_sha256: string;
-      /** Published At */
-      published_at: string | null;
-      /** Published By */
-      published_by: string;
-      /** Published Skill Hash */
-      published_skill_hash: string;
-      /** Review Notes */
-      review_notes: string;
-      /** Reviewed At */
-      reviewed_at: string | null;
-      /** Reviewed By */
-      reviewed_by: string;
-      /** Skill Id */
-      skill_id: string;
-      /** Source Commit */
-      source_commit: string;
-      /** Source Repository */
-      source_repository: string;
-      /** Source Tree Hash */
-      source_tree_hash: string;
-      /**
-       * State
-       * @enum {string}
-       */
-      state: 'validated' | 'reviewed' | 'rejected' | 'published' | 'superseded' | 'rolled_back';
-      /** Tests */
-      tests?: {
-        [key: string]: unknown;
-      };
-      /**
-       * Updated At
-       * Format: date-time
-       */
-      updated_at: string;
-      /** Validation */
-      validation?: {
-        [key: string]: unknown;
-      };
-      /** Version */
-      version: string;
-    };
-    /** SkillReleaseReviewRequest */
-    SkillReleaseReviewRequest: {
-      /**
-       * Decision
-       * @enum {string}
-       */
-      decision: 'approve' | 'reject';
-      /** Notes */
-      notes: string;
-    };
-    /** SkillRiskSummary */
-    SkillRiskSummary: {
-      /**
-       * Level
-       * @default read_only
-       * @enum {string}
-       */
-      level: 'read_only' | 'write' | 'external_action';
-      /**
-       * Modifies Uploaded Files
-       * @default false
-       */
-      modifies_uploaded_files: boolean;
-      /**
-       * Requires Approval
-       * @default false
-       */
-      requires_approval: boolean;
-      /**
-       * Requires Confirmation
-       * @default false
-       */
-      requires_confirmation: boolean;
-    };
-    /** SkillSummary */
-    SkillSummary: {
-      /** Action Label */
-      action_label: string;
-      /** Categories */
-      categories: string[];
-      /** Description */
-      description: string;
-      /** Estimated Minutes */
-      estimated_minutes: number;
-      /**
-       * Execution Mode
-       * @default standard
-       * @enum {string}
-       */
-      execution_mode: 'standard' | 'guided_workflow';
-      /** Id */
-      id: string;
-      /** Name */
-      name: string;
-      /** Output Summary */
-      output_summary: string;
-      /**
-       * Popular
-       * @default false
-       */
-      popular: boolean;
-      risk: components['schemas']['SkillRiskSummary'];
-      /**
-       * Status
-       * @enum {string}
-       */
-      status: 'draft' | 'published' | 'disabled';
-      /** Tags */
-      tags?: string[];
-      /** Version */
-      version: string;
-    };
-    /** SkillUiSpec */
-    SkillUiSpec: {
-      /** Action Label */
-      action_label: string;
-      /** Categories */
-      categories: string[];
-      /** Employee Name */
-      employee_name: string;
-      /** Estimated Minutes */
-      estimated_minutes: number;
-      /** Output Summary */
-      output_summary: string;
-      /**
-       * Popular
-       * @default false
-       */
-      popular: boolean;
-      /** Short Description */
-      short_description: string;
-    };
-    /** StepDefinitionRead */
-    StepDefinitionRead: {
-      /** Id */
-      id: string;
-      /** Is Idempotent */
-      is_idempotent: boolean;
-      /** Max Attempts */
-      max_attempts: number;
-      /** Name */
-      name: string;
-      /** Position */
-      position: number;
-      /** Retryable */
-      retryable: boolean;
-      /** Risk Level */
-      risk_level: string;
-      /** Step Key */
-      step_key: string;
-      /** Step Type */
-      step_type: string;
-      /** Timeout Seconds */
-      timeout_seconds: number;
-      /** Worker Pool */
-      worker_pool: string;
-    };
-    /** StepMetricRead */
-    StepMetricRead: {
-      /** Average Duration Seconds */
-      average_duration_seconds: number;
-      /** Failed Count */
-      failed_count: number;
-      /** Run Count */
-      run_count: number;
-      /** Step Type */
-      step_type: string;
-    };
-    /** StepRunRead */
-    StepRunRead: {
-      /** Attempt Count */
-      attempt_count: number;
-      /** Can Retry */
-      can_retry: boolean;
-      /**
-       * Created At
-       * Format: date-time
-       */
-      created_at: string;
-      /** Error Code */
-      error_code: string;
-      /** Error Message */
-      error_message: string;
-      /** Finished At */
-      finished_at: string | null;
-      /** Id */
-      id: string;
-      /** Input Summary */
-      input_summary?: {
-        [key: string]: unknown;
-      };
-      /** Name */
-      name: string;
-      /** Output Summary */
-      output_summary?: {
-        [key: string]: unknown;
-      };
-      /** Position */
-      position: number;
-      /** Queued At */
-      queued_at: string | null;
-      /** Retry Block Reason */
-      retry_block_reason: string;
-      /** Started At */
-      started_at: string | null;
-      /** State */
-      state: string;
-      /** Step Key */
-      step_key: string;
-      /** Step Type */
-      step_type: string;
-    };
-    /** TaskDraft */
-    TaskDraft: {
-      /** Candidates */
-      candidates?: components['schemas']['SkillSummary'][];
-      /**
-       * Clarification
-       * @default
-       */
-      clarification: string;
-      /**
-       * Confidence
-       * @default 0
-       */
-      confidence: number;
-      /**
-       * Confirmation Text
-       * @default
-       */
-      confirmation_text: string;
-      /**
-       * Created At
-       * Format: date-time
-       */
-      created_at: string;
-      /**
-       * Expires At
-       * @default null
-       */
-      expires_at: string | null;
-      /** File Hashes */
-      file_hashes?: {
-        [key: string]: string;
-      };
-      /** Files */
-      files?: {
-        [key: string]: string | string[];
-      };
-      /** Id */
-      id: string;
-      /**
-       * Message
-       * @default
-       */
-      message: string;
-      /** Missing Inputs */
-      missing_inputs?: string[];
-      /** Owner Id */
-      owner_id: string;
-      /** Parameters */
-      parameters?: {
-        [key: string]: unknown;
-      };
-      /**
-       * Requires Approval
-       * @default false
-       */
-      requires_approval: boolean;
-      /**
-       * Requires Confirmation
-       * @default true
-       */
-      requires_confirmation: boolean;
-      /**
-       * Run Id
-       * @default null
-       */
-      run_id: string | null;
-      /** Skill Id */
-      skill_id: string;
-      /** Skill Name */
-      skill_name: string;
-      /** Skill Version */
-      skill_version: string;
-      /**
-       * Source
-       * @default manual
-       * @enum {string}
-       */
-      source: 'manual' | 'assistant';
-      /**
-       * State
-       * @default draft
-       * @enum {string}
-       */
-      state: 'draft' | 'ready' | 'expired' | 'consumed';
-      /**
-       * Updated At
-       * Format: date-time
-       */
-      updated_at: string;
-      /** Validation Warnings */
-      validation_warnings?: string[];
-    };
-    /** TaskDraftUpdate */
-    TaskDraftUpdate: {
-      /** Files */
-      files?: {
-        [key: string]: string | string[];
-      } | null;
-      /** Parameters */
-      parameters?: {
-        [key: string]: unknown;
-      } | null;
-    };
-    /** ValidationError */
-    ValidationError: {
-      /** Context */
-      ctx?: Record<string, never>;
-      /** Input */
-      input?: unknown;
-      /** Location */
-      loc: (string | number)[];
-      /** Message */
-      msg: string;
-      /** Error Type */
-      type: string;
-    };
-    /** Workbench */
-    Workbench: {
-      /** Common Skills */
-      common_skills?: components['schemas']['WorkbenchSkillUsage'][];
-      counts: components['schemas']['WorkbenchCounts'];
-      /** Pending Runs */
-      pending_runs?: components['schemas']['RunSummary'][];
-      /** Recent Files */
-      recent_files?: components['schemas']['PlatformFile'][];
-      /** Recent Results */
-      recent_results?: components['schemas']['RunSummary'][];
-    };
-    /** WorkbenchCounts */
-    WorkbenchCounts: {
-      /**
-       * Active
-       * @default 0
-       */
-      active: number;
-      /**
-       * Failed
-       * @default 0
-       */
-      failed: number;
-      /**
-       * Files
-       * @default 0
-       */
-      files: number;
-      /**
-       * Succeeded
-       * @default 0
-       */
-      succeeded: number;
-      /**
-       * Waiting Confirmation
-       * @default 0
-       */
-      waiting_confirmation: number;
-    };
-    /** WorkbenchSkillUsage */
-    WorkbenchSkillUsage: {
-      /**
-       * Last Run At
-       * @default null
-       */
-      last_run_at: string | null;
-      /**
-       * Run Count
-       * @default 0
-       */
-      run_count: number;
-      skill: components['schemas']['SkillSummary'];
-    };
-    /** WorkflowActionRead */
-    WorkflowActionRead: {
-      /**
-       * Created At
-       * Format: date-time
-       */
-      created_at: string;
-      /** Error Message */
-      error_message: string;
-      /** Finished At */
-      finished_at: string | null;
-      /** Id */
-      id: string;
-      /** Name */
-      name: string;
-      /** State */
-      state: string;
-    };
-    /** WorkflowBatchRead */
-    WorkflowBatchRead: {
-      /**
-       * Created At
-       * Format: date-time
-       */
-      created_at: string;
-      /** Error Message */
-      error_message: string;
-      /** Id */
-      id: string;
-      /** Model Name */
-      model_name: string;
-      /** Model Provider */
-      model_provider: string;
-      /** Owner Id */
-      owner_id: string;
-      /** Progress */
-      progress: number;
-      /** Progress Message */
-      progress_message: string;
-      /** Reconciliation Dates */
-      reconciliation_dates: string[];
-      /** Skill Id */
-      skill_id: string;
-      /** Skill Name */
-      skill_name: string;
-      /** Skill Version */
-      skill_version: string;
-      /** State */
-      state: string;
-      /**
-       * Updated At
-       * Format: date-time
-       */
-      updated_at: string;
-      /** Workflows */
-      workflows: components['schemas']['WorkflowRead'][];
-    };
-    /** WorkflowBatchStart */
-    WorkflowBatchStart: {
-      /** Files */
-      files?: {
-        [key: string]: string[];
-      };
-      /** Model */
-      model?: string | null;
-      /** Model Connection Id */
-      model_connection_id: string;
-      /** Reconciliation Dates */
-      reconciliation_dates: string[];
-      /** Skill Id */
-      skill_id: string;
-    };
-    /** WorkflowCreate */
-    WorkflowCreate: {
-      /** Model */
-      model?: string | null;
-      /** Model Connection Id */
-      model_connection_id: string;
-      /** Skill Id */
-      skill_id: string;
-    };
-    /** WorkflowDefinitionRead */
-    WorkflowDefinitionRead: {
-      /**
-       * Created At
-       * Format: date-time
-       */
-      created_at: string;
-      /** Description */
-      description: string;
-      /** Id */
-      id: string;
-      /** Name */
-      name: string;
-      /** Skill Id */
-      skill_id: string;
-      /** Skill Version */
-      skill_version: string;
-      /** Status */
-      status: string;
-      /** Steps */
-      steps?: components['schemas']['StepDefinitionRead'][];
-      /**
-       * Updated At
-       * Format: date-time
-       */
-      updated_at: string;
-      /** Version */
-      version: string;
-      /** Workflow Key */
-      workflow_key: string;
-    };
-    /** WorkflowFilesUpdate */
-    WorkflowFilesUpdate: {
-      /** Files */
-      files?: {
-        [key: string]: string[];
-      };
-    };
-    /** WorkflowMessageCreate */
-    WorkflowMessageCreate: {
-      /** Content */
-      content: string;
-    };
-    /** WorkflowMessageRead */
-    WorkflowMessageRead: {
-      /** Content */
-      content: string;
-      /**
-       * Created At
-       * Format: date-time
-       */
-      created_at: string;
-      /** Data */
-      data: {
-        [key: string]: unknown;
-      };
-      /** Id */
-      id: number;
-      /** Role */
-      role: string;
-    };
-    /** WorkflowRead */
-    WorkflowRead: {
-      /** Actions */
-      actions: components['schemas']['WorkflowActionRead'][];
-      /** Artifacts */
-      artifacts: {
-        [key: string]: unknown;
-      }[];
-      /** Batch Id */
-      batch_id?: string | null;
-      /**
-       * Batch Sequence
-       * @default 0
-       */
-      batch_sequence: number;
-      /**
-       * Created At
-       * Format: date-time
-       */
-      created_at: string;
-      /** Error Message */
-      error_message: string;
-      /** Files */
-      files: {
-        [key: string]: unknown;
-      };
-      /** Id */
-      id: string;
-      /** Messages */
-      messages: components['schemas']['WorkflowMessageRead'][];
-      /** Model Name */
-      model_name: string;
-      /** Model Provider */
-      model_provider: string;
-      /** Owner Id */
-      owner_id: string;
-      /** Progress */
-      progress: number;
-      /** Progress Message */
-      progress_message: string;
-      /** Reconciliation Date */
-      reconciliation_date: string;
-      /**
-       * Requires Confirmation
-       * @default true
-       */
-      requires_confirmation: boolean;
-      /** Skill Id */
-      skill_id: string;
-      /** Skill Name */
-      skill_name: string;
-      /** Skill Version */
-      skill_version: string;
-      /** Stage */
-      stage: string;
-      /** State */
-      state: string;
-      /**
-       * Updated At
-       * Format: date-time
-       */
-      updated_at: string;
-    };
-    /** WorkflowStart */
-    WorkflowStart: {
-      /** Files */
-      files?: {
-        [key: string]: string[];
-      };
-      /** Model */
-      model?: string | null;
-      /** Model Connection Id */
-      model_connection_id: string;
-      /** Reconciliation Date */
-      reconciliation_date: string;
-      /** Skill Id */
-      skill_id: string;
-    };
-  };
-  responses: never;
-  parameters: never;
-  requestBodies: never;
-  headers: never;
-  pathItems: never;
+    schemas: {
+        /** AdminAssistantProfile */
+        AdminAssistantProfile: {
+            /**
+             * Api Key Hint
+             * @default
+             */
+            api_key_hint: string;
+            /** Configured */
+            configured: boolean;
+            /**
+             * Connection Id
+             * @default
+             */
+            connection_id: string;
+            /**
+             * Model
+             * @default
+             */
+            model: string;
+            /**
+             * Provider Name
+             * @default
+             */
+            provider_name: string;
+            /**
+             * Updated At
+             * @default null
+             */
+            updated_at: string | null;
+        };
+        /** AdminAssistantProfileWrite */
+        AdminAssistantProfileWrite: {
+            /** Connection Id */
+            connection_id: string;
+            /** Model */
+            model: string;
+        };
+        /**
+         * AdminSkillDetail
+         * @description 管理员 Skill DTO；员工接口不得返回这些执行和来源字段。
+         */
+        AdminSkillDetail: {
+            /**
+             * Category
+             * @default 其他
+             */
+            category: string;
+            /**
+             * Commit Sha
+             * @default
+             */
+            commit_sha: string;
+            /** Description */
+            description: string;
+            /** File Inputs */
+            file_inputs?: components["schemas"]["FileInputSpec"][];
+            handler: components["schemas"]["HandlerSpec"];
+            /** Id */
+            id: string;
+            /** Input Schema */
+            input_schema?: {
+                [key: string]: unknown;
+            };
+            /** Name */
+            name: string;
+            /** Output Schema */
+            output_schema?: {
+                [key: string]: unknown;
+            };
+            permissions?: components["schemas"]["PermissionSpec"];
+            /** Progress Stages */
+            progress_stages?: components["schemas"]["ProgressStageSpec"][];
+            result_presentation?: components["schemas"]["ResultPresentationSpec"];
+            risk?: components["schemas"]["RiskSpec"];
+            runtime?: components["schemas"]["RuntimeSpec"];
+            /** Safety Constraints */
+            safety_constraints?: {
+                [key: string]: components["schemas"]["SafetyConstraintSpec"];
+            };
+            /**
+             * Schema Version
+             * @default 1
+             */
+            schema_version: number;
+            /** Skill Hash */
+            skill_hash: string;
+            /** Source */
+            source: string;
+            /**
+             * Status
+             * @default draft
+             * @enum {string}
+             */
+            status: "draft" | "published" | "disabled";
+            /** Tags */
+            tags?: string[];
+            /** @default null */
+            ui: components["schemas"]["SkillUiSpec"] | null;
+            /** Version */
+            version: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /** AdminUserCreate */
+        AdminUserCreate: {
+            /**
+             * Department Id
+             * @default finance
+             */
+            department_id: string;
+            /** Display Name */
+            display_name: string;
+            /** Initial Password */
+            initial_password: string;
+            /**
+             * Role
+             * @default finance_user
+             * @enum {string}
+             */
+            role: "finance_user" | "skill_admin";
+            /** Username */
+            username: string;
+        };
+        /** AdminUserRead */
+        AdminUserRead: {
+            /** Clerk Organization Id */
+            clerk_organization_id: string | null;
+            /** Clerk User Id */
+            clerk_user_id: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Department Id */
+            department_id: string;
+            /** Display Name */
+            display_name: string;
+            /** Id */
+            id: string;
+            /** Must Change Password */
+            must_change_password: boolean;
+            /** Permissions */
+            permissions: components["schemas"]["SkillPermissionRead"][];
+            /** Role */
+            role: string;
+            /** Status */
+            status: string;
+            /** Username */
+            username: string;
+        };
+        /** AdminUserUpdate */
+        AdminUserUpdate: {
+            /** Clerk Organization Id */
+            clerk_organization_id?: string | null;
+            /** Clerk User Id */
+            clerk_user_id?: string | null;
+            /** Display Name */
+            display_name?: string | null;
+            /** Role */
+            role?: ("finance_user" | "skill_admin") | null;
+            /** Status */
+            status?: ("active" | "disabled") | null;
+        };
+        /** ApprovalDecisionRequest */
+        ApprovalDecisionRequest: {
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "approve" | "reject";
+            /** Reason */
+            reason: string;
+        };
+        /** ApprovalRecord */
+        ApprovalRecord: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Decided At
+             * @default null
+             */
+            decided_at: string | null;
+            /**
+             * Decided By
+             * @default
+             */
+            decided_by: string;
+            /**
+             * Decided By Name
+             * @default
+             */
+            decided_by_name: string;
+            /**
+             * Execution Action Id
+             * @default
+             */
+            execution_action_id: string;
+            /**
+             * Expires At
+             * @default null
+             */
+            expires_at: string | null;
+            /** Id */
+            id: string;
+            /** Preview */
+            preview?: {
+                [key: string]: unknown;
+            };
+            /** Preview Sha256 */
+            preview_sha256: string;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+            /** Requested By */
+            requested_by: string;
+            /**
+             * Requested By Name
+             * @default
+             */
+            requested_by_name: string;
+            /** Resource Id */
+            resource_id: string;
+            /**
+             * Resource Type
+             * @enum {string}
+             */
+            resource_type: "run" | "workflow";
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: string | null;
+            /** Skill Id */
+            skill_id: string;
+            /** Snapshot Sha256 */
+            snapshot_sha256: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "approved" | "rejected" | "expired" | "revoked";
+            /**
+             * Workflow Id
+             * @default null
+             */
+            workflow_id: string | null;
+        };
+        /** AssistantPrepareRequest */
+        AssistantPrepareRequest: {
+            /** File Ids */
+            file_ids?: string[];
+            /** Message */
+            message: string;
+        };
+        /** AssistantStatus */
+        AssistantStatus: {
+            /** Configured */
+            configured: boolean;
+        };
+        /** AuditEventRead */
+        AuditEventRead: {
+            /** Action */
+            action: string;
+            /** Actor Id */
+            actor_id: string;
+            /** Actor Role */
+            actor_role: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Details */
+            details?: {
+                [key: string]: unknown;
+            };
+            /** Id */
+            id: number;
+            /** Outcome */
+            outcome: string;
+            /** Resource Id */
+            resource_id: string;
+            /** Resource Type */
+            resource_type: string;
+        };
+        /** Body_upload_file_api_files_post */
+        Body_upload_file_api_files_post: {
+            /**
+             * Role
+             * @default
+             */
+            role: string;
+            /** Upload */
+            upload: string;
+        };
+        /** ChangePasswordRequest */
+        ChangePasswordRequest: {
+            /** Current Password */
+            current_password: string;
+            /** New Password */
+            new_password: string;
+        };
+        /** FileInputSpec */
+        FileInputSpec: {
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Extensions */
+            extensions?: string[];
+            /**
+             * Max Size Mb
+             * @default null
+             */
+            max_size_mb: number | null;
+            /**
+             * Min Files
+             * @default 1
+             */
+            min_files: number;
+            /**
+             * Multiple
+             * @default false
+             */
+            multiple: boolean;
+            /** Name */
+            name: string;
+            /**
+             * Required
+             * @default true
+             */
+            required: boolean;
+            /** Role */
+            role: string;
+        };
+        /** HTTPValidationError */
+        HTTPValidationError: {
+            /** Detail */
+            detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HandlerSpec */
+        HandlerSpec: {
+            /**
+             * Adapter
+             * @enum {string}
+             */
+            adapter: "python" | "rpa" | "http" | "workflow";
+            /**
+             * Endpoint
+             * @default null
+             */
+            endpoint: string | null;
+            /**
+             * Entrypoint
+             * @default null
+             */
+            entrypoint: string | null;
+            /**
+             * Worker Pool
+             * @default null
+             */
+            worker_pool: string | null;
+        };
+        /** InterpretRequest */
+        InterpretRequest: {
+            /**
+             * Message
+             * @default
+             */
+            message: string;
+            /** Model */
+            model?: string | null;
+            /** Model Connection Id */
+            model_connection_id?: string | null;
+            /** Parameters */
+            parameters?: {
+                [key: string]: unknown;
+            };
+        };
+        /** InterpretResponse */
+        InterpretResponse: {
+            /** Missing */
+            missing: string[];
+            /** Notes */
+            notes?: string[];
+            /** Parameters */
+            parameters: {
+                [key: string]: unknown;
+            };
+            /** Source */
+            source: string;
+        };
+        /** LoginRequest */
+        LoginRequest: {
+            /** Password */
+            password: string;
+            /** Username */
+            username: string;
+        };
+        /** ModelConnectRequest */
+        ModelConnectRequest: {
+            /** Api Key */
+            api_key: string;
+            /** Base Url */
+            base_url?: string | null;
+            /** Model */
+            model?: string | null;
+            /** Provider Id */
+            provider_id?: string | null;
+        };
+        /** ModelConnectionRead */
+        ModelConnectionRead: {
+            /** Api Key Hint */
+            api_key_hint: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: string;
+            /**
+             * Last Checked At
+             * Format: date-time
+             */
+            last_checked_at: string;
+            /** Models */
+            models: string[];
+            /** Provider */
+            provider: string;
+            /** Provider Name */
+            provider_name: string;
+            /** Selected Model */
+            selected_model: string;
+            /** Status */
+            status: string;
+        };
+        /** ModelProviderRead */
+        ModelProviderRead: {
+            /**
+             * Admin Only
+             * @default false
+             */
+            admin_only: boolean;
+            /** Allow Manual Model */
+            allow_manual_model: boolean;
+            /** Discovery Mode */
+            discovery_mode: string;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+        };
+        /** ModelSelectRequest */
+        ModelSelectRequest: {
+            /** Selected Model */
+            selected_model: string;
+        };
+        /** ModelUsageRead */
+        ModelUsageRead: {
+            /**
+             * Average Duration Ms
+             * @default 0
+             */
+            average_duration_ms: number;
+            /**
+             * Failed Count
+             * @default 0
+             */
+            failed_count: number;
+            /**
+             * Fallback Count
+             * @default 0
+             */
+            fallback_count: number;
+            /**
+             * Input Tokens
+             * @default 0
+             */
+            input_tokens: number;
+            /** Model */
+            model: string;
+            /**
+             * Output Tokens
+             * @default 0
+             */
+            output_tokens: number;
+            /** Provider */
+            provider: string;
+            /** Request Count */
+            request_count: number;
+        };
+        /** ObservabilitySummary */
+        ObservabilitySummary: {
+            /** Approval Count */
+            approval_count: number;
+            /** Average Queue Seconds */
+            average_queue_seconds: number;
+            /** Average Run Seconds */
+            average_run_seconds: number;
+            /** Failed Run Count */
+            failed_run_count: number;
+            /** Failure Rate */
+            failure_rate: number;
+            /** Manual Intervention Count */
+            manual_intervention_count: number;
+            /** Model Usage */
+            model_usage?: components["schemas"]["ModelUsageRead"][];
+            /** Retry Count */
+            retry_count: number;
+            /** Run Count */
+            run_count: number;
+            /** Step Metrics */
+            step_metrics?: components["schemas"]["StepMetricRead"][];
+            /** Window Hours */
+            window_hours: number;
+        };
+        /** PermissionSpec */
+        PermissionSpec: {
+            /**
+             * Manage
+             * @default skill_admin
+             */
+            manage: string;
+            /**
+             * Run
+             * @default finance_user
+             */
+            run: string;
+        };
+        /** PlatformFile */
+        PlatformFile: {
+            /**
+             * Can Delete
+             * @default false
+             */
+            can_delete: boolean;
+            /**
+             * Content Type
+             * @default application/octet-stream
+             */
+            content_type: string;
+            /**
+             * Created At
+             * @default null
+             */
+            created_at: string | null;
+            /**
+             * Delete Block Reason
+             * @default
+             */
+            delete_block_reason: string;
+            /** Download Url */
+            download_url: string;
+            /**
+             * Expires At
+             * @default null
+             */
+            expires_at: string | null;
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: ("input" | "output") | string;
+            /** Name */
+            name: string;
+            /**
+             * Role
+             * @default
+             */
+            role: string;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: string | null;
+            /** Sha256 */
+            sha256: string;
+            /** Size Bytes */
+            size_bytes: number;
+        };
+        /** PlatformFileDetail */
+        PlatformFileDetail: {
+            /**
+             * Can Delete
+             * @default false
+             */
+            can_delete: boolean;
+            /**
+             * Content Type
+             * @default application/octet-stream
+             */
+            content_type: string;
+            /**
+             * Created At
+             * @default null
+             */
+            created_at: string | null;
+            /**
+             * Delete Block Reason
+             * @default
+             */
+            delete_block_reason: string;
+            /** Download Url */
+            download_url: string;
+            /**
+             * Expires At
+             * @default null
+             */
+            expires_at: string | null;
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: ("input" | "output") | string;
+            /** Name */
+            name: string;
+            /** Referenced Run Ids */
+            referenced_run_ids?: string[];
+            /** Referenced Workflow Ids */
+            referenced_workflow_ids?: string[];
+            /**
+             * Role
+             * @default
+             */
+            role: string;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: string | null;
+            /** Sha256 */
+            sha256: string;
+            /** Size Bytes */
+            size_bytes: number;
+        };
+        /** PlatformFilePage */
+        PlatformFilePage: {
+            /** Items */
+            items?: components["schemas"]["PlatformFile"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Pages */
+            pages: number;
+            /** Total */
+            total: number;
+        };
+        /** PlatformHealth */
+        PlatformHealth: {
+            /** Configured Execution Capacity */
+            configured_execution_capacity: number;
+            /** Configured Workers */
+            configured_workers: {
+                [key: string]: number;
+            };
+            /** Environment */
+            environment: string;
+            /** Name */
+            name: string;
+            /** Registry Errors */
+            registry_errors?: components["schemas"]["RegistryError"][];
+            /** Skills */
+            skills: number;
+            /** Status */
+            status: string;
+        };
+        /** PlatformUser */
+        PlatformUser: {
+            /**
+             * Auth Provider
+             * @default session
+             * @enum {string}
+             */
+            auth_provider: "session" | "clerk";
+            /** Department Id */
+            department_id: string;
+            /** Display Name */
+            display_name: string;
+            /**
+             * Must Change Password
+             * @default false
+             */
+            must_change_password: boolean;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "finance_user" | "skill_admin";
+            /** User Id */
+            user_id: string;
+            /** Username */
+            username: string;
+        };
+        /** ProgressStageSpec */
+        ProgressStageSpec: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+        };
+        /** RegistryError */
+        RegistryError: {
+            /** Error */
+            error: string;
+            /** Path */
+            path: string;
+        };
+        /** RegistryReloadResponse */
+        RegistryReloadResponse: {
+            /** Errors */
+            errors?: components["schemas"]["RegistryError"][];
+            /** Skills */
+            skills: number;
+        };
+        /** ResultMetricSpec */
+        ResultMetricSpec: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+        };
+        /** ResultPresentationSpec */
+        ResultPresentationSpec: {
+            /** Metrics */
+            metrics?: components["schemas"]["ResultMetricSpec"][];
+        };
+        /** RiskSpec */
+        RiskSpec: {
+            /**
+             * Level
+             * @default read_only
+             * @enum {string}
+             */
+            level: "read_only" | "write" | "external_action";
+            /**
+             * Modifies Uploaded Files
+             * @default false
+             */
+            modifies_uploaded_files: boolean;
+            /**
+             * Requires Approval
+             * @default false
+             */
+            requires_approval: boolean;
+            /**
+             * Requires Change Review
+             * @default false
+             */
+            requires_change_review: boolean;
+            /**
+             * Requires Confirmation
+             * @default false
+             */
+            requires_confirmation: boolean;
+        };
+        /** RunActionResponse */
+        RunActionResponse: {
+            /** Id */
+            id: string;
+            /** Message */
+            message: string;
+            /** State */
+            state: string;
+        };
+        /** RunApprovalRead */
+        RunApprovalRead: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Decided At */
+            decided_at?: string | null;
+            /**
+             * Decided By Name
+             * @default
+             */
+            decided_by_name: string;
+            /** Expires At */
+            expires_at?: string | null;
+            /** Id */
+            id: string;
+            /** Preview */
+            preview?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+            /**
+             * Requested By Name
+             * @default
+             */
+            requested_by_name: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "approved" | "rejected" | "expired" | "revoked";
+        };
+        /** RunCreate */
+        RunCreate: {
+            /** Files */
+            files?: {
+                [key: string]: string | string[];
+            };
+            /** Idempotency Key */
+            idempotency_key?: string | null;
+            /**
+             * Message
+             * @default
+             */
+            message: string;
+            /** Model */
+            model?: string | null;
+            /** Model Connection Id */
+            model_connection_id?: string | null;
+            /** Parameters */
+            parameters?: {
+                [key: string]: unknown;
+            };
+            /** Skill Id */
+            skill_id: string;
+        };
+        /** RunDetail */
+        RunDetail: {
+            /**
+             * Attempt Count
+             * @default 0
+             */
+            attempt_count: number;
+            /**
+             * Can Retry
+             * @default false
+             */
+            can_retry: boolean;
+            /** Cancel Requested */
+            cancel_requested: boolean;
+            /** Confirmation Required */
+            confirmation_required: boolean;
+            /** Confirmed By */
+            confirmed_by: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Error Message */
+            error_message: string;
+            /** Files */
+            files?: {
+                [key: string]: unknown;
+            };
+            /** Finished At */
+            finished_at: string | null;
+            /** Id */
+            id: string;
+            /** Message */
+            message: string;
+            /** Model Name */
+            model_name: string;
+            /** Model Provider */
+            model_provider: string;
+            /** Owner Id */
+            owner_id: string;
+            /** Owner Name */
+            owner_name: string;
+            /** Parameters */
+            parameters?: {
+                [key: string]: unknown;
+            };
+            /** Progress */
+            progress: number;
+            /** Progress Message */
+            progress_message: string;
+            /** Queued At */
+            queued_at: string | null;
+            /** Result */
+            result?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Retry Block Reason
+             * @default
+             */
+            retry_block_reason: string;
+            /** Skill Commit */
+            skill_commit: string;
+            /** Skill Id */
+            skill_id: string;
+            /** Skill Name */
+            skill_name: string;
+            /** Skill Version */
+            skill_version: string;
+            /** Started At */
+            started_at: string | null;
+            /** State */
+            state: string;
+        };
+        /** RunEventRead */
+        RunEventRead: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Data */
+            data?: {
+                [key: string]: unknown;
+            };
+            /** Id */
+            id: number;
+            /** Message */
+            message: string;
+            /** Progress */
+            progress: number | null;
+            /** State */
+            state: string;
+            /** Type */
+            type: string;
+        };
+        /** RunPage */
+        RunPage: {
+            /** Items */
+            items?: components["schemas"]["RunSummary"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Pages */
+            pages: number;
+            /** Total */
+            total: number;
+        };
+        /** RunSummary */
+        RunSummary: {
+            /**
+             * Attempt Count
+             * @default 0
+             */
+            attempt_count: number;
+            /**
+             * Can Retry
+             * @default false
+             */
+            can_retry: boolean;
+            /** Cancel Requested */
+            cancel_requested: boolean;
+            /** Confirmation Required */
+            confirmation_required: boolean;
+            /** Confirmed By */
+            confirmed_by: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Error Message */
+            error_message: string;
+            /** Files */
+            files?: {
+                [key: string]: unknown;
+            };
+            /** Finished At */
+            finished_at: string | null;
+            /** Id */
+            id: string;
+            /** Owner Id */
+            owner_id: string;
+            /** Owner Name */
+            owner_name: string;
+            /** Progress */
+            progress: number;
+            /** Progress Message */
+            progress_message: string;
+            /** Queued At */
+            queued_at: string | null;
+            /**
+             * Retry Block Reason
+             * @default
+             */
+            retry_block_reason: string;
+            /** Skill Id */
+            skill_id: string;
+            /** Skill Name */
+            skill_name: string;
+            /** Skill Version */
+            skill_version: string;
+            /** Started At */
+            started_at: string | null;
+            /** State */
+            state: string;
+        };
+        /** RuntimeSpec */
+        RuntimeSpec: {
+            /**
+             * Concurrency Limit
+             * @default 1
+             */
+            concurrency_limit: number;
+            /**
+             * Memory Mb
+             * @default 1024
+             */
+            memory_mb: number;
+            /**
+             * Network Access
+             * @default false
+             */
+            network_access: boolean;
+            /** Network Allowlist */
+            network_allowlist?: string[];
+            /** Network Targets */
+            network_targets?: string[];
+            /**
+             * Timeout Seconds
+             * @default 300
+             */
+            timeout_seconds: number;
+        };
+        /** SafetyConstraintSpec */
+        SafetyConstraintSpec: {
+            /**
+             * Maximum
+             * @default null
+             */
+            maximum: number | null;
+            /**
+             * Minimum
+             * @default null
+             */
+            minimum: number | null;
+        };
+        /** ServiceCredentialRead */
+        ServiceCredentialRead: {
+            /** Account Hint */
+            account_hint: string;
+            /** Configured */
+            configured: boolean;
+            /** Service */
+            service: string;
+            /** Updated At */
+            updated_at: string | null;
+        };
+        /** ServiceCredentialWrite */
+        ServiceCredentialWrite: {
+            /** Account */
+            account: string;
+            /** Password */
+            password: string;
+        };
+        /**
+         * SessionRead
+         * @description 兼容旧 Cookie 登录接口；公开会话契约名称为 PlatformUser。
+         */
+        SessionRead: {
+            /**
+             * Auth Provider
+             * @default session
+             * @enum {string}
+             */
+            auth_provider: "session" | "clerk";
+            /** Department Id */
+            department_id: string;
+            /** Display Name */
+            display_name: string;
+            /**
+             * Must Change Password
+             * @default false
+             */
+            must_change_password: boolean;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "finance_user" | "skill_admin";
+            /** User Id */
+            user_id: string;
+            /** Username */
+            username: string;
+        };
+        /** SkillDetail */
+        SkillDetail: {
+            /** Action Label */
+            action_label: string;
+            /** Categories */
+            categories: string[];
+            /** Description */
+            description: string;
+            /** Estimated Minutes */
+            estimated_minutes: number;
+            /**
+             * Execution Mode
+             * @default standard
+             * @enum {string}
+             */
+            execution_mode: "standard" | "guided_workflow";
+            /** File Inputs */
+            file_inputs?: components["schemas"]["FileInputSpec"][];
+            /** Id */
+            id: string;
+            /** Input Schema */
+            input_schema?: {
+                [key: string]: unknown;
+            };
+            /** Name */
+            name: string;
+            /** Output Summary */
+            output_summary: string;
+            /**
+             * Popular
+             * @default false
+             */
+            popular: boolean;
+            /** Progress Stages */
+            progress_stages?: components["schemas"]["ProgressStageSpec"][];
+            result_presentation?: components["schemas"]["ResultPresentationSpec"];
+            risk: components["schemas"]["SkillRiskSummary"];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "draft" | "published" | "disabled";
+            /** Tags */
+            tags?: string[];
+            /** Version */
+            version: string;
+        };
+        /** SkillPermissionRead */
+        SkillPermissionRead: {
+            /**
+             * Can Create Draft
+             * @default true
+             */
+            can_create_draft: boolean;
+            /**
+             * Can Run
+             * @default true
+             */
+            can_run: boolean;
+            /**
+             * Can Upload
+             * @default true
+             */
+            can_upload: boolean;
+            /**
+             * Requires Approval
+             * @default false
+             */
+            requires_approval: boolean;
+            /** Skill Id */
+            skill_id: string;
+        };
+        /** SkillPermissionWrite */
+        SkillPermissionWrite: {
+            /**
+             * Can Create Draft
+             * @default true
+             */
+            can_create_draft: boolean;
+            /**
+             * Can Run
+             * @default true
+             */
+            can_run: boolean;
+            /**
+             * Can Upload
+             * @default true
+             */
+            can_upload: boolean;
+            /**
+             * Requires Approval
+             * @default false
+             */
+            requires_approval: boolean;
+            /** Skill Id */
+            skill_id: string;
+        };
+        /** SkillPermissionsReplace */
+        SkillPermissionsReplace: {
+            /** Permissions */
+            permissions?: components["schemas"]["SkillPermissionWrite"][];
+        };
+        /** SkillReleaseImportRequest */
+        SkillReleaseImportRequest: {
+            /** Package Name */
+            package_name: string;
+        };
+        /** SkillReleaseInboxItem */
+        SkillReleaseInboxItem: {
+            /** Package Name */
+            package_name: string;
+            /** Sha256 */
+            sha256: string;
+            /** Size Bytes */
+            size_bytes: number;
+        };
+        /** SkillReleaseMetadataUpdate */
+        SkillReleaseMetadataUpdate: {
+            /** Category */
+            category?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Progress Stages */
+            progress_stages?: components["schemas"]["ProgressStageSpec"][] | null;
+            result_presentation?: components["schemas"]["ResultPresentationSpec"] | null;
+            /** Tags */
+            tags?: string[] | null;
+            ui?: components["schemas"]["SkillUiSpec"] | null;
+        };
+        /** SkillReleasePublishRequest */
+        SkillReleasePublishRequest: {
+            /** Confirmation */
+            confirmation: string;
+        };
+        /** SkillReleaseRead */
+        SkillReleaseRead: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: string;
+            /** Imported By */
+            imported_by: string;
+            manifest: components["schemas"]["AdminSkillDetail"];
+            /** Package Sha256 */
+            package_sha256: string;
+            /** Published At */
+            published_at: string | null;
+            /** Published By */
+            published_by: string;
+            /** Published Skill Hash */
+            published_skill_hash: string;
+            /** Review Notes */
+            review_notes: string;
+            /** Reviewed At */
+            reviewed_at: string | null;
+            /** Reviewed By */
+            reviewed_by: string;
+            /** Skill Id */
+            skill_id: string;
+            /** Source Commit */
+            source_commit: string;
+            /** Source Repository */
+            source_repository: string;
+            /** Source Tree Hash */
+            source_tree_hash: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "validated" | "reviewed" | "rejected" | "published" | "superseded" | "rolled_back";
+            /** Tests */
+            tests?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Validation */
+            validation?: {
+                [key: string]: unknown;
+            };
+            /** Version */
+            version: string;
+        };
+        /** SkillReleaseReviewRequest */
+        SkillReleaseReviewRequest: {
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "approve" | "reject";
+            /** Notes */
+            notes: string;
+        };
+        /** SkillRiskSummary */
+        SkillRiskSummary: {
+            /**
+             * Level
+             * @default read_only
+             * @enum {string}
+             */
+            level: "read_only" | "write" | "external_action";
+            /**
+             * Modifies Uploaded Files
+             * @default false
+             */
+            modifies_uploaded_files: boolean;
+            /**
+             * Requires Approval
+             * @default false
+             */
+            requires_approval: boolean;
+            /**
+             * Requires Confirmation
+             * @default false
+             */
+            requires_confirmation: boolean;
+        };
+        /** SkillSummary */
+        SkillSummary: {
+            /** Action Label */
+            action_label: string;
+            /** Categories */
+            categories: string[];
+            /** Description */
+            description: string;
+            /** Estimated Minutes */
+            estimated_minutes: number;
+            /**
+             * Execution Mode
+             * @default standard
+             * @enum {string}
+             */
+            execution_mode: "standard" | "guided_workflow";
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Output Summary */
+            output_summary: string;
+            /**
+             * Popular
+             * @default false
+             */
+            popular: boolean;
+            risk: components["schemas"]["SkillRiskSummary"];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "draft" | "published" | "disabled";
+            /** Tags */
+            tags?: string[];
+            /** Version */
+            version: string;
+        };
+        /** SkillUiSpec */
+        SkillUiSpec: {
+            /** Action Label */
+            action_label: string;
+            /** Categories */
+            categories: string[];
+            /** Employee Name */
+            employee_name: string;
+            /** Estimated Minutes */
+            estimated_minutes: number;
+            /** Output Summary */
+            output_summary: string;
+            /**
+             * Popular
+             * @default false
+             */
+            popular: boolean;
+            /** Short Description */
+            short_description: string;
+        };
+        /** StepDefinitionRead */
+        StepDefinitionRead: {
+            /** Id */
+            id: string;
+            /** Is Idempotent */
+            is_idempotent: boolean;
+            /** Max Attempts */
+            max_attempts: number;
+            /** Name */
+            name: string;
+            /** Position */
+            position: number;
+            /** Retryable */
+            retryable: boolean;
+            /** Risk Level */
+            risk_level: string;
+            /** Step Key */
+            step_key: string;
+            /** Step Type */
+            step_type: string;
+            /** Timeout Seconds */
+            timeout_seconds: number;
+            /** Worker Pool */
+            worker_pool: string;
+        };
+        /** StepMetricRead */
+        StepMetricRead: {
+            /** Average Duration Seconds */
+            average_duration_seconds: number;
+            /** Failed Count */
+            failed_count: number;
+            /** Run Count */
+            run_count: number;
+            /** Step Type */
+            step_type: string;
+        };
+        /** StepRunRead */
+        StepRunRead: {
+            /** Attempt Count */
+            attempt_count: number;
+            /** Can Retry */
+            can_retry: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Error Code */
+            error_code: string;
+            /** Error Message */
+            error_message: string;
+            /** Finished At */
+            finished_at: string | null;
+            /** Id */
+            id: string;
+            /** Input Summary */
+            input_summary?: {
+                [key: string]: unknown;
+            };
+            /** Name */
+            name: string;
+            /** Output Summary */
+            output_summary?: {
+                [key: string]: unknown;
+            };
+            /** Position */
+            position: number;
+            /** Queued At */
+            queued_at: string | null;
+            /** Retry Block Reason */
+            retry_block_reason: string;
+            /** Started At */
+            started_at: string | null;
+            /** State */
+            state: string;
+            /** Step Key */
+            step_key: string;
+            /** Step Type */
+            step_type: string;
+        };
+        /** TaskDraft */
+        TaskDraft: {
+            /** Candidates */
+            candidates?: components["schemas"]["SkillSummary"][];
+            /**
+             * Clarification
+             * @default
+             */
+            clarification: string;
+            /**
+             * Confidence
+             * @default 0
+             */
+            confidence: number;
+            /**
+             * Confirmation Text
+             * @default
+             */
+            confirmation_text: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Expires At
+             * @default null
+             */
+            expires_at: string | null;
+            /** File Hashes */
+            file_hashes?: {
+                [key: string]: string;
+            };
+            /** Files */
+            files?: {
+                [key: string]: string | string[];
+            };
+            /** Id */
+            id: string;
+            /**
+             * Message
+             * @default
+             */
+            message: string;
+            /** Missing Inputs */
+            missing_inputs?: string[];
+            /** Owner Id */
+            owner_id: string;
+            /** Parameters */
+            parameters?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Requires Approval
+             * @default false
+             */
+            requires_approval: boolean;
+            /**
+             * Requires Confirmation
+             * @default true
+             */
+            requires_confirmation: boolean;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: string | null;
+            /** Skill Id */
+            skill_id: string;
+            /** Skill Name */
+            skill_name: string;
+            /** Skill Version */
+            skill_version: string;
+            /**
+             * Source
+             * @default manual
+             * @enum {string}
+             */
+            source: "manual" | "assistant";
+            /**
+             * State
+             * @default draft
+             * @enum {string}
+             */
+            state: "draft" | "ready" | "expired" | "consumed";
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Validation Warnings */
+            validation_warnings?: string[];
+        };
+        /** TaskDraftUpdate */
+        TaskDraftUpdate: {
+            /** Files */
+            files?: {
+                [key: string]: string | string[];
+            } | null;
+            /** Parameters */
+            parameters?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /** ValidationError */
+        ValidationError: {
+            /** Context */
+            ctx?: Record<string, never>;
+            /** Input */
+            input?: unknown;
+            /** Location */
+            loc: (string | number)[];
+            /** Message */
+            msg: string;
+            /** Error Type */
+            type: string;
+        };
+        /** Workbench */
+        Workbench: {
+            /** Common Skills */
+            common_skills?: components["schemas"]["WorkbenchSkillUsage"][];
+            counts: components["schemas"]["WorkbenchCounts"];
+            /** Pending Runs */
+            pending_runs?: components["schemas"]["RunSummary"][];
+            /** Recent Files */
+            recent_files?: components["schemas"]["PlatformFile"][];
+            /** Recent Results */
+            recent_results?: components["schemas"]["RunSummary"][];
+        };
+        /** WorkbenchCounts */
+        WorkbenchCounts: {
+            /**
+             * Active
+             * @default 0
+             */
+            active: number;
+            /**
+             * Failed
+             * @default 0
+             */
+            failed: number;
+            /**
+             * Files
+             * @default 0
+             */
+            files: number;
+            /**
+             * Succeeded
+             * @default 0
+             */
+            succeeded: number;
+            /**
+             * Waiting Confirmation
+             * @default 0
+             */
+            waiting_confirmation: number;
+        };
+        /** WorkbenchSkillUsage */
+        WorkbenchSkillUsage: {
+            /**
+             * Last Run At
+             * @default null
+             */
+            last_run_at: string | null;
+            /**
+             * Run Count
+             * @default 0
+             */
+            run_count: number;
+            skill: components["schemas"]["SkillSummary"];
+        };
+        /** WorkflowActionRead */
+        WorkflowActionRead: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Error Message */
+            error_message: string;
+            /** Finished At */
+            finished_at: string | null;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** State */
+            state: string;
+        };
+        /** WorkflowBatchRead */
+        WorkflowBatchRead: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Error Message */
+            error_message: string;
+            /** Id */
+            id: string;
+            /** Model Name */
+            model_name: string;
+            /** Model Provider */
+            model_provider: string;
+            /** Owner Id */
+            owner_id: string;
+            /** Progress */
+            progress: number;
+            /** Progress Message */
+            progress_message: string;
+            /** Reconciliation Dates */
+            reconciliation_dates: string[];
+            /** Skill Id */
+            skill_id: string;
+            /** Skill Name */
+            skill_name: string;
+            /** Skill Version */
+            skill_version: string;
+            /** State */
+            state: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Workflows */
+            workflows: components["schemas"]["WorkflowRead"][];
+        };
+        /** WorkflowBatchStart */
+        WorkflowBatchStart: {
+            /** Files */
+            files?: {
+                [key: string]: string[];
+            };
+            /** Model */
+            model?: string | null;
+            /** Model Connection Id */
+            model_connection_id: string;
+            /** Reconciliation Dates */
+            reconciliation_dates: string[];
+            /** Skill Id */
+            skill_id: string;
+        };
+        /** WorkflowCreate */
+        WorkflowCreate: {
+            /** Model */
+            model?: string | null;
+            /** Model Connection Id */
+            model_connection_id: string;
+            /** Skill Id */
+            skill_id: string;
+        };
+        /** WorkflowDefinitionRead */
+        WorkflowDefinitionRead: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Description */
+            description: string;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Skill Id */
+            skill_id: string;
+            /** Skill Version */
+            skill_version: string;
+            /** Status */
+            status: string;
+            /** Steps */
+            steps?: components["schemas"]["StepDefinitionRead"][];
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Version */
+            version: string;
+            /** Workflow Key */
+            workflow_key: string;
+        };
+        /** WorkflowFilesUpdate */
+        WorkflowFilesUpdate: {
+            /** Files */
+            files?: {
+                [key: string]: string[];
+            };
+        };
+        /** WorkflowMessageCreate */
+        WorkflowMessageCreate: {
+            /** Content */
+            content: string;
+        };
+        /** WorkflowMessageRead */
+        WorkflowMessageRead: {
+            /** Content */
+            content: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Data */
+            data: {
+                [key: string]: unknown;
+            };
+            /** Id */
+            id: number;
+            /** Role */
+            role: string;
+        };
+        /** WorkflowRead */
+        WorkflowRead: {
+            /** Actions */
+            actions: components["schemas"]["WorkflowActionRead"][];
+            /** Artifacts */
+            artifacts: {
+                [key: string]: unknown;
+            }[];
+            /** Batch Id */
+            batch_id?: string | null;
+            /**
+             * Batch Sequence
+             * @default 0
+             */
+            batch_sequence: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Error Message */
+            error_message: string;
+            /** Files */
+            files: {
+                [key: string]: unknown;
+            };
+            /** Id */
+            id: string;
+            /** Messages */
+            messages: components["schemas"]["WorkflowMessageRead"][];
+            /** Model Name */
+            model_name: string;
+            /** Model Provider */
+            model_provider: string;
+            /** Owner Id */
+            owner_id: string;
+            /** Progress */
+            progress: number;
+            /** Progress Message */
+            progress_message: string;
+            /** Reconciliation Date */
+            reconciliation_date: string;
+            /**
+             * Requires Confirmation
+             * @default true
+             */
+            requires_confirmation: boolean;
+            /** Skill Id */
+            skill_id: string;
+            /** Skill Name */
+            skill_name: string;
+            /** Skill Version */
+            skill_version: string;
+            /** Stage */
+            stage: string;
+            /** State */
+            state: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** WorkflowStart */
+        WorkflowStart: {
+            /** Files */
+            files?: {
+                [key: string]: string[];
+            };
+            /** Model */
+            model?: string | null;
+            /** Model Connection Id */
+            model_connection_id: string;
+            /** Reconciliation Date */
+            reconciliation_date: string;
+            /** Skill Id */
+            skill_id: string;
+        };
+    };
+    responses: never;
+    parameters: never;
+    requestBodies: never;
+    headers: never;
+    pathItems: never;
 }
 export type AdminAssistantProfile = components['schemas']['AdminAssistantProfile'];
 export type AdminAssistantProfileWrite = components['schemas']['AdminAssistantProfileWrite'];
@@ -2978,2167 +2978,2162 @@ export type WorkflowRead = components['schemas']['WorkflowRead'];
 export type WorkflowStart = components['schemas']['WorkflowStart'];
 export type $defs = Record<string, never>;
 export interface operations {
-  admin_list_approvals_api_admin_approvals_get: {
-    parameters: {
-      query?: {
-        status?: string;
-        limit?: number;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ApprovalRecord'][];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  admin_decide_approval_api_admin_approvals__approval_id__decision_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        approval_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['ApprovalDecisionRequest'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ApprovalRecord'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  get_admin_profile_api_admin_assistant_profile_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['AdminAssistantProfile'];
-        };
-      };
-    };
-  };
-  put_admin_profile_api_admin_assistant_profile_put: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['AdminAssistantProfileWrite'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['AdminAssistantProfile'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  delete_admin_profile_api_admin_assistant_profile_delete: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-    };
-  };
-  list_audit_events_api_admin_audit_events_get: {
-    parameters: {
-      query?: {
-        action?: string;
-        actor_id?: string;
-        limit?: number;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['AuditEventRead'][];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  admin_observability_summary_api_admin_observability_summary_get: {
-    parameters: {
-      query?: {
-        hours?: number;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ObservabilitySummary'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  reload_registry_api_admin_registry_reload_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['RegistryReloadResponse'];
-        };
-      };
-    };
-  };
-  admin_list_skill_releases_api_admin_skill_releases_get: {
-    parameters: {
-      query?: {
-        skill_id?: string;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['SkillReleaseRead'][];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  admin_import_skill_release_api_admin_skill_releases_import_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['SkillReleaseImportRequest'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['SkillReleaseRead'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  admin_list_release_inbox_api_admin_skill_releases_inbox_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['SkillReleaseInboxItem'][];
-        };
-      };
-    };
-  };
-  admin_update_skill_release_api_admin_skill_releases__release_id__patch: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        release_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['SkillReleaseMetadataUpdate'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['SkillReleaseRead'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  admin_publish_skill_release_api_admin_skill_releases__release_id__publish_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        release_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['SkillReleasePublishRequest'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['SkillReleaseRead'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  admin_review_skill_release_api_admin_skill_releases__release_id__review_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        release_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['SkillReleaseReviewRequest'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['SkillReleaseRead'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  admin_list_users_api_admin_users_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['AdminUserRead'][];
-        };
-      };
-    };
-  };
-  admin_create_user_api_admin_users_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['AdminUserCreate'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['AdminUserRead'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  admin_update_user_api_admin_users__user_id__patch: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        user_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['AdminUserUpdate'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['AdminUserRead'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  admin_replace_skill_permissions_api_admin_users__user_id__skill_permissions_put: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        user_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['SkillPermissionsReplace'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['SkillPermissionRead'][];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  admin_list_workflow_definitions_api_admin_workflow_definitions_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['WorkflowDefinitionRead'][];
-        };
-      };
-    };
-  };
-  prepare_api_assistant_prepare_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['AssistantPrepareRequest'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['TaskDraft'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  get_assistant_status_api_assistant_status_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['AssistantStatus'];
-        };
-      };
-    };
-  };
-  auth_change_password_api_auth_change_password_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['ChangePasswordRequest'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['SessionRead'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  auth_login_api_auth_login_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['LoginRequest'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['SessionRead'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  auth_logout_api_auth_logout_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-    };
-  };
-  auth_session_api_auth_session_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['SessionRead'];
-        };
-      };
-    };
-  };
-  list_catalog_skills_api_catalog_skills_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['SkillDetail'][];
-        };
-      };
-    };
-  };
-  get_catalog_skill_api_catalog_skills__skill_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        skill_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['SkillDetail'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  list_files_api_files_get: {
-    parameters: {
-      query?: {
-        page?: number;
-        page_size?: number;
-        kind?: string;
-        query?: string;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['PlatformFilePage'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  upload_file_api_files_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'multipart/form-data': components['schemas']['Body_upload_file_api_files_post'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['PlatformFile'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  get_file_api_files__file_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        file_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['PlatformFileDetail'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  remove_uploaded_file_api_files__file_id__delete: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        file_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  download_file_api_files__file_id__download_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        file_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  health_api_health_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['PlatformHealth'];
-        };
-      };
-    };
-  };
-  model_connections_api_model_connections_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ModelConnectionRead'][];
-        };
-      };
-    };
-  };
-  connect_model_api_model_connections_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['ModelConnectRequest'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ModelConnectionRead'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  delete_model_api_model_connections__connection_id__delete: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        connection_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  update_model_api_model_connections__connection_id__patch: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        connection_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['ModelSelectRequest'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ModelConnectionRead'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  refresh_model_api_model_connections__connection_id__refresh_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        connection_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ModelConnectionRead'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  model_providers_api_model_providers_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ModelProviderRead'][];
-        };
-      };
-    };
-  };
-  list_runs_api_runs_get: {
-    parameters: {
-      query?: {
-        page?: number;
-        page_size?: number;
-        state?: string;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['RunPage'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  new_run_api_runs_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['RunCreate'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['RunDetail'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  get_run_api_runs__run_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        run_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['RunDetail'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  get_run_approvals_api_runs__run_id__approvals_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        run_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['RunApprovalRead'][];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  cancel_api_runs__run_id__cancel_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        run_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['RunActionResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  confirm_api_runs__run_id__confirm_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        run_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['RunActionResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  run_events_api_runs__run_id__events_get: {
-    parameters: {
-      query?: {
-        after?: number;
-      };
-      header?: never;
-      path: {
-        run_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description RunEventRead 的 Server-Sent Events 数据流。 */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-          'text/event-stream': string;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  retry_api_runs__run_id__retry_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        run_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['RunDetail'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  get_run_steps_api_runs__run_id__steps_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        run_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['StepRunRead'][];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  service_credential_api_service_credentials__service__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        service: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ServiceCredentialRead'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  update_service_credential_api_service_credentials__service__put: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        service: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['ServiceCredentialWrite'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ServiceCredentialRead'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  delete_service_credential_api_service_credentials__service__delete: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        service: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  session_api_session_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['PlatformUser'];
-        };
-      };
-    };
-  };
-  list_skills_api_skills_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': (
-            | components['schemas']['SkillDetail']
-            | components['schemas']['AdminSkillDetail']
-          )[];
-        };
-      };
-    };
-  };
-  get_skill_api_skills__skill_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        skill_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json':
-            | components['schemas']['SkillDetail']
-            | components['schemas']['AdminSkillDetail'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  interpret_api_skills__skill_id__interpret_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        skill_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['InterpretRequest'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['InterpretResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  get_draft_api_task_drafts__draft_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        draft_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['TaskDraft'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  delete_draft_api_task_drafts__draft_id__delete: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        draft_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  update_draft_api_task_drafts__draft_id__patch: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        draft_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['TaskDraftUpdate'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['TaskDraft'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  confirm_draft_api_task_drafts__draft_id__confirm_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        draft_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['RunDetail'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  workbench_api_workbench_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['Workbench'];
-        };
-      };
-    };
-  };
-  workflow_batches_api_workflow_batches_get: {
-    parameters: {
-      query?: {
-        limit?: number;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['WorkflowBatchRead'][];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  start_workflow_batch_session_api_workflow_batches_start_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['WorkflowBatchStart'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['WorkflowBatchRead'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  get_workflow_batch_api_workflow_batches__batch_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        batch_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['WorkflowBatchRead'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  retry_workflow_batch_session_api_workflow_batches__batch_id__retry_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        batch_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['WorkflowBatchRead'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  workflows_api_workflows_get: {
-    parameters: {
-      query?: {
-        limit?: number;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['WorkflowRead'][];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  new_workflow_api_workflows_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['WorkflowCreate'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['WorkflowRead'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  start_workflow_session_api_workflows_start_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['WorkflowStart'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['WorkflowRead'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  get_workflow_api_workflows__workflow_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workflow_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['WorkflowRead'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  confirm_workflow_result_api_workflows__workflow_id__confirm_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workflow_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['WorkflowRead'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  set_workflow_files_api_workflows__workflow_id__files_put: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workflow_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['WorkflowFilesUpdate'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['WorkflowRead'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  workflow_message_api_workflows__workflow_id__messages_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workflow_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['WorkflowMessageCreate'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['WorkflowRead'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  rebuild_workflow_result_api_workflows__workflow_id__rebuild_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workflow_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['WorkflowRead'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  reset_workflow_session_api_workflows__workflow_id__reset_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workflow_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['WorkflowRead'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
+    admin_list_approvals_api_admin_approvals_get: {
+        parameters: {
+            query?: {
+                status?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApprovalRecord"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_decide_approval_api_admin_approvals__approval_id__decision_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                approval_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApprovalDecisionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApprovalRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_admin_profile_api_admin_assistant_profile_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminAssistantProfile"];
+                };
+            };
+        };
+    };
+    put_admin_profile_api_admin_assistant_profile_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminAssistantProfileWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminAssistantProfile"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_admin_profile_api_admin_assistant_profile_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_audit_events_api_admin_audit_events_get: {
+        parameters: {
+            query?: {
+                action?: string;
+                actor_id?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditEventRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_observability_summary_api_admin_observability_summary_get: {
+        parameters: {
+            query?: {
+                hours?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObservabilitySummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reload_registry_api_admin_registry_reload_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegistryReloadResponse"];
+                };
+            };
+        };
+    };
+    admin_list_skill_releases_api_admin_skill_releases_get: {
+        parameters: {
+            query?: {
+                skill_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillReleaseRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_import_skill_release_api_admin_skill_releases_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillReleaseImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillReleaseRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_list_release_inbox_api_admin_skill_releases_inbox_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillReleaseInboxItem"][];
+                };
+            };
+        };
+    };
+    admin_update_skill_release_api_admin_skill_releases__release_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                release_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillReleaseMetadataUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillReleaseRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_publish_skill_release_api_admin_skill_releases__release_id__publish_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                release_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillReleasePublishRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillReleaseRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_review_skill_release_api_admin_skill_releases__release_id__review_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                release_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillReleaseReviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillReleaseRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_list_users_api_admin_users_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserRead"][];
+                };
+            };
+        };
+    };
+    admin_create_user_api_admin_users_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminUserCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_update_user_api_admin_users__user_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminUserUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_replace_skill_permissions_api_admin_users__user_id__skill_permissions_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillPermissionsReplace"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillPermissionRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_list_workflow_definitions_api_admin_workflow_definitions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowDefinitionRead"][];
+                };
+            };
+        };
+    };
+    prepare_api_assistant_prepare_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistantPrepareRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskDraft"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_assistant_status_api_assistant_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantStatus"];
+                };
+            };
+        };
+    };
+    auth_change_password_api_auth_change_password_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangePasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    auth_login_api_auth_login_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    auth_logout_api_auth_logout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    auth_session_api_auth_session_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionRead"];
+                };
+            };
+        };
+    };
+    list_catalog_skills_api_catalog_skills_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillDetail"][];
+                };
+            };
+        };
+    };
+    get_catalog_skill_api_catalog_skills__skill_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_files_api_files_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+                kind?: string;
+                query?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlatformFilePage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_file_api_files_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_file_api_files_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlatformFile"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_file_api_files__file_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                file_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlatformFileDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_uploaded_file_api_files__file_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                file_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_file_api_files__file_id__download_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                file_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    health_api_health_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlatformHealth"];
+                };
+            };
+        };
+    };
+    model_connections_api_model_connections_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelConnectionRead"][];
+                };
+            };
+        };
+    };
+    connect_model_api_model_connections_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelConnectRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelConnectionRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_model_api_model_connections__connection_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_model_api_model_connections__connection_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelSelectRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelConnectionRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    refresh_model_api_model_connections__connection_id__refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelConnectionRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    model_providers_api_model_providers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelProviderRead"][];
+                };
+            };
+        };
+    };
+    list_runs_api_runs_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+                state?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    new_run_api_runs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_run_api_runs__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_run_approvals_api_runs__run_id__approvals_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunApprovalRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_api_runs__run_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunActionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_api_runs__run_id__confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunActionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_events_api_runs__run_id__events_get: {
+        parameters: {
+            query?: {
+                after?: number;
+            };
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description RunEventRead 的 Server-Sent Events 数据流。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                    "text/event-stream": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_api_runs__run_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_run_steps_api_runs__run_id__steps_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StepRunRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    service_credential_api_service_credentials__service__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceCredentialRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_service_credential_api_service_credentials__service__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ServiceCredentialWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceCredentialRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_service_credential_api_service_credentials__service__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    session_api_session_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlatformUser"];
+                };
+            };
+        };
+    };
+    list_skills_api_skills_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": (components["schemas"]["SkillDetail"] | components["schemas"]["AdminSkillDetail"])[];
+                };
+            };
+        };
+    };
+    get_skill_api_skills__skill_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillDetail"] | components["schemas"]["AdminSkillDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    interpret_api_skills__skill_id__interpret_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InterpretRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InterpretResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_draft_api_task_drafts__draft_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskDraft"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_draft_api_task_drafts__draft_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_draft_api_task_drafts__draft_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TaskDraftUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskDraft"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_draft_api_task_drafts__draft_id__confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    workbench_api_workbench_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Workbench"];
+                };
+            };
+        };
+    };
+    workflow_batches_api_workflow_batches_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowBatchRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_workflow_batch_session_api_workflow_batches_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowBatchStart"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowBatchRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_workflow_batch_api_workflow_batches__batch_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowBatchRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_workflow_batch_session_api_workflow_batches__batch_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowBatchRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    workflows_api_workflows_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    new_workflow_api_workflows_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_workflow_session_api_workflows_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowStart"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_workflow_api_workflows__workflow_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_workflow_result_api_workflows__workflow_id__confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_workflow_files_api_workflows__workflow_id__files_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowFilesUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    workflow_message_api_workflows__workflow_id__messages_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowMessageCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rebuild_workflow_result_api_workflows__workflow_id__rebuild_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reset_workflow_session_api_workflows__workflow_id__reset_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
 }

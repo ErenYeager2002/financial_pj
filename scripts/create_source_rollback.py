@@ -10,7 +10,6 @@ import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
 
-
 SECRET_MARKERS = (
     b"-----BEGIN PRIVATE KEY-----",
     b"-----BEGIN RSA PRIVATE KEY-----",

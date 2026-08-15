@@ -1,12 +1,14 @@
 $ErrorActionPreference = "Stop"
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
-$env:PYTHONIOENCODING = "utf-8"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
-$Python = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
+$ComposeFile = Join-Path $ProjectRoot "deploy\production\compose.yaml"
+$EnvFile = Join-Path $ProjectRoot "deploy\production\.env"
 
-if (-not (Test-Path -LiteralPath $Python)) {
-    throw "没有找到项目虚拟环境。"
+if (-not (Test-Path -LiteralPath $EnvFile)) {
+    throw "缺少生产环境配置：$EnvFile"
 }
 
-& $Python "$PSScriptRoot\serve_control.py" stop
-exit $LASTEXITCODE
+& docker compose --env-file $EnvFile -f $ComposeFile stop
+if ($LASTEXITCODE -ne 0) {
+    throw "平台停止失败。"
+}

@@ -15,7 +15,7 @@ FastAPI OpenAPI 是当前 Next.js 项目的唯一平台接口契约来源。不�
 ```powershell
 .\.venv\Scripts\python.exe scripts\export_openapi.py
 .\.venv\Scripts\python.exe scripts\export_openapi.py `
-  --output D:\anything\next-shadcn-dashboard-starter\contracts\financial-platform.openapi.json
+  --output D:\BESTEASY\financial_pj\web\contracts\financial-platform.openapi.json
 ```
 
 再在当前项目生成并检查 TypeScript 类型：

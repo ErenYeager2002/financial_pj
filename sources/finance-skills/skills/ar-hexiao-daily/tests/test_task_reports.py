@@ -52,7 +52,7 @@ def test_build_task_reports_keeps_only_three_static_range_files(tmp_path):
         assert audit.formula_cells == 0
         assert audit.full_calc_on_load == "0"
         assert audit.force_full_calc == "0"
-        checker = Path(r"D:\BESTEASY\03_tools\scripts\xlsx_lightweight_audit.py")
+        checker = Path(__file__).resolve().parents[5] / "tools" / "xlsx_lightweight_audit.py"
         if checker.is_file():
             checked = subprocess.run(
                 [sys.executable, str(checker), str(path), "--strict"],

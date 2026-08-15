@@ -15,7 +15,7 @@
 以下 PowerShell 示例只同步一个 Skill 到隔离暂存目录。把尖括号内容替换为实际值：
 
 ```powershell
-$SourceRepo = 'D:\BESTEASY\finance-skills'
+$SourceRepo = 'D:\BESTEASY\financial_pj\sources\finance-skills'
 $StageRoot = Join-Path $env:TEMP 'financial-skill-release-<skill-id>'
 
 .\.venv\Scripts\python.exe scripts\sync_finance_skills.py `

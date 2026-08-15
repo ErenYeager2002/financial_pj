@@ -4,9 +4,19 @@ from pathlib import Path
 
 import pytest
 import yaml
+
 from scripts import prepare_production_env as production_env
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+
+def test_monorepo_paths_are_the_portable_defaults() -> None:
+    assert production_env.default_next_root(PROJECT_ROOT) == PROJECT_ROOT / "web"
+    compose = (PROJECT_ROOT / "deploy" / "production" / "compose.yaml").read_text(
+        encoding="utf-8"
+    )
+    assert "${FINANCIAL_PLATFORM_DIR:-../..}" in compose
+    assert "${NEXT_APP_DIR:-../../web}" in compose
 
 
 def test_normalize_public_origin_accepts_https_fqdn_and_localhost() -> None:

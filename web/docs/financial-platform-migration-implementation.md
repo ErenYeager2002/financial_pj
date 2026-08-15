@@ -2,7 +2,7 @@
 
 ## 1. 目标与边界
 
-本项目作为迁移后的唯一用户界面，继续使用 Next.js、shadcn/ui、现有主题系统和 Clerk。`D:\BESTEASY\financial_pj` 暂时继续提供 FastAPI、Skill Registry、任务与工作流、文件、审计、Worker 和 Scheduler。旧 Vite 前端只作为业务行为参考，完成等价验证后下线。
+本目录是统一仓库中的唯一用户界面，继续使用 Next.js、shadcn/ui、现有主题系统和 Clerk。同一仓库根目录下的 `backend/`、`skills/`、`deploy/` 和 `scripts/` 提供 FastAPI、Skill Registry、任务与工作流、文件、审计、Worker 和 Scheduler。旧 Vite 前端只保存在 `legacy/vite-frontend/` 作为业务行为参考。
 
 ```text
 用户
@@ -37,7 +37,7 @@ src/
   features/access-control/
 ```
 
-`financial_pj` 在迁移期保持独立目录。接口和运行链路稳定后，再决定是否把 `backend/`、`skills/`、Alembic 和部署脚本合并到同一仓库。
+目录合并已经完成：Next.js 位于 `web/`，FastAPI 和 Alembic 位于 `backend/`，运行 Skill 位于 `skills/`，Skill 原始源码位于 `sources/finance-skills/`。
 
 ## 3. 分阶段实施
 

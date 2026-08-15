@@ -2,7 +2,7 @@
 
 面向财务部门的内部工具平台：员工选择 Skill、上传文件、描述要求，平台完成参数解析、校验、排队、确定性执行、实时进度、结果下载和审计留痕。
 
-当前 Registry 共接入 18 个 Skill：10 个已发布、1 个草稿、7 个停用。
+当前 Registry 共接入 19 个 Skill，实际发布状态以管理后台和健康检查为准。
 已发布工具覆盖应收合并与拆分、劳务发票核对、合规抽查、申报表重命名、
 追觅应收进度对比、部门费用分摊、九点下单统计、银行流水对账和对话式应收核销。
 完整状态与暂缓发布原因见
@@ -10,36 +10,16 @@
 
 ## 快速启动
 
-需要 Python 3.11+、Node.js 20+。
+生产环境需要 Docker Desktop；本地测试需要 Python 3.11+、Node.js 22+ 和 pnpm 10.15.1。
 
 ```powershell
 Set-Location D:\BESTEASY\financial_pj
-.\scripts\bootstrap.ps1
-.\scripts\start.ps1
+.\.venv\Scripts\python.exe .\scripts\prepare_production_env.py --check
+.\scripts\start.ps1 -Build
 ```
 
-本机浏览器打开 `http://127.0.0.1:8000`。平台默认只监听 `127.0.0.1`，
-**不会**暴露到局域网或公网。完成身份认证评估前，不要通过公网隧道（frp /
-ngrok / Cloudflare Tunnel 等）传输真实财务文件。
-
-局域网试用是**显式开启**的：先用管理员 PowerShell 执行防火墙脚本，再显式
-指定监听地址启动：
-
-```powershell
-.\scripts\start.ps1 -HostAddress 0.0.0.0
-```
-
-首次开启局域网访问时，请使用**管理员 PowerShell**执行：
-
-```powershell
-.\scripts\enable_lan_access.ps1
-```
-
-普通 PowerShell 也可以运行该脚本，系统会自动弹出管理员权限确认。
-脚本默认把 WLAN 设置为专用网络，并且只在 WLAN 接口上允许同一子网访问
-TCP 8000。请只在可信网络、且已经完成服务端身份认证之后启用；当前内部测试版
-尚未接入正式的用户登录鉴权，同一 Wi-Fi 中知道地址的访问者可能看到任务和文件，
-因此在正式认证上线前应保持 `127.0.0.1` 默认配置。
+本机浏览器打开 `https://localhost:8443`。默认只监听 `127.0.0.1`，PostgreSQL、
+FastAPI、Next.js 和 Worker 不映射主机端口。不要通过公网隧道传输真实财务文件。
 
 停止平台：
 
@@ -47,9 +27,8 @@ TCP 8000。请只在可信网络、且已经完成服务端身份认证之后启
 .\scripts\stop.ps1
 ```
 
-Linux 公网部署采用独立域名、HTTPS、Nginx 登录保护和 systemd 服务；完整步骤见
-[deploy/README.md](deploy/README.md)。部署包必须排除本机 `.env`、`data/`、
-`.venv/` 和历史财务文件。
+生产拓扑和正式域名配置见 [deploy/production/README.md](deploy/production/README.md)。
+部署包必须排除本机 `.env`、`data/`、`.venv/`、`web/.env*` 和历史财务文件。
 
 平台默认按执行池启动 6 个 Worker：Python 2、HTTP 2、Workflow 2。不同 Skill
 可以并行执行；同一个 Skill 的并发数由 `tool.yaml` 中
@@ -80,12 +59,16 @@ API Key 使用服务端密钥加密保存，接口只返回脱敏后的末四位
 
 ```text
 financial_pj/
-├── backend/        FastAPI 与 Worker
-├── frontend/       React 工作台
-├── skills/         可执行 Skill
-├── docs/           架构与接入协议
-├── scripts/        初始化和运行脚本
-└── data/           本地数据库、上传、运行快照和日志
+├── web/                         Next.js、shadcn/ui 与 Clerk 用户界面
+├── backend/                     FastAPI、Worker 与 Alembic
+├── skills/                      经审核的运行 Skill
+├── sources/finance-skills/      Skill 原始源码及上游历史
+├── contracts/                   OpenAPI 契约
+├── deploy/                      Compose、Caddy 与容器配置
+├── scripts/                     初始化、备份、迁移和发布脚本
+├── tools/                       项目专用校验工具
+├── legacy/vite-frontend/        只读旧界面参考
+└── data/                        数据、上传、备份和手工作业区；Git 忽略
 ```
 
 架构与完整业务流程见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)，新 Skill 接入方式见 [docs/SKILL_CONTRACT.md](docs/SKILL_CONTRACT.md)。
@@ -94,7 +77,7 @@ financial_pj/
 
 ```powershell
 .\.venv\Scripts\python.exe .\scripts\sync_finance_skills.py `
-  --source D:\BESTEASY\finance-skills\skills
+  --skill-id ar-hexiao-daily
 ```
 
 同步脚本只复制业务说明、脚本、配置和参考资料；会排除测试缓存、工作区、
@@ -138,9 +121,10 @@ Skill 可以存放在私有 GitHub 仓库，但平台运行的是经过批准的
 ```powershell
 .\.venv\Scripts\python.exe -m pytest backend
 .\.venv\Scripts\python.exe -m ruff check backend skills --config backend\pyproject.toml
-Set-Location frontend
-npm run typecheck
-npm run build
+Set-Location web
+pnpm contracts:check
+pnpm typecheck
+pnpm build
 ```
 
 并行执行的隔离端到端检查：
