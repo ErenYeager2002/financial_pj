@@ -1,0 +1,6 @@
+allowBuilds:
+  '@sentry/cli': true
+  bufferutil: true
+  core-js: true
+  sharp: true
+  utf-8-validate: true
