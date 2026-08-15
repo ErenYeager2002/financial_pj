@@ -1,0 +1,4 @@
+interface:
+  display_name: "金蝶现金流量凭证核对"
+  short_description: "自动核对现金流量项目凭证笔数金额并标色具体异常记录"
+  default_prompt: "使用 $jdy-cashflow-reconcile 以现金流量明细为基准核对整合表并标色异常凭证。"

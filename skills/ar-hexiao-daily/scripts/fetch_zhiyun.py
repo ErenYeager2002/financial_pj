@@ -50,6 +50,21 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 # ── 常量（表 ID / 字段 ID 来自 2026-07-09/22/23 勘探，非密钥）────────────────
 BASE_DEFAULT = "http://192.168.10.167:18880"
+
+
+def _assert_platform_network_url(url: str) -> None:
+    if os.environ.get("FINANCIAL_NETWORK_POLICY_REQUIRED") != "1":
+        return
+    from urllib.parse import urlsplit
+
+    host = (urlsplit(url).hostname or "").encode("idna").decode("ascii").lower()
+    allowed = {
+        item.strip().lower()
+        for item in os.environ.get("FINANCIAL_NETWORK_ALLOWLIST", "").split(",")
+        if item.strip()
+    }
+    if os.environ.get("FINANCIAL_NETWORK_ACCESS") != "1" or host not in allowed:
+        raise RuntimeError("网络目标不在平台批准的精确域名白名单中。")
 APP_ID = "6ff4fb2e-e68c-4ee9-83a0-836de8f72c11"
 EXPORT_SCHEMA_VERSION = "2026-08-13-flow-sales-name-v4"
 CREDENTIAL_SERVICE = "codex.ar-hexiao-daily.zhiyun"
@@ -268,7 +283,14 @@ class ZhiyunClient:
 
     def post(self, path: str, body: dict, timeout: int = 90) -> dict:
         url = f"{self.base}/wwwapi/{path.lstrip('/')}"
-        r = self.session.post(url, headers=self.headers, json=body, timeout=timeout)
+        _assert_platform_network_url(url)
+        r = self.session.post(
+            url,
+            headers=self.headers,
+            json=body,
+            timeout=timeout,
+            allow_redirects=False,
+        )
         r.raise_for_status()
         j = r.json()
         if isinstance(j, dict) and "data" in j:
