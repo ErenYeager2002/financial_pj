@@ -5,6 +5,14 @@ version: 1.0.0
 status: published
 category: 对账核对
 description: 对银行流水和财务总账进行确定性匹配，输出匹配明细、未匹配流水和未匹配总账。
+ui:
+  employee_name: 银行流水自动对账
+  short_description: 对银行流水和财务总账进行自动匹配。
+  categories: [对账核对]
+  estimated_minutes: 3
+  output_summary: 匹配明细和待核查清单
+  action_label: 开始对账
+  popular: true
 tags:
   - Excel
   - 银行流水
@@ -85,9 +93,38 @@ runtime:
 
 risk:
   level: read_only
-  requires_confirmation: false
+  requires_confirmation: true
+  requires_change_review: false
+  requires_approval: false
+  modifies_uploaded_files: false
+
+safety_constraints:
+  amount_tolerance:
+    minimum: 0
+    maximum: 100
+  date_tolerance_days:
+    minimum: 0
+    maximum: 31
+
+progress_stages:
+  - key: reading_files
+    label: 正在读取文件
+  - key: validating_fields
+    label: 正在检查字段
+  - key: matching
+    label: 正在匹配记录
+  - key: generating_output
+    label: 正在生成结果文件
+
+result_presentation:
+  metrics:
+    - key: matched
+      label: 成功匹配
+    - key: unmatched_bank
+      label: 待核查流水
+    - key: unmatched_ledger
+      label: 待核查总账
 
 permissions:
   run: finance_user
   manage: skill_admin
-

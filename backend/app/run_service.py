@@ -10,17 +10,22 @@ from typing import Any
 
 from fastapi import HTTPException, status
 from jsonschema import Draft202012Validator
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from .approval_service import manifest_requires_approval
 from .auth import UserContext
+from .authorization import assert_skill_permission
 from .events import emit_event
 from .model_service import resolve_runtime_config
-from .models import FileRecord, RunModelAudit, RunRecord
+from .models import FileRecord, ModelTraceRecord, RunModelAudit, RunRecord
 from .orchestrator import interpret_parameters
+from .redaction import sanitize_text
 from .registry import RegisteredSkill, registry
+from .resource_policy import assert_owner, owner_list_filter, run_root
 from .schemas import RunCreate, RunRead
-from .settings import settings
+from .step_runtime_service import initialize_run_steps, queue_run_execution_step
+from .storage import sha256_file
 
 TERMINAL_STATES = {"succeeded", "failed", "timed_out", "cancelled"}
 
@@ -37,8 +42,7 @@ def _load(value: str) -> Any:
 
 
 def _assert_visible(run: RunRecord, user: UserContext) -> None:
-    if run.department_id != user.department_id and not user.is_admin:
-        raise HTTPException(status_code=403, detail="无权查看其他部门的任务。")
+    assert_owner(run.owner_id, user, "任务", run.department_id)
 
 
 def get_run_or_404(db: Session, run_id: str, user: UserContext) -> RunRecord:
@@ -49,7 +53,12 @@ def get_run_or_404(db: Session, run_id: str, user: UserContext) -> RunRecord:
     return run
 
 
-def serialize_run(run: RunRecord) -> RunRead:
+def serialize_run(
+    run: RunRecord,
+    *,
+    can_retry: bool = False,
+    retry_block_reason: str = "",
+) -> RunRead:
     return RunRead(
         id=run.id,
         owner_id=run.owner_id,
@@ -62,15 +71,21 @@ def serialize_run(run: RunRecord) -> RunRead:
         model_name=run.model_audit.model if run.model_audit else "",
         state=run.state,
         progress=run.progress,
-        progress_message=run.progress_message,
+        progress_message=sanitize_text(
+            run.progress_message,
+            error=run.state in {"failed", "timed_out"},
+        ),
         message=run.message,
         parameters=_load(run.parameters_json),
         files=_load(run.files_json),
         result=_load(run.result_json),
-        error_message=run.error_message,
+        error_message=sanitize_text(run.error_message, error=True),
         confirmation_required=run.confirmation_required,
         confirmed_by=run.confirmed_by,
         cancel_requested=run.cancel_requested,
+        attempt_count=run.attempt_count,
+        can_retry=can_retry,
+        retry_block_reason=retry_block_reason,
         created_at=run.created_at,
         queued_at=run.queued_at,
         started_at=run.started_at,
@@ -78,7 +93,99 @@ def serialize_run(run: RunRecord) -> RunRead:
     )
 
 
-def _validate_files(
+def retry_status(
+    db: Session,
+    run: RunRecord,
+    user: UserContext,
+    *,
+    verify_file_hash: bool = False,
+) -> tuple[bool, str]:
+    if run.state not in {"failed", "timed_out"}:
+        return False, "只有失败或超时的任务可以重试。"
+    skill = registry.get(run.skill_id)
+    if not skill:
+        return False, "该 Skill 当前不可用。"
+    try:
+        assert_skill_permission(db, user, run.skill_id)
+    except HTTPException:
+        return False, "当前账号已没有使用该 Skill 的权限。"
+    if skill.skill_hash != run.skill_hash or skill.manifest.version != run.skill_version:
+        return False, "Skill 版本已经变化，请从目录重新创建任务。"
+    if skill.manifest.risk.level != "read_only" or skill.manifest.risk.modifies_uploaded_files:
+        return False, "写入型或会修改上传文件的任务不能直接重试。"
+    for value in _load(run.files_json).values():
+        items = value if isinstance(value, list) else ([value] if value else [])
+        for item in items:
+            if not isinstance(item, dict) or not isinstance(item.get("file_id"), str):
+                return False, "原任务的文件记录不完整。"
+            record = db.get(FileRecord, item["file_id"])
+            if not record or record.kind != "input":
+                return False, "原任务的输入文件已经不存在。"
+            try:
+                assert_owner(record.owner_id, user, "输入文件", record.department_id)
+            except HTTPException:
+                return False, "原任务的输入文件已经不可访问。"
+            path = Path(record.stored_path).resolve()
+            if not path.is_file():
+                return False, "原任务的输入文件已经不存在。"
+            if verify_file_hash and sha256_file(path) != item.get("sha256"):
+                return False, "原任务的输入文件缺失或内容已经变化。"
+    return True, ""
+
+
+def list_runs_page(
+    db: Session,
+    user: UserContext,
+    *,
+    page: int,
+    page_size: int,
+    state: str = "",
+) -> tuple[list[RunRead], int]:
+    filters = [owner_list_filter(RunRecord, user)]
+    if state:
+        filters.append(RunRecord.state == state)
+    total = int(db.scalar(select(func.count()).select_from(RunRecord).where(*filters)) or 0)
+    records = db.scalars(
+        select(RunRecord)
+        .where(*filters)
+        .order_by(RunRecord.created_at.desc(), RunRecord.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+    result: list[RunRead] = []
+    for item in records:
+        allowed, reason = retry_status(db, item, user)
+        result.append(
+            serialize_run(item, can_retry=allowed, retry_block_reason=reason)
+        )
+    return result, total
+
+
+def retry_run(db: Session, run: RunRecord, user: UserContext) -> RunRecord:
+    allowed, reason = retry_status(db, run, user, verify_file_hash=True)
+    if not allowed:
+        raise HTTPException(status_code=409, detail=reason)
+    raw_files: dict[str, str | list[str]] = {}
+    for role, value in _load(run.files_json).items():
+        items = value if isinstance(value, list) else ([value] if value else [])
+        ids = [item["file_id"] for item in items]
+        raw_files[role] = ids if isinstance(value, list) else (ids[0] if ids else "")
+    return create_run(
+        db,
+        RunCreate(
+            skill_id=run.skill_id,
+            message=run.message,
+            parameters=_load(run.parameters_json),
+            files=raw_files,
+            idempotency_key=f"retry:{run.id}",
+            model_connection_id=run.model_audit.connection_id if run.model_audit else None,
+            model=run.model_audit.model if run.model_audit else None,
+        ),
+        user,
+    )
+
+
+def validate_files(
     db: Session,
     skill: RegisteredSkill,
     bindings: dict[str, str | list[str]],
@@ -107,8 +214,7 @@ def _validate_files(
             record = db.get(FileRecord, file_id)
             if not record or record.kind != "input":
                 raise HTTPException(status_code=422, detail=f"输入文件不存在：{file_id}")
-            if record.department_id != user.department_id and not user.is_admin:
-                raise HTTPException(status_code=403, detail="无权使用其他部门文件。")
+            assert_owner(record.owner_id, user, "输入文件", record.department_id)
             suffix = Path(record.original_name).suffix.lower().lstrip(".")
             allowed = [item.lower().lstrip(".") for item in spec.extensions]
             if allowed and suffix not in allowed:
@@ -132,8 +238,8 @@ def _validate_files(
     return normalized, hashlib.sha256("|".join(sorted(hash_parts)).encode()).hexdigest()
 
 
-def _snapshot_skill(skill: RegisteredSkill, run_id: str) -> Path:
-    destination = settings.run_dir / run_id / "skill"
+def _snapshot_skill(skill: RegisteredSkill, owner_id: str, run_id: str) -> Path:
+    destination = run_root(owner_id, run_id) / "skill"
     destination.parent.mkdir(parents=True, exist_ok=True)
     for path in skill.directory.rglob("*"):
         if path.is_symlink():
@@ -150,10 +256,23 @@ def create_run(db: Session, request: RunCreate, user: UserContext) -> RunRecord:
     skill = registry.get(request.skill_id)
     if not skill:
         raise HTTPException(status_code=404, detail="Skill 不存在或尚未发布。")
+    permission = assert_skill_permission(db, user, request.skill_id)
+    if request.files:
+        assert_skill_permission(db, user, request.skill_id, "can_upload")
     if skill.manifest.handler.adapter == "workflow":
         raise HTTPException(
             status_code=422,
             detail="该 Skill 需要通过对话式工作流创建任务。",
+        )
+    if manifest_requires_approval(skill.manifest) or bool(
+        permission and permission.requires_approval
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "写入型、外部动作型或额外审批型标准任务尚未接入变更预览，"
+                "不能直接创建；请使用已接入审批的工作流。"
+            ),
         )
     if request.idempotency_key:
         existing = db.scalar(
@@ -171,11 +290,13 @@ def create_run(db: Session, request: RunCreate, user: UserContext) -> RunRecord:
         request.model_connection_id,
         request.model,
     )
+    model_trace: dict[str, int | str] = {}
     parameters, missing, _, _ = interpret_parameters(
         skill,
         request.message,
         request.parameters,
         llm_config,
+        model_trace,
     )
     if missing:
         raise HTTPException(status_code=422, detail={"message": "缺少必要参数", "missing": missing})
@@ -188,7 +309,7 @@ def create_run(db: Session, request: RunCreate, user: UserContext) -> RunRecord:
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=[error.message for error in errors],
         )
-    files, file_hash = _validate_files(db, skill, request.files, user)
+    files, file_hash = validate_files(db, skill, request.files, user)
     payload_hash = hashlib.sha256(
         (_json(parameters) + _json(files) + skill.skill_hash).encode("utf-8")
     ).hexdigest()
@@ -196,7 +317,7 @@ def create_run(db: Session, request: RunCreate, user: UserContext) -> RunRecord:
     confirmation = skill.manifest.risk.requires_confirmation
     now = datetime.now(UTC)
     run_id = str(uuid.uuid4())
-    snapshot_dir = _snapshot_skill(skill, run_id)
+    snapshot_dir = _snapshot_skill(skill, user.user_id, run_id)
     run = RunRecord(
         id=run_id,
         owner_id=user.user_id,
@@ -226,6 +347,7 @@ def create_run(db: Session, request: RunCreate, user: UserContext) -> RunRecord:
     )
     db.add(run)
     db.flush()
+    initialize_run_steps(db, run)
     if llm_config:
         db.add(
             RunModelAudit(
@@ -233,6 +355,23 @@ def create_run(db: Session, request: RunCreate, user: UserContext) -> RunRecord:
                 connection_id=llm_config.connection_id,
                 provider=llm_config.provider,
                 model=llm_config.model,
+            )
+        )
+        db.add(
+            ModelTraceRecord(
+                id=str(uuid.uuid4()),
+                owner_id=user.user_id,
+                department_id=user.department_id,
+                run_id=run.id,
+                connection_id=llm_config.connection_id,
+                purpose="parameter_interpretation",
+                provider=llm_config.provider,
+                model=llm_config.model,
+                status=str(model_trace.get("status", "fallback")),
+                duration_ms=int(model_trace.get("duration_ms", 0)),
+                input_tokens=int(model_trace.get("input_tokens", 0)),
+                output_tokens=int(model_trace.get("output_tokens", 0)),
+                failure_code=str(model_trace.get("failure_code", "unknown"))[:64],
             )
         )
     emit_event(
@@ -256,6 +395,7 @@ def confirm_run(db: Session, run: RunRecord, user: UserContext) -> RunRecord:
     run.confirmed_by = user.user_id
     run.confirmed_at = datetime.now(UTC)
     run.queued_at = datetime.now(UTC)
+    queue_run_execution_step(db, run)
     emit_event(
         db,
         run,
@@ -273,6 +413,9 @@ def cancel_run(db: Session, run: RunRecord) -> RunRecord:
     if run.state in {"created", "validating", "queued", "waiting_confirmation"}:
         run.cancel_requested = True
         run.finished_at = datetime.now(UTC)
+        from .step_runtime_service import finish_run_execution_step
+
+        finish_run_execution_step(db, run, state="cancelled", error_code="cancelled")
         emit_event(
             db,
             run,

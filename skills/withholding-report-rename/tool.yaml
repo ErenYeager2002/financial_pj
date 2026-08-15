@@ -5,6 +5,14 @@ version: 1.0.0
 status: published
 category: 文件整理
 description: 识别申报表 PDF 内容并生成规范命名的副本，平台不会修改上传原件。
+ui:
+  employee_name: 申报表批量重命名
+  short_description: 识别申报表内容并生成规范命名的 PDF 副本。
+  categories: [文件整理]
+  estimated_minutes: 1
+  output_summary: 规范命名的 PDF 副本
+  action_label: 开始整理
+  popular: true
 tags:
 - PDF
 - 申报表
@@ -51,7 +59,22 @@ runtime:
   network_access: false
 risk:
   level: read_only
-  requires_confirmation: false
+  requires_confirmation: true
+  requires_change_review: false
+  requires_approval: false
+  modifies_uploaded_files: false
+safety_constraints: {}
+progress_stages:
+- key: reading_files
+  label: 正在读取文件
+- key: validating_fields
+  label: 正在识别申报表
+- key: processing
+  label: 正在生成规范文件名
+- key: generating_output
+  label: 正在生成 PDF 副本
+result_presentation:
+  metrics: []
 permissions:
   run: finance_user
   manage: skill_admin

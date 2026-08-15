@@ -29,13 +29,25 @@ from typing import Dict, List
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import common  # noqa: E402
-from validate_plan import DERIVED, FIVE, _norm, check_one, read_ledger_rows  # noqa: E402
+import workbook_finalize  # noqa: E402
+from validate_plan import (  # noqa: E402
+    DERIVED,
+    FIVE,
+    _norm,
+    check_one,
+    duplicate_audit_error,
+    read_ledger_rows,
+)
 
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 except Exception:
     pass
+
+
+# 仅控制差异表判定范围。正常写入与 verify_written() 仍校验 FIVE 全字段。
+ORDER_DIFFERENCE_IGNORED_FIELDS = frozenset({"收款时间", "收款方式"})
 
 
 def locate_columns(ws, aliases) -> Dict[str, int]:
@@ -64,7 +76,26 @@ def locate_columns(ws, aliases) -> Dict[str, int]:
     return {k: v + 1 for k, v in cols.items()}  # openpyxl 是 1-based
 
 
-def write_plan(src: Path, out: Path, items: List[dict]) -> List[dict]:
+def _prepare_split_payment_chains(items: List[dict]) -> None:
+    """标记分笔回款链的物理主记录；每个父 AR 的业务行和值保持独立。"""
+    groups: Dict[str, List[dict]] = {}
+    for item in items:
+        gid = item.get("split_chain_group_id")
+        if gid:
+            groups.setdefault(str(gid), []).append(item)
+    for members in groups.values():
+        members.sort(key=lambda item: int(item.get("split_chain_index") or 0))
+        for index, member in enumerate(members):
+            member["_split_chain_primary"] = index == 0
+
+
+def write_plan(
+    src: Path,
+    out: Path,
+    items: List[dict],
+    *,
+    return_patch_result: bool = False,
+):
     """
     把 items 的五列写进 out（out 是 src 的无损副本）。返回变更明细。
 
@@ -74,6 +105,8 @@ def write_plan(src: Path, out: Path, items: List[dict]) -> List[dict]:
     """
     import openpyxl
     import xlsx_patch
+
+    _prepare_split_payment_chains(items)
 
     # 先用只读模式拿列位置与改前值（不保存，纯读）
     wb = openpyxl.load_workbook(str(src), read_only=True, data_only=True)
@@ -92,22 +125,146 @@ def write_plan(src: Path, out: Path, items: List[dict]) -> List[dict]:
     changes: List[dict] = []
     edits: List = []
     insertions: List = []
-    source_rows = sorted(
-        int(it["ledger_row_ref"])
-        for it in items
-        if (it.get("row_operation") or {}).get("type") == "split_below"
-    )
+    source_rows: List[int] = []
+    for it in items:
+        op = it.get("row_operation") or {}
+        if op.get("type") == "split_below":
+            source_rows.append(int(it["ledger_row_ref"]))
+        elif op.get("type") == "split_payment_chain" and it.get("_split_chain_primary"):
+            insertion_count = max(len(op.get("steps") or []) - 1, 0)
+            if op.get("final_unpaid"):
+                insertion_count += 1
+            source_rows.extend([int(it["ledger_row_ref"])] * insertion_count)
+    source_rows.sort()
 
     def final_original_row(row: int) -> int:
         return int(row) + sum(1 for source in source_rows if source < int(row))
 
+    def difference_formula(receivable_rows: List[int], target_row: int) -> str:
+        """差异按同一 SO/SOD 的原始应收合计减最终计提，兼容既有拆分行。"""
+        receivable_col = xlsx_patch.col_letter(cols["应收"])
+        accrual_col = xlsx_patch.col_letter(cols["计提"])
+        refs = [f"{receivable_col}{int(row)}" for row in sorted(set(receivable_rows))]
+        basis = refs[0] if len(refs) == 1 else f"SUM({','.join(refs)})"
+        return f"={basis}-{accrual_col}{int(target_row)}"
+
+    def existing_business_rows(item: dict, target_row: int) -> List[int]:
+        so = str(item.get("so") or "").strip()
+        sod = str(item.get("sod") or "").strip()
+        rows = [
+            final_original_row(row_no)
+            for row_no, row in before_rows.items()
+            if (not so or row.get("SO") == so)
+            and (not sod or row.get("SOD") == sod)
+        ]
+        return rows or [int(target_row)]
+
+    # 链内每个父 AR 都有独立物理行：第 1 笔使用原行，后续笔使用连续复制行。
+    for it in items:
+        if (it.get("row_operation") or {}).get("type") == "split_payment_chain":
+            base = final_original_row(int(it["ledger_row_ref"]))
+            it["_applied_row_ref"] = base + int(it.get("split_chain_index") or 0)
+            if it.get("_split_chain_primary") and (it.get("row_operation") or {}).get("final_unpaid"):
+                it["_chain_unpaid_row_ref"] = base + len((it.get("row_operation") or {}).get("steps") or [])
+
+    def normalized_five(five: dict) -> Dict[str, object]:
+        values: Dict[str, object] = {}
+        for key in FIVE:
+            value = five.get(key)
+            if key == "收款时间" and value is not None:
+                value = common.norm_date(value) or value
+            elif key in ("计提", "回款明细") and value is not None:
+                value = float(value)
+            values[key] = value
+        return values
+
     for it in items:
         r = int(it["ledger_row_ref"])
-        applied_r = final_original_row(r)
+        applied_r = int(it.get("_applied_row_ref") or final_original_row(r))
         it["_applied_row_ref"] = applied_r
         five = it.get("five_cols") or {}
         derived = it.get("derived_cols") or {}
         before = before_rows.get(r, {})
+        op = it.get("row_operation") or {}
+        if op.get("type") == "split_payment_chain":
+            steps = op.get("steps") or []
+            step_index = int(it.get("split_chain_index") or 0)
+            chain_base = applied_r - step_index
+            chain_rows = list(range(
+                chain_base,
+                chain_base + len(steps) + (1 if op.get("final_unpaid") else 0),
+            ))
+            formula = (
+                difference_formula(chain_rows, applied_r)
+                if "差异" in derived else ""
+            )
+            if formula:
+                it["_difference_formula"] = formula
+            if it.get("_split_chain_primary"):
+                first_five = normalized_five(steps[0].get("five_cols") or {})
+                for key, value in first_five.items():
+                    edits.append((r, cols[key], value))
+                edits.append((r, cols["应收"], float(steps[0]["receivable"])))
+                first_sod = first_five.get("实收SOD") or it.get("sod")
+                if first_sod:
+                    edits.append((r, cols["SOD"], first_sod))
+                if "差异" in cols:
+                    first_derived = steps[0].get("derived_cols") or {}
+                    if "差异" in first_derived:
+                        formula = difference_formula(chain_rows, applied_r)
+                        edits.append((r, cols["差异"], xlsx_patch.FormulaValue(
+                            formula, float(first_derived["差异"])
+                        )))
+                    else:
+                        edits.append((r, cols["差异"], None))
+
+                for offset, next_step in enumerate(steps[1:], start=1):
+                    row_no = applied_r + offset
+                    next_five = normalized_five(next_step.get("five_cols") or {})
+                    overrides = {cols[key]: value for key, value in next_five.items()}
+                    overrides[cols["应收"]] = float(next_step["receivable"])
+                    next_sod = next_five.get("实收SOD") or next_step.get("sod")
+                    if next_sod:
+                        overrides[cols["SOD"]] = next_sod
+                    if "差异" in cols:
+                        next_derived = next_step.get("derived_cols") or {}
+                        if "差异" in next_derived:
+                            next_formula = difference_formula(chain_rows, row_no)
+                            overrides[cols["差异"]] = xlsx_patch.FormulaValue(
+                                next_formula, float(next_derived["差异"])
+                            )
+                        else:
+                            overrides[cols["差异"]] = None
+                    insertions.append((r, overrides))
+
+                final_unpaid = op.get("final_unpaid")
+                if final_unpaid:
+                    unpaid_five = normalized_five(final_unpaid.get("five_cols") or {})
+                    overrides = {cols[key]: value for key, value in unpaid_five.items()}
+                    overrides[cols["应收"]] = float(final_unpaid["receivable"])
+                    unpaid_sod = unpaid_five.get("实收SOD") or it.get("sod")
+                    if unpaid_sod:
+                        overrides[cols["SOD"]] = unpaid_sod
+                    if "差异" in cols:
+                        overrides[cols["差异"]] = None
+                    insertions.append((r, overrides))
+
+            changes.append(
+                {
+                    "案例ID": it.get("case_id"),
+                    "行号": applied_r,
+                    "SO": it.get("so"),
+                    "SOD": five.get("实收SOD") or it.get("sod"),
+                    "改前": {k: _norm(before.get(k)) for k in FIVE} if step_index == 0 else {k: "" for k in FIVE},
+                    "改后": {k: _norm(five.get(k)) for k in FIVE},
+                    "派生列_改前": {},
+                    "派生列_改后": {k: _norm(derived.get(k)) for k in DERIVED if k in derived},
+                    "派生列_公式": {"差异": formula if "差异" in derived else ""},
+                    "操作": f"分笔回款链第 {step_index + 1} 笔（独立父回款）",
+                    "新增行号": applied_r if step_index > 0 else "",
+                }
+            )
+            continue
         for k in FIVE:
             v = five.get(k)
             if v is None:
@@ -121,18 +278,21 @@ def write_plan(src: Path, out: Path, items: List[dict]) -> List[dict]:
             if "差异" not in cols:
                 raise ValueError("本次需要写差异，但盈亏『明细』找不到“差异”列")
             target_diff = float(derived["差异"])
-            formula = (
-                f"={xlsx_patch.col_letter(cols['应收'])}{applied_r}"
-                f"-{xlsx_patch.col_letter(cols['计提'])}{applied_r}"
+            formula = difference_formula(
+                existing_business_rows(it, applied_r), applied_r
             )
+            it["_difference_formula"] = formula
             edits.append(
                 (r, cols["差异"], xlsx_patch.FormulaValue(formula, target_diff))
             )
         sod = five.get("实收SOD") or it.get("sod")
         if sod:
             edits.append((r, cols["SOD"], sod))
-        op = it.get("row_operation") or {}
-        if op.get("type") == "split_below":
+        if op.get("type") == "same_so_multi_sod_aggregate":
+            edits.append((r, cols["应收"], float(op["so_delivery"])))
+            if "差异" in cols:
+                edits.append((r, cols["差异"], None))
+        elif op.get("type") == "split_below":
             edits.append((r, cols["应收"], float(op["paid_receivable"])))
             # 部分回款阶段两侧计提与业务值差异都必须留空。旧版测试表可以没有
             # “差异”列；存在时显式把源行和复制出的未回款行保持为空。
@@ -167,17 +327,105 @@ def write_plan(src: Path, out: Path, items: List[dict]) -> List[dict]:
                 "派生列_公式": {
                     "差异": formula if "差异" in derived else "",
                 },
-                "操作": "拆分并在下方新增未回款行" if op else "更新",
-                "新增行号": applied_r + 1 if op else "",
+                "操作": (
+                    "拆分并在下方新增未回款行"
+                    if op.get("type") == "split_below"
+                    else "结清尾差合并写入"
+                    if op.get("type") == "settlement_tail_aggregate"
+                    else "同一 SO 多 SOD 合并写入"
+                    if op.get("type") == "same_so_multi_sod_aggregate"
+                    else "更新"
+                ),
+                "新增行号": applied_r + 1 if op.get("type") == "split_below" else "",
             }
         )
-    xlsx_patch.patch_cells(src, out, target_sheet, edits, insertions=insertions)
+
+    # SO 的最后一个 SOD 结清时，同一次补填此前已结清 SOD 的计提。补填只动
+    # 计提和必要的差异公式，不复制回款日期、方式或金额，也不新增到账记录。
+    for it in items:
+        for backfill in it.get("so_accrual_backfills") or []:
+            verdict = (backfill.get("_check") or {}).get("verdict")
+            if verdict in {"skip", "conflict"}:
+                continue
+            original_row = int(backfill["ledger_row_ref"])
+            target_row = final_original_row(original_row)
+            backfill["_applied_row_ref"] = target_row
+            accrual = float(backfill["accrual"])
+            edits.append((original_row, cols["计提"], accrual))
+            formula = ""
+            if backfill.get("difference") is not None:
+                if "差异" not in cols:
+                    raise ValueError("历史计提补填需要写差异，但盈亏『明细』找不到“差异”列")
+                source_rows_for_formula = [
+                    final_original_row(int(row_no))
+                    for row_no in (backfill.get("business_rows") or [original_row])
+                ]
+                formula = difference_formula(source_rows_for_formula, target_row)
+                backfill["_difference_formula"] = formula
+                edits.append((
+                    original_row,
+                    cols["差异"],
+                    xlsx_patch.FormulaValue(formula, float(backfill["difference"])),
+                ))
+            before = before_rows.get(original_row, {})
+            after_five = {k: "" for k in FIVE}
+            after_five["计提"] = _norm(accrual)
+            changes.append({
+                "案例ID": it.get("case_id"),
+                "行号": target_row,
+                "SO": backfill.get("so"),
+                "SOD": backfill.get("sod"),
+                "改前": {k: _norm(before.get(k)) for k in FIVE},
+                "改后": after_five,
+                "派生列_改前": {
+                    "差异": _norm(before.get("差异"))
+                } if backfill.get("difference") is not None else {},
+                "派生列_改后": {
+                    "差异": _norm(backfill.get("difference"))
+                } if backfill.get("difference") is not None else {},
+                "派生列_公式": {"差异": formula},
+                "操作": "SO 全部 SOD 结清后补填历史计提",
+                "新增行号": "",
+            })
+    patch_result = xlsx_patch.patch_cells(
+        src,
+        out,
+        target_sheet,
+        edits,
+        insertions=insertions,
+        return_result=True,
+    )
 
     # 写完立刻自证没搞坏她的表：少一个部件都算失败
     lost = xlsx_patch.parts_diff(src, out)
     if lost:
         raise ValueError(f"写入后工作簿部件缺失（不该发生）：{lost[:5]}")
-    return changes
+    return (changes, patch_result) if return_patch_result else changes
+
+
+def _finalize_output(
+    path: Path,
+    patch_result,
+    portable_out: Path,
+    *,
+    baseline: Path,
+):
+    """补齐计算链；有历史外链时再派生独立便携副本。"""
+    import workbook_finalize
+    import xlsx_patch
+
+    finalized = workbook_finalize.finalize_workbook(
+        path,
+        {"明细": patch_result},
+    )
+    lost = xlsx_patch.parts_diff(baseline, path)
+    if lost:
+        raise ValueError(f"计算链处理后工作簿部件缺失：{lost[:5]}")
+    portable = None
+    if workbook_finalize.external_link_count(path):
+        audit = workbook_finalize.create_portable_copy(path, portable_out)
+        portable = (portable_out, audit)
+    return finalized, portable
 
 
 def precheck_before_write(plan: dict, items: List[dict], src: Path) -> List[str]:
@@ -198,6 +446,11 @@ def precheck_before_write(plan: dict, items: List[dict], src: Path) -> List[str]
     只跳过报错的那条，等于把剩下的照样写歪。
     """
     problems: List[str] = []
+
+    for it in items:
+        audit_problem = duplicate_audit_error(plan, it)
+        if audit_problem:
+            problems.append(audit_problem)
 
     recorded = plan.get("ledger_sha256")
     if recorded:
@@ -274,7 +527,7 @@ def verify_written(out: Path, items: List[dict]) -> List[str]:
                     f"第 {r} 行 {k}：期望 {_norm(derived[k])!r} 实际 {_norm(row.get(k))!r}"
                 )
             if k == "差异":
-                expected_formula = (
+                expected_formula = it.get("_difference_formula") or (
                     f"={xlsx_patch.col_letter(formula_cols['应收'])}{r}"
                     f"-{xlsx_patch.col_letter(formula_cols['计提'])}{r}"
                 )
@@ -311,6 +564,81 @@ def verify_written(out: Path, items: List[dict]) -> List[str]:
                     problems.append(
                         f"第 {inserted_r} 行 {key}：期望 {_norm(want)!r} 实际 {_norm(got)!r}"
                     )
+        elif op.get("type") == "split_payment_chain":
+            steps = op.get("steps") or []
+            step_index = int(it.get("split_chain_index") or 0)
+            if step_index >= len(steps):
+                problems.append(f"第 {r} 行分笔链序号越界")
+                continue
+            step = steps[step_index]
+            if _norm(row.get("应收金额")) != _norm(step.get("receivable")):
+                problems.append(
+                    f"第 {r} 行 应收金额：期望 {_norm(step.get('receivable'))!r} "
+                    f"实际 {_norm(row.get('应收金额'))!r}"
+                )
+            for key, want in (step.get("five_cols") or {}).items():
+                if key not in FIVE:
+                    continue
+                if _norm(row.get(key)) != _norm(want):
+                    problems.append(
+                        f"第 {r} 行 {key}：期望 {_norm(want)!r} 实际 {_norm(row.get(key))!r}"
+                    )
+            if it.get("_split_chain_primary") and op.get("final_unpaid"):
+                unpaid_r = int(it.get("_chain_unpaid_row_ref") or (r + len(steps)))
+                unpaid_row = rows.get(unpaid_r)
+                unpaid = op["final_unpaid"]
+                if unpaid_row is None:
+                    problems.append(f"第 {unpaid_r} 行应为分笔链最终未回款行，但写完读不到")
+                else:
+                    expected_unpaid = dict(unpaid.get("five_cols") or {})
+                    expected_unpaid["应收金额"] = unpaid.get("receivable")
+                    if "差异" in formula_cols:
+                        expected_unpaid["差异"] = None
+                    for key, want in expected_unpaid.items():
+                        actual_key = "SOD" if key == "实收SOD" else key
+                        if _norm(unpaid_row.get(actual_key)) != _norm(want):
+                            problems.append(
+                                f"第 {unpaid_r} 行 {key}：期望 {_norm(want)!r} "
+                                f"实际 {_norm(unpaid_row.get(actual_key))!r}"
+                            )
+        elif op.get("type") == "same_so_multi_sod_aggregate":
+            if _norm(row.get("应收金额")) != _norm(op.get("so_delivery")):
+                problems.append(
+                    f"第 {r} 行 应收金额：期望 {_norm(op.get('so_delivery'))!r} "
+                    f"实际 {_norm(row.get('应收金额'))!r}"
+                )
+            if "差异" in formula_cols and _norm(row.get("差异")) not in ("", "None"):
+                problems.append(f"第 {r} 行 多 SOD 合并后差异应留空")
+        for backfill in it.get("so_accrual_backfills") or []:
+            if (backfill.get("_check") or {}).get("verdict") == "conflict":
+                continue
+            backfill_r = int(
+                backfill.get("_applied_row_ref") or backfill["ledger_row_ref"]
+            )
+            backfill_row = rows.get(backfill_r)
+            if backfill_row is None:
+                problems.append(f"第 {backfill_r} 行历史计提补填后读不到")
+                continue
+            if _norm(backfill_row.get("计提")) != _norm(backfill.get("accrual")):
+                problems.append(
+                    f"第 {backfill_r} 行历史计提：期望 {_norm(backfill.get('accrual'))!r} "
+                    f"实际 {_norm(backfill_row.get('计提'))!r}"
+                )
+            if backfill.get("difference") is not None:
+                if _norm(backfill_row.get("差异")) != _norm(backfill.get("difference")):
+                    problems.append(
+                        f"第 {backfill_r} 行历史差异：期望 {_norm(backfill.get('difference'))!r} "
+                        f"实际 {_norm(backfill_row.get('差异'))!r}"
+                    )
+                expected_formula = backfill.get("_difference_formula")
+                actual_formula = formula_ws.cell(
+                    backfill_r, formula_cols["差异"]
+                ).value
+                if expected_formula and actual_formula != expected_formula:
+                    problems.append(
+                        f"第 {backfill_r} 行历史差异公式：期望 {expected_formula!r} "
+                        f"实际 {actual_formula!r}"
+                    )
     formula_wb.close()
     return problems
 
@@ -342,9 +670,14 @@ def write_change_report(changes: List[dict], path: Path) -> None:
             + [ch.get("派生列_改后", {}).get(k, "") for k in DERIVED]
             + [ch.get("派生列_公式", {}).get(k, "") for k in DERIVED]
         )
+        # 变更清单只展示公式原文，不让报表自身参与计算。
+        for cell in ws[ws.max_row][-len(DERIVED):]:
+            if isinstance(cell.value, str) and cell.value.startswith("="):
+                cell.data_type = "s"
     ws.freeze_panes = "A2"
     path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(str(path))
+    workbook_finalize.finalize_static_report(path)
 
 
 def _comparison_objects(items: List[dict]) -> List[dict]:
@@ -370,6 +703,16 @@ def _comparison_objects(items: List[dict]) -> List[dict]:
         if operation.get("type") == "split_below":
             expected["应收金额"] = operation.get("paid_receivable")
             expected["计提"] = None
+            expected["差异"] = None
+        elif operation.get("type") == "split_payment_chain":
+            step_index = int(item.get("split_chain_index") or 0)
+            step = (operation.get("steps") or [])[step_index]
+            expected.update({key: value for key, value in (step.get("five_cols") or {}).items() if key in FIVE})
+            expected["应收金额"] = step.get("receivable")
+            if not step.get("derived_cols"):
+                expected["差异"] = None
+        elif operation.get("type") == "same_so_multi_sod_aggregate":
+            expected["应收金额"] = operation.get("so_delivery")
             expected["差异"] = None
         objects.append(
             {
@@ -400,6 +743,46 @@ def _comparison_objects(items: List[dict]) -> List[dict]:
                     },
                 }
             )
+        elif (
+            operation.get("type") == "split_payment_chain"
+            and item.get("_split_chain_primary")
+            and operation.get("final_unpaid")
+        ):
+            unpaid = operation["final_unpaid"]
+            unpaid_row = int(item.get("_chain_unpaid_row_ref") or (
+                applied_row + len(operation.get("steps") or [])
+            ))
+            unpaid_expected = {
+                "SO": item.get("so") or "",
+                "SOD": (unpaid.get("five_cols") or {}).get("实收SOD") or sod,
+                "应收金额": unpaid.get("receivable"),
+                **{key: value for key, value in (unpaid.get("five_cols") or {}).items() if key in FIVE},
+                "差异": None,
+            }
+            objects.append({
+                "item": item,
+                "object_type": "分笔链最终未回款行",
+                "planned_row": unpaid_row,
+                "expected": unpaid_expected,
+            })
+        for backfill in item.get("so_accrual_backfills") or []:
+            if (backfill.get("_check") or {}).get("verdict") == "conflict":
+                continue
+            expected_backfill = {
+                "SO": backfill.get("so") or "",
+                "SOD": backfill.get("sod") or "",
+                "计提": backfill.get("accrual"),
+            }
+            if backfill.get("difference") is not None:
+                expected_backfill["差异"] = backfill.get("difference")
+            objects.append({
+                "item": item,
+                "object_type": "SO 全部 SOD 结清后历史计提补填",
+                "planned_row": int(
+                    backfill.get("_applied_row_ref") or backfill["ledger_row_ref"]
+                ),
+                "expected": expected_backfill,
+            })
     return objects
 
 
@@ -422,6 +805,7 @@ def build_order_difference(
     将本次实际写入订单与上传盈亏表的写后副本逐字段对比。
 
     只核对本批次实际写入的订单，不把上传表中的全部历史订单算作“多余订单”。
+    收款时间、收款方式只作为写入与回读字段，不参与差异判定。
     """
     rows = read_ledger_rows(ledger)
     order_rows: List[dict] = []
@@ -446,6 +830,8 @@ def build_order_difference(
             )
         else:
             for field, wanted in expected.items():
+                if field in ORDER_DIFFERENCE_IGNORED_FIELDS:
+                    continue
                 actual = actual_row.get(field)
                 if _norm(actual) != _norm(wanted):
                     row_differences.append(
@@ -503,6 +889,7 @@ def build_order_difference(
         "comparison_object_count": len(order_rows),
         "matched_count": sum(1 for row in order_rows if row["对比结果"] == "一致"),
         "difference_count": len(field_differences),
+        "ignored_difference_fields": sorted(ORDER_DIFFERENCE_IGNORED_FIELDS),
         "order_rows": order_rows,
         "field_differences": field_differences,
     }
@@ -523,6 +910,10 @@ def write_order_difference_report(result: dict, path: Path) -> None:
         ("对比对象数", result.get("comparison_object_count", 0)),
         ("一致对象数", result.get("matched_count", 0)),
         ("字段差异数", result.get("difference_count", 0)),
+        (
+            "不参与差异判定",
+            "、".join(result.get("ignored_difference_fields") or []),
+        ),
         (
             "结论",
             "写入订单与上传表写后数据全部一致"
@@ -562,10 +953,10 @@ def write_order_difference_report(result: dict, path: Path) -> None:
     success_fill = PatternFill("solid", fgColor="E6F4EA")
     difference_fill = PatternFill("solid", fgColor="FCE8E6")
     summary.sheet_view.showGridLines = False
-    summary["B7"].fill = (
+    summary["B8"].fill = (
         success_fill if not result.get("difference_count") else difference_fill
     )
-    summary["B7"].font = Font(bold=True)
+    summary["B8"].font = Font(bold=True)
     for ws in (orders, differences):
         ws.sheet_view.showGridLines = False
         for cell in ws[1]:
@@ -598,6 +989,7 @@ def write_order_difference_report(result: dict, path: Path) -> None:
 
     path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(str(path))
+    workbook_finalize.finalize_static_report(path)
 
 
 def _apply_new_file(
@@ -612,8 +1004,17 @@ def _apply_new_file(
     """默认模式：写一份新文件，她给的副本一个字节不动（最安全，头几次现场用这个并排验）。"""
     out.parent.mkdir(parents=True, exist_ok=True)
     try:
-        changes = write_plan(src, out, writable)
-    except ValueError as e:
+        changes, patch_result = write_plan(
+            src, out, writable, return_patch_result=True
+        )
+        portable_out = __import__("workbook_finalize").portable_path_for(out)
+        finalized, portable = _finalize_output(
+            out, patch_result, portable_out, baseline=src
+        )
+    except (ValueError, RuntimeError) as e:
+        out.unlink(missing_ok=True)
+        if "portable_out" in locals():
+            portable_out.unlink(missing_ok=True)
         print(f"ERROR: {e}", file=sys.stderr)
         return 2
 
@@ -625,6 +1026,9 @@ def _apply_new_file(
         )
         write_order_difference_report(difference_result, difference_report)
     except Exception as e:
+        out.unlink(missing_ok=True)
+        if portable:
+            portable[0].unlink(missing_ok=True)
         print(
             f"ERROR: 订单写入差异表生成失败：{type(e).__name__}"
             "（她给的副本没有改动）",
@@ -635,6 +1039,16 @@ def _apply_new_file(
     print(f"已写入 {len(changes)} 笔 → {out}")
     print(f"变更清单 → {report}")
     print(f"订单写入差异表 → {difference_report}")
+    print(
+        f"计算链处理 → {finalized.mode}；计算链="
+        f"{'已生成' if finalized.calc_chain_present else '无公式无需生成'}"
+    )
+    if portable:
+        portable_path, audit = portable
+        print(
+            f"便携副本 → {portable_path}（固化历史外链公式 "
+            f"{audit.frozen_external_formulas} 格；显示值差异 0）"
+        )
     print(f"基线未动（她给的副本）→ {src}")
     if problems:
         print("⚠ 写后回读比对不符：", file=sys.stderr)
@@ -670,14 +1084,29 @@ def _apply_in_place(
 
     tmp = src.with_name(f".{src.stem}_写入中_{ts}{src.suffix}")
     try:
-        changes = write_plan(src, tmp, writable)
-    except ValueError as e:
+        changes, patch_result = write_plan(
+            src, tmp, writable, return_patch_result=True
+        )
+        import workbook_finalize
+
+        portable = workbook_finalize.portable_path_for(src)
+        portable_tmp = src.with_name(
+            f".{portable.stem}_生成中_{ts}{portable.suffix}"
+        )
+        finalized, portable_result = _finalize_output(
+            tmp, patch_result, portable_tmp, baseline=src
+        )
+    except (ValueError, RuntimeError) as e:
         tmp.unlink(missing_ok=True)
+        if "portable_tmp" in locals():
+            portable_tmp.unlink(missing_ok=True)
         print(f"ERROR: {e}\n（原副本没动，备份在 {backup}）", file=sys.stderr)
         return 2
 
     problems = verify_written(tmp, writable)
     if problems:
+        if "portable_tmp" in locals():
+            portable_tmp.unlink(missing_ok=True)
         print(
             "⚠ 写后回读比对不符——**没有改动你的副本**（写坏的只是临时文件）：",
             file=sys.stderr,
@@ -696,6 +1125,8 @@ def _apply_in_place(
         write_order_difference_report(difference_result, difference_report)
     except Exception as e:
         tmp.unlink(missing_ok=True)
+        if "portable_tmp" in locals():
+            portable_tmp.unlink(missing_ok=True)
         print(
             f"ERROR: 订单写入差异表生成失败：{type(e).__name__}"
             f"（原副本没动，备份在 {backup}）",
@@ -703,22 +1134,48 @@ def _apply_in_place(
         )
         return 2
 
+    portable_backup = None
     try:
+        if portable_result:
+            if portable.exists():
+                portable_backup = portable.with_name(
+                    f".{portable.stem}_替换前_{ts}{portable.suffix}"
+                )
+                shutil.copy2(portable, portable_backup)
+            portable_tmp.replace(portable)
         tmp.replace(src)  # 要么整份换成新的，要么完全没换，不会写一半
     except OSError as e:
         difference_report.unlink(missing_ok=True)
+        portable_tmp.unlink(missing_ok=True)
+        if portable_result:
+            if portable_backup and portable_backup.exists():
+                portable_backup.replace(portable)
+            else:
+                portable.unlink(missing_ok=True)
         print(
             f"ERROR: 无法原子替换盈亏副本：{type(e).__name__}"
             f"（原副本没动，备份在 {backup}）",
             file=sys.stderr,
         )
         return 2
+    if portable_backup:
+        portable_backup.unlink(missing_ok=True)
     write_change_report(changes, report)
     _resnapshot_sources(src)
     print(f"已就地回填 {len(changes)} 笔 → {src}")
     print(f"写前备份 → {backup}")
     print(f"变更清单 → {report}")
     print(f"订单写入差异表 → {difference_report}")
+    print(
+        f"计算链处理 → {finalized.mode}；计算链="
+        f"{'已生成' if finalized.calc_chain_present else '无公式无需生成'}"
+    )
+    if portable_result:
+        _portable_path, audit = portable, portable_result[1]
+        print(
+            f"便携副本 → {_portable_path}（固化历史外链公式 "
+            f"{audit.frozen_external_formulas} 格；显示值差异 0）"
+        )
     print("写后回读逐格比对：全部一致 ✓")
     return 0
 

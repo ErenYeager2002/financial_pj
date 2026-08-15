@@ -2,8 +2,40 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
+from urllib.parse import urlsplit
+
+
+def _normalized_origin(url: str) -> str:
+    parsed = urlsplit(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return ""
+    try:
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    except ValueError:
+        return ""
+    return f"{parsed.scheme}://{parsed.hostname.lower()}:{port}"
+
+
+def _allowed_url(url: str) -> bool:
+    if os.environ.get("FINANCIAL_NETWORK_POLICY_REQUIRED") != "1":
+        return True
+    allowed = {
+        item.strip().lower()
+        for item in os.environ.get("FINANCIAL_NETWORK_TARGETS", "").split(",")
+        if item.strip()
+    }
+    return (
+        os.environ.get("FINANCIAL_NETWORK_ACCESS") == "1"
+        and _normalized_origin(url) in allowed
+    )
+
+
+def _assert_allowed_url(url: str) -> None:
+    if not _allowed_url(url):
+        raise RuntimeError("网络目标不在平台批准的精确目标白名单中。")
 
 
 def _edge_login(
@@ -16,13 +48,23 @@ def _edge_login(
     from playwright.sync_api import sync_playwright
 
     try:
+        _assert_allowed_url(base_url)
         with sync_playwright() as playwright:
             launch_options: dict[str, object] = {"headless": headless}
             if sys.platform == "win32":
                 launch_options["channel"] = "msedge"
+            proxy_url = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
+            if proxy_url:
+                launch_options["proxy"] = {"server": proxy_url}
             browser = playwright.chromium.launch(**launch_options)
             try:
                 context = browser.new_context(ignore_https_errors=True)
+                context.route(
+                    "**/*",
+                    lambda route: route.continue_()
+                    if _allowed_url(route.request.url)
+                    else route.abort(),
+                )
                 page = context.new_page()
                 page.goto(base_url, wait_until="domcontentloaded", timeout=60_000)
                 page.locator("#txtMobilePhone").wait_for(state="visible", timeout=60_000)

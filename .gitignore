@@ -1,4 +1,9 @@
 .env
+.env.runtime.local
+deploy/production/.env
+deploy/production/.secrets/
+deploy/production/tls/*
+!deploy/production/tls/.gitkeep
 .venv/
 __pycache__/
 *.py[cod]

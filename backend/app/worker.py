@@ -13,14 +13,19 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .adapters import ExecutionContext, get_adapter
+from .approval_service import manifest_requires_approval
 from .auth import UserContext
+from .auth_models import UserSkillPermission
 from .database import SessionLocal, init_db
 from .events import emit_event
 from .leases import LeaseHeartbeat, lease_deadline
 from .models import RunRecord
+from .redaction import sanitize_text
 from .registry import SkillManifest
+from .resource_policy import run_root
 from .scheduler import acquire_claim_lock, active_run_count, recover_expired_jobs
 from .settings import settings
+from .step_runtime_service import finish_run_execution_step, start_run_execution_step
 from .workflow_service import run_workflow_action_once
 
 STOP = False
@@ -52,6 +57,56 @@ def claim_next_run(
         run = db.get(RunRecord, run_id)
         if not run:
             continue
+        try:
+            manifest = SkillManifest.model_validate(json.loads(run.manifest_snapshot))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            run.error_message = "任务中的 Skill 执行快照无效。"
+            run.finished_at = now
+            finish_run_execution_step(
+                db,
+                run,
+                state="failed",
+                error_code="invalid_skill_snapshot",
+                error_message=run.error_message,
+            )
+            emit_event(
+                db,
+                run,
+                event_type="state",
+                state="failed",
+                message=run.error_message,
+                commit=False,
+            )
+            continue
+        permission = db.scalar(
+            select(UserSkillPermission).where(
+                UserSkillPermission.user_id == run.owner_id,
+                UserSkillPermission.skill_id == run.skill_id,
+            )
+        )
+        if manifest_requires_approval(manifest) or bool(
+            permission and permission.requires_approval
+        ):
+            run.error_message = (
+                "Worker 拒绝领取缺少批准快照的写入型、外部动作型或额外审批型标准任务。"
+            )
+            run.finished_at = now
+            finish_run_execution_step(
+                db,
+                run,
+                state="failed",
+                error_code="approval_snapshot_missing",
+                error_message=run.error_message,
+            )
+            emit_event(
+                db,
+                run,
+                event_type="state",
+                state="failed",
+                message=run.error_message,
+                commit=False,
+            )
+            continue
         if active_run_count(db, run.skill_id, now) >= max(1, run.concurrency_limit):
             continue
         run.state = "running"
@@ -76,6 +131,8 @@ def claim_next_run(
         message="Worker 已领取任务",
         data={"worker_id": worker_id, "attempt": selected.attempt_count},
     )
+    start_run_execution_step(db, selected, worker_id)
+    db.commit()
     return selected
 
 
@@ -87,7 +144,7 @@ def execute_run(db: Session, run: RunRecord) -> None:
         role="finance_user",
         department_id=run.department_id,
     )
-    workspace = settings.run_dir / run.id
+    workspace = run_root(run.owner_id, run.id)
     skill_dir = workspace / "skill"
     ctx = ExecutionContext(
         db=db,
@@ -105,6 +162,7 @@ def execute_run(db: Session, run: RunRecord) -> None:
             raise RuntimeError("输出协议校验失败：" + "; ".join(error.message for error in errors))
         run.result_json = json.dumps(result, ensure_ascii=False, sort_keys=True)
         run.finished_at = datetime.now(UTC)
+        finish_run_execution_step(db, run, state="succeeded", result=result)
         emit_event(
             db,
             run,
@@ -115,16 +173,32 @@ def execute_run(db: Session, run: RunRecord) -> None:
             data={"summary": result.get("summary", {})},
         )
     except InterruptedError as exc:
+        safe_error = sanitize_text(str(exc), error=True)
         run.finished_at = datetime.now(UTC)
-        emit_event(db, run, event_type="state", state="cancelled", message=str(exc))
+        finish_run_execution_step(
+            db, run, state="cancelled", error_code="cancelled", error_message=safe_error
+        )
+        emit_event(db, run, event_type="state", state="cancelled", message=safe_error)
     except TimeoutError as exc:
-        run.error_message = str(exc)
+        safe_error = sanitize_text(str(exc), error=True)
+        run.error_message = safe_error
         run.finished_at = datetime.now(UTC)
-        emit_event(db, run, event_type="state", state="timed_out", message=str(exc))
+        finish_run_execution_step(
+            db, run, state="timed_out", error_code="timeout", error_message=safe_error
+        )
+        emit_event(db, run, event_type="state", state="timed_out", message=safe_error)
     except Exception as exc:
-        run.error_message = str(exc)
+        safe_error = sanitize_text(str(exc), error=True)
+        run.error_message = safe_error
         run.finished_at = datetime.now(UTC)
-        emit_event(db, run, event_type="state", state="failed", message=str(exc))
+        finish_run_execution_step(
+            db,
+            run,
+            state="failed",
+            error_code="adapter_failure",
+            error_message=safe_error,
+        )
+        emit_event(db, run, event_type="state", state="failed", message=safe_error)
 
 
 def run_once(

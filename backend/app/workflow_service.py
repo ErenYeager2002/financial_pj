@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 import shutil
 import subprocess
@@ -15,7 +14,16 @@ from fastapi import HTTPException
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
+from .approval_service import (
+    ApprovalGateError,
+    assert_workflow_action_approval,
+    load_workflow_manifest,
+    request_workflow_approval,
+    revoke_workflow_approvals,
+    workflow_requires_approval,
+)
 from .auth import UserContext
+from .authorization import assert_skill_permission
 from .leases import LeaseHeartbeat, lease_deadline
 from .model_service import resolve_runtime_config
 from .models import (
@@ -25,7 +33,13 @@ from .models import (
     WorkflowMessage,
     WorkflowSession,
 )
+from .network_policy import (
+    assert_url_allowed,
+    skill_subprocess_environment,
+    subprocess_base_environment,
+)
 from .registry import RegisteredSkill, registry
+from .resource_policy import assert_owner, owner_list_filter, workflow_root
 from .scheduler import (
     acquire_claim_lock,
     active_workflow_count,
@@ -71,8 +85,7 @@ def _load(value: str, fallback: Any) -> Any:
 
 
 def _assert_visible(workflow: WorkflowSession, user: UserContext) -> None:
-    if workflow.department_id != user.department_id and not user.is_admin:
-        raise HTTPException(status_code=403, detail="无权查看其他部门的对话任务。")
+    assert_owner(workflow.owner_id, user, "对话任务", workflow.department_id)
 
 
 def get_workflow_or_404(
@@ -187,8 +200,7 @@ def serialize_workflow_batch(batch: WorkflowBatch) -> WorkflowBatchRead:
 
 
 def _assert_batch_visible(batch: WorkflowBatch, user: UserContext) -> None:
-    if batch.department_id != user.department_id and not user.is_admin:
-        raise HTTPException(status_code=403, detail="无权查看其他部门的批次任务。")
+    assert_owner(batch.owner_id, user, "批次任务", batch.department_id)
 
 
 def get_workflow_batch_or_404(
@@ -203,8 +215,8 @@ def get_workflow_batch_or_404(
     return batch
 
 
-def _snapshot_skill(skill: RegisteredSkill, workflow_id: str) -> Path:
-    root = (settings.workflow_dir / workflow_id).resolve()
+def _snapshot_skill(skill: RegisteredSkill, owner_id: str, workflow_id: str) -> Path:
+    root = workflow_root(owner_id, workflow_id)
     destination = root / "skill"
     root.mkdir(parents=True, exist_ok=False)
     for path in skill.directory.rglob("*"):
@@ -228,11 +240,12 @@ def create_workflow(
     skill = registry.get(request.skill_id)
     if not skill or skill.manifest.handler.adapter != "workflow":
         raise HTTPException(status_code=404, detail="对话式 Skill 不存在或尚未发布。")
+    assert_skill_permission(db, user, request.skill_id)
     llm = resolve_runtime_config(db, user, request.model_connection_id, request.model)
     if not llm:
         raise HTTPException(status_code=422, detail="对话式 Skill 必须选择一个大模型连接。")
     workflow_id = str(uuid.uuid4())
-    _snapshot_skill(skill, workflow_id)
+    _snapshot_skill(skill, user.user_id, workflow_id)
     workflow = WorkflowSession(
         id=workflow_id,
         owner_id=user.user_id,
@@ -278,6 +291,9 @@ def start_workflow(
     skill = registry.get(request.skill_id)
     if not skill or skill.manifest.handler.adapter != "workflow":
         raise HTTPException(status_code=404, detail="对话式 Skill 不存在或尚未发布。")
+    assert_skill_permission(db, user, request.skill_id)
+    if request.files:
+        assert_skill_permission(db, user, request.skill_id, "can_upload")
     parsed_date = _parse_date(request.reconciliation_date)
     if not parsed_date:
         raise HTTPException(status_code=422, detail="核销日期无效，不能晚于今天。")
@@ -288,7 +304,7 @@ def start_workflow(
         raise HTTPException(status_code=422, detail="尚未配置智云登录凭据，请先安全保存账号密码。")
 
     workflow_id = str(uuid.uuid4())
-    _snapshot_skill(skill, workflow_id)
+    _snapshot_skill(skill, user.user_id, workflow_id)
     workflow = WorkflowSession(
         id=workflow_id,
         owner_id=user.user_id,
@@ -310,6 +326,7 @@ def start_workflow(
             {
                 "started_from_form": True,
                 "requires_confirmation": skill.manifest.risk.requires_confirmation,
+                "requires_approval": skill.manifest.risk.requires_approval,
             }
         ),
         progress_message="正在核验前置条件",
@@ -355,6 +372,9 @@ def start_workflow_batch(
     skill = registry.get(request.skill_id)
     if not skill or skill.manifest.handler.adapter != "workflow":
         raise HTTPException(status_code=404, detail="对话式 Skill 不存在或尚未发布。")
+    assert_skill_permission(db, user, request.skill_id)
+    if request.files:
+        assert_skill_permission(db, user, request.skill_id, "can_upload")
     if len(request.reconciliation_dates) > 7:
         raise HTTPException(status_code=422, detail="单个批次最多选择 7 个核销日期。")
 
@@ -407,13 +427,14 @@ def start_workflow_batch(
     try:
         for sequence, reconciliation_date in enumerate(parsed_dates, start=1):
             workflow_id = str(uuid.uuid4())
-            _snapshot_skill(skill, workflow_id)
-            created_roots.append((settings.workflow_dir / workflow_id).resolve())
+            _snapshot_skill(skill, user.user_id, workflow_id)
+            created_roots.append(workflow_root(user.user_id, workflow_id))
             is_first = sequence == 1
             context = {
                 "started_from_form": True,
                 "batch_id": batch_id,
                 "requires_confirmation": skill.manifest.risk.requires_confirmation,
+                "requires_approval": skill.manifest.risk.requires_approval,
             }
             workflow = WorkflowSession(
                 id=workflow_id,
@@ -473,7 +494,7 @@ def list_workflows(db: Session, user: UserContext, limit: int = 50) -> list[Work
     query = (
         select(WorkflowSession)
         .where(
-            WorkflowSession.department_id == user.department_id,
+            owner_list_filter(WorkflowSession, user),
             # Only sessions created by the completed prerequisite form belong
             # in the task list. The legacy conversational bootstrap remains
             # available for API compatibility/tests, but must not create a
@@ -494,7 +515,7 @@ def list_workflow_batches(
 ) -> list[WorkflowBatch]:
     query = (
         select(WorkflowBatch)
-        .where(WorkflowBatch.department_id == user.department_id)
+        .where(owner_list_filter(WorkflowBatch, user))
         .order_by(WorkflowBatch.updated_at.desc())
         .limit(min(max(limit, 1), 200))
     )
@@ -521,8 +542,7 @@ def _validate_file_bindings(
             record = db.get(FileRecord, file_id)
             if not record or record.kind != "input":
                 raise HTTPException(status_code=422, detail=f"输入文件不存在：{file_id}")
-            if record.department_id != user.department_id and not user.is_admin:
-                raise HTTPException(status_code=403, detail="无权使用其他部门文件。")
+            assert_owner(record.owner_id, user, "输入文件", record.department_id)
             suffix = Path(record.original_name).suffix.lower().lstrip(".")
             allowed = [item.lower().lstrip(".") for item in spec.extensions]
             if allowed and suffix not in allowed:
@@ -571,6 +591,7 @@ def update_workflow_files(
 def reset_workflow(
     db: Session,
     workflow: WorkflowSession,
+    actor: UserContext,
 ) -> WorkflowSession:
     pending = db.scalar(
         select(WorkflowAction.id).where(
@@ -581,6 +602,7 @@ def reset_workflow(
     if pending or workflow.stage in BUSY_STAGES:
         raise HTTPException(status_code=409, detail="当前动作正在执行，完成后才能重置任务。")
 
+    revoke_workflow_approvals(db, workflow, actor, "工作流已由发起人重置。")
     workflow.state = "active"
     workflow.stage = "awaiting_date"
     workflow.reconciliation_date = ""
@@ -680,6 +702,7 @@ def _status_reply(workflow: WorkflowSession) -> str:
             "传好后回复“上传好了”。智云核销数据由平台自动获取。"
         ),
         "awaiting_apply_confirmation": "《核销日清》已生成；请打开检查，确认后回复“确认”。",
+        "waiting_approval": "写入确认已记录，正在等待另一名管理员审批。",
         "applying": "正在执行确认后的写入和回读校验，请不要修改相关表格。",
         "completed": "本次核销已完成，结果文件可以下载。",
         "failed": "上一步没有完成。请根据错误提示补齐材料后回复“重出日清”。",
@@ -707,6 +730,7 @@ def _apply_decision(
     db: Session,
     workflow: WorkflowSession,
     decision: WorkflowDecision,
+    actor: UserContext,
 ) -> None:
     action = decision.action
     source = {"decision_source": decision.source, "action": action}
@@ -811,6 +835,9 @@ def _apply_decision(
         if workflow.stage != "awaiting_apply_confirmation":
             _message(db, workflow, "assistant", _status_reply(workflow), source)
             return
+        if workflow_requires_approval(workflow):
+            request_workflow_approval(db, workflow, actor)
+            return
         _queue_action(db, workflow, "apply_confirmed")
         workflow.stage = "applying"
         workflow.state = "running"
@@ -841,6 +868,7 @@ def _apply_decision(
             workflow.state = "active"
             _message(db, workflow, "assistant", _status_reply(workflow), source)
             return
+        revoke_workflow_approvals(db, workflow, actor, "发起人重新生成变更预览。")
         _queue_action(db, workflow, "prepare_worklist")
         workflow.context_json = "{}"
         workflow.artifacts_json = "[]"
@@ -864,6 +892,7 @@ def _apply_decision(
                 source,
             )
         else:
+            revoke_workflow_approvals(db, workflow, actor, "工作流已由发起人取消。")
             workflow.stage = "cancelled"
             workflow.state = "cancelled"
             workflow.progress_message = "对话任务已取消"
@@ -924,7 +953,7 @@ def send_workflow_message(
         apply=True,
     ):
         decision = WorkflowDecision("show_status", {}, "backend_guard")
-    _apply_decision(db, workflow, decision)
+    _apply_decision(db, workflow, decision, user)
     db.commit()
     db.refresh(workflow)
     return workflow
@@ -956,6 +985,26 @@ def claim_next_workflow_action(
             action.error_message = "对话任务不存在。"
             action.finished_at = now
             continue
+        try:
+            assert_workflow_action_approval(db, action, workflow)
+        except (ApprovalGateError, HTTPException) as exc:
+            detail = str(exc.detail) if isinstance(exc, HTTPException) else str(exc)
+            action.state = "failed"
+            action.error_message = detail[:500]
+            action.finished_at = now
+            workflow.stage = "awaiting_apply_confirmation"
+            workflow.state = "waiting_confirmation"
+            workflow.error_message = action.error_message
+            workflow.progress_message = "审批无效，需要重新确认"
+            db.add(
+                WorkflowMessage(
+                    workflow_id=workflow.id,
+                    role="assistant",
+                    content=f"写入没有执行：{action.error_message} 请重新检查预览并确认。",
+                    data_json=_json({"kind": "approval_gate_blocked"}),
+                )
+            )
+            continue
         if active_workflow_count(db, workflow.skill_id, now) >= max(1, workflow.concurrency_limit):
             continue
         action.state = "running"
@@ -970,7 +1019,12 @@ def claim_next_workflow_action(
     return selected
 
 
-def _copy_inputs(db: Session, action: WorkflowAction, business: Path) -> None:
+def _copy_inputs(
+    db: Session,
+    action: WorkflowAction,
+    workflow: WorkflowSession,
+    business: Path,
+) -> None:
     payload = _load(action.input_json, {})
     for role, folder_name in FILE_ROLES.items():
         target_dir = business / folder_name
@@ -979,6 +1033,8 @@ def _copy_inputs(db: Session, action: WorkflowAction, business: Path) -> None:
             record = db.get(FileRecord, item["file_id"])
             if not record:
                 raise RuntimeError(f"输入记录不存在：{item['file_id']}")
+            if record.owner_id != workflow.owner_id or record.kind != "input":
+                raise RuntimeError(f"输入文件所有者校验失败：{record.id}")
             source = Path(record.stored_path).resolve()
             if not source.is_file() or sha256_file(source) != record.sha256:
                 raise RuntimeError(f"输入文件完整性校验失败：{record.id}")
@@ -997,10 +1053,11 @@ def _run_script(
     timeout: int = 900,
     stdin_data: str | None = None,
     sensitive_values: tuple[str, ...] = (),
+    extra_env: dict[str, str] | None = None,
 ) -> str:
     command = [sys.executable, str(script_dir / script_name), *arguments]
-    env = os.environ.copy()
-    env["PYTHONUTF8"] = "1"
+    env = subprocess_base_environment()
+    env.update(extra_env or {})
     completed = subprocess.run(
         command,
         cwd=script_dir,
@@ -1029,7 +1086,7 @@ def _register_artifact(
     source: Path,
     action_id: str,
 ) -> dict[str, Any]:
-    root = (settings.workflow_dir / workflow.id).resolve()
+    root = workflow_root(workflow.owner_id, workflow.id)
     source = source.resolve()
     if not source.is_file() or not source.is_relative_to(root):
         raise RuntimeError("工作流产物必须位于当前会话目录。")
@@ -1079,20 +1136,56 @@ def _worklist_summary(stdout: str) -> dict[str, int]:
     return summary
 
 
+def _discover_annual_ledger_paths(business: Path) -> dict[int, Path]:
+    """Return every annual P&L copy, rejecting ambiguous duplicate years."""
+    base = business / "02_我的表副本"
+    by_year: dict[int, Path] = {}
+    for path in sorted(base.glob("*盈亏*.xls*")):
+        if not path.is_file() or path.name.startswith(("~$", ".")):
+            continue
+        match = re.search(r"(?<!\d)(20\d{2})(?:年)?", path.stem)
+        year = int(match.group(1)) if match else date.today().year
+        resolved = path.resolve()
+        previous = by_year.get(year)
+        if previous and previous != resolved:
+            raise RuntimeError(
+                f"检测到两份 {year} 年盈亏表：{previous.name}、{resolved.name}；"
+                "每个年度只能上传一份权威工作副本。"
+            )
+        by_year[year] = resolved
+    return dict(sorted(by_year.items()))
+
+
+def _annual_ledger_arguments(ledgers: dict[int, Path]) -> list[str]:
+    arguments: list[str] = []
+    for year, path in sorted(ledgers.items()):
+        arguments.extend(["--ledger-year", f"{year}={path}"])
+    return arguments
+
+
 def _prepare_worklist(
     db: Session,
     action: WorkflowAction,
     workflow: WorkflowSession,
 ) -> dict[str, Any]:
-    root = (settings.workflow_dir / workflow.id).resolve()
+    root = workflow_root(workflow.owner_id, workflow.id)
     business = root / "actions" / action.id / "工作区"
     business.mkdir(parents=True, exist_ok=False)
-    _copy_inputs(db, action, business)
+    _copy_inputs(db, action, workflow, business)
+    ledgers = _discover_annual_ledger_paths(business)
+    if not ledgers:
+        raise RuntimeError("没有找到盈亏核算表副本。")
+    ledger_arguments = _annual_ledger_arguments(ledgers)
     script_dir = root / "skill" / "vendor" / "scripts"
     if not (script_dir / "classify_hexiao.py").is_file():
         raise RuntimeError("应收核销脚本包不完整。")
     workspace = str(business.resolve())
     hexiao_date = workflow.reconciliation_date
+    runtime = load_workflow_manifest(workflow).runtime
+    network_env = skill_subprocess_environment(runtime)
+    if settings.zhiyun_base_url:
+        assert_url_allowed(settings.zhiyun_base_url, runtime)
+        network_env["ZHIYUN_BASE"] = settings.zhiyun_base_url
     account, password = resolve_service_credential(
         db,
         workflow.owner_id,
@@ -1117,6 +1210,7 @@ def _prepare_worklist(
                 }
             ),
             sensitive_values=(account, password),
+            extra_env=network_env,
         )
     finally:
         password = ""
@@ -1125,11 +1219,11 @@ def _prepare_worklist(
         ("verify_sources.py", ["snapshot", "--workspace", workspace]),
         (
             "classify_hexiao.py",
-            ["--workspace", workspace, "--hexiao-date", hexiao_date],
+            ["--workspace", workspace, "--hexiao-date", hexiao_date, *ledger_arguments],
         ),
         (
             "validate_plan.py",
-            ["--workspace", workspace, "--hexiao-date", hexiao_date],
+            ["--workspace", workspace, "--hexiao-date", hexiao_date, *ledger_arguments],
         ),
         (
             "build_flow_plan.py",
@@ -1157,14 +1251,13 @@ def _prepare_worklist(
         (business / "04_产出").glob("写入计划_校验后*.json"),
         key=lambda path: path.stat().st_mtime,
     )
-    ledgers = sorted((business / "02_我的表副本").glob("*盈亏*.xls*"))
     if not checked or not ledgers:
         raise RuntimeError("日清已生成，但没有找到校验后计划或盈亏副本。")
     summary = _worklist_summary(stdout)
     return {
         "workspace": str(business),
         "checked_plan": str(checked[-1]),
-        "ledger": str(ledgers[0]),
+        "ledger_years": {str(year): str(path) for year, path in ledgers.items()},
         "summary": summary,
         "artifacts": [artifact],
     }
@@ -1177,26 +1270,41 @@ def _apply_confirmed(
 ) -> dict[str, Any]:
     context = _load(action.input_json, {}).get("context", {})
     business = Path(context.get("workspace", "")).resolve()
-    root = (settings.workflow_dir / workflow.id).resolve()
+    root = workflow_root(workflow.owner_id, workflow.id)
     if not business.is_dir() or not business.is_relative_to(root):
         raise RuntimeError("上一次日清工作区不存在，请重新生成日清。")
     script_dir = root / "skill" / "vendor" / "scripts"
     checked = Path(context.get("checked_plan", "")).resolve()
-    ledger = Path(context.get("ledger", "")).resolve()
-    if not checked.is_file() or not ledger.is_file():
+    raw_ledger_years = context.get("ledger_years") or {}
+    ledger_years: dict[int, Path] = {}
+    for raw_year, raw_path in raw_ledger_years.items():
+        if not str(raw_year).isdigit():
+            raise RuntimeError("年度盈亏表上下文无效，请重新生成日清。")
+        path = Path(raw_path).resolve()
+        if not path.is_file() or not path.is_relative_to(business):
+            raise RuntimeError("年度盈亏表不存在或超出当前工作区，请重新生成日清。")
+        ledger_years[int(raw_year)] = path
+    legacy_ledger = Path(context.get("ledger", "")).resolve()
+    if not checked.is_file() or not checked.is_relative_to(business):
+        raise RuntimeError("校验后计划或盈亏副本不存在，请重新生成日清。")
+    if not ledger_years and not legacy_ledger.is_file():
         raise RuntimeError("校验后计划或盈亏副本不存在，请重新生成日清。")
     workspace = str(business)
     # The preparation snapshot is a pre-write guard. Verify it immediately before
     # the confirmed mutation so a stale or externally changed workbook is rejected.
     _run_script(script_dir, "verify_sources.py", ["verify", "--workspace", workspace])
+    ledger_arguments = (
+        _annual_ledger_arguments(ledger_years)
+        if ledger_years
+        else ["--ledger", str(legacy_ledger)]
+    )
     _run_script(
         script_dir,
         "apply_all.py",
         [
             "--checked",
             str(checked),
-            "--ledger",
-            str(ledger),
+            *ledger_arguments,
             "--workspace",
             workspace,
             "--confirmed",
@@ -1405,7 +1513,7 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
             stop = bool(context.get("stop_after_action"))
             auto_apply = bool(context.get("started_from_form")) and not bool(
                 context.get("requires_confirmation", True)
-            )
+            ) and not workflow_requires_approval(workflow)
             summary = result.get("summary", {})
             if stop:
                 workflow.stage = "cancelled"
@@ -1443,6 +1551,7 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
                 )
             _message(db, workflow, "assistant", reply, {"kind": "worklist_ready"})
         elif action.name == "apply_confirmed":
+            assert_workflow_action_approval(db, action, workflow)
             result = _apply_confirmed(db, action, workflow)
             context = _load(workflow.context_json, {})
             context.update(result)

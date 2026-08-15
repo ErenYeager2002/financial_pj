@@ -4,7 +4,9 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(
+    os.getenv("FINANCIAL_PROJECT_ROOT", Path(__file__).resolve().parents[2])
+).resolve()
 
 
 def _env_path(name: str, default: Path) -> Path:
@@ -28,6 +30,10 @@ def _worker_counts() -> tuple[tuple[str, int], ...]:
     return tuple(counts) or (("python", 2), ("http", 2), ("workflow", 2))
 
 
+def _csv_env(name: str) -> tuple[str, ...]:
+    return tuple(item.strip() for item in os.getenv(name, "").split(",") if item.strip())
+
+
 @dataclass(frozen=True)
 class Settings:
     app_name: str = os.getenv("FINANCIAL_APP_NAME", "财务 Skill 运行平台")
@@ -45,6 +51,15 @@ class Settings:
         f"sqlite:///{(PROJECT_ROOT / 'data' / 'financial.db').as_posix()}",
     )
     max_upload_mb: int = int(os.getenv("FINANCIAL_MAX_UPLOAD_MB", "100"))
+    file_retention_days: int = max(
+        1, int(os.getenv("FINANCIAL_FILE_RETENTION_DAYS", "90"))
+    )
+    task_draft_ttl_minutes: int = max(
+        5, int(os.getenv("FINANCIAL_TASK_DRAFT_TTL_MINUTES", "30"))
+    )
+    approval_ttl_minutes: int = max(
+        5, int(os.getenv("FINANCIAL_APPROVAL_TTL_MINUTES", "30"))
+    )
     queue_poll_seconds: float = float(os.getenv("FINANCIAL_QUEUE_POLL_SECONDS", "1"))
     worker_pools: tuple[str, ...] = tuple(
         item.strip()
@@ -60,6 +75,43 @@ class Settings:
     llm_base_url: str = os.getenv("FINANCIAL_LLM_BASE_URL", "").rstrip("/")
     llm_api_key: str = os.getenv("FINANCIAL_LLM_API_KEY", "")
     llm_model: str = os.getenv("FINANCIAL_LLM_MODEL", "")
+    llm_provider: str = os.getenv("FINANCIAL_LLM_PROVIDER", "")
+    zhiyun_base_url: str = os.getenv("FINANCIAL_ZHIYUN_BASE_URL", "").rstrip("/")
+
+    # 会话与认证
+    session_cookie_name: str = os.getenv("FINANCIAL_SESSION_COOKIE", "financial_session")
+    session_max_age_seconds: int = int(os.getenv("FINANCIAL_SESSION_MAX_AGE_SECONDS", "28800"))
+    session_cookie_secure: bool = os.getenv("FINANCIAL_SESSION_COOKIE_SECURE", "").lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    session_cookie_samesite: str = os.getenv("FINANCIAL_SESSION_COOKIE_SAMESITE", "lax")
+    login_failure_limit: int = max(1, int(os.getenv("FINANCIAL_LOGIN_FAILURE_LIMIT", "5")))
+    login_lockout_seconds: int = max(1, int(os.getenv("FINANCIAL_LOGIN_LOCKOUT_SECONDS", "300")))
+    bootstrap_admin_username: str = os.getenv("FINANCIAL_BOOTSTRAP_ADMIN_USERNAME", "admin")
+    bootstrap_admin_password: str = os.getenv("FINANCIAL_BOOTSTRAP_ADMIN_PASSWORD", "")
+    auth_mode: str = os.getenv("FINANCIAL_AUTH_MODE", "session").strip().lower()
+    clerk_issuer: str = os.getenv("FINANCIAL_CLERK_ISSUER", "").rstrip("/")
+    clerk_jwks_url: str = os.getenv("FINANCIAL_CLERK_JWKS_URL", "")
+    clerk_jwt_key: str = os.getenv("FINANCIAL_CLERK_JWT_KEY", "").replace("\\n", "\n")
+    clerk_audience: str = os.getenv("FINANCIAL_CLERK_AUDIENCE", "")
+    clerk_authorized_parties: tuple[str, ...] = _csv_env("FINANCIAL_CLERK_AUTHORIZED_PARTIES")
+    clerk_jwt_leeway_seconds: int = max(
+        0, int(os.getenv("FINANCIAL_CLERK_JWT_LEEWAY_SECONDS", "5"))
+    )
+
+    @property
+    def trusted_origins(self) -> tuple[str, ...]:
+        """显式可信来源（逗号分隔）。默认从请求 Host 推导同源。"""
+        raw = os.getenv("FINANCIAL_TRUSTED_ORIGINS", "")
+        return tuple(item.strip() for item in raw.split(",") if item.strip())
+
+    @property
+    def custom_llm_host_allowlist(self) -> tuple[str, ...]:
+        """自定义模型服务允许的主机名白名单（逗号分隔的精确主机名，默认空）。"""
+        raw = os.getenv("FINANCIAL_LLM_CUSTOM_HOST_ALLOWLIST", "")
+        return tuple(item.strip().lower() for item in raw.split(",") if item.strip())
 
     @property
     def upload_dir(self) -> Path:
@@ -78,6 +130,14 @@ class Settings:
         return self.data_dir / "logs"
 
     @property
+    def skill_release_dir(self) -> Path:
+        return self.data_dir / "skill-releases"
+
+    @property
+    def skill_release_inbox_dir(self) -> Path:
+        return self.data_dir / "skill-release-inbox"
+
+    @property
     def credential_key_file(self) -> Path:
         return self.data_dir / "credential.key"
 
@@ -92,6 +152,8 @@ class Settings:
             self.run_dir,
             self.workflow_dir,
             self.log_dir,
+            self.skill_release_dir,
+            self.skill_release_inbox_dir,
         ):
             path.mkdir(parents=True, exist_ok=True)
 

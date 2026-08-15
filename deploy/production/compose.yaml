@@ -1,0 +1,246 @@
+name: financial-platform
+
+x-backend: &backend
+  image: financial-platform-backend:stage10
+  build:
+    context: ${FINANCIAL_PLATFORM_DIR}
+    dockerfile: deploy/docker/Dockerfile
+  restart: unless-stopped
+  read_only: true
+  tmpfs:
+    - /tmp:size=256m,mode=1777
+  shm_size: 512m
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  environment: &backend-environment
+    PYTHONPATH: /app/backend
+    FINANCIAL_PROJECT_ROOT: /app
+    FINANCIAL_APP_NAME: 财务 Skill 运行平台
+    FINANCIAL_ENV: production
+    FINANCIAL_DATA_DIR: /var/lib/financial-platform
+    FINANCIAL_SKILL_DIR: /app/skills
+    FINANCIAL_DATABASE_URL: postgresql+psycopg://financial:${POSTGRES_PASSWORD}@postgres:5432/financial
+    FINANCIAL_AUTH_MODE: ${FINANCIAL_AUTH_MODE:-clerk}
+    FINANCIAL_CLERK_ISSUER: ${FINANCIAL_CLERK_ISSUER}
+    FINANCIAL_CLERK_AUTHORIZED_PARTIES: ${FINANCIAL_CLERK_AUTHORIZED_PARTIES}
+    FINANCIAL_TRUSTED_ORIGINS: ${FINANCIAL_TRUSTED_ORIGINS}
+    FINANCIAL_ZHIYUN_BASE_URL: ${FINANCIAL_ZHIYUN_BASE_URL:-}
+    FINANCIAL_NETWORK_POLICY_MODE: ${FINANCIAL_NETWORK_POLICY_MODE:-strict}
+    FINANCIAL_SESSION_COOKIE_SECURE: "true"
+    FINANCIAL_WORKER_COUNTS: python:2,http:2,workflow:2
+  volumes:
+    - ${FINANCIAL_DATA_DIR}:/var/lib/financial-platform
+  networks:
+    - data
+  depends_on:
+    postgres:
+      condition: service_healthy
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "3"
+
+x-worker: &worker
+  <<: *backend
+  volumes:
+    - ${FINANCIAL_DATA_DIR}:/var/lib/financial-platform
+    - skill-data:/app/skills:ro
+  environment:
+    <<: *backend-environment
+    FINANCIAL_NETWORK_PROXY_URL: http://egress-proxy:8080
+  depends_on:
+    postgres:
+      condition: service_healthy
+    egress-proxy:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: docker.m.daocloud.io/library/postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: financial
+      POSTGRES_USER: financial
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U financial -d financial"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    security_opt:
+      - no-new-privileges:true
+
+  egress-proxy:
+    image: financial-platform-backend:stage10
+    build:
+      context: ${FINANCIAL_PLATFORM_DIR}
+      dockerfile: deploy/docker/Dockerfile
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    command: ["python", "/app/scripts/egress_proxy.py", "--host", "0.0.0.0", "--port", "8080"]
+    environment:
+      PYTHONPATH: /app/backend
+      PYTHONUNBUFFERED: "1"
+      FINANCIAL_NETWORK_POLICY_MODE: ${FINANCIAL_NETWORK_POLICY_MODE:-strict}
+      FINANCIAL_EGRESS_PROXY_TARGETS: ${FINANCIAL_EGRESS_PROXY_TARGETS:-}
+      FINANCIAL_EGRESS_PROXY_ALLOWLIST: ${FINANCIAL_EGRESS_PROXY_ALLOWLIST:-}
+    networks:
+      - data
+      - edge
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import socket; socket.create_connection(('127.0.0.1', 8080), timeout=3).close()"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  migrate:
+    <<: *backend
+    profiles: ["tools"]
+    restart: "no"
+    command:
+      - /bin/sh
+      - -ec
+      - >-
+        cd /app && python -m alembic -c /app/alembic.ini upgrade head &&
+        python /app/scripts/migrate_sqlite_to_postgres.py --apply
+        --report /var/lib/financial-platform/migrations/stage10-postgres-migration.json
+    environment:
+      <<: *backend-environment
+      FINANCIAL_MIGRATION_SOURCE_URL: sqlite:////var/lib/financial-platform/financial.db
+      FINANCIAL_MIGRATION_TARGET_URL: postgresql+psycopg://financial:${POSTGRES_PASSWORD}@postgres:5432/financial
+      FINANCIAL_MIGRATION_SOURCE_DATA_DIR: ${FINANCIAL_DATA_DIR}
+      FINANCIAL_MIGRATION_TARGET_DATA_DIR: /var/lib/financial-platform
+
+  api:
+    <<: *backend
+    volumes:
+      - ${FINANCIAL_DATA_DIR}:/var/lib/financial-platform
+      - skill-data:/app/skills
+    command:
+      - uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --proxy-headers
+      - --forwarded-allow-ips=*
+    networks:
+      - data
+      - edge
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  worker-python-1:
+    <<: *worker
+    command: ["python", "-m", "app.worker", "--pools", "python", "--worker-id", "python-1"]
+  worker-python-2:
+    <<: *worker
+    command: ["python", "-m", "app.worker", "--pools", "python", "--worker-id", "python-2"]
+  worker-http-1:
+    <<: *worker
+    command: ["python", "-m", "app.worker", "--pools", "http", "--worker-id", "http-1"]
+  worker-http-2:
+    <<: *worker
+    command: ["python", "-m", "app.worker", "--pools", "http", "--worker-id", "http-2"]
+  worker-workflow-1:
+    <<: *worker
+    command: ["python", "-m", "app.worker", "--pools", "workflow", "--worker-id", "workflow-1"]
+  worker-workflow-2:
+    <<: *worker
+    command: ["python", "-m", "app.worker", "--pools", "workflow", "--worker-id", "workflow-2"]
+
+  next:
+    image: financial-platform-next:stage10
+    build:
+      context: ${NEXT_APP_DIR}
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
+        NEXT_PUBLIC_CLERK_SIGN_IN_URL: /auth/sign-in
+        NEXT_PUBLIC_CLERK_SIGN_UP_URL: /auth/sign-up
+        NEXT_PUBLIC_SENTRY_DISABLED: "true"
+        NEXT_PUBLIC_APP_URL: ${PLATFORM_PUBLIC_ORIGIN:-https://localhost:8443}
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      HOSTNAME: 0.0.0.0
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY}
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
+      NEXT_PUBLIC_CLERK_SIGN_IN_URL: /auth/sign-in
+      NEXT_PUBLIC_CLERK_SIGN_UP_URL: /auth/sign-up
+      NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL: /dashboard/overview
+      NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL: /dashboard/overview
+      NEXT_PUBLIC_APP_URL: ${PLATFORM_PUBLIC_ORIGIN:-https://localhost:8443}
+      FINANCIAL_PLATFORM_API_URL: http://api:8000
+      FINANCIAL_PLATFORM_REQUEST_TIMEOUT_MS: "30000"
+      NEXT_PUBLIC_SENTRY_DISABLED: "true"
+    networks:
+      - edge
+    depends_on:
+      api:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  gateway:
+    image: docker.m.daocloud.io/library/caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - ${PLATFORM_BIND_ADDRESS:-127.0.0.1}:${PLATFORM_HTTPS_PORT:-8443}:443
+    volumes:
+      - ${CADDYFILE_PATH:-./Caddyfile}:/etc/caddy/Caddyfile:ro
+      - ${PLATFORM_TLS_DIR:-./tls}:/etc/caddy/tls:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - edge
+    environment:
+      PLATFORM_HOST: ${PLATFORM_HOST:-localhost}
+    depends_on:
+      - next
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  postgres-data:
+  caddy-data:
+  caddy-config:
+  skill-data:
+
+networks:
+  edge:
+  data:
+    internal: true

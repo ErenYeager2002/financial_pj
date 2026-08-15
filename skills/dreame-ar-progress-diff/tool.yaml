@@ -5,6 +5,14 @@ version: 1.0.0
 status: published
 category: 应收管理
 description: 对两份及以上追觅应收进度表做期间并集、人名对齐和变化对比。
+ui:
+  employee_name: 追觅应收进度对比
+  short_description: 对多个期间的追觅应收进度表进行对齐和变化对比。
+  categories: [应收管理]
+  estimated_minutes: 3
+  output_summary: 应收进度变化对比表
+  action_label: 开始对比
+  popular: false
 tags:
 - Excel
 - 应收
@@ -52,7 +60,22 @@ runtime:
   network_access: false
 risk:
   level: read_only
-  requires_confirmation: false
+  requires_confirmation: true
+  requires_change_review: false
+  requires_approval: false
+  modifies_uploaded_files: false
+safety_constraints: {}
+progress_stages:
+- key: reading_files
+  label: 正在读取文件
+- key: validating_fields
+  label: 正在检查字段
+- key: processing
+  label: 正在对比进度
+- key: generating_output
+  label: 正在生成结果文件
+result_presentation:
+  metrics: []
 permissions:
   run: finance_user
   manage: skill_admin

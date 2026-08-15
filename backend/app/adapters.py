@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import queue
 import subprocess
 import sys
@@ -18,8 +17,9 @@ from sqlalchemy.orm import Session
 from .auth import UserContext
 from .events import emit_event
 from .models import FileRecord, RunRecord
+from .network_policy import assert_url_allowed, skill_subprocess_environment
 from .registry import SkillManifest
-from .storage import copy_input_to_workspace, register_output
+from .storage import copy_input_to_workspace, register_output, sha256_file
 
 
 @dataclass
@@ -71,8 +71,13 @@ def build_execution_request(ctx: ExecutionContext) -> tuple[dict[str, Any], Path
             record = ctx.db.get(FileRecord, item["file_id"])
             if not record:
                 raise RuntimeError(f"输入文件记录不存在：{item['file_id']}")
+            if record.owner_id != ctx.run.owner_id or record.kind != "input":
+                raise RuntimeError(f"输入文件所有者校验失败：{record.id}")
+            source = Path(record.stored_path).resolve()
+            if not source.is_file() or record.sha256 != sha256_file(source):
+                raise RuntimeError(f"输入文件完整性校验失败：{record.id}")
             local_path = copy_input_to_workspace(
-                Path(record.stored_path),
+                source,
                 inputs_dir,
                 f"{role}_{len(copied) + 1}__{Path(record.original_name).stem}",
             )
@@ -152,7 +157,7 @@ class SubprocessAdapter:
         if not entrypoint.is_file() or not entrypoint.is_relative_to(ctx.skill_dir.resolve()):
             raise RuntimeError("Skill 入口不存在或超出 Skill 目录。")
         command = self.command(entrypoint, request_path, result_path)
-        env = os.environ.copy()
+        env = skill_subprocess_environment(ctx.manifest.runtime)
         env.update(
             {
                 "FINANCIAL_RUN_ID": ctx.run.id,
@@ -267,6 +272,7 @@ class HttpAdapter:
     def execute(self, ctx: ExecutionContext) -> dict[str, Any]:
         payload, _ = build_execution_request(ctx)
         endpoint = ctx.manifest.handler.endpoint or ""
+        assert_url_allowed(endpoint, ctx.manifest.runtime)
         ctx.emit("正在调用内部接口", progress=10, state="running", event_type="state")
         response = httpx.post(endpoint, json=payload, timeout=ctx.manifest.runtime.timeout_seconds)
         response.raise_for_status()

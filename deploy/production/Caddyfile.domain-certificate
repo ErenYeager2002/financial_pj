@@ -1,0 +1,21 @@
+{
+	auto_https disable_redirects
+	admin off
+}
+
+{$PLATFORM_HOST} {
+	tls /etc/caddy/tls/fullchain.pem /etc/caddy/tls/privkey.pem
+	encode zstd gzip
+	reverse_proxy next:3000
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy same-origin
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+		-Via
+		-X-Powered-By
+	}
+}

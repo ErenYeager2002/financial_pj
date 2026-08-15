@@ -14,8 +14,8 @@
 
 - `backend/`：FastAPI、SQLAlchemy、SQLite、Registry、Orchestrator、Worker 与适配器。
 - `frontend/`：React + TypeScript + Vite。
-- `skills/`：平台托管 Skill；共登记 18 个，其中 10 个 published、1 个 draft、
-  7 个 disabled。状态明细见 `docs/FINANCE_SKILLS_CATALOG.md`。
+- `skills/`：平台托管 Skill；当前 Registry 共登记 19 个，其中 10 个 published、
+  1 个 draft、8 个 disabled。状态和用途明细见 `docs/FINANCE_SKILLS_CATALOG.md`。
 - `data/`：上传、运行快照、输出、日志和数据库，不进入 Git。
 - `docs/`：架构与 Skill 接入协议。
 - `scripts/`：初始化、启动和停止脚本。
@@ -51,7 +51,56 @@ npm run build
 
 ## 当前边界
 
-第一期使用演示身份请求头和 SQLite，适合单部门内网验证。正式部署前需要接公司 SSO、PostgreSQL、独立隔离 Worker、Git 批准版本同步、病毒扫描、日志脱敏和备份策略。
+新代码已受控部署到 `127.0.0.1:8001`，使用 Clerk/服务端会话混合认证、用户级资源隔离、统一审计和受控 Skill 版本发布；SQLite 适合当前单部门受限验证。进一步扩大使用范围前仍需要公司 SSO、PostgreSQL、独立隔离 Worker、病毒扫描、日志脱敏和完整备份策略。
+
+## 2026-08-13 · 员工权限与用户级资源隔离
+
+- P0-05 员工 Skill 默认拒绝、管理员账号/授权接口和创建及确认阶段权限硬闸已部署。
+- P0-06 已把员工文件、标准任务、SSE、工作流和批次访问从同部门范围改为本人所有者范围；跨用户资源按不存在返回，运行态已部署。
+- 新上传、标准任务和工作流分别使用 `uploads/{user_id}/{file_id}`、`runs/{user_id}/{run_id}`、`workflows/{user_id}/{workflow_id}`；执行前复核文件所有者、类型、存在性和 SHA-256。
+- P0-06 阶段后端全量102项、Ruff、前端 typecheck/build通过；之后已在P0-07完成真实旧目录迁移。
+- P0-07 离线迁移工具和合成测试已完成并用于真实迁移：执行时提供了已校验备份 manifest、显式 `demo-user → bootstrap admin` 映射且平台无活动任务；32个目录、115个文件迁移通过。
+- 加入 P0-07 后，后端全量 104 项通过；前端没有新增改动，沿用本轮已通过的 typecheck/build 结果。
+- P0-08 已新增并部署 audit_events 迁移、统一脱敏审计服务和管理员查询，接入登录、改密/退出、文件上传删除、员工与 Skill 权限事件；审计相关定向回归28项通过。
+- 加入 P0-08 后，后端全量 106 项和项目范围 Ruff 通过。
+- P1-01 已完成并部署：Registry 支持员工 UI、参数安全范围、业务进度和结果展示配置；10 个已发布 Skill 均补齐配置并要求执行前确认。员工 Skill API 已删除版本、handler、runtime、权限、哈希、Commit、来源和安全上限等技术字段，管理员仍可查看完整 Manifest。
+- P1-01 验证：后端全量 112 项通过，本任务 Ruff、前端 typecheck/build 通过；运行实例保持 `127.0.0.1:8001`，Health 正常、19 个 Skill 零 Registry 错误、7/7 进程存活，`ar-hexiao-daily` 仍为 disabled。下一任务为 P1-02 管理员默认模型档案。
+
+## 2026-08-14 · P1-02/P1-03 AI 助手与 TaskDraft
+
+- 新增部门级 `model_profiles` 和用户级 `task_drafts`，Alembic head 为 `d7e5a3f91c42`。管理员可以从本部门已连接模型中选择助手默认模型，普通员工只能读取是否已配置。
+- 助手只接收当前用户已授权、已发布、标准、只读且不修改上传文件的 Skill 安全目录；文件仅以临时别名发送。模型结构化推荐经过参数、安全范围、文件角色、格式、大小、所有权和 SHA-256 校验后保存为不可执行草稿。
+- 草稿确认前重新校验权限、Skill 版本和哈希、文件记录及磁盘哈希，确认成功才创建 Run；写入、外部动作和需审批 Skill 当前被拒绝。草稿所有权隔离和确认幂等已覆盖测试。
+- 后端完整测试 131 项通过，本轮 Ruff 通过；OpenAPI 契约已同步到 Next.js，前端契约检查、类型检查、定向 lint 和生产构建通过。
+- 部署前没有活动任务。备份工具修复 Windows 长路径复制和校验，`data/backups/20260814_140409_pre-stage6-assistant-verified` 已校验数据库及 142 个业务文件。真实库升级后，8001 API 和 Python/HTTP/Workflow 各 2 个 Worker 均恢复健康。
+- 现有 Clerk 管理员登录态已打开中文 AI 助手页面，两个模型连接及模型列表正常显示且无控制台错误。因存在两个可用连接，未替管理员选择默认模型；未调用真实模型或创建任务。
+
+## 2026-08-14 · Next.js 迁移阶段七用户、权限与审计
+
+- 管理员用户列表、创建、更新和 Skill 权限替换已集中到 `backend/app/admin_user_service.py`，统一限制在当前管理员所属部门。跨部门用户不进入列表，修改和授权返回不存在，不能创建其他部门账号；当前管理员不能禁用自己或移除自己的管理员角色。
+- 平台固定角色仍为 `finance_user` 和 `skill_admin`。管理员默认管理当前部门全部 Skill，员工继续默认拒绝，只能获授已发布 Skill 的 `can_run`、`can_upload`、`can_create_draft` 和 `requires_approval`。Clerk 映射字段可以由平台管理员维护，但 Clerk 角色不参与平台授权判断。
+- 管理员读取用户列表和审计列表现在也写入脱敏审计，审计查询增加字段长度与最多 500 条限制。新增跨部门隔离和敏感读取审计测试，后端全量 133 项通过，本阶段 Ruff 通过。
+- Next.js 新增用户、更新、权限替换和审计查询显式 BFF，`/dashboard/users` 提供本部门用户、账号状态、角色、Clerk 绑定、Skill 权限矩阵和脱敏审计；OpenAPI 契约、TypeScript、定向 lint 和生产构建通过。
+- 部署前确认没有活动 Run、Workflow Action 或执行中 Workflow；`data/backups/20260814_143245_pre-stage7-user-permissions` 已校验数据库及业务文件，且未包含高敏 `credential.key`。8001 API 与 6 个 Worker 已重启并通过健康检查。
+- 已绑定 Clerk 管理员会话成功打开用户与权限页，显示 finance 部门 2 个账号，并检查管理员信息和员工权限矩阵；本地管理员会话验证用户和审计接口及读取审计。本次未创建、禁用或修改用户，未保存权限，未运行财务任务。
+
+## 2026-08-14 · Next.js 迁移阶段八 Skill 版本发布
+
+- 新增 `skill_releases` 表和受控发布服务，Alembic head 为 `f4a9c2e71b30`。只有 `skill_admin` 可以从服务器收件箱导入 ZIP、编辑业务元数据、审核、发布和回退；网页不能上传或修改代码。
+- 导入限制 50 MB 包、200 MB 解压内容和 2000 个文件，拒绝越界、重复、Windows 无效路径和符号链接；校验 Manifest、源码仓库、Commit、源码树哈希、测试证据和执行入口。
+- 包 SHA-256 与解压内容 SHA-256 在审核和激活时重新计算。发布/回退前检查活动 Run、Workflow 和 Action，跨线程及进程串行切换目录，Registry 加载失败时恢复原版本。
+- `scripts/sync_finance_skills.py` 支持单 Skill 隔离同步；`scripts/stage_skill_release.py` 只接受干净 Git 源码仓库并运行实际测试。操作步骤记录在 `docs/SKILL_RELEASE_WORKFLOW.md`。
+- 后端全量 139 项测试、Ruff、OpenAPI 契约检查、Next.js TypeScript、定向前端检查和生产构建通过。
+- 部署前活动任务为 0；`data/backups/20260814_151302_pre-stage8-skill-releases` 已校验数据库及 142 个业务文件，未包含 `credential.key`。真实库升级后，8001 API 与 6 个 Worker 健康，19 个 Skill、0 个 Registry 错误；管理员登录和发布列表/收件箱接口均为 200。本阶段没有导入或发布真实 Skill。
+
+## 2026-08-13 · P0 新代码受控部署
+
+- 部署前确认无活动任务；创建并校验 `data/backups/20260813_164747_pre_p0_deploy`，数据库及131个目录文件均在 manifest 中通过回读，高敏凭据恢复包已限制 NTFS ACL。
+- 旧实例停止后，真实数据库从无版本11表升级到 Alembic head `c4d91f7b2e10`；创建 bootstrap 管理员，将唯一遗留所有者 `demo-user` 显式映射给该管理员。
+- 用户级目录迁移完成：32个资源目录、115个文件哈希一致，45条文件路径更新；45条文件记录、1个工作流、1个批次、2个模型连接和1个业务凭据均归属管理员，数据库引用文件无缺失。
+- 新实例运行于 `127.0.0.1:8001`，API和6个 Worker共7个进程存活；health ok、19个 Skill、0个 Registry 错误，`ar-hexiao-daily` 保持 disabled。
+- 运行态冒烟14项通过，覆盖匿名/伪造身份拒绝、首次改密、会话、历史文件和工作流、审计、凭据状态及重新登录。没有创建或执行财务任务。
+- 管理员当前密码保存在受限 ACL 文件 `data/admin_password_after_deploy.txt`，未写入文档或日志；读取后应删除该文件。一次性初始密码文件已自动删除。
 
 ## 2026-07-28 · 写入后源文件校验修复
 
@@ -823,3 +872,430 @@ npm run build
 - 原 GitHub origin `abbbzaq/financial_pj` 不存在；当前 GitHub 令牌实际账号为 `ErenYeager2002`，已创建私有仓库 `ErenYeager2002/financial_pj` 并将 origin 更新到该地址。
 - 本地 `main` 历史已先推送为远端默认分支；当前项目源码、文档、部署脚本和托管 Skill 在现有功能分支提交并通过草稿 PR 发布。
 - `.gitignore` 明确排除 `financial.db*`、`.codex/` 和 `.skill-sync/`，运行数据库、本地校验产物、上传文件和凭据不进入 GitHub。
+
+## 2026-08-05 · 独立 Linux 服务部署
+
+- 以 GitHub 发布提交 `f22134d` 的源码和本地构建的前端产物部署到独立
+  `/opt/financial-platform`，运行数据使用全新的
+  `/var/lib/financial-platform`；未迁移本机数据库、上传文件、凭据或历史财务材料。
+- 新增本机回环地址上的 API 服务和 Python/HTTP/Workflow 各 2 个 Worker，健康接口返回
+  `production / ok`、19 个 Skill、0 个 Registry 错误和 6 个执行容量；原有看板与 Nginx
+  服务保持 active，未修改其配置、端口或数据。
+- 目标机只有 Python 3.14，项目依赖声明为 Python 3.11+；依赖已通过镜像安装并完成启动验证。
+  Playwright Chromium 下载源未能完成下载，因此网页自动化任务需在补齐 Chromium 后再启用；
+  API、文件处理和非浏览器 Worker 已可运行。
+
+## 2026-08-05 · Headless Chromium 下载复核
+
+- 按用户指示尝试 `playwright install --only-shell chromium`，该包约 115 MB，低于完整
+  Chromium 的约 184 MB。默认下载源连续观察后仍为 0%；备用镜像连接超过 90 秒仍无日志
+  或下载字节，因此已停止两个下载进程，并回滚了新的浏览器目录环境配置。
+- 复核 API 和 Python/HTTP/Workflow 共 6 个 Worker 仍为 active，回环健康接口仍返回 `ok`。
+  结论是该服务器到浏览器二进制下载源的链路不可用，而非平台服务或 Python 依赖安装问题。
+
+## 2026-08-06 · 本机平台重新启动
+
+- 发现 `data/runtime.json` 留有过期 PID，但本机 8000 端口未监听；使用 `scripts/start.ps1` 清理过期记录并重新启动本机平台。
+- 当前 API 监听 `0.0.0.0:8000`，Python、HTTP、Workflow 各 2 个 Worker；首页和 `/api/health` 在回环及当前三块网卡地址上均返回 HTTP 200。
+- 健康状态为 `development / ok`，登记 19 个 Skill、0 个 Registry 错误；当前局域网常用地址为 `http://192.168.30.89:8000/`，有线同网段也可使用 `http://192.168.20.207:8000/`。
+
+## 2026-08-06 · 多厂商模型 API Key 接入
+
+- 新增 `backend/app/model_providers.py` 厂商注册表：内置 6 家（qwen、deepseek、zhipu、
+  moonshot、openai、doubao）+ 管理员专用 custom_openai，均为 Chat Completions 协议。
+  每家定义固定 base_url、发现模式（api/manual/hybrid）、include/exclude 模型模式、
+  首选模型和是否允许手动填模型/部署 ID。
+- 前端改为“必选供应商 + API Key”手动接入：加载页面时读取 `GET /api/model-providers`；
+  密钥只发送给所选供应商；custom_openai 显示 HTTPS 服务地址和模型输入框，manual/hybrid
+  允许填写模型名称或部署 ID；删除“自动识别所有供应商”的旧文案。
+- 兼容旧客户端：不传 `provider_id` 时仍只按千问探测，不向其他供应商发送密钥；
+  旧的 qwen 连接支持列表、刷新、选择和运行。新连接按 owner_id + department_id +
+  provider + base_url + API Key 指纹去重；同密钥接不同供应商会生成独立连接。
+- 仅对最终选定的默认/手动模型做一次最小 Tool Calling 冒烟验证，不逐模型测试；
+  api 模式必须从 `/models` 目录发现，manual 模式不读目录，doubao/custom_openai 为
+  hybrid（目录失败时回退手动模型或部署 ID）。模型过滤排除 embedding/image/audio/
+  speech/moderation/rerank 等非对话模型，不依赖严格单版本号正则。
+- 运行态：`LlmConfig` 新增 `protocol` 与 `extra_body`；`orchestrator.py` 和
+  `workflow_orchestrator.py` 移除写死的千问判断，统一合并 `build_extra_body` 结果，
+  且 extra_body 不允许覆盖 model/messages/tools/tool_choice。qwen3.x 仅在适用模型注入
+  `enable_thinking:false`，kimi-k2.x 注入 `thinking:disabled`，其他厂商不会收到
+  千问专有参数。新增可选环境变量 `FINANCIAL_LLM_PROVIDER`，未设置时保持原
+  environment 连接行为。
+- 安全：内置厂商 base_url 固定不可改；custom_openai 仅管理员可用，base_url 必须
+  HTTPS，服务端解析并拒绝回环、链路本地、内网地址（含 DNS rebinding 防护）。
+  完整密钥不出现在日志、异常、测试输出、API 响应或本上下文文档；存储仍为 Fernet
+  加密，前端只显示脱敏提示。
+- 验证：后端 44 项测试全部通过（新增 `tests/test_model_providers.py`，覆盖注册表、
+  模型过滤与未来模型、手动选择只命中所选厂商、旧请求仅千问、未知厂商拒绝、错误
+  厂商不继续探测、三种发现模式、Tool Calling 验证、qwen 参数隔离、连接隔离、
+  旧 qwen 刷新、custom_openai 权限与 SSRF、响应不泄露密钥）；Ruff 0 错误；
+  前端 typecheck/build 通过。
+- 运行状态：重启前活动任务为 0；已安全重启，`/api/health` 为 `development / ok`、
+  19 个 Skill、0 个 Registry 错误、6 个 Worker（python 2/http 2/workflow 2）全部
+  存活；首页与健康接口 200；普通用户可见 6 家供应商，管理员可见 7 家。
+- 待人工验证：使用真实厂商密钥逐家接入验收；deepseek 旧名模型、kimi-k2.x 思考关闭、
+  豆包部署 ID、智谱/OpenAI 实际工具调用行为需在真实厂商环境复核。本任务未使用
+  真实 API Key、未创建虚假财务任务、未运行真实写表任务；工作树修改未提交。
+
+## 2026-08-06 · 多厂商模型接入只读验收
+
+- 完整后端测试 `44 passed`，Ruff 通过，前端 `typecheck` 与生产构建通过；运行实例首页和健康接口返回 200，状态为 `development / ok`、19 个 Skill、0 个 Registry 错误、6 个 Worker；普通用户接口返回6家厂商，管理员返回6家加 `custom_openai`。
+- 当前不予功能验收通过：Tool Calling 探针只检查 HTTP 成功，不检查响应是否包含目标 `tool_calls`，且使用 `tool_choice=auto`；只读独立探针已证明无任何工具调用的 HTTP 200 响应仍会被接受。连接后切换模型也没有重新验证 Tool Calling。
+- `api` 发现模式在发现列表为空但请求携带手工模型时会接受任意模型，绕过了该模式必须通过目录发现的边界；前端同时把 `hybrid` 模式实现为模型必填，使豆包无法从页面执行纯自动发现。
+- 自定义地址校验只在保存前解析一次 DNS，实际请求时由 HTTP 客户端再次解析，尚不能称为完整 DNS rebinding 防护。真实六厂商 Key 仍未验证；浏览器视觉验收因当前浏览器控制运行环境无法初始化而未执行，未改业务代码。
+
+## 2026-08-06 · 多厂商模型接入验收问题修复
+
+- 修复四类问题：
+  1. Tool Calling 验证改为强制 `tool_choice` 指定 `tool_call_supported` 函数，
+     `max_tokens=32`，HTTP 200 后必须解析 `choices/message/tool_calls` 非空、
+     函数名精确匹配、`arguments` 为合法 JSON 对象，否则 422「模型 xxx 返回成功，
+     但没有完成平台要求的 Tool Calling 验证。」；旧 qwen 连接（不传 provider_id）
+     同样执行最终模型验证。
+  2. `select_model()` 切换前先解密 Key 并按 `connection.base_url` 重新执行
+     Tool Calling 验证；失败返回 422 且 `selected_model`、状态、模型列表全部不变。
+  3. `_resolve_models()` 严格三模式：`api` 目录为空或手工模型不在目录一律拒绝、
+     不再接受任意手工模型；`manual` 必填且命中排除规则拒绝；`hybrid` 手工模型
+     通过排除规则后追加进发现列表（不丢弃既有发现），目录为空且无手工模型时报错。
+  4. 自定义地址安全升级：新增环境变量 `FINANCIAL_LLM_CUSTOM_HOST_ALLOWLIST`
+     （逗号分隔精确主机名，默认空）。空白名单时 custom_openai 连接直接 422
+     「尚未配置允许的自定义模型服务域名。」且不发任何网络请求；必须 HTTPS、
+     禁止 userinfo 与 fragment、主机名与白名单精确匹配（无后缀模糊）、DNS 解析
+     的全部 IP 必须为公网地址（拒绝私网/回环/链路本地/reserved/组播/未指定），
+     规范化端口与路径；`/models`、Tool Calling 验证、refresh、custom_openai
+     运行态真实请求统一走 `secure_llm_request`/`chat_completion_request`
+     安全入口，自定义请求不跟随重定向；运行态校验失败时参数解释与工作流决策
+     安全回退本地规则。
+- 前端 `ModelSettings.tsx`：`manual` 必填、`hybrid` 可选（留空自动发现）、
+  `api` 不显示模型框、custom_openai 服务地址必填；按钮禁用与 connect() 前置
+  检查使用同一套规则；切换供应商清空 baseUrl（离开 custom_openai 时）与
+  modelName，保留 API Key。
+- 测试 Mock 纠正：`FakeOkResponse` 带真实 `choices/message/tool_calls` 结构与
+  可解析 arguments；新增 6 种失败响应（200 普通文本、200 `tool_calls=[]`、
+  200 错误函数名、200 非法 arguments、400/401、网络超时）及白名单 10 类、
+  切换重验证、严格三模式、运行态安全入口等新测试；修复既有 e2e/工作流测试的
+  POST Mock。独立回归探针证明：200 无 tool_calls 被拒绝、api 目录为空拒绝
+  手工模型、hybrid 保留发现并追加手工模型、切换失败后数据库 selected_model
+  不变。
+- 验证：后端完整测试 `67 passed`（上轮 44 项 + 本轮新增 23 项），Ruff 0 错误，
+  前端 `typecheck`/生产构建通过，`git diff --check` 无空白错误。
+- 运行状态：重启前 runs/workflow_actions/workflow_sessions 均无
+  queued/running/preparing/applying 活动任务；已安全重启，
+  `/api/health` 为 `development / ok`、19 个 Skill、0 个 Registry 错误、
+  6 个 Worker（python 2/http 2/workflow 2）；首页与健康接口 200；
+  普通用户 6 家、管理员 6 家加 `custom_openai`。
+- 浏览器视觉验收已实际执行（本机 Edge 无头渲染）：供应商下拉 6 家与预期一致、
+  豆包留空模型可提交、api 模式不显示模型/地址框、切换供应商保留 Key 并清空
+  模型名、桌面深浅主题与 375px 移动端均无横向溢出、控制台 0 错误；截图在
+  `.codex/models-verify-check/`。custom_openai 表单为管理员专用，前端仅
+  `/admin` 路径发送管理员身份，模型页默认员工端不可见（服务端 API 已验证
+  管理员可见 7 家）。
+- 待人工验证：真实六厂商 Key 需持有人逐家验证；本任务未使用真实 API Key、
+  未创建虚假财务任务、未运行真实写表任务；工作树修改未提交。
+
+## 2026-08-06 · 自定义服务非公网地址判断修复
+
+- `validate_https_base_url()` 的 IP 判断改为以 `is_global` 为主要判据，并保留
+  `is_multicast` 明确拒绝：`if not address.is_global or address.is_multicast`。
+  修复旧逻辑分别判断 private/loopback/link-local/reserved/multicast/unspecified
+  时放过 `100.64.0.0/10` 共享地址空间的问题（如 100.64.0.1 的 is_global=False
+  且 is_private=False）；当前 Python 3.13.9 环境下组播地址（224.0.0.1、ff02::1）
+  的 is_global 为 True，因此必须保留 is_multicast 判断。DNS 返回的全部地址只要
+  有一个不满足条件即拒绝，混合解析不会因存在公网地址而通过。
+- 新增边界测试（全部 monkeypatch DNS，不访问真实网络）：拒绝 100.64.0.1、
+  100.127.255.254、198.18.0.1、192.0.0.8、2001:db8::1、224.0.0.1、ff02::1；
+  通过 1.1.1.1、8.8.8.8、2606:4700:4700::1111；trusted.example 同时解析到
+  1.1.1.1 与 100.64.0.1 时混合解析必须拒绝。
+- 独立回归探针 `.codex/ip-global-probe.py` 输出：
+  `100.64.0.1 -> rejected`、`100.127.255.254 -> rejected`、
+  `224.0.0.1 -> rejected`、`1.1.1.1 -> accepted`，`probe_ok=True`。
+- 验证：后端完整测试 `70 passed`（新增 3 项边界测试），Ruff 0 错误，
+  `git diff --check` 无空白错误；前端未改动。
+- 运行状态：重启前 runs/workflow_actions/workflow_sessions 均无活动任务；
+  已安全重启，`/api/health` 为 `development / ok`、19 个 Skill、
+  0 个 Registry 错误、6 个 Worker（python 2/http 2/workflow 2）；首页与
+  健康接口 200；普通用户 6 家、管理员 6 家加 `custom_openai`。
+- 真实六厂商 Key 仍待持有人验证；本任务未使用真实 API Key、未运行真实
+  厂商请求或财务任务；工作树修改未提交。
+
+## 2026-08-06 · 新增 MiniMax / 海螺 AI 厂商
+
+- `backend/app/model_providers.py` 注册表新增第 7 家内置厂商 `minimax`
+  （MiniMax / 海螺 AI）：OpenAI 兼容 `https://api.minimaxi.com/v1`，
+  discovery_mode=api；include `^MiniMax-[A-Za-z0-9]+(?:[.-][\w.-]*)?$`
+  （覆盖 M3 / M2.7 / M2.7-highspeed / M2.5 / M2.1 / M2 / Text-01 等）；
+  排除 vl/vision/image/video/audio/speech/tts/asr/whisper/embedding/
+  rerank/moderation/ocr/music 及 `-her` 角色扮演模型；preferred 顺序
+  M3 → M2.7 → M2.5 → M2.1 → M2。
+- 前端无需改动（`/api/model-providers` 动态渲染）；管理员与普通用户共用。
+- 测试更新：注册表断言改为 7 家内置（含 minimax 及 base_url/discovery 断言），
+  端点测试普通用户列表加入 minimax，过滤测试新增 MiniMax 用例
+  （M2-her / VL-01 / Speech-01 / image-01 / video-01 被正确排除），
+  build_extra_body 默认空覆盖加入 minimax；过滤排序遵循 preference 顺序
+  （M3、M2.7、M2、M2.1-highspeed、Text-01）。
+- 验证：后端完整测试 `70 passed`，Ruff 0 错误，`git diff --check` 干净。
+- 运行状态：重启前无活动任务；已安全重启，health `development / ok`、
+  19 Skills、0 Registry 错误、6 Worker；普通用户 7 家、管理员 8 家
+  （含 custom_openai）。
+- MiniMax 真实 Key 待持有人验证；本任务未使用真实 API Key、未运行真实
+  厂商请求或财务任务；工作树修改未提交。
+
+## 2026-08-06 · MiniMax Tool Calling 验证修复
+
+- 现象：`MiniMax-M3` 接入时返回 HTTP 200 但无 `tool_calls`，报
+  「模型 MiniMax-M3 返回成功，但没有完成平台要求的 Tool Calling 验证」。
+- 根因（对照官方 OpenAI 兼容文档）：① MiniMax 端点的 `tool_choice` 仅支持
+  `none`/`auto` 字符串，不支持 `{"type":"function","function":{...}}`
+  对象强制形式，被忽略后模型按 auto 行为自由回复；② `MiniMax-M3` 思考
+  默认开启（thinking omitted → on），`max_tokens=32` 会被思考内容耗尽
+  导致截断、无法输出工具调用。
+- 修复：
+  - `build_extra_body` 新增 `minimax` + `^MiniMax-M3(?:[.-]|$)` 匹配 →
+    `{"thinking": {"type": "disabled"}}`（M3 支持禁用思考；M2.x 不支持
+    禁用，不传该参数）；验证与运行时请求均生效。
+  - `_verify_tool_calling` 对 minimax 专用路径：不发送 object 形式的
+    `tool_choice`，改用 system 指令「你必须调用提供的 tool_call_supported
+    工具并返回空参数对象。」强制调用，`max_tokens` 提至 1024 容纳 M2.x
+    不可禁用的思考输出；其他厂商行为不变（object tool_choice + 32）。
+- 新增测试 2 项：M3 验证请求不含 tool_choice、含 system 强制指令、
+  max_tokens=1024、thinking=disabled；M2.7 验证请求同样无 tool_choice、
+  1024 token、且不携带 thinking 参数；build_extra_body 断言补 M3 /
+  M3-priority / M2.7 / M2.1-highspeed 四种模型。
+- 验证：后端完整测试 `72 passed`，Ruff 0 错误，`git diff --check` 干净。
+- 运行状态：重启前无活动任务；已安全重启，health `development / ok`、
+  19 Skills、0 Registry 错误、6 Worker。
+- 待持有人用真实 Key 重连 `MiniMax-M3` 确认 Tool Calling 验证通过；
+  本任务未使用真实 API Key、未运行真实厂商请求或财务任务；工作树未提交。
+
+## 2026-08-06 · 多厂商模型接入独立复验
+
+- 独立复跑确认后端 `67 passed`、Ruff 通过、前端 `typecheck`/生产构建通过；运行实例仍为 `development / ok`、19 个 Skill、0 个 Registry 错误、6 个 Worker，首页200，普通用户6家、管理员7家。三张现有验收截图已人工查看，桌面深浅主题和375px移动端未见明显溢出或布局异常。
+- Tool Calling 响应结构校验、切换模型重验证、严格三种发现模式和 hybrid 前端可选模型均已按前次问题修复。
+- 当前仍不予最终验收通过：`validate_https_base_url()` 通过枚举私网/回环等属性判断，但没有要求 `address.is_global`；独立探针证明 `100.64.0.1`（`is_global=False`）会被接受。该共享地址可能在运营商网络、VPN或叠加网络中可达，不符合“全部解析结果必须为公网地址”的安全约束。应改为 `if not address.is_global: reject` 并增加 `100.64.0.1` 等非 global 地址回归测试后再验收。
+
+## 2026-08-06 · 多厂商模型接入最终独立验收
+
+- 已确认地址判断改为逐个执行 `not address.is_global or address.is_multicast`；共享地址、文档地址、组播地址和公网 IPv4/IPv6 回归覆盖完整，混合解析中任一非公网地址会使整体拒绝。独立离线探针结果为3个非公网/组播地址拒绝、`1.1.1.1` 接受、`probe_ok=True`。
+- 独立复跑后端 `70 passed`、Ruff 通过、`git diff --check` 无错误；运行实例为 `development / ok`、19 个 Skill、0 个 Registry 错误、6 个 Worker，首页200，普通用户6家、管理员7家。
+- 本地代码范围验收通过；剩余事项仅为真实六厂商 Key 由持有人逐家验证。当前全部改动仍未提交，未运行真实厂商请求或财务任务。
+
+## 2026-08-06 · MiniMax 厂商独立验收
+
+- 对照 MiniMax 官方文档确认：国内 OpenAI 兼容地址为
+  `https://api.minimaxi.com/v1`，模型发现接口为 `GET /v1/models`；官方模型列表
+  包含 `MiniMax-M3`、`MiniMax-M2.7`、`MiniMax-M2.5`，Chat Completions 支持
+  `tools`，当前注册表的 base_url、api 发现模式、M3 优先级与文本模型过滤方向一致。
+- 独立检查确认普通用户供应商接口返回 7 家（含 `minimax`），管理员返回 8 家
+  （含 `custom_openai`）；运行实例 `/api/health` 为 `development / ok`、19 个
+  Skill、0 个 Registry 错误、配置执行容量 6，首页 200。
+- 独立复跑后端 `70 passed`（仅有测试框架弃用警告及退出时临时目录权限提示，测试
+  退出码为 0），项目虚拟环境 Ruff 检查 backend 通过，前端 `typecheck` 与生产构建
+  通过，`git diff --check` 无空白错误。
+- 本地实现验收通过；未使用真实 MiniMax API Key，因此真实 `/models`、Tool Calling
+  和运行态请求仍属于持有人凭据验证项。当前改动未提交，未运行财务任务。
+
+## 2026-08-06 · 关闭 Gitee Skill 定时同步
+
+- 已确认 Windows 计划任务 `Finance Skill Gitee Sync` 对应
+  `scripts/sync_from_gitee.ps1`，操作前状态为 Ready，未在运行。
+- 已禁用该计划任务并复查 `Enabled=False`；任务定义保留，平台服务、Worker 和其他
+  Windows 计划任务未改动。此后不会再按小时自动拉取最新 Skill，手工运行同步脚本
+  仍然可用。
+
+## 2026-08-06 · 已完成工作流仍显示转圈的诊断
+
+- 截图对应任务 `30caa6ae-1716-49fd-b1ee-9ed141f67f1f` 已在数据库中完成：
+  `stage=completed`、`state=succeeded`、`progress=100`，完成信息和产出均已保存，
+  不是后端仍在写表。
+- 原因是 `frontend/src/pages/WorkflowChat.tsx` 用
+  `workflow.state === 'completed'` 判断完成，而后端成功状态实际为 `succeeded`；页面
+  收到 `stage=completed` 后停止轮询，但 `completed` 仍为 false，所以加载图标一直显示。
+  页面顶部的 `核销执行中` 也是固定文案。
+- 本次按用户要求只诊断、未修改代码。建议以 `stage === 'completed'`（并兼容
+  `state === 'succeeded'`）作为完成条件，同时让顶部状态文案按完成/失败/执行中切换，
+  增加工作流成功响应的前端回归测试。
+
+## 2026-08-06 · 修复已完成工作流仍显示转圈
+
+- `frontend/src/pages/WorkflowChat.tsx` 的完成条件改为同时识别
+  `stage === 'completed'` 与 `state === 'succeeded'`，与后端成功状态一致；完成后
+  图标、标题、时间线最后一步和状态提示都会进入完成态。
+- 顶部固定文案 `核销执行中` 改为按失败、完成、执行中动态显示，成功任务显示
+  `核销已完成`。
+- 验证：前端 `npm run typecheck`、`npm run build` 均通过；运行实例首页和新版前端
+  bundle 均返回 200，已确认 bundle 包含新完成条件及 `核销已完成`、`核销任务已完成`
+  文案。未修改任务数据或重新执行核销。
+
+## 2026-08-07 · 更新 Codex CLI
+
+- 当前 CLI 通过 npm 全局安装，原版本为 `@openai/codex@0.146.0`。
+- `codex update` 首次执行因 npm 持久代理 `127.0.0.1:7897` 拒绝连接而失败；随后仅对
+  本次命令临时使用官方 registry `https://registry.npmjs.org`，未修改持久 npm 配置。
+- 已完成 `npm install -g @openai/codex@0.146.1`，当前 `codex --version` 输出
+  `codex-cli 0.146.1`，`codex --help` 与 `codex update --help` 均可正常启动。
+
+## 2026-08-06 · 同步当前应收核销 Skill
+
+- 按用户授权，使用 `scripts/sync_finance_skills.py` 的单 Skill 同步入口，从
+  `D:\BESTEASY\finance-skills\skills\ar-hexiao-daily` 重新生成平台
+  `skills/ar-hexiao-daily`；其它平台 Skill 未修改。
+- 平台清单保持 `1.5.0 / published / workflow`。旧取数标识已统一为
+  `2026-08-05-order-written-off-fallback-v2`，员工说明使用当前日清和写前校验通过后
+  直接写工作副本的规则。
+- 平台包46个文件与隔离生成包 SHA-256 完全一致，Skill 结构校验通过，
+  `backend/tests/test_workflow.py` 为 `8 passed`。一次同时运行 workflow 与 platform_e2e
+  时，模型连接列表测试受同一测试会话前序数据影响失败，与本次 Skill 同步无关；
+  未使用真实凭据或运行财务任务。
+
+## 2026-08-10 · 项目明细补录轻量化
+
+- `project-detail-to-ledger` 已更新为 `1.1.0`。平台 vendor 与安装版、知识库源码同步：
+  最终工作簿不再设置打开时完整重算，历史外链公式固化为现有缓存值并移除外链部件，
+  内部公式保留计算链，只清除范围发生变化的公式缓存。
+- 同时修复中文 sheet 名在 OOXML 中转义后无法识别，以及单行范围 `L2:L2` 被错误改成
+  `L3:L3` 的问题；现在只延长范围终点。
+- 三份 Skill 结构校验通过，项目明细补录专项测试2项与项目级联合回归共12项通过；
+  隔离同步成功生成 `1.1.0` 平台包，vendor 两个核心脚本与安装版哈希一致。
+- 使用真实形状工作簿只读基线和合成追加行验证：源文件哈希不变，12个sheet可读，
+  237个历史外链公式被固化，外链部件0，计算链保留，强制重算标记0；原表样式部件逐字节保留，
+  输出通过OpenXML格式校验。未运行真实平台任务，未提交或推送。
+
+## 2026-08-10 · 应收核销 Skill 旧版本清理
+
+- 使用 `scripts/sync_finance_skills.py` 的单 Skill 入口，将平台 `ar-hexiao-daily` 更新为当前源码；只重建该 Skill，未同步其它平台 Skill。
+- 平台 vendor 的 `classify_hexiao.py` 与源码 SHA-256 均为 `C83A7D54963218007CCAD18A7EC3EEB1060CC46177E245EC7D4645ED9F512176`，取数标识为 `2026-08-05-order-written-off-fallback-v2`；Skill 结构校验通过，工作流测试 `8 passed`。
+- 平台 `.codex`、`.skill-sync` 和 `data/backups/skill-sync` 中的旧 `ar-hexiao-daily` 副本已移入 Windows 回收站；活动平台包和运行数据未删除。定时 Gitee 同步任务仍保持禁用。
+
+## 2026-08-13 · 启动财务 Skill 平台
+
+- 默认端口 `8000` 已由另一套 Python API 服务 `apps/api/server.py` 占用，未停止或修改该服务；平台改用空闲端口 `8001`，通过 `scripts/start.ps1` 以 `0.0.0.0` 和 6 个 Worker 启动。
+- 回读验证：本机首页返回 200，回环及有线局域网健康接口均为 `status=ok`；注册 19 个 Skill、0 个 Registry 错误，Python 2、HTTP 2、Workflow 2 个 Worker 的 PID 和命令行均匹配。
+- 访问地址：本机 `http://127.0.0.1:8001`，有线局域网 `http://192.168.20.207:8001`。未运行财务任务，未使用或输出任何凭据。
+
+## 2026-08-13 · 临时外网访问入口
+
+- 平台本身继续监听 `8001`；在 `127.0.0.1:8011` 增加独立 Basic Auth 反向代理，再通过 Pinggy 官方 SSH 443 隧道发布临时 HTTPS 地址。免费隧道提示有效期 60 分钟，进程或电脑停止后地址立即失效。
+- 网关删除外部请求中的 `Authorization` 与 `X-User-*` 身份头，固定向平台传递 `finance_user / public-gateway-user`，并拒绝 `/admin`、`/admin/*`、`/api/admin/*`；认证口令仅在网关进程环境和本次用户交付中使用，未写入项目上下文或日志。
+- 公网回读验证：无认证为 401，正确认证首页 200，`/api/health` 为 `ok`、19 个 Skill、0 个 Registry 错误；伪造 `X-User-Role: skill_admin` 后 `/api/session` 仍返回 `finance_user`，管理员页面返回 403。
+- Cloudflare Tunnel 官方二进制下载因网络缓慢未完成且续传文件损坏，未执行该文件；最终未使用 Cloudflare Tunnel。未运行财务任务，未改业务数据，未提交或推送代码。
+
+## 2026-08-13 · 员工工作台与安全改造实施文档
+
+- 新增 `docs/EMPLOYEE_WORKBENCH_MVP_IMPLEMENTATION.md`，把“工具驱动、AI 生成不可执行任务草稿、员工确认后运行”的产品方案拆分为认证、用户级隔离、TaskDraft、默认模型档案、统一向导、审批、审计、网络出站限制和应收核销恢复发布等开发任务。
+- 文档列出具体新增/修改文件、数据库迁移、接口、28项 P0/P1/P2 任务、依赖关系、测试文件和验收证据；10个工作日仅定义为内网、3～5个只读或生成副本 Skill、写入 Skill 全部禁用的受限 MVP，完整部门试用版预计15～20个工作日。
+- 明确当前阻断项：浏览器身份头不可信、资源读取主要按部门而非所有者隔离、无通用审批模型、`ar-hexiao-daily` 仍为 published 且无需确认、Manifest 网络白名单尚无不可绕过的执行层强制。本文仅新增规划文档，未修改平台代码、Skill 状态、数据库、业务文件或运行任务。
+
+## 2026-08-13 · P0 安全基础二次评审修复
+
+- `bootstrap.ps1` 不再对无版本旧库直接执行裸 `alembic upgrade head`，改为备份成功后调用统一 `init_db()` 接管入口；真实数据库备份副本从 11 张旧表成功升级到当前 head `8dd3d2f9a6c5`，认证三表和独立管理员初始化均通过。
+- 旧库迁移测试会在基线建库后删除 `alembic_version`，真实覆盖“有业务表、无版本表”分支，并断言最终版本等于当前 Alembic head。
+- 带 `--include-keys` 的备份分别校验主清单和高敏恢复清单；PowerShell 包装器新增 `-IncludeKeys`。普通员工改密不再删除 bootstrap 管理员的一次性密码文件。
+- 验证：后端 91 项通过；Ruff 对本轮后端、迁移和备份脚本范围检查通过；前端 typecheck/build 通过。主实例未重启，真实数据库未迁移，仍需按实施文档执行受控部署。
+
+## 2026-08-13 · P0-05 员工 Skill 权限
+
+- 新增默认拒绝的 Skill 授权服务和管理员用户接口。普通员工只有写入 `user_skill_permissions` 且 `can_run=true` 的已发布 Skill 才能在目录中看到并创建任务；管理员按角色拥有全部管理权限。
+- 标准任务、工作流、批次、文件绑定、参数解析、确认、对话推进和失败重试均增加服务端权限硬闸；撤权后等待确认任务不能继续。禁用员工会立即撤销既有会话。
+- `/admin` 页面可创建员工、逐项授权、保存权限和启停账号。`can_create_draft` 与 `requires_approval` 只保存权限配置，分别等待 P1-03 和 P2 接入；权限变更已接入 P0-08 审计。
+- 新增 8 项权限矩阵，后端全量 99 项通过；Ruff 指定范围、`git diff --check`、前端 typecheck/build 通过。验证仅使用隔离测试库，真实主实例和真实数据库未重启或迁移。
+
+## 2026-08-14 · Next.js 迁移阶段二 Clerk 身份桥接
+
+- 当前 Next.js 项目新增完整迁移实施文档，并明确保留 Next.js、shadcn/ui、主题和 Clerk 作为唯一前端，`financial_pj` 继续承担 FastAPI、业务权限、Skill、任务、文件、审计和 Worker。
+- 后端新增 Clerk Session JWT 验证：仅接受 RS256，校验 issuer、时间声明、可选 audience 和 authorized party；Token 只用于取得 Clerk `sub`，平台角色、部门和 Skill 权限仍从本地数据库读取。无效 Bearer 在 hybrid 模式下不会退回旧 Cookie。
+- `users` 增加唯一 `clerk_user_id` 与可选 `clerk_organization_id`，Alembic head 更新为 `b1a76f93c2de`。管理员用户接口可显式绑定或解除 Clerk 身份并记录脱敏审计；未绑定、组织不一致或禁用用户均被服务端拒绝。
+- 认证支持 `session`、`hybrid`、`clerk` 三种显式模式。现有运行环境默认保持 `session`；完成 issuer、authorized party 和管理员 Clerk ID 配置后才切换 `hybrid`，新前端验收后再切换 `clerk`。
+- 新增 8 项 Clerk 认证测试，覆盖真实 RSA 签名、authorized party、用户映射、组织限制、禁用用户、管理员绑定、Cookie 降级防护和仅 Clerk 模式。后端完整测试 120 项通过；仅有既有 Starlette/httpx 弃用警告和 Windows pytest 临时目录退出提示，退出码为 0。
+- 当前 Next.js 新增服务端平台客户端和显式 `/api/platform/session` BFF 路由，使用 Clerk `auth().getToken()` 向 FastAPI 传递 Bearer Token；后端地址只使用服务端环境变量。Next.js 类型检查、lint 和生产构建通过，构建产物包含该动态路由；lint 仍有 5 条既有嵌套组件警告。
+- 本次未读取、输出或写入任何 Clerk 密钥，没有迁移真实数据库、绑定真实 Clerk 用户、重启平台、运行财务任务或修改业务文件。检查时 `127.0.0.1:8001` 不可用；真实 Clerk 联调和运行实例切换仍待受控部署。
+
+## 2026-08-14 · Clerk 管理员身份受控部署
+
+- 部署前确认 Clerk 应用与平台均只有一个候选账号，但原 Clerk 测试用户并非目标邮箱；随后通过 Clerk Backend API 创建目标邮箱的应用用户并启用密码登录，最终仅把该用户绑定到平台唯一启用管理员 `admin`，原 Clerk 测试用户未删除且不再拥有平台映射。
+- 真实 SQLite 数据库部署前已通过在线备份 API 备份并校验，备份目录为 `data/backups/20260814_103107_pre-clerk-binding`；数据库迁移从 `c4d91f7b2e10` 升级到 Clerk 身份版本 `b1a76f93c2de`，身份绑定变更已写入审计事件。
+- 运行配置使用被 Git 忽略的 `.env.runtime.local`，设置 `FINANCIAL_AUTH_MODE=hybrid`、当前 Clerk issuer，以及 `http://localhost:3000`、`http://127.0.0.1:3000` 两个 authorized party；不复制或保存 Clerk Secret Key。`serve_control.py` 启动时在现有 `.env` 后加载该本地运行配置。
+- 平台已在 `127.0.0.1:8001` 启动，API 与 6 个 Worker 的 PID、命令行均匹配；健康检查为 `ok`，19 个 Skill、0 个 Registry 错误。无 Bearer 请求继续进入旧 Session 登录，无效 Bearer 明确按 Clerk 拒绝，不会降级到 Cookie。
+- Clerk 目标用户的密码启用、未锁定、未封禁，并通过官方密码校验接口验证；浏览器尚未代用户创建登录会话。后端完整测试 120 项和指定 Ruff 检查通过，只有既有 Starlette/httpx 弃用警告及 Windows pytest 临时目录退出提示。未运行任何真实财务任务，未提交或推送代码。
+
+## 2026-08-14 · 迁移阶段三契约与阶段四 Skill 目录
+
+- 新增根级 `CONTEXT.md`，固定平台用户、Skill、任务、任务事件、平台文件、任务草稿、审批记录和审计事件的业务含义；Clerk 用户只提供外部身份，平台用户继续承载本地角色、部门和权限。
+- 新增 `backend/app/contracts.py` 和确定性 OpenAPI 导出脚本。OpenAPI 版本更新为 `0.2.0`，核心领域 DTO、员工/管理员 Skill DTO、任务摘要/详情 DTO 和后续 TaskDraft/ApprovalRecord 契约均进入 `components.schemas`；导出文件的 `--check` 可检测漂移。
+- `/api/session`、健康检查、Skill、文件上传、任务摘要/详情和 Registry 重载补齐显式响应模型；新增 `/api/catalog/skills` 与详情接口，管理员和员工都只收到员工安全字段，handler、runtime、permissions、source 和 skill_hash 不进入目录响应。
+- Next.js 已保存同一 OpenAPI 快照并用 `openapi-typescript 7.12.0` 生成类型；新增 Skill 目录与详情 BFF 和页面。后端完整测试 124 项、指定 Ruff、Next.js 契约检查、typecheck、lint 和生产构建通过；lint 仍为 5 条既有警告，构建仍有字体 fallback 与 `metadataBase` 既有警告。
+- 重启前确认 runs、workflow_sessions 和 workflow_actions 均无活动记录；平台已安全重启到 `127.0.0.1:8001`，19 个 Skill、0 个 Registry 错误、6 个 Worker，7 个进程命令行均匹配。匿名目录请求返回 401。未运行真实 Skill，未修改业务文件，未提交或推送代码。
+
+## 2026-08-14 · Clerk 管理员账号重新绑定
+
+- 浏览器登录使用了另一个 Clerk 应用账号，登录成功后平台返回“身份尚未绑定”。经 Clerk Backend API 精确查询确认该账号唯一存在；绑定前检查显示它不是平台用户，而唯一启用管理员仍绑定旧 Clerk 身份。
+- 修改前使用 SQLite 在线备份 API 生成 `data/backups/20260814_113334_pre-clerk-admin-rebind-db`，数据库完整性检查为 `ok`，SHA-256 写后回读一致。一次完整数据目录备份因运行期文件在复制时消失而失败，未作为有效备份使用；其不完整目录为 `data/backups/20260814_113315_pre-clerk-admin-rebind`。
+- 通过平台本地管理员登录和 `/api/admin/users/{user_id}` 接口把唯一启用管理员 `admin` 的 Clerk 身份替换为本次登录账号；没有设置 Clerk 组织限制。旧 Clerk 身份随字段替换解除平台映射。
+- 写后检查通过：目标身份映射到启用的 `skill_admin`，启用管理员总数为1、Clerk 身份绑定总数为1，并存在 `clerk_identity_changed=true` 的用户更新审计事件。未输出或保存登录密码，未运行任何 Skill，未提交或推送代码。
+
+## 2026-08-14 · Next.js 迁移阶段四端到端验收
+
+- 使用 Clerk 已绑定管理员和两份三行合成 Excel，在 Next.js 前端完成 `reconcile-bank` 的目录、详情、上传、参数确认、任务创建/确认、Worker 执行、SSE、结果展示和下载全链路验证；未使用真实财务文件。
+- 验收任务 `1d010e6b-1b8a-412a-aae6-ec6b32257422` 成功结束，结果为银行流水3条、总账3条、成功匹配2条、两侧各1条未匹配；结果工作簿三个工作表经独立回读与渲染检查一致。
+- 下载产生 `file.download` 成功审计，详情仅含文件类型、任务 ID、大小和 SHA-256，不含文件名或内容。后端 `test_platform_e2e.py` 4项通过。
+- 验收发现并修复 Next.js 终态任务页跳过历史 SSE 的问题；刷新后完整展示10条事件。阶段四已经完成，下一阶段为工作台、任务中心和文件中心。
+
+## 2026-08-14 · Next.js 迁移阶段五工作台与资源中心
+
+- 新增员工工作台聚合接口，按当前用户或管理员部门范围统计待确认、执行中、成功、失败和文件数量，并返回常用 Skill、待处理任务、最近结果与最近文件；员工响应继续使用安全 Skill DTO，不含执行入口和来源路径。
+- 任务列表改为服务端分页，任务摘要和详情返回业务失败原因、受控重试状态与阻断原因。失败或超时的只读任务可以创建新的重试任务；重试重新校验权限、Skill 版本、输入文件存在性和 SHA-256，同一来源任务的重复请求保持幂等，写入型任务不能直接重试。
+- 新增文件分页、详情、保留日期和引用信息。默认保留日期为创建后90天，本阶段只展示日期，不自动清理；结果文件和任何已被任务或工作流引用的上传文件不能单独删除。通用文件下载沿用所有者检查、存储根目录检查和脱敏 `file.download` 审计。
+- Next.js 已把原模板模拟概览替换为真实工作台，任务中心增加状态筛选、分页和失败定位，新增文件中心及导航入口，并通过明确列出的 BFF 访问 FastAPI。
+- 后端全量127项测试通过，OpenAPI 快照一致；Next.js 类型检查、契约检查、定向 lint 和生产构建通过。浏览器使用现有 Clerk 管理员登录态验收三个页面，工作台显示1个成功任务和48个可见文件，文件中心显示3页数据及引用删除限制。
+- 部署前确认无活动 Run、Workflow Action 和执行中 Workflow；平台安全重启后为 `development / ok`、19个 Skill、0个 Registry 错误、6个 Worker。未创建新任务，未删除或下载真实文件，未提交或推送代码。
+
+## 2026-08-14 · Next.js 迁移阶段九审批与写入硬闸
+
+- 新增 `approval_records`、双人审批服务和管理员接口。写入工作流的 Skill 树、输入文件及磁盘哈希、业务工作区、校验后计划、财务副本和变更预览被绑定为不可变审批证据；审批过期或任一证据变化时自动失效并退回重新确认。
+- 发起人不能审批自己的任务。批准后生成唯一绑定的 `apply_confirmed` Action，Workflow Worker 在领取和执行前分别重新验证审批人、有效期、Action 内容与当前证据。无审批写入动作被拒绝，写入失败不自动重试。
+- 标准 Run 对写入、外部动作、修改上传文件或权限要求额外审批的 Skill 默认拒绝创建；Worker 也拒领遗留队列中的同类 Run，避免从旧接口或数据库绕过工作流变更预览。
+- 新增应用级网络策略和测试：只接受精确完整域名，拒绝通配符、协议、端口、IP 与 localhost；HTTP Adapter、Skill 子进程环境、智云 Playwright 请求和 API 请求均执行检查。当前真实智云地址仍为内网 IP，基础设施出站隔离也未完成，因此 `ar-hexiao-daily` 保持 disabled。
+- 后端全量155项、来源 Skill 智云取数10项、Ruff、OpenAPI 契约、Next.js 类型/lint/生产构建均通过。部署前无活动 Run、Workflow Action 或执行中 Workflow。
+- 备份 `data/backups/20260814_154908_pre-stage9-approvals` 已校验数据库和142个业务文件，数据库 SHA-256 为 `35a6084025e3dda219e53f928f367a6b242e8e7597fb11fe90e737670b32f667`，普通备份未包含凭据密钥。真实库升级至 `a8b6d1c904fe`，8001 API 与6个 Worker 健康，19个 Skill、0个 Registry 错误。
+- 阶段十继续完成 PostgreSQL、统一 HTTPS、Worker 进程外网络隔离、并发/回滚演练和合成数据写入全流程；通过前不恢复写入型 Skill。
+
+## 2026-08-14 · 阶段十 PostgreSQL 与统一 HTTPS 部署
+
+- SQLite 数据已迁移到 PostgreSQL 16，19 张初始业务表、136 行记录和59处路径转换通过逐表哈希复核；Alembic head 为 `a8b6d1c904fe`。SQLite 原库及切换前全量数据备份继续保留。
+- 独立 Compose 项目运行 Next.js、FastAPI、PostgreSQL、Caddy 与6个 Worker。主机只监听 `127.0.0.1:8443`；数据库、API、Next.js 和 Worker 不映射主机端口，Worker 仅加入内部数据网络且无法访问公网。
+- PostgreSQL 并发验证为6个领取线程仅1个成功；48个迁移文件均存在、SHA-256一致并位于容器数据根。合成 `reconcile-bank` 任务成功，结果摘要、输出文件哈希和工作表结构回读一致。
+- 最终 PostgreSQL 备份 `data/backups/20260814_171432_postgres-verified` 已恢复到临时数据库，19张表、150行、迁移版本与逐表哈希一致。旧 SQLite API、Vite 与6 Worker 已完成回滚演练，之后重新切回容器栈。
+- 后端全量158项测试通过；Next.js 类型、lint和生产构建通过。最终后端镜像 ID 为 `e9671b927384d1aef34467551964bd7e0f51e57de85a83fd3d92041f6a823b34`，前端镜像 ID 为 `33587fdca7b9d439cbee826714629f81fac07ec98666ed4f8ef549230390a8c1`。
+- 两个脏工作树的最终源码回滚点为 `data/backups/20260814_174307_stage10-source-rollback-final`，bundle、patch、untracked ZIP与清单哈希均已校验，忽略文件及生产密钥未进入快照。
+- 当前为本机受限部署。智云仍只有IP地址，真实业务FQDN、受信任证书、精确受控出站路径和管理员恢复发布批准未提供；`ar-hexiao-daily` 必须继续保持 disabled，不能用伪造域名规避策略。
+
+## 2026-08-14 · 阶段十精确域名出站代理
+
+- 新增 CONNECT-only 出站代理并部署到 Compose。代理容器加入 `data` 与 `edge` 网络，6 个 Worker 仍只加入 `internal` 数据网络；空业务白名单默认拒绝全部目标。
+- Worker 直接公网连接返回 `Network is unreachable`，通过生产代理访问未批准域名返回403。隔离临时代理仅允许 `example.com` 时精确主机返回200，未列出的 `www.example.com` 返回403，验证后临时容器已删除。
+- Skill 子进程改用最小环境，不再继承数据库连接串、PostgreSQL 密码、Clerk Secret 或模型 API Key；智云业务凭据继续只通过标准输入临时传递。
+- 新增正式域名 Caddy 模板、公司证书模板和生产配置校验。后端完整184项测试、相关Ruff、Caddy模板解析、Compose解析、PostgreSQL并发探针和幂等合成任务均通过。当前后端镜像为 `d485a4e81a2cbcd98c7e6fbf29f8c2115db7cc3527096b37982fd09a249a5318`。
+- 生产 PostgreSQL 中有1条已迁移的业务凭据记录，未读取或输出密文；生产 `.env` 没有账号密码变量，`FINANCIAL_ZHIYUN_BASE_URL` 与出站白名单继续为空。真实智云 HTTPS FQDN、证书信任和现场443放行验收完成前，`ar-hexiao-daily` 保持 disabled。
+
+## 2026-08-14 · P2-05 内网精确目标联调
+
+- 用户确认当前阶段采用内网联调模式。网络策略新增 `internal`：只允许 RFC1918 IPv4、HTTP 和显式端口；当前唯一目标为 `http://192.168.10.167:18880`。原 `strict` HTTPS FQDN:443 模式继续保留，供对外正式部署使用。
+- 出站代理支持精确 HTTP 转发，重写 Host、删除代理认证和连接头，只开放 GET、HEAD、POST、OPTIONS；Skill 的 Playwright 路由与 API 请求继续按协议、IP、端口精确校验。Worker 仍只加入内部 `data` 网络，代理加入 `data` 与 `edge`。
+- 生产 `.env` 已切换为 `FINANCIAL_NETWORK_POLICY_MODE=internal`，平台入口保持 `127.0.0.1:8443`。部署后 Worker 直连智云失败，经代理访问唯一目标返回 200；错误 IP、错误端口和 CONNECT 均返回 403。验证未提交账号密码，也未读取业务数据。
+- 后端完整 198 项测试通过；相关 Ruff、Compose、生产配置、OpenAPI、Next.js 契约、类型检查和 lint 通过，lint 仅保留 5 条既有组件嵌套警告。新后端镜像为 `sha256:8c141b19c45309940e8cf0cbc2b2661663ef1265292fc8cb7e53bd52c4e9eea5`。
+- API 与 6 个 Worker 健康，Health 回读 19 个 Skill、6 个执行容量、0 个 Registry 错误；PostgreSQL 并发探针和幂等合成任务再次通过。`ar-hexiao-daily` 仍为 disabled，下一步是 P2-06 只读真实取数与写入副本专项回归，随后由管理员决定是否恢复发布。
+
+## 2026-08-14 · P2-06 智云真实只读取数
+
+- 用户确认核销日期 2026-08-13 后，在 `worker-workflow-1` 中使用平台已加密保存的唯一智云凭据执行真实只读取数。凭据只在进程内临时解密并通过标准输入传递，没有进入命令行、环境变量、日志或对话。
+- 内网精确目标代理取数成功，导出版本为 `2026-08-13-flow-sales-name-v4`，生成四件套和摘要共 5 个文件：回款记录 5 笔、22 个 SO、核销明细 22 行、订单明细 33 个 SOD；接口总数一致，缺项目交付日期、无关联订单和缺 SOD 均为 0。
+- 取数目录为 `data/controlled-tests/p2-06-zhiyun-fetch-20260813-20260814T111426Z/工作区`。官方来源校验脚本记录 5 个 SHA-256 后立即 verify，全部未变化。
+- 本次没有分类、生成日清、前置登记或写财务工作簿。P2-06 的真实只读取数部分已通过，仍需完成受控写入副本专项回归；`ar-hexiao-daily` 保持 disabled。
+
+## 2026-08-14 · P2-06 受控写入副本专项回归
+
+- 用户提供 2025、2026 两份年度盈亏表和一份 2026 年到账流转表；三个下载原件只读并完成复制前后哈希比对。平台改为保存和显式传递完整年度盈亏映射，年度表数量不设上限、每年只允许一份，也支持写往年表。
+- 2026-08-13 写前结果为可写 9、挂账 1、冲突 0，实际目标年度均为 2026；盈亏写入 9 条并逐格回读一致，2025 年副本未改变。流转计划自动 2、手填 3，前置登记成功，状态阶段无额外变更。
+- 写后重新分类和校验得到可写 0、幂等跳过 9、冲突 0；再次统一执行时三份工作簿哈希全部不变。三个下载原件哈希仍与回归前一致。
+- 严格轻量审计只发现原件中已经存在的透视表部件告警，2025 年表另有既有外部链接告警；未发现本次写入新增的结构错误。到账流转表 artifact-tool 导入和渲染通过，大型盈亏表因复杂公式在 300 秒内未完成渲染。
+- 回归目录为 `data/controlled-tests/p2-06-write-copy-20260813-20260814T112935Z/工作区`。P2-06 完成，`ar-hexiao-daily` 保持 disabled，等待 P2-07 管理员批准。
+- 工作流专项 10 项、后端全量 200 项测试和 Ruff 通过。API、出站代理及 6 个 Worker 已重建并部署镜像 `sha256:93b44cccfc6d4aacfd1f26286dc1ba4f04601b1238a6fce841277e76f324c665`；API 健康检查通过，登录页返回 200。

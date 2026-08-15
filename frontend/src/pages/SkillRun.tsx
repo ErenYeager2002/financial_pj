@@ -92,7 +92,7 @@ export function SkillRun() {
     consumedDraft.current = true
     if (draft.message) setMessage(draft.message)
     if (draft.files?.length) {
-      if (skill.handler.adapter === 'workflow') {
+      if (skill.execution_mode === 'guided_workflow') {
         const grouped = draft.files.reduce<Record<string, UploadedFile[]>>((current, file) => {
           current[file.role] = [...(current[file.role] || []), file]
           return current
@@ -118,11 +118,11 @@ export function SkillRun() {
   }, [])
 
   useEffect(() => {
-    if (skill?.handler.adapter !== 'workflow') return
+    if (skill?.execution_mode !== 'guided_workflow') return
     api.serviceCredential('zhiyun')
       .then(setServiceCredential)
       .catch((reason: Error) => setError(reason.message))
-  }, [skill?.handler.adapter])
+  }, [skill?.execution_mode])
 
   const ready = useMemo(() => {
     if (!skill) return false
@@ -130,7 +130,7 @@ export function SkillRun() {
   }, [files, skill])
 
   const workflowReady = useMemo(() => {
-    if (!skill || skill.handler.adapter !== 'workflow') return false
+    if (!skill || skill.execution_mode !== 'guided_workflow') return false
     return Boolean(
       reconciliationDates.length > 0 &&
       modelConnectionId &&
@@ -259,7 +259,7 @@ export function SkillRun() {
   }
 
   const startWorkflow = async () => {
-    if (!skill || skill.handler.adapter !== 'workflow') return
+    if (!skill || skill.execution_mode !== 'guided_workflow') return
     setStartingWorkflow(true)
     setError('')
     try {
@@ -322,13 +322,13 @@ export function SkillRun() {
     return <div className="alert alert-error" role="alert"><TriangleAlert size={18} />{error}</div>
   }
 
-  if (skill.handler.adapter === 'workflow') {
+  if (skill.execution_mode === 'guided_workflow') {
     return (
       <div className="workflow-launch page-stack">
         <Link to="/skills" className="back-link"><ArrowLeft size={16} /> 返回工具列表</Link>
         <header className="workflow-launch-hero">
           <div className="workflow-start-icon"><Bot size={28} /></div>
-          <span className="skill-category">{skill.category}</span>
+          <span className="skill-category">{skill.categories?.[0] || skill.category}</span>
           <h2>{skill.name}</h2>
           <p>{skill.description}</p>
           <div className="workflow-gates">
@@ -488,7 +488,7 @@ export function SkillRun() {
       <div className="run-builder-main">
         <Link to="/skills" className="back-link"><ArrowLeft size={16} /> 返回工具列表</Link>
         <div className="run-title">
-          <span className="skill-category">{skill.category}</span>
+          <span className="skill-category">{skill.categories?.[0] || skill.category}</span>
           <h2>{skill.name}</h2>
           <p>{skill.description}</p>
         </div>
@@ -614,15 +614,13 @@ export function SkillRun() {
           <span className="eyebrow">运行确认</span>
           <h3>执行前复核</h3>
           <dl>
-            <div><dt>Skill 版本</dt><dd>v{skill.version}</dd></div>
-            <div><dt>执行器</dt><dd>{skill.handler.adapter.toUpperCase()}</dd></div>
-            <div><dt>理解模型</dt><dd>{selectedModel || '平台默认'}</dd></div>
+            <div><dt>预计耗时</dt><dd>约 {skill.estimated_minutes || 1} 分钟</dd></div>
+            <div><dt>结果内容</dt><dd>{skill.output_summary || '结果文件和业务摘要'}</dd></div>
             <div><dt>风险等级</dt><dd>{skill.risk.level === 'read_only' ? '只读分析' : '需要确认'}</dd></div>
-            <div><dt>最长运行</dt><dd>{skill.runtime.timeout_seconds} 秒</dd></div>
           </dl>
           <div className="check-list">
             <span className={ready ? 'done' : ''}><Check size={15} /> 必要文件已上传</span>
-            <span className="done"><Check size={15} /> Skill 版本将被固化</span>
+            <span className="done"><Check size={15} /> 执行配置将写入审计记录</span>
             <span className="done"><LockKeyhole size={15} /> 源文件保持只读</span>
           </div>
           <button

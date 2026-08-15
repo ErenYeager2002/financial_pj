@@ -5,6 +5,14 @@ version: 1.0.0
 status: disabled
 category: 对账核对
 description: 按现金流量项目和凭证号核对明细表与整合表并标记差异。
+ui:
+  employee_name: 现金流量明细核对
+  short_description: 核对现金流量明细表和整合表并标记差异。
+  categories: [对账核对]
+  estimated_minutes: 3
+  output_summary: 现金流量差异明细
+  action_label: 开始核对
+  popular: false
 tags:
 - Excel
 - 现金流量
@@ -41,7 +49,22 @@ runtime:
   network_access: false
 risk:
   level: read_only
-  requires_confirmation: false
+  requires_confirmation: true
+  requires_change_review: false
+  requires_approval: false
+  modifies_uploaded_files: false
+safety_constraints: {}
+progress_stages:
+- key: reading_files
+  label: 正在读取文件
+- key: validating_fields
+  label: 正在检查字段
+- key: processing
+  label: 正在核对记录
+- key: generating_output
+  label: 正在生成结果文件
+result_presentation:
+  metrics: []
 permissions:
   run: finance_user
   manage: skill_admin

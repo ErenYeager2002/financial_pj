@@ -5,6 +5,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from .contracts import PlatformFile, RunDetail
+
 
 class InterpretRequest(BaseModel):
     message: str = ""
@@ -36,44 +38,27 @@ class RunActionResponse(BaseModel):
     message: str
 
 
-class RunRead(BaseModel):
-    id: str
-    owner_id: str
-    owner_name: str
-    skill_id: str
-    skill_name: str
-    skill_version: str
-    skill_commit: str
-    model_provider: str
-    model_name: str
-    state: str
-    progress: int
-    progress_message: str
-    message: str
-    parameters: dict[str, Any]
-    files: dict[str, Any]
-    result: dict[str, Any]
-    error_message: str
-    confirmation_required: bool
-    confirmed_by: str
-    cancel_requested: bool
-    created_at: datetime
-    queued_at: datetime | None
-    started_at: datetime | None
-    finished_at: datetime | None
+class RunRead(RunDetail):
+    """兼容旧服务代码；公开契约名称为 RunDetail。"""
 
 
-class FileRead(BaseModel):
-    id: str
-    name: str
-    size_bytes: int
-    sha256: str
-    kind: str
-    download_url: str
+class FileRead(PlatformFile):
+    """兼容旧服务代码；公开契约名称为 PlatformFile。"""
 
 
 class ModelConnectRequest(BaseModel):
     api_key: str = Field(min_length=8, max_length=512)
+    provider_id: str | None = Field(default=None, max_length=64)
+    base_url: str | None = Field(default=None, max_length=512)
+    model: str | None = Field(default=None, max_length=255)
+
+
+class ModelProviderRead(BaseModel):
+    id: str
+    name: str
+    discovery_mode: str
+    allow_manual_model: bool
+    admin_only: bool = False
 
 
 class ModelSelectRequest(BaseModel):

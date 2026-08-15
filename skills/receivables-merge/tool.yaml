@@ -5,6 +5,14 @@ version: 1.0.0
 status: published
 category: 应收管理
 description: 合并应收源台账并按上一版台账回填，生成新的应收 all 工作簿。
+ui:
+  employee_name: 应收账款合并
+  short_description: 合并本期应收台账，并可参考上一期台账回填。
+  categories: [应收管理]
+  estimated_minutes: 3
+  output_summary: 合并后的应收台账
+  action_label: 开始合并
+  popular: true
 tags:
 - Excel
 - 应收
@@ -68,7 +76,22 @@ runtime:
   network_access: false
 risk:
   level: read_only
-  requires_confirmation: false
+  requires_confirmation: true
+  requires_change_review: false
+  requires_approval: false
+  modifies_uploaded_files: false
+safety_constraints: {}
+progress_stages:
+- key: reading_files
+  label: 正在读取文件
+- key: validating_fields
+  label: 正在检查字段
+- key: processing
+  label: 正在合并台账
+- key: generating_output
+  label: 正在生成结果文件
+result_presentation:
+  metrics: []
 permissions:
   run: finance_user
   manage: skill_admin

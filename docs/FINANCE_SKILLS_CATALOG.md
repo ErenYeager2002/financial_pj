@@ -1,6 +1,7 @@
 # 财务 Skill 接入目录
 
-平台共登记 18 个 Skill。`published` 可由普通财务用户直接选择运行；
+平台共登记 19 个 Skill，其中 10 个 `published`、1 个 `draft`、8 个 `disabled`。
+`published` 仍需经过平台用户权限授权后才能选择运行；
 `draft` 已完成目录接入但仍缺少安全执行条件；`disabled` 保留说明和来源，
 修复阻断项前不会出现在普通用户的工具目录中。
 
@@ -11,13 +12,13 @@
 | `reconcile-bank` | 银行流水与财务总账匹配 | Python |
 | `receivables-merge` | 合并本期应收台账并回填上一版 | Python 桥接 |
 | `split-by-sales` | 应收 all 按销售人员拆分 | Python 桥接 |
-| `ar-hexiao-daily` | 应收核销日清，写前双重人工确认 | 对话式工作流 |
 | `labor-invoice-check` | 劳务清单与发票台账核对 | Python 桥接 |
 | `withholding-report-rename` | 申报表 PDF 规范命名副本 | Python 桥接 |
 | `compliance-spot-check` | 生成本周合规抽查建议 | Python 桥接 |
 | `dreame-ar-progress-diff` | 多版本应收进度变化对比 | Python 桥接 |
 | `dept-expense-alloc` | 部门费用归集分摊 | Python 桥接 |
 | `order-daily-summary` | 使用九点导出表生成下单统计 | Python 桥接（离线） |
+| `project-detail-to-ledger` | 项目明细追加到财务台账副本 | Python 桥接 |
 
 ## 已登记但暂未发布
 
@@ -25,6 +26,7 @@
 | --- | --- | --- |
 | `jdy-cashflow-export` | draft | 需要独立凭据保管与受控浏览器会话 |
 | `jdy-cashflow-reconcile` | disabled | 当前缺少会计期间维度，同号凭证跨月会被错误合并 |
+| `ar-hexiao-daily` | disabled | 写入型工作流；内网精确出站已完成，真实取数、受控写入专项回归和管理员批准完成前保持禁用 |
 | `task-clarifier` | disabled | Agent 行为指南，不是独立 CLI |
 | `env-doctor` | disabled | 需要受控系统诊断适配器 |
 | `xlsx` | disabled | 文档型 Agent 基础能力 |

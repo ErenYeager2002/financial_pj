@@ -5,6 +5,14 @@ version: 1.0.0
 status: published
 category: 合规检查
 description: 依据应收 all 和可选历史记录生成本周合规抽查建议清单。
+ui:
+  employee_name: 合规文件抽查建议
+  short_description: 根据应收台账和可选历史记录生成本周抽查建议。
+  categories: [合规检查]
+  estimated_minutes: 2
+  output_summary: 合规抽查建议清单
+  action_label: 生成建议
+  popular: false
 tags:
 - Excel
 - 合规
@@ -61,7 +69,22 @@ runtime:
   network_access: false
 risk:
   level: read_only
-  requires_confirmation: false
+  requires_confirmation: true
+  requires_change_review: false
+  requires_approval: false
+  modifies_uploaded_files: false
+safety_constraints: {}
+progress_stages:
+- key: reading_files
+  label: 正在读取文件
+- key: validating_fields
+  label: 正在检查字段
+- key: processing
+  label: 正在生成抽查建议
+- key: generating_output
+  label: 正在生成结果文件
+result_presentation:
+  metrics: []
 permissions:
   run: finance_user
   manage: skill_admin

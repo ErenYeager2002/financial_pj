@@ -139,14 +139,14 @@ export function WorkflowChat() {
 
   const waitingConfirmation = workflow.stage === 'awaiting_apply_confirmation'
   const failed = workflow.state === 'failed'
-  const completed = workflow.state === 'completed'
+  const completed = workflow.stage === 'completed' || workflow.state === 'succeeded'
 
   return (
     <div className="workflow-page workflow-execution-page">
       <header className="workflow-header">
         <div>
           <Link to={workflow.batch_id ? `/workflow-batches/${workflow.batch_id}` : '/skills'} className="back-link"><ArrowLeft size={16} /> {workflow.batch_id ? '返回核销批次' : '返回工具列表'}</Link>
-          <span className="skill-category">{skill.category}</span>
+          <span className="skill-category">{skill.categories?.[0] || skill.category}</span>
           <h2>{workflow.skill_name}</h2>
           <p><Bot size={15} /> {workflow.model_provider} · {workflow.model_name}</p>
           <p className="detail-record-id">任务 ID <code>{workflow.id}</code></p>
@@ -177,7 +177,7 @@ export function WorkflowChat() {
               {failed ? <TriangleAlert size={28} /> : completed ? <Check size={30} /> : <LoaderCircle className="spin" size={28} />}
             </div>
             <div>
-              <span className="eyebrow">核销执行中</span>
+              <span className="eyebrow">{failed ? '核销执行异常' : completed ? '核销已完成' : '核销执行中'}</span>
               <h3>{failed ? '本次核销没有完成' : completed ? '核销任务已完成' : waitingConfirmation ? '核销日清已生成，等待你的确认' : '正在自动核销'}</h3>
               <p>{failed ? workflow.error_message : workflow.progress_message}</p>
             </div>

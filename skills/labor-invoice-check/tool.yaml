@@ -5,6 +5,14 @@ version: 1.0.0
 status: published
 category: 发票核对
 description: 按业务规则核对劳务清单与发票台账，输出支付前核对结果。
+ui:
+  employee_name: 劳务发票核对
+  short_description: 核对劳务清单与发票台账，生成支付前差异清单。
+  categories: [发票检查]
+  estimated_minutes: 2
+  output_summary: 核对结果和差异清单
+  action_label: 开始核对
+  popular: true
 tags:
 - Excel
 - 劳务
@@ -62,7 +70,22 @@ runtime:
   network_access: false
 risk:
   level: read_only
-  requires_confirmation: false
+  requires_confirmation: true
+  requires_change_review: false
+  requires_approval: false
+  modifies_uploaded_files: false
+safety_constraints: {}
+progress_stages:
+- key: reading_files
+  label: 正在读取文件
+- key: validating_fields
+  label: 正在检查字段
+- key: processing
+  label: 正在核对记录
+- key: generating_output
+  label: 正在生成结果文件
+result_presentation:
+  metrics: []
 permissions:
   run: finance_user
   manage: skill_admin

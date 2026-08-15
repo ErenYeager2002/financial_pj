@@ -3,15 +3,16 @@ from __future__ import annotations
 from io import BytesIO
 from types import SimpleNamespace
 
+from fastapi.testclient import TestClient
+from helpers import auth_client
+from openpyxl import Workbook, load_workbook
+from sqlalchemy import select
+
 from app import model_service, orchestrator
 from app.database import SessionLocal
-from app.main import app
 from app.models import ModelConnection
 from app.registry import registry
 from app.worker import run_once
-from fastapi.testclient import TestClient
-from openpyxl import Workbook, load_workbook
-from sqlalchemy import select
 
 
 def workbook_bytes(headers: list[str], rows: list[list[object]]) -> bytes:
@@ -24,6 +25,35 @@ def workbook_bytes(headers: list[str], rows: list[list[object]]) -> bytes:
     workbook.save(stream)
     workbook.close()
     return stream.getvalue()
+
+
+class FakeVerificationResponse:
+    """符合 Tool Calling 验证要求的成功响应结构。"""
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> dict[str, object]:
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": "call_1",
+                                "type": "function",
+                                "function": {
+                                    "name": "tool_call_supported",
+                                    "arguments": "{}",
+                                },
+                            }
+                        ],
+                    }
+                }
+            ]
+        }
 
 
 def upload(client: TestClient, role: str, name: str, content: bytes) -> str:
@@ -43,7 +73,7 @@ def upload(client: TestClient, role: str, name: str, content: bytes) -> str:
 
 
 def test_registry_and_admin_boundary() -> None:
-    with TestClient(app) as client:
+    with auth_client() as client:
         skills = client.get("/api/skills")
         assert skills.status_code == 200
         assert [item["id"] for item in skills.json()] == [
@@ -51,7 +81,6 @@ def test_registry_and_admin_boundary() -> None:
             "compliance-spot-check",
             "reconcile-bank",
             "split-by-sales",
-            "ar-hexiao-daily",
             "receivables-merge",
             "dreame-ar-progress-diff",
             "withholding-report-rename",
@@ -63,10 +92,8 @@ def test_registry_and_admin_boundary() -> None:
         denied = client.post("/api/admin/registry/reload")
         assert denied.status_code == 403
 
-        allowed = client.post(
-            "/api/admin/registry/reload",
-            headers={"X-User-Role": "skill_admin"},
-        )
+    with auth_client(role="skill_admin") as admin_client:
+        allowed = admin_client.post("/api/admin/registry/reload")
         assert allowed.status_code == 200
         assert allowed.json()["skills"] == 19
         assert allowed.json()["errors"] == []
@@ -84,6 +111,7 @@ def test_qwen_tool_call_disables_thinking(monkeypatch) -> None:
 
         def json(self) -> dict[str, object]:
             return {
+                "usage": {"prompt_tokens": 12, "completion_tokens": 5},
                 "choices": [
                     {
                         "message": {
@@ -116,16 +144,22 @@ def test_qwen_tool_call_disables_thinking(monkeypatch) -> None:
     )
     monkeypatch.setattr(orchestrator.httpx, "post", fake_post)
 
+    trace: dict[str, int | str] = {}
     parameters, missing, source, notes = orchestrator.interpret_parameters(
         skill,
         "金额差异 3 元以内，日期相差 4 天可以匹配",
         {},
+        trace=trace,
     )
     assert captured["enable_thinking"] is False
     assert parameters == {"amount_tolerance": 3, "date_tolerance_days": 4}
     assert missing == []
     assert source == "llm"
     assert notes == []
+    assert trace["status"] == "succeeded"
+    assert trace["input_tokens"] == 12
+    assert trace["output_tokens"] == 5
+    assert int(trace["duration_ms"]) >= 0
 
 
 def test_api_key_auto_detection_and_model_selection(monkeypatch) -> None:
@@ -149,8 +183,13 @@ def test_api_key_auto_detection_and_model_selection(monkeypatch) -> None:
         "get",
         lambda *_, **__: FakeModelsResponse(),
     )
+    monkeypatch.setattr(
+        model_service.httpx,
+        "post",
+        lambda *_, **__: FakeVerificationResponse(),
+    )
 
-    with TestClient(app) as client:
+    with auth_client() as client:
         connected = client.post("/api/model-connections", json={"api_key": api_key})
         assert connected.status_code == 200, connected.text
         body = connected.json()
@@ -230,6 +269,14 @@ def test_upload_run_worker_and_download(monkeypatch) -> None:
                 ]
             }
 
+    def fake_post(url, **kwargs):
+        del url
+        payload = kwargs.get("json") or {}
+        tools = payload.get("tools") or []
+        if tools and tools[0].get("function", {}).get("name") == "tool_call_supported":
+            return FakeVerificationResponse()
+        return FakeToolResponse()
+
     monkeypatch.setattr(
         model_service.httpx,
         "get",
@@ -238,10 +285,10 @@ def test_upload_run_worker_and_download(monkeypatch) -> None:
     monkeypatch.setattr(
         orchestrator.httpx,
         "post",
-        lambda *_, **__: FakeToolResponse(),
+        fake_post,
     )
 
-    with TestClient(app) as client:
+    with auth_client() as client:
         connection = client.post(
             "/api/model-connections",
             json={"api_key": "sk-e2e-model-secret"},
@@ -268,13 +315,17 @@ def test_upload_run_worker_and_download(monkeypatch) -> None:
         )
         assert created.status_code == 200, created.text
         run_id = created.json()["id"]
-        assert created.json()["state"] == "queued"
+        assert created.json()["state"] == "waiting_confirmation"
         assert created.json()["model_provider"] == "qwen"
         assert created.json()["model_name"] == "qwen3.7-plus"
         assert created.json()["parameters"] == {
             "amount_tolerance": 1.0,
             "date_tolerance_days": 2,
         }
+
+        confirmed = client.post(f"/api/runs/{run_id}/confirm")
+        assert confirmed.status_code == 200, confirmed.text
+        assert confirmed.json()["state"] == "queued"
 
         assert run_once(("python",)) is True
 

@@ -1,10 +1,18 @@
 schema_version: 1
 id: project-detail-to-ledger
 name: 项目明细补录
-version: 1.0.0
+version: 1.1.0
 status: published
 category: 经营报表
-description: 自动识别项目明细表和盈亏核算表，按固定字段映射追加到新副本；数量、单价和应收金额转为数字，并按 SO+SOD 跳过重复记录。
+description: 自动识别项目明细表和盈亏核算表，按固定字段映射追加到轻量副本；数量、单价和应收金额转为数字，按 SO+SOD 跳过重复记录，并移除历史外链和打开时强制完整重算。
+ui:
+  employee_name: 项目明细补录
+  short_description: 将项目明细按固定字段追加到盈亏核算表副本，并跳过重复记录。
+  categories: [经营报表]
+  estimated_minutes: 3
+  output_summary: 补录后的盈亏核算表副本
+  action_label: 开始补录
+  popular: false
 tags:
 - Excel
 - 项目明细
@@ -61,7 +69,22 @@ runtime:
   network_access: false
 risk:
   level: read_only
-  requires_confirmation: false
+  requires_confirmation: true
+  requires_change_review: false
+  requires_approval: false
+  modifies_uploaded_files: false
+safety_constraints: {}
+progress_stages:
+- key: reading_files
+  label: 正在读取文件
+- key: validating_fields
+  label: 正在检查字段
+- key: processing
+  label: 正在补录项目明细
+- key: generating_output
+  label: 正在生成结果文件
+result_presentation:
+  metrics: []
 permissions:
   run: finance_user
   manage: skill_admin

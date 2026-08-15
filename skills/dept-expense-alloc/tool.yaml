@@ -5,6 +5,14 @@ version: 1.0.0
 status: published
 category: 费用管理
 description: 读取费用材料并按配置规则归集、分摊到部门和科目。
+ui:
+  employee_name: 部门费用归集分摊
+  short_description: 按既定规则将费用归集并分摊到部门和科目。
+  categories: [费用管理]
+  estimated_minutes: 3
+  output_summary: 部门和科目分摊结果
+  action_label: 开始分摊
+  popular: true
 tags:
 - Excel
 - 费用
@@ -53,7 +61,22 @@ runtime:
   network_access: false
 risk:
   level: read_only
-  requires_confirmation: false
+  requires_confirmation: true
+  requires_change_review: false
+  requires_approval: false
+  modifies_uploaded_files: false
+safety_constraints: {}
+progress_stages:
+- key: reading_files
+  label: 正在读取文件
+- key: validating_fields
+  label: 正在检查字段
+- key: processing
+  label: 正在归集分摊
+- key: generating_output
+  label: 正在生成结果文件
+result_presentation:
+  metrics: []
 permissions:
   run: finance_user
   manage: skill_admin

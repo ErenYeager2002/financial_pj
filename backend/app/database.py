@@ -2,9 +2,12 @@ from __future__ import annotations
 
 from collections.abc import Generator
 
+from alembic.config import Config
 from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+
+from alembic import command
 
 from .settings import settings
 
@@ -68,10 +71,66 @@ def _upgrade_sqlite_runtime_schema() -> None:
                             raise
 
 
+def _alembic_config() -> Config:
+    """返回指向仓库 alembic.ini 的配置，脚本路径固定为绝对路径。"""
+    project_root = settings.project_root
+    config = Config(str(project_root / "alembic.ini"))
+    config.set_main_option("script_location", str(project_root / "backend" / "alembic"))
+    config.set_main_option("prepend_sys_path", str(project_root / "backend"))
+    return config
+
+
+def _has_alembic_version() -> bool:
+    return "alembic_version" in inspect(engine).get_table_names()
+
+
+def _has_platform_tables() -> bool:
+    names = set(inspect(engine).get_table_names())
+    return bool(names & {"runs", "files", "workflow_sessions"})
+
+
+def _baseline_revision() -> str:
+    """返回迁移链最底部的基线版本（down_revision 为空的第一个迁移）。
+
+    旧库由历史 create_all 建成，只等价于基线迁移之前的结构；必须先把版本
+    标记到基线，再 upgrade head，才会真正执行基线之后的迁移（如认证表）。
+    """
+    from alembic.script import ScriptDirectory
+
+    script = ScriptDirectory.from_config(_alembic_config())
+    baseline: str | None = None
+    for revision in script.walk_revisions():
+        if revision.down_revision is None:
+            baseline = revision.revision
+            break
+    if not baseline:
+        raise RuntimeError("无法定位 Alembic 基线迁移版本。")
+    return baseline
+
+
+def _upgrade_database() -> None:
+    """通过 Alembic 把数据库升级到 head。
+
+    - 全新数据库：直接执行全部迁移；
+    - 既有数据库（已由历史 create_all 建表，但没有 alembic_version）：
+      先 stamp 到基线版本（首个迁移），再 upgrade head，从而真正执行基线
+      之后的迁移（例如 users / user_sessions / user_skill_permissions）。
+      不重建基线内已有的表，不动既有数据。
+    """
+    if not _has_alembic_version():
+        if _has_platform_tables():
+            command.stamp(_alembic_config(), _baseline_revision())
+            command.upgrade(_alembic_config(), "head")
+        else:
+            command.upgrade(_alembic_config(), "head")
+    else:
+        command.upgrade(_alembic_config(), "head")
+
+
 def init_db() -> None:
     from . import models  # noqa: F401
 
-    Base.metadata.create_all(bind=engine)
+    _upgrade_database()
     if is_sqlite:
         _upgrade_sqlite_runtime_schema()
     with engine.begin() as connection:

@@ -8,7 +8,8 @@ from typing import Any
 
 import httpx
 
-from .orchestrator import LlmConfig
+from .model_providers import chat_completion_request
+from .orchestrator import LlmConfig, config_extra_body
 
 CONFIRM_WORDS = {
     "确认",
@@ -125,14 +126,13 @@ def _llm_decision(
         "tool_choice": "auto",
         "temperature": 0.2,
     }
-    if config.provider == "qwen" or config.model.startswith("qwen"):
-        payload["enable_thinking"] = False
+    payload.update(config_extra_body(config))
     try:
-        response = httpx.post(
-            f"{config.base_url}/chat/completions",
-            headers={"Authorization": f"Bearer {config.api_key}"},
-            json=payload,
-            timeout=30,
+        response = chat_completion_request(
+            config.provider,
+            config.base_url,
+            config.api_key,
+            payload,
         )
         response.raise_for_status()
         response_message = response.json()["choices"][0]["message"]
@@ -150,7 +150,7 @@ def _llm_decision(
         if content:
             return WorkflowDecision("reply", {"content": content}, "llm")
         return None
-    except (httpx.HTTPError, KeyError, IndexError, TypeError, json.JSONDecodeError):
+    except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError):
         return None
 
 
@@ -223,7 +223,10 @@ def _fallback_decision(stage: str, message: str) -> WorkflowDecision:
         "重新跑",
         "清单作废",
     }
-    if stage in {"awaiting_apply_confirmation", "failed"} and lowered in rebuild_commands:
+    if (
+        stage in {"awaiting_apply_confirmation", "waiting_approval", "failed"}
+        and lowered in rebuild_commands
+    ):
         return WorkflowDecision("rebuild_worklist", {}, "local")
     return WorkflowDecision("show_status", {}, "local")
 

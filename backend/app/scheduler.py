@@ -16,6 +16,7 @@ from .models import (
     WorkflowSession,
 )
 from .settings import settings
+from .step_runtime_service import finish_run_execution_step, queue_run_execution_step
 
 
 def acquire_claim_lock(db: Session) -> None:
@@ -58,6 +59,7 @@ def recover_expired_jobs(db: Session, now: datetime | None = None) -> None:
             run.started_at = None
             event_state = "queued"
             event_message = run.progress_message
+            queue_run_execution_step(db, run)
         else:
             run.state = "failed"
             run.error_message = "Worker 中断且执行租约已过期，请人工检查后重新提交。"
@@ -65,6 +67,13 @@ def recover_expired_jobs(db: Session, now: datetime | None = None) -> None:
             run.finished_at = current
             event_state = "failed"
             event_message = run.error_message
+            finish_run_execution_step(
+                db,
+                run,
+                state="failed",
+                error_code="worker_lease_expired",
+                error_message=run.error_message,
+            )
         run.worker_id = ""
         run.heartbeat_at = None
         run.lease_expires_at = None

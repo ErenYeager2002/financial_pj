@@ -5,6 +5,7 @@ import json
 import re
 import shutil
 import uuid
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from fastapi import HTTPException, UploadFile, status
@@ -13,19 +14,10 @@ from sqlalchemy.orm import Session
 
 from .auth import UserContext
 from .models import FileRecord, RunRecord, WorkflowAction, WorkflowSession
+from .resource_policy import assert_owner, run_root, upload_root
 from .settings import settings
 
 SAFE_NAME_PATTERN = re.compile(r"[^0-9A-Za-z\u4e00-\u9fff._()（）-]+")
-ACTIVE_RUN_STATES = {
-    "created",
-    "parsing",
-    "waiting_confirmation",
-    "queued",
-    "running",
-    "cancelling",
-}
-
-
 def safe_filename(name: str) -> str:
     clean = SAFE_NAME_PATTERN.sub("_", Path(name).name).strip("._")
     return clean[:180] or "uploaded-file"
@@ -39,9 +31,15 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def file_expiry(created_at: datetime | None) -> datetime | None:
+    if created_at is None:
+        return None
+    return created_at + timedelta(days=settings.file_retention_days)
+
+
 async def save_upload(db: Session, upload: UploadFile, user: UserContext) -> FileRecord:
     file_id = str(uuid.uuid4())
-    folder = settings.upload_dir / file_id
+    folder = upload_root(user.user_id, file_id)
     folder.mkdir(parents=True, exist_ok=False)
     target = folder / safe_filename(upload.filename or "uploaded-file")
     max_bytes = settings.max_upload_mb * 1024 * 1024
@@ -86,8 +84,8 @@ def register_output(
     display_name: str | None = None,
 ) -> FileRecord:
     resolved = path.resolve()
-    run_root = (settings.run_dir / run_id).resolve()
-    if not resolved.is_file() or not resolved.is_relative_to(run_root):
+    expected_run_root = run_root(owner.user_id, run_id)
+    if not resolved.is_file() or not resolved.is_relative_to(expected_run_root):
         raise ValueError("输出文件必须位于本次运行目录内")
     record = FileRecord(
         id=str(uuid.uuid4()),
@@ -130,6 +128,42 @@ def _contains_file_id(value: str, file_id: str) -> bool:
     return contains(payload)
 
 
+def file_references(
+    db: Session,
+    record: FileRecord,
+) -> tuple[list[str], list[str]]:
+    runs = db.scalars(
+        select(RunRecord).where(RunRecord.owner_id == record.owner_id)
+    ).all()
+    workflows = db.scalars(
+        select(WorkflowSession).where(WorkflowSession.owner_id == record.owner_id)
+    ).all()
+    actions = db.scalars(
+        select(WorkflowAction)
+        .join(WorkflowSession, WorkflowSession.id == WorkflowAction.workflow_id)
+        .where(WorkflowSession.owner_id == record.owner_id)
+    ).all()
+    run_ids = [item.id for item in runs if _contains_file_id(item.files_json, record.id)]
+    workflow_ids = {
+        item.id for item in workflows if _contains_file_id(item.files_json, record.id)
+    }
+    workflow_ids.update(
+        item.workflow_id for item in actions if _contains_file_id(item.input_json, record.id)
+    )
+    if record.run_id:
+        run_ids.append(record.run_id)
+    return sorted(set(run_ids)), sorted(workflow_ids)
+
+
+def file_delete_status(db: Session, record: FileRecord) -> tuple[bool, str]:
+    if record.kind != "input":
+        return False, "结果文件随任务记录保留，不能单独删除。"
+    run_ids, workflow_ids = file_references(db, record)
+    if run_ids or workflow_ids:
+        return False, "文件仍被任务使用；为保留审计和重试证据，不能删除。"
+    return True, ""
+
+
 def delete_upload(
     db: Session,
     file_id: str,
@@ -138,54 +172,22 @@ def delete_upload(
     record = db.get(FileRecord, file_id)
     if not record:
         raise HTTPException(status_code=404, detail="上传文件不存在。")
-    if record.owner_id != user.user_id and not user.is_admin:
-        raise HTTPException(status_code=403, detail="无权删除其他员工上传的文件。")
-    if record.kind != "input":
-        raise HTTPException(status_code=409, detail="结果文件不能通过上传文件接口删除。")
-
-    active_runs = db.scalars(
-        select(RunRecord).where(
-            RunRecord.department_id == record.department_id,
-            RunRecord.state.in_(ACTIVE_RUN_STATES),
-        )
-    ).all()
-    active_workflows = db.scalars(
-        select(WorkflowSession).where(
-            WorkflowSession.department_id == record.department_id,
-            WorkflowSession.stage.in_(
-                (
-                    "awaiting_date",
-                    "awaiting_date_confirmation",
-                    "awaiting_files",
-                    "preparing",
-                    "awaiting_apply_confirmation",
-                    "applying",
-                    "failed",
-                )
-            ),
-        )
-    ).all()
-    active_actions = db.scalars(
-        select(WorkflowAction).where(WorkflowAction.state.in_(("queued", "running")))
-    ).all()
-    if (
-        any(_contains_file_id(item.files_json, file_id) for item in active_runs)
-        or any(_contains_file_id(item.files_json, file_id) for item in active_workflows)
-        or any(_contains_file_id(item.input_json, file_id) for item in active_actions)
-    ):
-        raise HTTPException(
-            status_code=409,
-            detail="文件仍被任务使用，请先从任务文件列表中移除。",
-        )
+    assert_owner(record.owner_id, user, "上传文件", record.department_id)
+    can_delete, reason = file_delete_status(db, record)
+    if not can_delete:
+        raise HTTPException(status_code=409, detail=reason)
 
     path = Path(record.stored_path).resolve()
-    upload_root = settings.upload_dir.resolve()
-    expected_folder = (upload_root / record.id).resolve()
-    if not path.is_relative_to(upload_root) or path.parent != expected_folder:
+    uploads_root = settings.upload_dir.resolve()
+    expected_folders = {
+        upload_root(record.owner_id, record.id),
+        (uploads_root / record.id).resolve(),  # P0-07 搬迁前兼容旧目录。
+    }
+    if not path.is_relative_to(uploads_root) or path.parent not in expected_folders:
         raise HTTPException(status_code=409, detail="上传文件存储路径异常，已拒绝删除。")
     if path.exists():
         path.unlink()
-    if expected_folder.exists():
-        expected_folder.rmdir()
+    if path.parent.exists():
+        path.parent.rmdir()
     db.delete(record)
     db.commit()

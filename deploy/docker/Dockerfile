@@ -11,18 +11,22 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-COPY backend/pyproject.toml /app/backend/pyproject.toml
-COPY backend/app /app/backend/app
+COPY backend/pyproject.toml /tmp/financial-platform/pyproject.toml
 RUN sed -i \
         -e 's|deb.debian.org|mirrors.aliyun.com|g' \
         -e 's|security.debian.org|mirrors.aliyun.com|g' \
         /etc/apt/sources.list.d/debian.sources
-RUN python -m pip install --no-cache-dir --upgrade pip \
-    && python -m pip install --no-cache-dir /app/backend
+RUN mkdir -p /tmp/financial-platform/app \
+    && touch /tmp/financial-platform/app/__init__.py \
+    && python -m pip install --no-cache-dir --upgrade pip \
+    && python -m pip install --no-cache-dir /tmp/financial-platform \
+    && rm -rf /tmp/financial-platform
 RUN python -m playwright install-deps chromium
 RUN python -m playwright install chromium
 
-COPY frontend/dist /app/frontend/dist
+COPY backend/app /app/backend/app
+COPY backend/alembic /app/backend/alembic
+COPY alembic.ini /app/alembic.ini
 COPY skills /app/skills
 COPY scripts /app/scripts
 
@@ -38,7 +42,8 @@ RUN groupadd --system --gid 10001 financial-platform \
         -o financial-platform \
         -g financial-platform \
         -m 0750 \
-        /var/lib/financial-platform
+        /var/lib/financial-platform \
+    && chown -R financial-platform:financial-platform /app/skills
 
 USER 10001:10001
 WORKDIR /app/backend

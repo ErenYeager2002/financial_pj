@@ -19,11 +19,11 @@ export function SkillList() {
     setQuery(searchParams.get('search') || '')
   }, [searchParams])
 
-  const categories = ['全部', ...new Set(skills.map((item) => item.category))]
+  const categories = ['全部', ...new Set(skills.flatMap((item) => item.categories || (item.category ? [item.category] : [])))]
   const filtered = useMemo(
     () =>
       skills.filter((item) => {
-        const categoryMatch = category === '全部' || item.category === category
+        const categoryMatch = category === '全部' || (item.categories || [item.category]).includes(category)
         const text = `${item.name}${item.description}${item.tags.join('')}`.toLowerCase()
         return categoryMatch && text.includes(query.toLowerCase())
       }),
@@ -76,7 +76,7 @@ export function SkillList() {
           <article className="skill-card" key={skill.id}>
             <div className="skill-card-top">
               <div className="skill-icon">
-                {['rpa', 'workflow'].includes(skill.handler.adapter)
+                {skill.execution_mode === 'guided_workflow'
                   ? <Bot size={22} />
                   : <FileSpreadsheet size={22} />}
               </div>
@@ -85,7 +85,7 @@ export function SkillList() {
               </span>
             </div>
             <div className="skill-card-body">
-              <span className="skill-category">{skill.category}</span>
+              <span className="skill-category">{skill.categories?.[0] || skill.category}</span>
               <h3>{skill.name}</h3>
               <p>{skill.description}</p>
               <div className="tag-row">
@@ -93,9 +93,9 @@ export function SkillList() {
               </div>
             </div>
             <div className="skill-card-footer">
-              <span>{skill.handler.adapter.toUpperCase()} · v{skill.version}</span>
+              <span>预计约 {skill.estimated_minutes || 1} 分钟</span>
               <Link to={`/skills/${skill.id}`}>
-                使用工具 <ArrowRight size={16} />
+                {skill.action_label || '使用工具'} <ArrowRight size={16} />
               </Link>
             </div>
           </article>

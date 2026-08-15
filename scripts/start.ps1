@@ -1,6 +1,6 @@
 param(
     [int]$Port = 8000,
-    [string]$HostAddress = "0.0.0.0",
+    [string]$HostAddress = "127.0.0.1",
     [string]$LanInterfaceAlias = "WLAN",
     [switch]$NoBrowser
 )

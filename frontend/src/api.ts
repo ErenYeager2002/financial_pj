@@ -1,40 +1,36 @@
 import type {
   RunRecord,
   ModelConnection,
+  ModelProviderInfo,
   SkillManifest,
   ServiceCredential,
   UploadedFile,
-  UserRole,
   UserSession,
   WorkflowRecord,
   WorkflowBatchRecord,
+  AdminUser,
+  SkillPermission,
 } from './types'
 
-export function getRole(): UserRole {
-  // The demo identity is intentionally derived from the URL. There is no
-  // client-side role switcher: normal pages are employee pages and the admin
-  // console is only reachable by explicitly entering /admin.
-  return window.location.pathname.startsWith('/admin') ? 'skill_admin' : 'finance_user'
-}
-
-export function authHeaders(): Record<string, string> {
-  const role = getRole()
-  return {
-    'X-User-Id': role === 'skill_admin' ? 'skill-admin' : 'demo-user',
-    'X-User-Role': role,
-    'X-Department-Id': 'finance',
-  }
-}
-
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+export async function request<T>(
+  path: string,
+  init: RequestInit = {},
+  options: { redirectOnUnauthorized?: boolean } = {},
+): Promise<T> {
   const response = await fetch(path, {
     ...init,
+    credentials: 'include',
     headers: {
-      ...authHeaders(),
       ...(init.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
       ...(init.headers || {}),
     },
   })
+  if (response.status === 401 && options.redirectOnUnauthorized !== false) {
+    if (window.location.pathname !== '/login') {
+      window.location.assign('/login')
+    }
+    throw new Error('未登录或会话已失效')
+  }
   if (!response.ok) {
     let message = `请求失败（${response.status}）`
     try {
@@ -54,16 +50,46 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export const api = {
   session: () => request<UserSession>('/api/session'),
+  login: (username: string, password: string) =>
+    request<UserSession>(
+      '/api/auth/login',
+      {
+        method: 'POST',
+        body: JSON.stringify({ username, password }),
+      },
+      { redirectOnUnauthorized: false },
+    ),
+  logout: () => request<void>('/api/auth/logout', { method: 'POST' }),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<UserSession>(
+      '/api/auth/change-password',
+      {
+        method: 'POST',
+        body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+      },
+      { redirectOnUnauthorized: false },
+    ),
   health: () => request<import('./types').PlatformHealth>('/api/health'),
   skills: () => request<SkillManifest[]>('/api/skills'),
   skill: (id: string) => request<SkillManifest>(`/api/skills/${id}`),
   runs: () => request<RunRecord[]>('/api/runs'),
   run: (id: string) => request<RunRecord>(`/api/runs/${id}`),
   modelConnections: () => request<ModelConnection[]>('/api/model-connections'),
-  connectModel: (apiKey: string) =>
+  modelProviders: () => request<ModelProviderInfo[]>('/api/model-providers'),
+  connectModel: (
+    providerId: string,
+    apiKey: string,
+    baseUrl?: string,
+    model?: string,
+  ) =>
     request<ModelConnection>('/api/model-connections', {
       method: 'POST',
-      body: JSON.stringify({ api_key: apiKey }),
+      body: JSON.stringify({
+        provider_id: providerId,
+        api_key: apiKey,
+        base_url: baseUrl || null,
+        model: model || null,
+      }),
     }),
   selectModel: (connectionId: string, selectedModel: string) =>
     request<ModelConnection>(`/api/model-connections/${connectionId}`, {
@@ -214,16 +240,35 @@ export const api = {
       '/api/admin/registry/reload',
       { method: 'POST' },
     ),
+  adminUsers: () => request<AdminUser[]>('/api/admin/users'),
+  createAdminUser: (body: {
+    username: string
+    display_name: string
+    initial_password: string
+    role: 'finance_user' | 'skill_admin'
+    department_id: string
+  }) =>
+    request<AdminUser>('/api/admin/users', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  updateAdminUser: (
+    userId: string,
+    body: Partial<Pick<AdminUser, 'display_name' | 'role' | 'status'>>,
+  ) =>
+    request<AdminUser>(`/api/admin/users/${userId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+  replaceSkillPermissions: (userId: string, permissions: SkillPermission[]) =>
+    request<SkillPermission[]>(`/api/admin/users/${userId}/skill-permissions`, {
+      method: 'PUT',
+      body: JSON.stringify({ permissions }),
+    }),
 }
 
 export function eventStreamUrl(runId: string, after = 0): string {
-  const role = getRole()
-  const userId = role === 'skill_admin' ? 'skill-admin' : 'demo-user'
-  const query = new URLSearchParams({
-    after: String(after),
-    user_id: userId,
-    role,
-    department_id: 'finance',
-  })
+  // SSE 身份来自会话 Cookie，URL 不再携带用户身份参数。
+  const query = new URLSearchParams({ after: String(after) })
   return `/api/runs/${runId}/events?${query.toString()}`
 }

@@ -24,6 +24,52 @@ COMMON_OUTPUT_SCHEMA = {
     },
 }
 
+DISPLAY_METADATA: dict[str, dict[str, Any]] = {
+    "labor-invoice-check": {
+        "output_summary": "核对结果和差异清单",
+        "action_label": "开始核对",
+        "estimated_minutes": 2,
+        "popular": True,
+    },
+    "receivables-merge": {
+        "output_summary": "合并后的应收台账",
+        "action_label": "开始合并",
+        "estimated_minutes": 3,
+        "popular": True,
+    },
+    "dept-expense-alloc": {
+        "output_summary": "部门和科目分摊结果",
+        "action_label": "开始分摊",
+        "estimated_minutes": 3,
+        "popular": True,
+    },
+    "withholding-report-rename": {
+        "output_summary": "规范命名的 PDF 副本",
+        "action_label": "开始整理",
+        "estimated_minutes": 1,
+        "popular": True,
+    },
+    "ar-hexiao-daily": {
+        "output_summary": "核销日清、变更清单和工作副本",
+        "action_label": "开始核销",
+        "estimated_minutes": 10,
+        "popular": False,
+    },
+    "jdy-cashflow-reconcile": {
+        "output_summary": "现金流量差异明细",
+        "action_label": "开始核对",
+        "estimated_minutes": 3,
+        "popular": False,
+    },
+}
+
+DEFAULT_PROGRESS_STAGES = [
+    {"key": "reading_files", "label": "正在读取文件"},
+    {"key": "validating_fields", "label": "正在检查字段"},
+    {"key": "processing", "label": "正在处理数据"},
+    {"key": "generating_output", "label": "正在生成结果文件"},
+]
+
 
 def file_spec(
     role: str,
@@ -60,11 +106,15 @@ def manifest(
     adapter: str = "python",
     risk: str = "read_only",
     confirmation: bool = False,
+    change_review: bool = False,
+    approval: bool = False,
     timeout: int = 600,
     network_access: bool = False,
+    network_targets: list[str] | None = None,
     version: str = "1.0.0",
     blocked_reason: str = "",
 ) -> dict[str, Any]:
+    display = DISPLAY_METADATA.get(skill_id, {})
     value = {
         "schema_version": 1,
         "id": skill_id,
@@ -73,6 +123,15 @@ def manifest(
         "status": status,
         "category": category,
         "description": description,
+        "ui": {
+            "employee_name": name,
+            "short_description": description,
+            "categories": [category],
+            "estimated_minutes": display.get("estimated_minutes", max(1, timeout // 300)),
+            "output_summary": display.get("output_summary", "处理结果文件和业务摘要"),
+            "action_label": display.get("action_label", "开始处理"),
+            "popular": display.get("popular", False),
+        },
         "tags": tags,
         "file_inputs": file_inputs,
         "input_schema": input_schema,
@@ -91,9 +150,19 @@ def manifest(
             "memory_mb": 2048,
             "concurrency_limit": 1,
             "network_access": network_access or adapter == "rpa",
+            "network_targets": network_targets or [],
         },
-        "risk": {"level": risk, "requires_confirmation": confirmation},
+        "risk": {
+            "level": risk,
+            "requires_confirmation": confirmation or status == "published",
+            "requires_change_review": change_review,
+            "requires_approval": approval,
+            "modifies_uploaded_files": False,
+        },
         "permissions": {"run": "finance_user", "manage": "skill_admin"},
+        "safety_constraints": {},
+        "progress_stages": DEFAULT_PROGRESS_STAGES,
+        "result_presentation": {"metrics": []},
         "upstream": {
             "repository": "https://github.com/EvanLee2004/finance-skills",
             "path": f"skills/{skill_id}",
@@ -110,7 +179,9 @@ EXECUTABLES: dict[str, dict[str, Any]] = {
             "project-detail-to-ledger",
             "项目明细补录",
             "经营报表",
-            "自动识别项目明细表和盈亏核算表，按固定字段映射追加到新副本；数量、单价和应收金额转为数字，并按 SO+SOD 跳过重复记录。",
+            "自动识别项目明细表和盈亏核算表，按固定字段映射追加到轻量副本；"
+            "数量、单价和应收金额转为数字，按 SO+SOD 跳过重复记录，"
+            "并移除历史外链和打开时强制完整重算。",
             ["Excel", "项目明细", "盈亏核算", "字段映射", "副本"],
             [
                 file_spec("project_detail", "项目明细表", ["xlsx"]),
@@ -123,7 +194,7 @@ EXECUTABLES: dict[str, dict[str, Any]] = {
             confirmation=False,
             timeout=600,
             network_access=False,
-            version="1.0.0",
+            version="1.1.0",
         ),
         "bridge": {
             "name": "项目明细补录",
@@ -437,17 +508,23 @@ CATALOG_ONLY: dict[str, dict[str, Any]] = {
                 ["xlsx", "xlsm", "xls"],
                 multiple=True,
                 min_files=2,
-                description="至少上传盈亏核算表和到账流转表副本。",
+                description=(
+                    "至少上传一份年度盈亏核算表和一份到账流转表副本；"
+                    "盈亏表数量不限，每年一份，可同时上传往年表。"
+                ),
             ),
         ],
         {"type": "object", "additionalProperties": False, "properties": {}},
         status="published",
         adapter="workflow",
         risk="write",
-        confirmation=False,
+        confirmation=True,
+        change_review=True,
+        approval=True,
         timeout=1800,
         network_access=True,
-        version="1.5.0",
+        network_targets=["http://192.168.10.167:18880"],
+        version="1.5.1",
     ),
     "jdy-cashflow-export": manifest(
         "jdy-cashflow-export",
@@ -644,6 +721,12 @@ def main() -> None:
         default=PLATFORM_SKILLS,
         help="目标 Skill 目录；默认写入平台 skills，自动同步时可指定隔离暂存目录",
     )
+    parser.add_argument(
+        "--skill-id",
+        action="append",
+        default=[],
+        help="只同步指定 Skill；可重复使用。未提供时同步全部。",
+    )
     args = parser.parse_args()
     source_root = args.source.resolve()
     if not source_root.is_dir():
@@ -651,17 +734,29 @@ def main() -> None:
     PLATFORM_SKILLS = args.target.resolve()
     PLATFORM_SKILLS.mkdir(parents=True, exist_ok=True)
 
-    for skill_id, item in EXECUTABLES.items():
+    requested = set(args.skill_id)
+    known = set(EXECUTABLES) | set(CATALOG_ONLY)
+    unknown = sorted(requested - known)
+    if unknown:
+        raise ValueError("未知 Skill：" + ", ".join(unknown))
+    executable_items = {
+        key: value for key, value in EXECUTABLES.items() if not requested or key in requested
+    }
+    catalog_items = {
+        key: value for key, value in CATALOG_ONLY.items() if not requested or key in requested
+    }
+
+    for skill_id, item in executable_items.items():
         sync_one(source_root, skill_id, item, True)
     skipped = []
-    for skill_id, item in CATALOG_ONLY.items():
+    for skill_id, item in catalog_items.items():
         if not (source_root / skill_id).is_dir():
             skipped.append(skill_id)
             continue
         sync_one(source_root, skill_id, item, False)
     print(
-        f"已同步 {len(EXECUTABLES)} 个可执行 Skill、"
-        f"{len(CATALOG_ONLY) - len(skipped)} 个目录级 Skill。"
+        f"已同步 {len(executable_items)} 个可执行 Skill、"
+        f"{len(catalog_items) - len(skipped)} 个目录级 Skill。"
     )
     if skipped:
         print("远端缺少目录级 Skill，已保留平台现有版本：" + ", ".join(skipped))

@@ -9,6 +9,7 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
+from .network_policy import validate_runtime_network_policy
 from .settings import settings
 
 
@@ -44,11 +45,56 @@ class RuntimeSpec(BaseModel):
     concurrency_limit: int = Field(default=1, ge=1)
     network_access: bool = False
     network_allowlist: list[str] = Field(default_factory=list)
+    network_targets: list[str] = Field(default_factory=list)
 
 
 class RiskSpec(BaseModel):
     level: Literal["read_only", "write", "external_action"] = "read_only"
     requires_confirmation: bool = False
+    requires_change_review: bool = False
+    requires_approval: bool = False
+    modifies_uploaded_files: bool = False
+
+
+class SkillUiSpec(BaseModel):
+    employee_name: str = Field(min_length=1, max_length=128)
+    short_description: str = Field(min_length=1, max_length=300)
+    categories: list[str] = Field(min_length=1, max_length=5)
+    estimated_minutes: int = Field(ge=1, le=1440)
+    output_summary: str = Field(min_length=1, max_length=300)
+    action_label: str = Field(min_length=1, max_length=40)
+    popular: bool = False
+
+
+class SafetyConstraintSpec(BaseModel):
+    minimum: float | None = None
+    maximum: float | None = None
+
+    @model_validator(mode="after")
+    def validate_range(self) -> SafetyConstraintSpec:
+        if self.minimum is None and self.maximum is None:
+            raise ValueError("安全约束至少需要 minimum 或 maximum")
+        if (
+            self.minimum is not None
+            and self.maximum is not None
+            and self.minimum > self.maximum
+        ):
+            raise ValueError("安全约束 minimum 不能大于 maximum")
+        return self
+
+
+class ProgressStageSpec(BaseModel):
+    key: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
+    label: str = Field(min_length=1, max_length=80)
+
+
+class ResultMetricSpec(BaseModel):
+    key: str = Field(pattern=r"^[A-Za-z_][A-Za-z0-9_.]*$")
+    label: str = Field(min_length=1, max_length=80)
+
+
+class ResultPresentationSpec(BaseModel):
+    metrics: list[ResultMetricSpec] = Field(default_factory=list, max_length=20)
 
 
 class PermissionSpec(BaseModel):
@@ -74,6 +120,43 @@ class SkillManifest(BaseModel):
     runtime: RuntimeSpec = Field(default_factory=RuntimeSpec)
     risk: RiskSpec = Field(default_factory=RiskSpec)
     permissions: PermissionSpec = Field(default_factory=PermissionSpec)
+    ui: SkillUiSpec | None = None
+    safety_constraints: dict[str, SafetyConstraintSpec] = Field(default_factory=dict)
+    progress_stages: list[ProgressStageSpec] = Field(default_factory=list)
+    result_presentation: ResultPresentationSpec = Field(
+        default_factory=ResultPresentationSpec
+    )
+
+    @model_validator(mode="after")
+    def validate_employee_metadata(self) -> SkillManifest:
+        if self.ui and len(set(self.ui.categories)) != len(self.ui.categories):
+            raise ValueError("ui.categories 不能重复")
+        stage_keys = [item.key for item in self.progress_stages]
+        if len(stage_keys) != len(set(stage_keys)):
+            raise ValueError("progress_stages.key 不能重复")
+        metric_keys = [item.key for item in self.result_presentation.metrics]
+        if len(metric_keys) != len(set(metric_keys)):
+            raise ValueError("result_presentation.metrics.key 不能重复")
+        properties = self.input_schema.get("properties", {})
+        for name, constraint in self.safety_constraints.items():
+            schema = properties.get(name)
+            if not isinstance(schema, dict):
+                raise ValueError(f"safety_constraints 引用了未知参数：{name}")
+            schema_min = schema.get("minimum")
+            schema_max = schema.get("maximum")
+            if (
+                constraint.minimum is not None
+                and schema_min is not None
+                and constraint.minimum < schema_min
+            ):
+                raise ValueError(f"{name} 安全下限不能小于 input_schema.minimum")
+            if (
+                constraint.maximum is not None
+                and schema_max is not None
+                and constraint.maximum > schema_max
+            ):
+                raise ValueError(f"{name} 安全上限不能大于 input_schema.maximum")
+        return self
 
 
 class RegisteredSkill(BaseModel):
@@ -98,6 +181,44 @@ class RegisteredSkill(BaseModel):
                 "source": self.source,
             }
         )
+        return data
+
+    def employee_dict(self, include_schema: bool = True) -> dict[str, Any]:
+        """Return business-facing fields only; never expose runtime internals."""
+        ui = self.manifest.ui
+        if ui is None:
+            raise ValueError(f"Skill {self.manifest.id} 缺少员工展示配置")
+        data: dict[str, Any] = {
+            "id": self.manifest.id,
+            "name": ui.employee_name,
+            "version": self.manifest.version,
+            "status": self.manifest.status,
+            "description": ui.short_description,
+            "categories": ui.categories,
+            "estimated_minutes": ui.estimated_minutes,
+            "output_summary": ui.output_summary,
+            "action_label": ui.action_label,
+            "popular": ui.popular,
+            "tags": self.manifest.tags,
+            "file_inputs": [item.model_dump() for item in self.manifest.file_inputs],
+            "risk": {
+                "level": self.manifest.risk.level,
+                "requires_confirmation": self.manifest.risk.requires_confirmation,
+                "requires_approval": self.manifest.risk.requires_approval,
+                "modifies_uploaded_files": self.manifest.risk.modifies_uploaded_files,
+            },
+            "execution_mode": (
+                "guided_workflow"
+                if self.manifest.handler.adapter == "workflow"
+                else "standard"
+            ),
+            "progress_stages": [
+                item.model_dump() for item in self.manifest.progress_stages
+            ],
+            "result_presentation": self.manifest.result_presentation.model_dump(),
+        }
+        if include_schema:
+            data["input_schema"] = self.manifest.input_schema
         return data
 
 
@@ -166,6 +287,10 @@ class SkillRegistry:
                 try:
                     payload = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
                     manifest = SkillManifest.model_validate(payload)
+                    if manifest.status == "published" and manifest.ui is None:
+                        raise ValueError("published Skill 必须配置 ui")
+                    if manifest.status == "published":
+                        validate_runtime_network_policy(manifest.runtime)
                     registered = RegisteredSkill(
                         manifest=manifest,
                         directory=manifest_path.parent.resolve(),

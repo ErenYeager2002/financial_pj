@@ -7,9 +7,14 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import httpx
+import pytest
+from fastapi.testclient import TestClient
+from helpers import auth_client
+from openpyxl import Workbook
+from sqlalchemy import select
+
 from app import model_service, workflow_orchestrator, workflow_service
 from app.database import SessionLocal
-from app.main import app
 from app.models import (
     FileRecord,
     ServiceCredential,
@@ -17,9 +22,19 @@ from app.models import (
     WorkflowBatch,
     WorkflowSession,
 )
-from fastapi.testclient import TestClient
-from openpyxl import Workbook
-from sqlalchemy import select
+
+
+@pytest.fixture(autouse=True)
+def _allow_disabled_workflow_skill(monkeypatch):
+    """工作流测试始终允许读取目标 Skill，避免发布状态影响状态机测试。"""
+    from app.registry import registry as _registry
+
+    real_get = _registry.get
+
+    def get(skill_id: str, include_unpublished: bool = False):
+        return real_get(skill_id, include_unpublished=True)
+
+    monkeypatch.setattr(_registry, "get", get)
 
 
 def workbook_bytes() -> bytes:
@@ -30,6 +45,35 @@ def workbook_bytes() -> bytes:
     workbook.save(stream)
     workbook.close()
     return stream.getvalue()
+
+
+class FakeVerificationResponse:
+    """符合 Tool Calling 验证要求的成功响应结构。"""
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> dict[str, object]:
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": "call_1",
+                                "type": "function",
+                                "function": {
+                                    "name": "tool_call_supported",
+                                    "arguments": "{}",
+                                },
+                            }
+                        ],
+                    }
+                }
+            ]
+        }
 
 
 def upload(client: TestClient, role: str, name: str) -> str:
@@ -65,12 +109,60 @@ def execute_next_action(workflow_id: str) -> None:
         db.commit()
 
 
+def fake_prepare_worklist(_db, action, workflow) -> dict[str, object]:
+    business = (
+        workflow_service.workflow_root(workflow.owner_id, workflow.id)
+        / "actions"
+        / action.id
+        / "工作区"
+    )
+    checked = business / "04_产出" / "写入计划_校验后.json"
+    ledger = business / "02_我的表副本" / "盈亏表.xlsx"
+    preview = business / "04_产出" / "核销日清_测试.xlsx"
+    checked.parent.mkdir(parents=True, exist_ok=True)
+    ledger.parent.mkdir(parents=True, exist_ok=True)
+    checked.write_text('{"rows": 1}', encoding="utf-8")
+    ledger.write_bytes(workbook_bytes())
+    preview.write_bytes(workbook_bytes())
+    return {
+        "workspace": str(business.resolve()),
+        "checked_plan": str(checked.resolve()),
+        "ledger": str(ledger.resolve()),
+        "summary": {"今天要填": 1, "异常": 0},
+        "artifacts": [
+            {
+                "file_id": f"preview-{action.id}",
+                "name": preview.name,
+                "sha256": workflow_service.sha256_file(preview),
+                "size_bytes": preview.stat().st_size,
+            }
+        ],
+    }
+
+
+def approve_pending_workflow(workflow_id: str) -> dict[str, object]:
+    with auth_client(role="skill_admin") as admin:
+        listed = admin.get("/api/admin/approvals?status=pending")
+        assert listed.status_code == 200, listed.text
+        approval = next(
+            item for item in listed.json() if item.get("workflow_id") == workflow_id
+        )
+        decided = admin.post(
+            f"/api/admin/approvals/{approval['id']}/decision",
+            json={"decision": "approve", "reason": "变更预览和执行快照复核通过。"},
+        )
+        assert decided.status_code == 200, decided.text
+        assert decided.json()["status"] == "approved"
+        return decided.json()
+
+
 def test_apply_confirmed_verifies_before_write_and_refreshes_final_baseline(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
     workflow_id = str(uuid.uuid4())
-    workflow_root = tmp_path / workflow_id
+    owner_id = "workflow-unit-user"
+    workflow_root = tmp_path / owner_id / workflow_id
     workspace = workflow_root / "actions" / "prepare" / "工作区"
     checked = workspace / "04_产出" / "写入计划_校验后.json"
     ledger = workspace / "02_我的表副本" / "盈亏核算表.xlsx"
@@ -93,8 +185,10 @@ def test_apply_confirmed_verifies_before_write_and_refreshes_final_baseline(
 
     monkeypatch.setattr(
         workflow_service,
-        "settings",
-        SimpleNamespace(workflow_dir=tmp_path),
+        "workflow_root",
+        lambda selected_owner, selected_workflow: (
+            tmp_path / selected_owner / selected_workflow
+        ).resolve(),
     )
     monkeypatch.setattr(workflow_service, "_run_script", fake_run_script)
     monkeypatch.setattr(
@@ -114,7 +208,7 @@ def test_apply_confirmed_verifies_before_write_and_refreshes_final_baseline(
             }
         ),
     )
-    workflow = SimpleNamespace(id=workflow_id)
+    workflow = SimpleNamespace(id=workflow_id, owner_id=owner_id)
 
     result = workflow_service._apply_confirmed(
         SimpleNamespace(),
@@ -135,23 +229,91 @@ def test_apply_confirmed_verifies_before_write_and_refreshes_final_baseline(
     ]
 
 
+def test_annual_ledgers_have_no_count_limit_and_are_passed_explicitly(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    workflow_id = str(uuid.uuid4())
+    owner_id = "workflow-multi-year-user"
+    workflow_root = tmp_path / owner_id / workflow_id
+    workspace = workflow_root / "actions" / "prepare" / "工作区"
+    checked = workspace / "04_产出" / "写入计划_校验后.json"
+    ledger_dir = workspace / "02_我的表副本"
+    checked.parent.mkdir(parents=True)
+    ledger_dir.mkdir(parents=True)
+    checked.write_text("{}", encoding="utf-8")
+    ledgers = {
+        year: ledger_dir / f"{year}年盈亏核算表.xlsx"
+        for year in (2024, 2025, 2026)
+    }
+    for ledger in ledgers.values():
+        ledger.write_bytes(workbook_bytes())
+    (workflow_root / "skill" / "vendor" / "scripts").mkdir(parents=True)
+
+    calls: list[tuple[str, list[str]]] = []
+
+    def fake_run_script(_script_dir, script_name, arguments, **_kwargs):
+        calls.append((script_name, arguments))
+        return ""
+
+    monkeypatch.setattr(
+        workflow_service,
+        "workflow_root",
+        lambda selected_owner, selected_workflow: (
+            tmp_path / selected_owner / selected_workflow
+        ).resolve(),
+    )
+    monkeypatch.setattr(workflow_service, "_run_script", fake_run_script)
+    monkeypatch.setattr(
+        workflow_service,
+        "_register_artifact",
+        lambda _db, _workflow, path, _action_id: {"name": path.name},
+    )
+    context = {
+        "workspace": str(workspace),
+        "checked_plan": str(checked),
+        "ledger_years": {str(year): str(path) for year, path in ledgers.items()},
+    }
+    action = SimpleNamespace(id="apply-action", input_json=json.dumps({"context": context}))
+    workflow = SimpleNamespace(id=workflow_id, owner_id=owner_id)
+
+    workflow_service._apply_confirmed(SimpleNamespace(), action, workflow)
+
+    apply_args = next(args for name, args in calls if name == "apply_all.py")
+    specs = [
+        apply_args[index + 1]
+        for index, value in enumerate(apply_args)
+        if value == "--ledger-year"
+    ]
+    assert specs == [f"{year}={ledgers[year]}" for year in (2024, 2025, 2026)]
+    assert "--ledger" not in apply_args
+
+
+def test_duplicate_annual_ledger_year_is_rejected(tmp_path: Path) -> None:
+    ledger_dir = tmp_path / "02_我的表副本"
+    ledger_dir.mkdir()
+    for name in ("2026年盈亏核算表.xlsx", "2026年盈亏核算表_第二份.xlsx"):
+        (ledger_dir / name).write_bytes(workbook_bytes())
+
+    with pytest.raises(RuntimeError, match="每个年度只能上传一份"):
+        workflow_service._discover_annual_ledger_paths(tmp_path)
+
+
 def test_unbound_upload_can_be_deleted() -> None:
-    with TestClient(app) as client:
-        file_id = upload(client, "finance_workbooks", "待删除.xlsx")
+    with auth_client() as owner:
+        file_id = upload(owner, "finance_workbooks", "待删除.xlsx")
         with SessionLocal() as db:
             record = db.get(FileRecord, file_id)
             assert record is not None
             stored_path = Path(record.stored_path)
             assert stored_path.is_file()
 
-        denied = client.delete(
-            f"/api/files/{file_id}",
-            headers={"X-User-Id": "another-user"},
-        )
-        assert denied.status_code == 403
+        with auth_client(username="other-upload-user") as other:
+            denied = other.delete(f"/api/files/{file_id}")
+            assert denied.status_code == 404
         assert stored_path.is_file()
 
-        deleted = client.delete(f"/api/files/{file_id}")
+        deleted = owner.delete(f"/api/files/{file_id}")
         assert deleted.status_code == 204
         assert not stored_path.exists()
         with SessionLocal() as db:
@@ -236,7 +398,7 @@ def test_prepare_worklist_fetches_zhiyun_before_analysis(monkeypatch) -> None:
     action_id = str(uuid.uuid4())
     calls: list[tuple[str, list[str], str | None]] = []
 
-    def fake_copy_inputs(_db, _action, business):
+    def fake_copy_inputs(_db, _action, _workflow, business):
         ledgers = business / "02_我的表副本"
         ledgers.mkdir(parents=True, exist_ok=True)
         (business / "04_产出").mkdir(parents=True, exist_ok=True)
@@ -249,11 +411,12 @@ def test_prepare_worklist_fetches_zhiyun_before_analysis(monkeypatch) -> None:
         timeout=900,
         stdin_data=None,
         sensitive_values=(),
+        extra_env=None,
     ):
-        del script_dir, timeout, sensitive_values
+        del script_dir, timeout, sensitive_values, extra_env
         calls.append((script_name, arguments, stdin_data))
         if script_name == "build_worklist.py":
-            business = workflow_service.settings.workflow_dir / workflow_id / "actions"
+            business = workflow_service.workflow_root("demo-user", workflow_id) / "actions"
             workspace = business / action_id / "工作区"
             (workspace / "04_产出" / "核销日清_20260724.xlsx").write_bytes(b"worklist")
             (workspace / "04_产出" / "写入计划_校验后.json").write_text(
@@ -276,14 +439,31 @@ def test_prepare_worklist_fetches_zhiyun_before_analysis(monkeypatch) -> None:
     )
 
     skill_scripts = (
-        workflow_service.settings.workflow_dir
-        / workflow_id
+        workflow_service.workflow_root("demo-user", workflow_id)
         / "skill"
         / "vendor"
         / "scripts"
     )
     skill_scripts.mkdir(parents=True)
     (skill_scripts / "classify_hexiao.py").write_text("", encoding="utf-8")
+    (skill_scripts.parents[1] / "tool.yaml").write_text(
+        """schema_version: 1
+id: ar-hexiao-daily
+name: 应收核销日清
+version: 1.0.0
+status: disabled
+description: 合成测试
+handler:
+  adapter: workflow
+runtime:
+  network_access: true
+  network_allowlist: [zhiyun.synthetic.example]
+risk:
+  level: write
+  requires_approval: true
+""",
+        encoding="utf-8",
+    )
     workflow = SimpleNamespace(
         id=workflow_id,
         owner_id="demo-user",
@@ -320,20 +500,18 @@ def test_conversational_workflow_hard_gates(monkeypatch) -> None:
         lambda *_, **__: FakeModelsResponse(),
     )
 
-    def unavailable_model(*_, **__):
+    def unavailable_model(url, **kwargs):
+        payload = kwargs.get("json") or {}
+        tools = payload.get("tools") or []
+        if tools and tools[0].get("function", {}).get("name") == "tool_call_supported":
+            return FakeVerificationResponse()
         raise httpx.ConnectError("offline")
 
     monkeypatch.setattr(workflow_orchestrator.httpx, "post", unavailable_model)
     monkeypatch.setattr(
         workflow_service,
         "_prepare_worklist",
-        lambda db, action, workflow: {
-            "workspace": "isolated-test-workspace",
-            "checked_plan": "checked-plan.json",
-            "ledger": "ledger.xlsx",
-            "summary": {"今天要填": 3, "异常": 0},
-            "artifacts": [],
-        },
+        fake_prepare_worklist,
     )
     monkeypatch.setattr(
         workflow_service,
@@ -344,7 +522,7 @@ def test_conversational_workflow_hard_gates(monkeypatch) -> None:
         },
     )
 
-    with TestClient(app) as client:
+    with auth_client() as client:
         connection = client.post(
             "/api/model-connections",
             json={"api_key": "sk-workflow-test-secret"},
@@ -444,11 +622,12 @@ def test_conversational_workflow_hard_gates(monkeypatch) -> None:
         assert status.json()["configured"] is True
         assert test_account not in status.text
         assert test_password not in status.text
+        owner_id = client.get("/api/session").json()["user_id"]
         with SessionLocal() as db:
             stored = db.scalar(
                 select(ServiceCredential).where(
                     ServiceCredential.service == "zhiyun",
-                    ServiceCredential.owner_id == "demo-user",
+                    ServiceCredential.owner_id == owner_id,
                 )
             )
             assert stored is not None
@@ -503,8 +682,16 @@ def test_conversational_workflow_hard_gates(monkeypatch) -> None:
             f"/api/workflows/{workflow_id}/messages",
             json={"content": "我已检查核销日清，确认写入"},
         )
-        assert applying.json()["stage"] == "applying"
-        assert len(applying.json()["actions"]) == 2
+        assert applying.status_code == 200, applying.text
+        assert applying.json()["stage"] == "waiting_approval"
+        assert applying.json()["state"] == "waiting_approval"
+        assert len(applying.json()["actions"]) == 1
+
+        approved = approve_pending_workflow(workflow_id)
+        assert approved["requested_by"] != approved["decided_by"]
+        after_approval = client.get(f"/api/workflows/{workflow_id}").json()
+        assert after_approval["stage"] == "applying"
+        assert len(after_approval["actions"]) == 2
 
         execute_next_action(workflow_id)
         completed = client.get(f"/api/workflows/{workflow_id}").json()
@@ -543,8 +730,13 @@ def test_workflow_reset_clears_current_state_and_preserves_audit(monkeypatch) ->
         "get",
         lambda *_, **__: FakeModelsResponse(),
     )
+    monkeypatch.setattr(
+        model_service.httpx,
+        "post",
+        lambda *_, **__: FakeVerificationResponse(),
+    )
 
-    with TestClient(app) as client:
+    with auth_client() as client:
         connection = client.post(
             "/api/model-connections",
             json={"api_key": "sk-workflow-reset-test"},
@@ -630,15 +822,14 @@ def test_multi_date_batch_runs_children_in_order_and_chains_files(monkeypatch) -
 
     monkeypatch.setattr(model_service.httpx, "get", lambda *_, **__: FakeModelsResponse())
     monkeypatch.setattr(
+        model_service.httpx,
+        "post",
+        lambda *_, **__: FakeVerificationResponse(),
+    )
+    monkeypatch.setattr(
         workflow_service,
         "_prepare_worklist",
-        lambda _db, _action, workflow: {
-            "workspace": f"isolated-{workflow.id}",
-            "checked_plan": "checked-plan.json",
-            "ledger": "ledger.xlsx",
-            "summary": {"今天要填": 1, "异常": 0},
-            "artifacts": [],
-        },
+        fake_prepare_worklist,
     )
 
     def fake_apply(_db, _action, workflow):
@@ -650,7 +841,7 @@ def test_multi_date_batch_runs_children_in_order_and_chains_files(monkeypatch) -
 
     monkeypatch.setattr(workflow_service, "_apply_confirmed", fake_apply)
 
-    with TestClient(app) as client:
+    with auth_client() as client:
         connection = client.post(
             "/api/model-connections",
             json={"api_key": "sk-workflow-batch-test"},
@@ -687,13 +878,19 @@ def test_multi_date_batch_runs_children_in_order_and_chains_files(monkeypatch) -
 
         execute_next_action(first["id"])
         after_prepare = client.get(f"/api/workflows/{first['id']}").json()
-        assert after_prepare["stage"] == "applying"
-        assert [item["name"] for item in after_prepare["actions"]] == [
-            "prepare_worklist",
-            "apply_confirmed",
-        ]
+        assert after_prepare["stage"] == "awaiting_apply_confirmation"
+        assert [item["name"] for item in after_prepare["actions"]] == ["prepare_worklist"]
+
+        confirmed = client.post(
+            f"/api/workflows/{first['id']}/messages",
+            json={"content": "确认写入"},
+        )
+        assert confirmed.status_code == 200, confirmed.text
+        assert confirmed.json()["stage"] == "waiting_approval"
+        assert [item["name"] for item in confirmed.json()["actions"]] == ["prepare_worklist"]
         assert client.get(f"/api/workflows/{second['id']}").json()["stage"] == "queued"
 
+        approve_pending_workflow(first["id"])
         execute_next_action(first["id"])
         first_complete = client.get(f"/api/workflows/{first['id']}").json()
         second_started = client.get(f"/api/workflows/{second['id']}").json()
@@ -702,6 +899,14 @@ def test_multi_date_batch_runs_children_in_order_and_chains_files(monkeypatch) -
         assert second_started["files"]["finance_workbooks"][0]["file_id"] == ledger_id
 
         execute_next_action(second["id"])
+        second_prepare = client.get(f"/api/workflows/{second['id']}").json()
+        assert second_prepare["stage"] == "awaiting_apply_confirmation"
+        confirmed_second = client.post(
+            f"/api/workflows/{second['id']}/messages",
+            json={"content": "确认写入"},
+        )
+        assert confirmed_second.json()["stage"] == "waiting_approval"
+        approve_pending_workflow(second["id"])
         execute_next_action(second["id"])
         completed = client.get(f"/api/workflow-batches/{batch['id']}").json()
         assert completed["state"] == "succeeded"

@@ -125,7 +125,7 @@ export function Dashboard() {
     const load = () => Promise.all([api.skills(), api.runs(), api.workflows(), api.workflowBatches()])
       .then(([skillData, runData, workflowData, batchData]) => {
         if (!active) return
-        const published = skillData.filter((item) => item.status === 'published')
+        const published = skillData.filter((item) => (item.status ?? 'published') === 'published')
         setSkills(published)
         setSelectedSkill((current) => current || published[0]?.id || '')
         setRuns(runData)
@@ -254,7 +254,7 @@ export function Dashboard() {
 
         <aside className="console-panel launch-panel">
           <div className="launch-heading"><div><span className="launch-mark">▷</span><div><h2>开始任务</h2><p>选择 Skill、上传文件、描述需求</p></div></div><ArrowRight size={17} /></div>
-          <div className="launch-step"><div className="step-label"><span>1</span><strong>选择 Skill</strong><a href="#skill">查看说明 <ArrowRight size={13} /></a></div><SelectMenu value={selectedSkill || skills[0]?.id || ''} onChange={setSelectedSkill} ariaLabel="选择 Skill" className="launch-select-menu" options={skills.length ? skills.map((skill) => ({ value: skill.id, label: skill.name, description: skill.category })) : [{ value: '', label: '正在读取 Skill…' }]} />{activeSkill && <small className="launch-help">{activeSkill.description}</small>}</div>
+          <div className="launch-step"><div className="step-label"><span>1</span><strong>选择 Skill</strong><a href="#skill">查看说明 <ArrowRight size={13} /></a></div><SelectMenu value={selectedSkill || skills[0]?.id || ''} onChange={setSelectedSkill} ariaLabel="选择 Skill" className="launch-select-menu" options={skills.length ? skills.map((skill) => ({ value: skill.id, label: skill.name, description: skill.categories?.[0] || skill.category })) : [{ value: '', label: '正在读取 Skill…' }]} />{activeSkill && <small className="launch-help">{activeSkill.description}</small>}</div>
           <div className="launch-step"><div className="step-label"><span>2</span><strong>上传文件</strong></div><p className="launch-help">支持 Excel / CSV / PDF，单个文件 ≤ 100MB</p>{files.map((file) => <div className="selected-file" key={file}><FileSpreadsheet size={16} /><span>{file}</span><button type="button" aria-label={`移除 ${file}`} onClick={() => setFiles((current) => current.filter((item) => item !== file))}><X size={14} /></button></div>)}<label className="upload-dropzone"><UploadCloud size={21} /><span>点击或拖拽文件到此处</span><small>或 <b>选择文件</b></small><input type="file" multiple onChange={handleFiles} /></label></div>
           <div className="launch-step"><div className="step-label"><span>3</span><strong>描述需求</strong><em>（选填）</em></div><textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="请按部门、费用类别、项目进行对比，输出差异金额与差异率…" maxLength={500} /><div className="char-count">{note.length} / 500</div></div>
           <label className="notify-check"><input type="checkbox" defaultChecked />完成后自动通知我</label>

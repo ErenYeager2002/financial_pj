@@ -2,9 +2,31 @@ export type UserRole = 'finance_user' | 'skill_admin'
 
 export interface UserSession {
   user_id: string
+  username: string
   display_name: string
   role: UserRole
   department_id: string
+  must_change_password?: boolean
+}
+
+export interface SkillPermission {
+  skill_id: string
+  can_run: boolean
+  can_upload: boolean
+  can_create_draft: boolean
+  requires_approval: boolean
+}
+
+export interface AdminUser {
+  id: string
+  username: string
+  display_name: string
+  role: UserRole
+  department_id: string
+  status: 'active' | 'disabled'
+  must_change_password: boolean
+  permissions: SkillPermission[]
+  created_at: string
 }
 
 export interface FileInputSpec {
@@ -29,13 +51,19 @@ export interface JsonSchemaProperty {
 }
 
 export interface SkillManifest {
-  schema_version: number
+  schema_version?: number
   id: string
   name: string
-  version: string
-  status: 'draft' | 'published' | 'disabled'
-  category: string
+  version?: string
+  status?: 'draft' | 'published' | 'disabled'
+  category?: string
+  categories?: string[]
   description: string
+  estimated_minutes?: number
+  output_summary?: string
+  action_label?: string
+  popular?: boolean
+  execution_mode?: 'standard' | 'guided_workflow'
   blocked_reason?: string
   tags: string[]
   file_inputs: FileInputSpec[]
@@ -44,14 +72,14 @@ export interface SkillManifest {
     properties?: Record<string, JsonSchemaProperty>
     required?: string[]
   }
-  output_schema: Record<string, unknown>
-  handler: {
+  output_schema?: Record<string, unknown>
+  handler?: {
     adapter: 'python' | 'rpa' | 'http' | 'workflow'
     entrypoint?: string
     endpoint?: string
     worker_pool?: string
   }
-  runtime: {
+  runtime?: {
     timeout_seconds: number
     memory_mb: number
     concurrency_limit: number
@@ -60,14 +88,17 @@ export interface SkillManifest {
   risk: {
     level: 'read_only' | 'write' | 'external_action'
     requires_confirmation: boolean
+    modifies_uploaded_files?: boolean
   }
-  permissions: {
+  progress_stages?: Array<{ key: string; label: string }>
+  result_presentation?: { metrics: Array<{ key: string; label: string }> }
+  permissions?: {
     run: string
     manage: string
   }
-  skill_hash: string
-  commit_sha: string
-  source: string
+  skill_hash?: string
+  commit_sha?: string
+  source?: string
 }
 
 export interface UploadedFile {
@@ -89,6 +120,16 @@ export interface ModelConnection {
   status: string
   last_checked_at: string
   created_at: string
+}
+
+export type ProviderDiscoveryMode = 'api' | 'manual' | 'hybrid'
+
+export interface ModelProviderInfo {
+  id: string
+  name: string
+  discovery_mode: ProviderDiscoveryMode
+  allow_manual_model: boolean
+  admin_only: boolean
 }
 
 export interface ServiceCredential {

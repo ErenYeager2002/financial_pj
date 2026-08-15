@@ -5,15 +5,15 @@ import threading
 import uuid
 from datetime import UTC, datetime, timedelta
 
+from scripts import serve_control
+from scripts.serve_control import worker_specs
+from sqlalchemy import select
+
 from app import worker
 from app.database import SessionLocal, init_db
 from app.models import RunRecord, WorkflowAction, WorkflowSession
 from app.worker import claim_next_run, run_once
 from app.workflow_service import claim_next_workflow_action
-from sqlalchemy import select
-
-from scripts import serve_control
-from scripts.serve_control import worker_specs
 
 
 def setup_module() -> None:
@@ -106,6 +106,21 @@ def _workflow(skill_id: str, concurrency_limit: int = 1) -> tuple[WorkflowSessio
         state="queued",
     )
     return workflow, action
+
+
+def test_worker_rejects_standard_write_run_without_approval_snapshot() -> None:
+    with SessionLocal() as db:
+        run = _queued_run(
+            skill_id=f"write-gate-{uuid.uuid4()}",
+            concurrency_limit=1,
+            risk="write",
+        )
+        db.add(run)
+        db.commit()
+        assert claim_next_run(db, ("python",), "write-gate-worker") is None
+        db.refresh(run)
+        assert run.state == "failed"
+        assert "缺少批准快照" in run.error_message
 
 
 def test_two_workers_execute_tasks_with_real_overlap(monkeypatch) -> None:

@@ -49,17 +49,17 @@ def worker_specs(environment: dict[str, str]) -> list[tuple[str, str]]:
 
 def runtime_environment() -> dict[str, str]:
     environment = os.environ.copy()
-    env_file = PROJECT_ROOT / ".env"
-    if not env_file.is_file():
-        return environment
-    for raw_line in env_file.read_text(encoding="utf-8-sig").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
+    for env_file in (PROJECT_ROOT / ".env", PROJECT_ROOT / ".env.runtime.local"):
+        if not env_file.is_file():
             continue
-        key, value = line.split("=", 1)
-        key = key.strip()
-        if not environment.get(key):
-            environment[key] = value.strip().strip("\"'")
+        for raw_line in env_file.read_text(encoding="utf-8-sig").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            if not environment.get(key):
+                environment[key] = value.strip().strip("\"'")
     return environment
 
 
@@ -301,8 +301,8 @@ def main() -> int:
     start_parser.add_argument("--port", type=int, default=8000)
     start_parser.add_argument(
         "--host",
-        default=os.getenv("FINANCIAL_HOST", "0.0.0.0"),
-        help="API 监听地址；0.0.0.0 允许局域网访问。",
+        default=os.getenv("FINANCIAL_HOST", "127.0.0.1"),
+        help="API 监听地址；仅 127.0.0.1 时只有本机可访问，显式指定 0.0.0.0 才允许局域网访问。",
     )
     start_parser.add_argument("--no-browser", action="store_true")
     commands.add_parser("stop")

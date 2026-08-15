@@ -2,10 +2,10 @@ import {
   ArrowRight,
   Activity,
   Blocks,
-  Bot,
   Command,
   LayoutDashboard,
   ListChecks,
+  LogOut,
   Menu,
   Moon,
   Search,
@@ -16,7 +16,7 @@ import {
 } from 'lucide-react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { api, getRole } from '../api'
+import { api } from '../api'
 import type { PlatformHealth, RunRecord, SkillManifest, UserSession, WorkflowRecord } from '../types'
 
 const TITLES: Record<string, string> = {
@@ -24,7 +24,6 @@ const TITLES: Record<string, string> = {
   '/skills': '财务工具',
   '/runs': '运行记录',
   '/workflows': '对话任务',
-  '/models': '模型接入',
   '/admin': 'Skill 管理',
 }
 
@@ -44,8 +43,7 @@ export function Layout() {
   const [searchWorkflows, setSearchWorkflows] = useState<WorkflowRecord[]>([])
   const [health, setHealth] = useState<PlatformHealth | null>(null)
   const searchRef = useRef<HTMLDivElement>(null)
-  const isAdminPath = location.pathname.startsWith('/admin')
-  const role = getRole()
+  const role = session?.role || 'finance_user'
 
   useEffect(() => {
     api.session().then(setSession).catch(() => setSession(null))
@@ -62,7 +60,7 @@ export function Layout() {
           api.health(),
         ])
         if (!active) return
-        const published = skills.filter((skill) => skill.status === 'published')
+        const published = skills.filter((skill) => (skill.status ?? 'published') === 'published')
         const usage = new Map<string, number>()
         runs.forEach((run) => usage.set(run.skill_id, (usage.get(run.skill_id) || 0) + 1))
         workflows.forEach((workflow) => usage.set(workflow.skill_id, (usage.get(workflow.skill_id) || 0) + 1))
@@ -173,10 +171,7 @@ export function Layout() {
           <NavLink to="/runs">
             <ListChecks size={18} /> 运行记录
           </NavLink>
-          <NavLink to="/models">
-            <Bot size={18} /> 模型接入
-          </NavLink>
-          {isAdminPath && (
+          {role === 'skill_admin' && (
             <>
               <span className="nav-section">平台管理</span>
               <NavLink to="/admin">
@@ -266,8 +261,23 @@ export function Layout() {
               <span className="role-avatar">{role === 'skill_admin' ? '管' : '财'}</span>
               <span className="role-copy">
                 <strong>{session?.display_name || (role === 'skill_admin' ? 'Skill 管理员' : '财务员工')}</strong>
-                <small>{role === 'skill_admin' ? '平台管理权限 · /admin' : '财务部 · 普通权限'}</small>
+                <small>{role === 'skill_admin' ? '平台管理权限' : '财务部 · 普通权限'}</small>
               </span>
+              <button
+                className="logout-button"
+                type="button"
+                aria-label="退出登录"
+                title="退出登录"
+                onClick={async () => {
+                  try {
+                    await api.logout()
+                  } finally {
+                    navigate('/login', { replace: true })
+                  }
+                }}
+              >
+                <LogOut size={15} />
+              </button>
             </div>
           </div>
         </header>
