@@ -83,7 +83,8 @@ risk:
 不能提供脚本名、命令或路径。耗时动作写入 `WorkflowAction` 队列，由
 `workflow` Worker 执行固化 Skill 快照中的固定脚本。
 
-`ar-hexiao-daily` 当前声明 `requires_confirmation: false`，其单日硬闸顺序为：
+`ar-hexiao-daily` 当前声明 `requires_confirmation: true`，并同时要求变更复核和管理员审批；
+其单日硬闸顺序为：
 
 ```text
 核验日期、模型、凭据和两份财务工作簿 → 从加密凭据库读取账号并自动登录智云取数

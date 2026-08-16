@@ -1,6 +1,6 @@
 # 财务 Skill 接入目录
 
-平台共登记 19 个 Skill，其中 10 个 `published`、1 个 `draft`、8 个 `disabled`。
+平台共登记 19 个 Skill，其中 11 个 `published`、1 个 `draft`、7 个 `disabled`。
 `published` 仍需经过平台用户权限授权后才能选择运行；
 `draft` 已完成目录接入但仍缺少安全执行条件；`disabled` 保留说明和来源，
 修复阻断项前不会出现在普通用户的工具目录中。
@@ -19,6 +19,7 @@
 | `dept-expense-alloc` | 部门费用归集分摊 | Python 桥接 |
 | `order-daily-summary` | 使用九点导出表生成下单统计 | Python 桥接（离线） |
 | `project-detail-to-ledger` | 项目明细追加到财务台账副本 | Python 桥接 |
+| `ar-hexiao-daily` | 智云回款取数、核销日清和工作副本回填 | workflow 工作流 |
 
 ## 已登记但暂未发布
 
@@ -26,7 +27,6 @@
 | --- | --- | --- |
 | `jdy-cashflow-export` | draft | 需要独立凭据保管与受控浏览器会话 |
 | `jdy-cashflow-reconcile` | disabled | 当前缺少会计期间维度，同号凭证跨月会被错误合并 |
-| `ar-hexiao-daily` | disabled | 写入型工作流；内网精确出站已完成，真实取数、受控写入专项回归和管理员批准完成前保持禁用 |
 | `task-clarifier` | disabled | Agent 行为指南，不是独立 CLI |
 | `env-doctor` | disabled | 需要受控系统诊断适配器 |
 | `xlsx` | disabled | 文档型 Agent 基础能力 |
@@ -41,6 +41,8 @@
 - 输入文件复制到本次任务工作区；文件名保留原名称信息，便于日期识别。
 - 旧 CLI 的产物必须写入本次任务输出目录，平台再登记下载链接。
 - 多文件输入可声明 `min_files`；例如进度对比至少需要两份工作簿。
-- 对话式工作流只能调用当前阶段白名单动作；`ar-hexiao-daily` 在确认日期后
-  才能生成日清，在员工检查并二次确认后才能写表。
+- `ar-hexiao-daily` 已恢复发布（1.5.1），只能通过当前阶段白名单动作运行；确认日期后
+  生成日清，变更复核和管理员批准通过后才能写入工作副本。
+- 该 Skill 的真实智云取数仍依赖部署环境中的内网地址、凭据和出站代理配置；本地回归使用合成数据，
+  不代表真实业务数据已执行。
 - RPA Worker 默认不开启，配置完凭据保管与浏览器隔离后才加入 `rpa` 池。

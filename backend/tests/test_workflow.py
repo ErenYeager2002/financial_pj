@@ -811,6 +811,22 @@ def test_workflow_reset_clears_current_state_and_preserves_audit(monkeypatch) ->
         assert blocked.status_code == 409
         assert "正在执行" in blocked.text
 
+        # 这个测试故意留下运行中的动作来验证 reset 的保护条件；
+        # 断言完成后清理它，避免后续审批测试把它误认为待领取动作。
+        with SessionLocal() as db:
+            workflow = db.get(WorkflowSession, workflow_id)
+            assert workflow is not None
+            for action in db.scalars(
+                select(WorkflowAction).where(
+                    WorkflowAction.workflow_id == workflow_id,
+                    WorkflowAction.state == "queued",
+                )
+            ).all():
+                action.state = "cancelled"
+            workflow.state = "failed"
+            workflow.stage = "failed"
+            db.commit()
+
 
 def test_multi_date_batch_runs_children_in_order_and_chains_files(monkeypatch) -> None:
     class FakeModelsResponse:

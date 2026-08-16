@@ -10,11 +10,27 @@ def test_all_published_skills_have_employee_metadata_and_confirmation() -> None:
     registry.refresh()
     assert registry.errors == []
     published = registry.list()
-    assert len(published) == 10
-    assert all(item.manifest.id != "ar-hexiao-daily" for item in published)
+    assert len(published) == 11
+    assert "ar-hexiao-daily" in {item.manifest.id for item in published}
     assert all(item.manifest.ui is not None for item in published)
     assert all(item.manifest.progress_stages for item in published)
     assert all(item.manifest.risk.requires_confirmation for item in published)
+
+
+def test_ar_hexiao_is_published_as_a_confirmed_workflow() -> None:
+    registry.refresh()
+    skill = registry.get("ar-hexiao-daily")
+    assert skill is not None
+    assert skill.manifest.version == "1.5.1"
+    assert skill.manifest.handler.adapter == "workflow"
+    assert skill.manifest.runtime.network_access is True
+    assert skill.manifest.runtime.network_targets == ["https://zhiyun.synthetic.example:443"]
+    assert skill.manifest.risk.requires_confirmation is True
+    assert skill.manifest.risk.requires_change_review is True
+    assert skill.manifest.risk.requires_approval is True
+    assert skill.manifest.file_inputs[0].role == "finance_workbooks"
+    assert skill.manifest.file_inputs[0].multiple is True
+    assert skill.manifest.file_inputs[0].min_files == 2
 
 
 def test_first_manifest_batch_has_expected_employee_metadata() -> None:
