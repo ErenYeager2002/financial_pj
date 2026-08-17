@@ -4105,12 +4105,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--out", default="", help="判定结果 json 路径")
     ap.add_argument("--flow", default="", help="到账流转表副本（只读）；不给则扫 02_我的表副本/")
     ap.add_argument(
+        "--name-map", action="append", default=[],
+        help="名称对照表路径（表头为到账名称/系统客户名称），可重复；默认按表头自动识别",
+    )
+    ap.add_argument(
         "--flow-complete", action="store_true",
         help="声明当天所有渠道的流转表都已给全；只有这时才判 E0（对不到账）",
     )
     ap.add_argument(
         "--hexiao-date", default="",
-        help="声明这批是哪个**核销日期**（她确认过的那天）。给了就跟数据核对，对不上直接退出",
+        help="声明这批是哪个**核销日期**（由任务指令确定）。给了就跟数据核对，对不上直接退出",
     )
     ap.add_argument(
         "--allow-mixed-dates", action="store_true",
@@ -4168,14 +4172,25 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     import flow_ledger as FL
 
+    name_map_paths = [Path(p) for p in args.name_map] if args.name_map else None
     flow = (
-        FL.FlowLedger.from_paths([Path(args.flow)])
+        FL.FlowLedger.from_paths([Path(args.flow)], name_map_paths=name_map_paths)
         if args.flow
-        else FL.FlowLedger.from_workspace(ws)
+        else FL.FlowLedger.from_workspace(ws, name_map_paths=name_map_paths)
     )
     if flow.rows:
         FL.annotate_records(records, flow, complete=args.flow_complete)
         print(f"流转表已接入：{len(flow.rows)} 行，来源 {flow.sources}")
+        if flow.name_map_sources:
+            print(
+                f"名称对照已接入：{len(flow.name_map)} 个有效名称，来源 {flow.name_map_sources}"
+            )
+        if flow.name_map_issues:
+            print(
+                f"WARN: 名称对照表有 {len(flow.name_map_issues)} 个空值/格式问题，"
+                "相关订单不自动猜测",
+                file=sys.stderr,
+            )
     else:
         print(
             "WARN: 未认出到账流转表（02_我的表副本/）→ 本轮不做三键匹配，"
@@ -4199,11 +4214,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     hexiao_date = batch_dates[0] if batch_dates else None
     if requested_date:
         if hexiao_date is not None and requested_date != hexiao_date:
-            # 她确认的是这天、数据却是那天 → 多半取数取错了日子，绝不能闷头往下判
+            # 任务指定的是这天、数据却是那天 → 多半取数取错了日子，绝不能闷头往下判
             print(
-                f"ERROR: 你确认要跑的是 {common.date_cn(requested_date)}，"
+                f"ERROR: 任务指定要跑的是 {common.date_cn(requested_date)}，"
                 f"但 01_智云导出/ 里的数据是 {common.date_cn(hexiao_date)} 的。\n"
-                "  先确认这次到底要跑哪天，再重新取数。",
+                "  按任务指定日期重新取数。",
                 file=sys.stderr,
             )
             return 2

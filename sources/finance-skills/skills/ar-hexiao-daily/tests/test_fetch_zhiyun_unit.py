@@ -126,7 +126,9 @@ def test_no_credentials_in_source():
     # 禁止真实账号/密码痕迹（允许文档里出现变量名 ZHIYUN_PASS）
     assert "sharon" not in text.lower()
     assert "sharon1234" not in text
-    assert "getpass" in text  # 必须支持交互输入
+    assert "getpass" not in text  # 核销任务不在取数中途交互询问
+    assert "input(" not in text
+    assert "自动任务不会在取数过程中弹出账号密码询问" in text
     # 禁止把真实密码字面量赋给环境示例
     assert "PASS='****'" not in text
 
