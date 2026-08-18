@@ -1,0 +1,72 @@
+# This Dockerfile is built with the repository root as its context.
+
+ARG NODE_VERSION=docker.m.daocloud.io/library/node:22-slim
+
+FROM ${NODE_VERSION} AS dependencies
+
+WORKDIR /app
+
+ENV COREPACK_NPM_REGISTRY=https://registry.npmmirror.com
+
+# Build the local Agent Runtime before pnpm packs the file dependency.
+COPY agent-runtime/package.json agent-runtime/pnpm-lock.yaml agent-runtime/tsconfig.json ./agent-runtime/
+COPY agent-runtime/src ./agent-runtime/src
+
+# Install the web dependency graph from its own lockfile. The file dependency
+# resolves to /app/agent-runtime inside this build context.
+COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./web/
+
+RUN corepack enable \
+    && corepack prepare pnpm@10.15.1 --activate \
+    && pnpm config set registry https://registry.npmmirror.com \
+    && cd /app/agent-runtime \
+    && pnpm install --frozen-lockfile --ignore-scripts \
+    && pnpm run build \
+    && cd /app/web \
+    && pnpm install --frozen-lockfile
+
+FROM ${NODE_VERSION} AS builder
+
+WORKDIR /app/web
+
+ENV COREPACK_NPM_REGISTRY=https://registry.npmmirror.com
+
+COPY --from=dependencies /app/web/node_modules ./node_modules
+COPY web .
+
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+
+ARG NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+ARG NEXT_PUBLIC_CLERK_SIGN_IN_URL=/auth/sign-in
+ARG NEXT_PUBLIC_CLERK_SIGN_UP_URL=/auth/sign-up
+ARG NEXT_PUBLIC_SENTRY_DISABLED=true
+ARG NEXT_PUBLIC_APP_URL=http://localhost:3000
+
+ENV BUILD_STANDALONE=true
+
+RUN corepack enable \
+    && corepack prepare pnpm@10.15.1 --activate \
+    && pnpm build
+
+FROM ${NODE_VERSION} AS runner
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV PORT=3000
+ENV HOSTNAME="0.0.0.0"
+ENV NEXT_TELEMETRY_DISABLED=1
+
+COPY --from=builder --chown=node:node /app/web/public ./public
+
+RUN mkdir .next && chown node:node .next
+
+COPY --from=builder --chown=node:node /app/web/.next/standalone ./
+COPY --from=builder --chown=node:node /app/web/.next/static ./.next/static
+
+USER node
+
+EXPOSE 3000
+
+CMD ["node", "server.js"]

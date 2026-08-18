@@ -92,20 +92,22 @@ def test_legacy_database_without_auth_tables_is_upgraded(tmp_path: Path) -> None
 
     # 2) 在旧库写入一条历史文件记录。
     seed = (
-        "from app.database import SessionLocal, engine\n"
-        "from sqlalchemy import inspect\n"
-        "from app.models import FileRecord\n"
+        "from app.database import engine\n"
+        "from sqlalchemy import inspect, text\n"
         "with engine.connect() as c:\n"
         "    tables = set(inspect(c).get_table_names())\n"
         "    assert 'users' not in tables and 'user_sessions' not in tables\n"
-        "with SessionLocal() as db:\n"
-        "    db.add(FileRecord(\n"
-        "        id='legacy-file-0001', owner_id='demo-user', department_id='finance',\n"
-        "        kind='input', original_name='legacy.xlsx', stored_path='C:/legacy.xlsx',\n"
-        "        content_type='application/octet-stream', size_bytes=42,\n"
-        "        sha256='0'*64,\n"
-        "    ))\n"
-        "    db.commit()\n"
+        "with engine.begin() as c:\n"
+        "    c.execute(text(\n"
+        "        \"INSERT INTO files (id, owner_id, department_id, kind, original_name, \"\n"
+        "        \"stored_path, content_type, size_bytes, sha256, created_at) \"\n"
+        "        \"VALUES (:id, :owner_id, :department_id, :kind, :original_name, \"\n"
+        "        \":stored_path, :content_type, :size_bytes, :sha256, CURRENT_TIMESTAMP)\"), {\n"
+        "        'id': 'legacy-file-0001', 'owner_id': 'demo-user', 'department_id': 'finance',\n"
+        "        'kind': 'input', 'original_name': 'legacy.xlsx',\n"
+        "        'stored_path': 'C:/legacy.xlsx',\n"
+        "        'content_type': 'application/octet-stream', 'size_bytes': 42, 'sha256': '0'*64,\n"
+        "    })\n"
     )
     seeded = _run_python(seed, db_url=db_url, data_dir=data_dir)
     assert seeded.returncode == 0, seeded.stderr

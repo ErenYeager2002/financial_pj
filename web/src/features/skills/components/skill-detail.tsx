@@ -4,6 +4,7 @@ import { buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { PlatformFile, SkillDetail, TaskDraft } from '@/features/platform-api/types';
 import { SkillRunSetup } from '@/features/run-setup/components/skill-run-setup';
+import { detailEntryForSkill } from '@/features/skills/detail-entry';
 import { cn } from '@/lib/utils';
 
 function inputProperties(skill: SkillDetail): Array<[string, Record<string, unknown>]> {
@@ -30,6 +31,7 @@ interface SkillDetailViewProps {
 }
 
 export function SkillDetailView({ skill, draft, draftFiles }: SkillDetailViewProps) {
+  const detailEntry = detailEntryForSkill(skill);
   const properties = inputProperties(skill);
   const required = Array.isArray(skill.input_schema?.required)
     ? new Set(
@@ -135,7 +137,26 @@ export function SkillDetailView({ skill, draft, draftFiles }: SkillDetailViewPro
         </Card>
       </div>
 
-      <SkillRunSetup skill={skill} draft={draft} draftFiles={draftFiles} />
+      {detailEntry === 'workflow' ? (
+        <Card>
+          <CardHeader>
+          <CardTitle>进入后台任务</CardTitle>
+          </CardHeader>
+          <CardContent className='space-y-3'>
+            <p className='text-sm text-muted-foreground'>
+              这个 Skill 需要由后台 Worker 处理日期、文件和写入确认，不能从标准任务向导启动。
+            </p>
+            <Link
+              href={`/dashboard/workflows?skill=${encodeURIComponent(skill.id)}`}
+              className={cn(buttonVariants())}
+            >
+              创建后台任务
+            </Link>
+          </CardContent>
+        </Card>
+      ) : (
+        <SkillRunSetup skill={skill} draft={draft} draftFiles={draftFiles} />
+      )}
 
       <div className='flex items-center justify-between rounded-lg border bg-muted/30 p-4'>
         <p className='text-sm text-muted-foreground'>任务创建后可在本页查看任务编号和队列状态。</p>

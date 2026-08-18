@@ -245,6 +245,9 @@ class SubprocessAdapter:
                 ctx.run.id,
                 ctx.owner,
                 display_name=item.get("name"),
+                skill_id=ctx.run.skill_id,
+                skill_name=ctx.run.skill_name,
+                skill_version=ctx.run.skill_version,
             )
             artifacts.append(
                 {

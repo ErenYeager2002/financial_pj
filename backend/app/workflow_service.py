@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
@@ -15,12 +16,8 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from .approval_service import (
-    ApprovalGateError,
-    assert_workflow_action_approval,
     load_workflow_manifest,
-    request_workflow_approval,
     revoke_workflow_approvals,
-    workflow_requires_approval,
 )
 from .auth import UserContext
 from .authorization import assert_skill_permission
@@ -58,17 +55,39 @@ from .service_credential_service import (
 )
 from .settings import settings
 from .storage import safe_filename, sha256_file
-from .workflow_orchestrator import WorkflowDecision, decide_workflow_turn
+from .task_errors import TaskErrorDetail, build_task_error
+from .workflow_constants import (
+    BACKGROUND_MODEL_CONNECTION_ID,
+    BACKGROUND_MODEL_NAME,
+    BACKGROUND_MODEL_PROVIDER,
+    is_background_model_connection,
+)
+from .workflow_execution_policy import (
+    assert_workflow_agent_action_enabled,
+    assert_workflow_execution_enabled,
+    assert_workflow_skill_execution_enabled,
+)
+from .workflow_orchestrator import (
+    WorkflowDecision,
+    decide_workflow_turn,
+    validate_workflow_agent_request,
+)
 
 WEEKDAYS = "一二三四五六日"
 CONFIRM_STAGES = {"awaiting_date_confirmation", "awaiting_apply_confirmation"}
 BUSY_STAGES = {"preparing", "applying"}
+ANNUAL_LEDGER_ROLE = "profit_loss_ledgers"
+RECEIPT_FLOW_ROLE = "receipt_flow_table"
+LEGACY_FILE_ROLE = "finance_workbooks"
 FILE_ROLES = {
-    "finance_workbooks": "02_我的表副本",
+    ANNUAL_LEDGER_ROLE: "02_我的表副本",
+    RECEIPT_FLOW_ROLE: "02_我的表副本",
+}
+FILE_ROLE_LABELS = {
+    ANNUAL_LEDGER_ROLE: "年度盈亏核算表",
+    RECEIPT_FLOW_ROLE: "到账流转表",
 }
 CONFIRM_REPLIES = {"确认", "可以", "可以写", "按这个写", "没问题写吧", "写吧", "对", "是"}
-
-
 class PostWriteVerificationError(RuntimeError):
     """The deterministic write completed, but its final baseline could not be verified."""
 
@@ -82,6 +101,122 @@ def _load(value: str, fallback: Any) -> Any:
         return json.loads(value)
     except (TypeError, json.JSONDecodeError):
         return fallback
+
+
+def _set_progress_step(
+    db: Session,
+    workflow: WorkflowSession,
+    key: str,
+    label: str,
+    progress: int | None = None,
+) -> None:
+    # A few low-level synthetic tests use a minimal workflow namespace; the
+    # persisted WorkflowSession always has context_json and commit().
+    if not hasattr(workflow, "context_json") or not hasattr(db, "commit"):
+        return
+    context = _load(workflow.context_json, {})
+    context["current_step"] = key
+    context["current_step_label"] = label
+    context.pop("step_error", None)
+    context.pop("error_detail", None)
+    workflow.context_json = _json(context)
+    if progress is not None:
+        workflow.progress = progress
+    workflow.progress_message = label
+    db.commit()
+
+
+def _entry_file_id(value: object) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict) and isinstance(value.get("file_id"), str):
+        return value["file_id"]
+    return ""
+
+
+def _entry_name(value: object) -> str:
+    if isinstance(value, dict) and isinstance(value.get("name"), str):
+        return value["name"]
+    return ""
+
+
+def _file_role_for_name(name: str, *, strict: bool = False) -> str:
+    lowered = name.lower()
+    if any(marker in lowered for marker in ("到账", "流转", "receipt", "flow")):
+        return RECEIPT_FLOW_ROLE
+    if any(marker in lowered for marker in ("盈亏", "利润", "profit", "ledger")):
+        return ANNUAL_LEDGER_ROLE
+    if strict:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"无法从旧文件用途识别表类型：{name or '未命名文件'}；"
+                "请按新的两类用途重新绑定。"
+            ),
+        )
+    return ANNUAL_LEDGER_ROLE
+
+
+def _canonicalize_file_bindings(bindings: object) -> dict[str, list[object]]:
+    """Map legacy combined bindings to the two stable workflow roles."""
+    if not isinstance(bindings, dict):
+        return {}
+    canonical: dict[str, list[object]] = {}
+    for raw_role, raw_entries in bindings.items():
+        if not isinstance(raw_role, str):
+            continue
+        entries = raw_entries if isinstance(raw_entries, list) else [raw_entries]
+        if raw_role == LEGACY_FILE_ROLE:
+            for entry in entries:
+                target = _file_role_for_name(_entry_name(entry))
+                canonical.setdefault(target, []).append(entry)
+        elif raw_role in FILE_ROLES:
+            canonical.setdefault(raw_role, []).extend(entries)
+        else:
+            canonical.setdefault(raw_role, []).extend(entries)
+    return canonical
+
+
+def _binding_ids(bindings: object) -> dict[str, list[str]]:
+    ids: dict[str, list[str]] = {}
+    for role, entries in _canonicalize_file_bindings(bindings).items():
+        for entry in entries:
+            file_id = _entry_file_id(entry)
+            if file_id and file_id not in ids.setdefault(role, []):
+                ids[role].append(file_id)
+    return ids
+
+
+def _merge_file_bindings(
+    existing: dict[str, list[dict[str, Any]]],
+    incoming: dict[str, list[dict[str, Any]]],
+) -> dict[str, list[dict[str, Any]]]:
+    """Append annual ledgers and replace the single flow table when supplied."""
+    merged = {
+        role: list(entries)
+        for role, entries in _canonicalize_file_bindings(existing).items()
+        if role in FILE_ROLES
+    }
+    for role, entries in incoming.items():
+        if role == ANNUAL_LEDGER_ROLE:
+            seen = {_entry_file_id(item) for item in merged.get(role, [])}
+            merged.setdefault(role, [])
+            for entry in entries:
+                if _entry_file_id(entry) not in seen:
+                    merged[role].append(entry)
+                    seen.add(_entry_file_id(entry))
+        elif role == RECEIPT_FLOW_ROLE:
+            merged[role] = list(entries)
+    return merged
+
+
+def _missing_required_files(skill: RegisteredSkill, files: object) -> list[str]:
+    canonical = _canonicalize_file_bindings(files)
+    return [
+        spec.role
+        for spec in skill.manifest.file_inputs
+        if spec.required and len(canonical.get(spec.role, [])) < spec.min_files
+    ]
 
 
 def _assert_visible(workflow: WorkflowSession, user: UserContext) -> None:
@@ -139,6 +274,14 @@ def serialize_workflow(workflow: WorkflowSession) -> WorkflowRead:
         progress=workflow.progress,
         progress_message=workflow.progress_message,
         error_message=workflow.error_message,
+        current_step=str(context.get("current_step", "")),
+        current_step_label=str(context.get("current_step_label", "")),
+        step_error=str(context.get("step_error", "")),
+        step_error_detail=(
+            context.get("error_detail", {})
+            if isinstance(context.get("error_detail", {}), dict)
+            else {}
+        ),
         files=_load(workflow.files_json, {}),
         artifacts=_load(workflow.artifacts_json, []),
         messages=[
@@ -232,6 +375,79 @@ def _snapshot_skill(skill: RegisteredSkill, owner_id: str, workflow_id: str) -> 
     return destination
 
 
+def _reusable_file_bindings(
+    db: Session,
+    skill: RegisteredSkill,
+    user: UserContext,
+) -> dict[str, list[dict[str, Any]]]:
+    """Find the newest complete input set without uploading files again."""
+    sessions = db.scalars(
+        select(WorkflowSession)
+        .where(
+            WorkflowSession.owner_id == user.user_id,
+            WorkflowSession.department_id == user.department_id,
+            WorkflowSession.skill_id == skill.manifest.id,
+        )
+        .order_by(WorkflowSession.updated_at.desc())
+    ).all()
+    merged_ids: dict[str, list[str]] = {}
+    for previous in sessions:
+        saved_ids = _binding_ids(_load(previous.files_json, {}))
+        if not saved_ids:
+            continue
+        try:
+            saved = _validate_file_bindings(db, skill, saved_ids, user)
+        except HTTPException:
+            # A deleted or old output record must not prevent a newer valid set
+            # from being reused.
+            continue
+        for entry in saved.get(ANNUAL_LEDGER_ROLE, []):
+            file_id = _entry_file_id(entry)
+            if file_id and file_id not in merged_ids.setdefault(ANNUAL_LEDGER_ROLE, []):
+                merged_ids[ANNUAL_LEDGER_ROLE].append(file_id)
+        if RECEIPT_FLOW_ROLE not in merged_ids and saved.get(RECEIPT_FLOW_ROLE):
+            merged_ids[RECEIPT_FLOW_ROLE] = [
+                _entry_file_id(saved[RECEIPT_FLOW_ROLE][0])
+            ]
+        try:
+            candidate = _validate_file_bindings(db, skill, merged_ids, user)
+        except HTTPException:
+            continue
+        if not _missing_required_files(skill, candidate):
+            return candidate
+    return {}
+
+
+def _effective_file_bindings(
+    db: Session,
+    skill: RegisteredSkill,
+    requested: dict[str, list[str]],
+    user: UserContext,
+) -> dict[str, list[dict[str, Any]]]:
+    reusable = _reusable_file_bindings(db, skill, user)
+    if not requested:
+        return reusable
+    incoming = _validate_file_bindings(db, skill, requested, user)
+    return _merge_file_bindings(reusable, incoming)
+
+
+def _workflow_model_snapshot(
+    db: Session,
+    user: UserContext,
+    connection_id: str | None,
+    requested_model: str | None,
+) -> tuple[str, str, str]:
+    """Return an audit snapshot without making background Skill runs depend on an LLM."""
+    llm = resolve_runtime_config(db, user, connection_id, requested_model)
+    if llm:
+        return llm.connection_id, llm.provider, llm.model
+    return (
+        BACKGROUND_MODEL_CONNECTION_ID,
+        BACKGROUND_MODEL_PROVIDER,
+        BACKGROUND_MODEL_NAME,
+    )
+
+
 def create_workflow(
     db: Session,
     request: WorkflowCreate,
@@ -240,10 +456,13 @@ def create_workflow(
     skill = registry.get(request.skill_id)
     if not skill or skill.manifest.handler.adapter != "workflow":
         raise HTTPException(status_code=404, detail="对话式 Skill 不存在或尚未发布。")
+    assert_workflow_skill_execution_enabled(request.skill_id)
     assert_skill_permission(db, user, request.skill_id)
     llm = resolve_runtime_config(db, user, request.model_connection_id, request.model)
     if not llm:
         raise HTTPException(status_code=422, detail="对话式 Skill 必须选择一个大模型连接。")
+    reusable_files = _reusable_file_bindings(db, skill, user)
+    reusable_ready = not _missing_required_files(skill, reusable_files)
     workflow_id = str(uuid.uuid4())
     _snapshot_skill(skill, user.user_id, workflow_id)
     workflow = WorkflowSession(
@@ -262,7 +481,19 @@ def create_workflow(
         model_name=llm.model,
         state="active",
         stage="awaiting_date",
-        progress_message="等待确认核销日期",
+        files_json=_json(reusable_files),
+        context_json=_json(
+            {
+                "reused_files": reusable_ready,
+                "requires_confirmation": skill.manifest.risk.requires_confirmation,
+                "requires_approval": skill.manifest.risk.requires_approval,
+            }
+        ),
+        progress_message=(
+            "等待确认核销日期（已复用上次保存的财务表）"
+            if reusable_ready
+            else "等待确认核销日期"
+        ),
     )
     db.add(workflow)
     _message(
@@ -291,15 +522,19 @@ def start_workflow(
     skill = registry.get(request.skill_id)
     if not skill or skill.manifest.handler.adapter != "workflow":
         raise HTTPException(status_code=404, detail="对话式 Skill 不存在或尚未发布。")
+    assert_workflow_skill_execution_enabled(request.skill_id)
     assert_skill_permission(db, user, request.skill_id)
     if request.files:
         assert_skill_permission(db, user, request.skill_id, "can_upload")
     parsed_date = _parse_date(request.reconciliation_date)
     if not parsed_date:
         raise HTTPException(status_code=422, detail="核销日期无效，不能晚于今天。")
-    llm = resolve_runtime_config(db, user, request.model_connection_id, request.model)
-    if not llm:
-        raise HTTPException(status_code=422, detail="开始核销前必须选择一个大模型连接。")
+    model_connection_id, model_provider, model_name = _workflow_model_snapshot(
+        db,
+        user,
+        request.model_connection_id,
+        request.model,
+    )
     if not has_service_credential(db, user.user_id, user.department_id, "zhiyun"):
         raise HTTPException(status_code=422, detail="尚未配置智云登录凭据，请先安全保存账号密码。")
 
@@ -316,9 +551,9 @@ def start_workflow(
         skill_hash=skill.skill_hash,
         skill_commit=skill.commit_sha,
         concurrency_limit=skill.manifest.runtime.concurrency_limit,
-        model_connection_id=llm.connection_id,
-        model_provider=llm.provider,
-        model_name=llm.model,
+        model_connection_id=model_connection_id,
+        model_provider=model_provider,
+        model_name=model_name,
         state="active",
         stage="awaiting_files",
         reconciliation_date=parsed_date.isoformat(),
@@ -327,15 +562,16 @@ def start_workflow(
                 "started_from_form": True,
                 "requires_confirmation": skill.manifest.risk.requires_confirmation,
                 "requires_approval": skill.manifest.risk.requires_approval,
+                "current_step": "queued",
+                "current_step_label": "已提交后台任务队列",
             }
         ),
         progress_message="正在核验前置条件",
     )
     db.add(workflow)
     db.flush()
-    # Reuse the same role, extension, ownership and minimum-count validation
-    # used by the legacy workflow form.
-    update_workflow_files(db, workflow, request.files, user)
+    normalized_files = _effective_file_bindings(db, skill, request.files, user)
+    workflow.files_json = _json(normalized_files)
     ready, missing = _has_required_files(workflow)
     if not ready:
         raise HTTPException(
@@ -345,16 +581,23 @@ def start_workflow(
     workflow.state = "running"
     workflow.stage = "preparing"
     workflow.progress = 5
-    workflow.progress_message = (
-        f"前置条件已核验，开始生成 {_date_label(workflow.reconciliation_date)} 的核销日清"
-    )
+    workflow.progress_message = "已提交后台 Worker，等待开始"
     workflow.error_message = ""
+    context = _load(workflow.context_json, {})
+    context.update(
+        {
+            "current_step": "queued",
+            "current_step_label": "已提交后台 Worker，等待开始",
+            "step_error": "",
+        }
+    )
+    workflow.context_json = _json(context)
     _queue_action(db, workflow, "prepare_worklist")
     _message(
         db,
         workflow,
         "assistant",
-        f"前置条件已核验，已使用 {workflow.model_name} 开始执行"
+        f"前置条件已核验，已提交后台 Worker 执行"
         f" {_date_label(workflow.reconciliation_date)} 的核销日清。",
         {"kind": "direct_start", "reconciliation_date": workflow.reconciliation_date},
     )
@@ -372,11 +615,12 @@ def start_workflow_batch(
     skill = registry.get(request.skill_id)
     if not skill or skill.manifest.handler.adapter != "workflow":
         raise HTTPException(status_code=404, detail="对话式 Skill 不存在或尚未发布。")
+    assert_workflow_skill_execution_enabled(request.skill_id)
     assert_skill_permission(db, user, request.skill_id)
     if request.files:
         assert_skill_permission(db, user, request.skill_id, "can_upload")
-    if len(request.reconciliation_dates) > 7:
-        raise HTTPException(status_code=422, detail="单个批次最多选择 7 个核销日期。")
+    if len(request.reconciliation_dates) > 31:
+        raise HTTPException(status_code=422, detail="单个批次最多选择 31 个核销日期。")
 
     parsed_dates: list[str] = []
     for value in request.reconciliation_dates:
@@ -388,17 +632,19 @@ def start_workflow_batch(
     if not parsed_dates:
         raise HTTPException(status_code=422, detail="请至少选择一个核销日期。")
 
-    llm = resolve_runtime_config(db, user, request.model_connection_id, request.model)
-    if not llm:
-        raise HTTPException(status_code=422, detail="开始核销前必须选择一个大模型连接。")
+    model_connection_id, model_provider, model_name = _workflow_model_snapshot(
+        db,
+        user,
+        request.model_connection_id,
+        request.model,
+    )
     if not has_service_credential(db, user.user_id, user.department_id, "zhiyun"):
         raise HTTPException(status_code=422, detail="尚未配置智云登录凭据，请先安全保存账号密码。")
 
-    normalized_files = _validate_file_bindings(db, skill, request.files, user)
+    normalized_files = _effective_file_bindings(db, skill, request.files, user)
     missing = [
-        spec.name
-        for spec in skill.manifest.file_inputs
-        if spec.required and len(normalized_files.get(spec.role, [])) < spec.min_files
+        FILE_ROLE_LABELS.get(role, role)
+        for role in _missing_required_files(skill, normalized_files)
     ]
     if missing:
         raise HTTPException(status_code=422, detail=f"前置文件未上传完整：{'、'.join(missing)}。")
@@ -412,9 +658,9 @@ def start_workflow_batch(
         skill_id=skill.manifest.id,
         skill_name=skill.manifest.name,
         skill_version=skill.manifest.version,
-        model_connection_id=llm.connection_id,
-        model_provider=llm.provider,
-        model_name=llm.model,
+        model_connection_id=model_connection_id,
+        model_provider=model_provider,
+        model_name=model_name,
         reconciliation_dates_json=_json(parsed_dates),
         files_json=_json(normalized_files),
         state="running",
@@ -435,6 +681,10 @@ def start_workflow_batch(
                 "batch_id": batch_id,
                 "requires_confirmation": skill.manifest.risk.requires_confirmation,
                 "requires_approval": skill.manifest.risk.requires_approval,
+                "current_step": "queued" if not is_first else "preparing",
+                "current_step_label": (
+                    "等待前一天完成后进入后台任务" if not is_first else "已提交后台任务队列"
+                ),
             }
             workflow = WorkflowSession(
                 id=workflow_id,
@@ -447,9 +697,9 @@ def start_workflow_batch(
                 skill_hash=skill.skill_hash,
                 skill_commit=skill.commit_sha,
                 concurrency_limit=skill.manifest.runtime.concurrency_limit,
-                model_connection_id=llm.connection_id,
-                model_provider=llm.provider,
-                model_name=llm.model,
+                model_connection_id=model_connection_id,
+                model_provider=model_provider,
+                model_name=model_name,
                 state="running" if is_first else "queued",
                 stage="preparing" if is_first else "queued",
                 reconciliation_date=reconciliation_date,
@@ -481,6 +731,7 @@ def start_workflow_batch(
             )
             previous_workflow_id = workflow_id
         db.commit()
+
     except Exception:
         db.rollback()
         for root in created_roots:
@@ -488,6 +739,26 @@ def start_workflow_batch(
         raise
     db.refresh(batch)
     return batch
+
+
+def _workflow_error_detail(workflow: WorkflowSession, reason: object) -> TaskErrorDetail:
+    context = _load(workflow.context_json, {})
+    return build_task_error(
+        employee=workflow.owner_name or workflow.owner_id,
+        skill_id=workflow.skill_id,
+        skill_name=workflow.skill_name,
+        step_key=str(context.get("current_step", "unknown")),
+        step=str(context.get("current_step_label", "当前步骤")),
+        reason=reason,
+    )
+
+
+def _store_workflow_error(workflow: WorkflowSession, detail: TaskErrorDetail) -> None:
+    context = _load(workflow.context_json, {})
+    context["step_error"] = detail.message()
+    context["error_detail"] = detail.as_dict()
+    workflow.context_json = _json(context)
+    workflow.error_message = detail.message()
 
 
 def list_workflows(db: Session, user: UserContext, limit: int = 50) -> list[WorkflowSession]:
@@ -529,11 +800,26 @@ def _validate_file_bindings(
     user: UserContext,
 ) -> dict[str, list[dict[str, Any]]]:
     specs = {item.role: item for item in skill.manifest.file_inputs}
-    unknown = set(bindings) - set(specs)
+    unknown = set(bindings) - set(specs) - {LEGACY_FILE_ROLE}
+    if unknown:
+        raise HTTPException(status_code=422, detail=f"未知文件角色：{sorted(unknown)}")
+    role_ids: dict[str, list[str]] = {}
+    for role, ids in bindings.items():
+        if role != LEGACY_FILE_ROLE:
+            role_ids.setdefault(role, []).extend(ids)
+            continue
+        for file_id in ids:
+            record = db.get(FileRecord, file_id)
+            if not record:
+                raise HTTPException(status_code=422, detail=f"输入文件不存在：{file_id}")
+            role = _file_role_for_name(record.original_name, strict=True)
+            role_ids.setdefault(role, []).append(file_id)
+
+    unknown = set(role_ids) - set(specs)
     if unknown:
         raise HTTPException(status_code=422, detail=f"未知文件角色：{sorted(unknown)}")
     normalized: dict[str, list[dict[str, Any]]] = {}
-    for role, ids in bindings.items():
+    for role, ids in role_ids.items():
         spec = specs[role]
         if not spec.multiple and len(ids) > 1:
             raise HTTPException(status_code=422, detail=f"{spec.name}只能上传一个文件。")
@@ -579,8 +865,14 @@ def update_workflow_files(
     skill = registry.get(workflow.skill_id)
     if not skill:
         raise HTTPException(status_code=409, detail="Skill 当前不可用。")
-    normalized = _load(workflow.files_json, {})
-    normalized.update(_validate_file_bindings(db, skill, bindings, user))
+    current_ids = _binding_ids(_load(workflow.files_json, {}))
+    current = (
+        _validate_file_bindings(db, skill, current_ids, user)
+        if current_ids
+        else {}
+    )
+    incoming = _validate_file_bindings(db, skill, bindings, user)
+    normalized = _merge_file_bindings(current, incoming)
     workflow.files_json = _json(normalized)
     workflow.updated_at = datetime.now(UTC)
     db.commit()
@@ -641,15 +933,11 @@ def _date_label(value: str) -> str:
 
 
 def _has_required_files(workflow: WorkflowSession) -> tuple[bool, list[str]]:
-    files = _load(workflow.files_json, {})
+    files = _canonicalize_file_bindings(_load(getattr(workflow, "files_json", "{}"), {}))
     skill = registry.get(workflow.skill_id)
     if not skill:
         return False, list(FILE_ROLES)
-    missing = [
-        spec.role
-        for spec in skill.manifest.file_inputs
-        if spec.required and len(files.get(spec.role, [])) < spec.min_files
-    ]
+    missing = _missing_required_files(skill, files)
     return not missing, missing
 
 
@@ -681,7 +969,7 @@ def _new_action(
         input_json=_json(
             {
                 "reconciliation_date": workflow.reconciliation_date,
-                "files": _load(workflow.files_json, {}),
+                "files": _canonicalize_file_bindings(_load(workflow.files_json, {})),
                 "context": _load(workflow.context_json, {}),
             }
         ),
@@ -698,11 +986,12 @@ def _status_reply(workflow: WorkflowSession) -> str:
     labels = {
         "awaiting_date": "请先告诉我核销日期。",
         "awaiting_files": (
-            "请安全保存智云账号，并上传盈亏表和到账流转表副本，"
-            "传好后回复“上传好了”。智云核销数据由平台自动获取。"
+            "首次使用请安全保存智云账号，并上传年度盈亏核算表和到账流转表。"
+            "后续任务会复用已保存的两类表；需要更换或增加年度表时再上传，完成后回复“上传好了”。"
+            "智云核销数据由平台自动获取。"
         ),
         "awaiting_apply_confirmation": "《核销日清》已生成；请打开检查，确认后回复“确认”。",
-        "waiting_approval": "写入确认已记录，正在等待另一名管理员审批。",
+        "waiting_approval": "已收到写入确认，正在继续执行（旧任务状态已兼容处理）。",
         "applying": "正在执行确认后的写入和回读校验，请不要修改相关表格。",
         "completed": "本次核销已完成，结果文件可以下载。",
         "failed": "上一步没有完成。请根据错误提示补齐材料后回复“重出日清”。",
@@ -775,13 +1064,23 @@ def _apply_decision(
             return
         workflow.stage = "awaiting_files"
         workflow.state = "active"
-        workflow.progress_message = "等待智云凭据和财务工作簿"
+        workflow.progress_message = "等待智云凭据和两类财务表"
+        ready, _ = _has_required_files(workflow)
+        if ready:
+            message = (
+                "日期已确认。已复用上次保存的年度盈亏核算表和到账流转表，不需要再次上传；"
+                "如需更换到账流转表或增加年度盈亏表，请在下方上传，准备好后回复“上传好了”。"
+            )
+        else:
+            message = (
+                "日期已确认。请在右侧安全保存智云账号，并上传年度盈亏核算表和到账流转表；"
+                "准备好后回复“上传好了”。"
+            )
         _message(
             db,
             workflow,
             "assistant",
-            "日期已确认。请在右侧安全保存智云账号，并上传盈亏表和到账流转表副本。"
-            "智云回款、核销和订单数据会自动获取；准备好后回复“上传好了”。",
+            message,
             source,
         )
         return
@@ -791,12 +1090,13 @@ def _apply_decision(
             return
         ready, missing = _has_required_files(workflow)
         if not ready:
-            labels = {"finance_workbooks": "盈亏/流转表副本"}
             _message(
                 db,
                 workflow,
                 "assistant",
-                "还缺：" + "、".join(labels[item] for item in missing) + "。上传后再说“上传好了”。",
+                "还缺："
+                + "、".join(FILE_ROLE_LABELS.get(item, item) for item in missing)
+                + "。上传后再说“上传好了”。",
                 source,
             )
             return
@@ -832,12 +1132,14 @@ def _apply_decision(
         )
         return
     if action == "confirm_apply":
-        if workflow.stage != "awaiting_apply_confirmation":
+        if workflow.stage not in {"awaiting_apply_confirmation", "waiting_approval"}:
             _message(db, workflow, "assistant", _status_reply(workflow), source)
             return
-        if workflow_requires_approval(workflow):
-            request_workflow_approval(db, workflow, actor)
-            return
+        # Older tasks may still be persisted in waiting_approval from the
+        # previous release.  Treat that state as a compatibility alias and
+        # invalidate its historical approval record before queuing the write.
+        if workflow.stage == "waiting_approval":
+            revoke_workflow_approvals(db, workflow, actor, "平台已取消管理员审批流程。")
         _queue_action(db, workflow, "apply_confirmed")
         workflow.stage = "applying"
         workflow.state = "running"
@@ -909,12 +1211,68 @@ def _apply_decision(
     _message(db, workflow, "assistant", _status_reply(workflow), source)
 
 
+@dataclass(frozen=True)
+class WorkflowAgentActionResult:
+    action: str
+    await_confirmation: bool
+    confirmation_kind: str
+    message: str
+
+
+def apply_workflow_agent_action(
+    db: Session,
+    workflow: WorkflowSession,
+    action: str,
+    arguments: dict[str, Any],
+    actor: UserContext,
+) -> WorkflowAgentActionResult:
+    """Apply one Pi-requested workflow action without exposing execution internals."""
+    assert_workflow_execution_enabled(workflow)
+    assert_workflow_agent_action_enabled(workflow.skill_id, action)
+    decision = validate_workflow_agent_request(workflow.stage, action, arguments)
+    if decision.action == "request_user_confirmation":
+        kind = str(decision.arguments["kind"])
+        default_message = (
+            f"当前核销日期是 {_date_label(workflow.reconciliation_date)}，请确认日期。"
+            if kind == "date"
+            else "《核销日清》已生成，请检查预览后确认是否继续。"
+        )
+        message = str(decision.arguments.get("message") or default_message)
+        _message(
+            db,
+            workflow,
+            "assistant",
+            message,
+            {
+                "kind": "agent_confirmation_request",
+                "await_confirmation": True,
+                "confirmation_kind": kind,
+            },
+        )
+    else:
+        _apply_decision(db, workflow, decision, actor)
+
+    db.commit()
+    return WorkflowAgentActionResult(
+        action=action,
+        await_confirmation=decision.action == "request_user_confirmation"
+        or action == "set_reconciliation_date",
+        confirmation_kind=(
+            str(decision.arguments.get("kind", "date"))
+            if action == "set_reconciliation_date"
+            else str(decision.arguments.get("kind", ""))
+        ),
+        message=_status_reply(workflow),
+    )
+
+
 def send_workflow_message(
     db: Session,
     workflow: WorkflowSession,
     content: str,
     user: UserContext,
 ) -> WorkflowSession:
+    assert_workflow_execution_enabled(workflow)
     _message(db, workflow, "user", content)
     db.flush()
     recent = list(
@@ -930,11 +1288,15 @@ def send_workflow_message(
         for item in reversed(recent)
         if item.role in {"user", "assistant"}
     ]
-    llm = resolve_runtime_config(
-        db,
-        user,
-        workflow.model_connection_id,
-        workflow.model_name,
+    llm = (
+        None
+        if is_background_model_connection(workflow.model_connection_id)
+        else resolve_runtime_config(
+            db,
+            user,
+            workflow.model_connection_id,
+            workflow.model_name,
+        )
     )
     decision = decide_workflow_turn(
         llm,
@@ -972,7 +1334,12 @@ def claim_next_workflow_action(
     candidates = list(
         db.scalars(
             select(WorkflowAction)
-            .where(WorkflowAction.state == "queued")
+            .join(WorkflowSession, WorkflowSession.id == WorkflowAction.workflow_id)
+            .where(
+                WorkflowAction.state == "queued",
+                WorkflowSession.state.in_(("active", "running")),
+                WorkflowSession.stage.in_(("preparing", "applying")),
+            )
             .order_by(WorkflowAction.queued_at.asc())
             .limit(100)
         ).all()
@@ -984,26 +1351,6 @@ def claim_next_workflow_action(
             action.state = "failed"
             action.error_message = "对话任务不存在。"
             action.finished_at = now
-            continue
-        try:
-            assert_workflow_action_approval(db, action, workflow)
-        except (ApprovalGateError, HTTPException) as exc:
-            detail = str(exc.detail) if isinstance(exc, HTTPException) else str(exc)
-            action.state = "failed"
-            action.error_message = detail[:500]
-            action.finished_at = now
-            workflow.stage = "awaiting_apply_confirmation"
-            workflow.state = "waiting_confirmation"
-            workflow.error_message = action.error_message
-            workflow.progress_message = "审批无效，需要重新确认"
-            db.add(
-                WorkflowMessage(
-                    workflow_id=workflow.id,
-                    role="assistant",
-                    content=f"写入没有执行：{action.error_message} 请重新检查预览并确认。",
-                    data_json=_json({"kind": "approval_gate_blocked"}),
-                )
-            )
             continue
         if active_workflow_count(db, workflow.skill_id, now) >= max(1, workflow.concurrency_limit):
             continue
@@ -1024,16 +1371,29 @@ def _copy_inputs(
     action: WorkflowAction,
     workflow: WorkflowSession,
     business: Path,
-) -> None:
+) -> dict[str, list[Path]]:
     payload = _load(action.input_json, {})
+    copied: dict[str, list[Path]] = {}
+    files = _canonicalize_file_bindings(payload.get("files", {}))
     for role, folder_name in FILE_ROLES.items():
         target_dir = business / folder_name
         target_dir.mkdir(parents=True, exist_ok=True)
-        for item in payload.get("files", {}).get(role, []):
-            record = db.get(FileRecord, item["file_id"])
+        for item in files.get(role, []):
+            file_id = _entry_file_id(item)
+            record = db.get(FileRecord, file_id)
             if not record:
-                raise RuntimeError(f"输入记录不存在：{item['file_id']}")
-            if record.owner_id != workflow.owner_id or record.kind != "input":
+                raise RuntimeError(f"输入记录不存在：{file_id}")
+            batch_output = isinstance(item, dict) and bool(item.get("batch_output"))
+            output_allowed = (
+                record.kind == "output"
+                and batch_output
+                and Path(record.stored_path).resolve().is_relative_to(
+                    settings.workflow_dir.resolve()
+                )
+            )
+            if record.owner_id != workflow.owner_id or (
+                record.kind != "input" and not output_allowed
+            ):
                 raise RuntimeError(f"输入文件所有者校验失败：{record.id}")
             source = Path(record.stored_path).resolve()
             if not source.is_file() or sha256_file(source) != record.sha256:
@@ -1042,8 +1402,10 @@ def _copy_inputs(
             if target.exists():
                 target = target_dir / f"{target.stem}_{record.id[:8]}{target.suffix}"
             shutil.copy2(source, target)
+            copied.setdefault(role, []).append(target.resolve())
     for folder_name in ("03_台账", "04_产出"):
         (business / folder_name).mkdir(parents=True, exist_ok=True)
+    return copied
 
 
 def _run_script(
@@ -1108,12 +1470,17 @@ def _register_artifact(
         content_type="application/octet-stream",
         size_bytes=target.stat().st_size,
         sha256=sha256_file(target),
+        skill_id=workflow.skill_id,
+        skill_name=workflow.skill_name,
+        skill_version=workflow.skill_version,
+        workflow_id=workflow.id,
     )
     db.add(record)
     db.flush()
     return {
         "name": record.original_name,
         "file_id": record.id,
+        "kind": record.kind,
         "size_bytes": record.size_bytes,
         "sha256": record.sha256,
         "download_url": f"/api/files/{record.id}/download",
@@ -1171,10 +1538,23 @@ def _prepare_worklist(
     root = workflow_root(workflow.owner_id, workflow.id)
     business = root / "actions" / action.id / "工作区"
     business.mkdir(parents=True, exist_ok=False)
-    _copy_inputs(db, action, workflow, business)
+    _set_progress_step(db, workflow, "copy_inputs", "正在读取并复制平台文件", 7)
+    copied_files = _copy_inputs(db, action, workflow, business) or {}
     ledgers = _discover_annual_ledger_paths(business)
     if not ledgers:
         raise RuntimeError("没有找到盈亏核算表副本。")
+    flow_files = copied_files.get(RECEIPT_FLOW_ROLE, [])
+    if len(flow_files) != 1:
+        flow_files = sorted(
+            {
+                path.resolve()
+                for pattern in ("*到账*.xls*", "*流转*.xls*")
+                for path in (business / "02_我的表副本").glob(pattern)
+                if path.is_file() and "便携版" not in path.name
+            }
+        )
+    if len(flow_files) != 1:
+        raise RuntimeError("没有找到唯一的到账流转表副本。")
     ledger_arguments = _annual_ledger_arguments(ledgers)
     script_dir = root / "skill" / "vendor" / "scripts"
     if not (script_dir / "classify_hexiao.py").is_file():
@@ -1193,8 +1573,7 @@ def _prepare_worklist(
         "zhiyun",
     )
     workflow.progress = 10
-    workflow.progress_message = "正在登录智云并按核销日期自动取数"
-    db.commit()
+    _set_progress_step(db, workflow, "fetch_zhiyun", "正在登录智云并按核销日期自动取数", 10)
     try:
         _run_script(
             script_dir,
@@ -1215,26 +1594,47 @@ def _prepare_worklist(
     finally:
         password = ""
     steps = [
-        ("inspect_inputs.py", ["--workspace", workspace]),
-        ("verify_sources.py", ["snapshot", "--workspace", workspace]),
+        (
+            "inspect_inputs.py",
+            ["--workspace", workspace],
+            "inspect_inputs",
+            "正在检查输入文件和字段",
+        ),
+        (
+            "verify_sources.py",
+            ["snapshot", "--workspace", workspace],
+            "snapshot_sources",
+            "正在建立工作副本校验基线",
+        ),
         (
             "classify_hexiao.py",
             ["--workspace", workspace, "--hexiao-date", hexiao_date, *ledger_arguments],
+            "classify_receipts",
+            "正在按核销日期判定回款和订单",
         ),
         (
             "validate_plan.py",
             ["--workspace", workspace, "--hexiao-date", hexiao_date, *ledger_arguments],
+            "validate_plan",
+            "正在校验盈亏写入计划",
         ),
         (
             "build_flow_plan.py",
             ["--workspace", workspace, "--hexiao-date", hexiao_date],
+            "build_flow_plan",
+            "正在生成到账流转写入计划",
         ),
     ]
-    for index, (script, arguments) in enumerate(steps, start=1):
-        workflow.progress = 20 + index * 11
-        workflow.progress_message = f"正在执行日清准备步骤 {index}/{len(steps) + 1}"
-        db.commit()
+    for index, (script, arguments, step_key, label) in enumerate(steps, start=1):
+        _set_progress_step(
+            db,
+            workflow,
+            step_key,
+            f"{label}（{index}/{len(steps) + 1}）",
+            20 + index * 11,
+        )
         _run_script(script_dir, script, arguments)
+    _set_progress_step(db, workflow, "build_worklist", "正在生成核销日清文件", 80)
     stdout = _run_script(
         script_dir,
         "build_worklist.py",
@@ -1253,11 +1653,13 @@ def _prepare_worklist(
     )
     if not checked or not ledgers:
         raise RuntimeError("日清已生成，但没有找到校验后计划或盈亏副本。")
+    _set_progress_step(db, workflow, "review", "核销日清已生成，等待结果确认", 100)
     summary = _worklist_summary(stdout)
     return {
         "workspace": str(business),
         "checked_plan": str(checked[-1]),
         "ledger_years": {str(year): str(path) for year, path in ledgers.items()},
+        "flow_file": str(flow_files[0]),
         "summary": summary,
         "artifacts": [artifact],
     }
@@ -1274,6 +1676,7 @@ def _apply_confirmed(
     if not business.is_dir() or not business.is_relative_to(root):
         raise RuntimeError("上一次日清工作区不存在，请重新生成日清。")
     script_dir = root / "skill" / "vendor" / "scripts"
+    _set_progress_step(db, workflow, "write_files", "正在写入工作副本", 85)
     checked = Path(context.get("checked_plan", "")).resolve()
     raw_ledger_years = context.get("ledger_years") or {}
     ledger_years: dict[int, Path] = {}
@@ -1289,6 +1692,20 @@ def _apply_confirmed(
         raise RuntimeError("校验后计划或盈亏副本不存在，请重新生成日清。")
     if not ledger_years and not legacy_ledger.is_file():
         raise RuntimeError("校验后计划或盈亏副本不存在，请重新生成日清。")
+    raw_flow = str(context.get("flow_file", ""))
+    flow_file = Path(raw_flow).resolve() if raw_flow else None
+    if flow_file is None or not flow_file.is_file():
+        candidates = sorted(
+            {
+                path.resolve()
+                for pattern in ("*到账*.xls*", "*流转*.xls*")
+                for path in (business / "02_我的表副本").glob(pattern)
+                if path.is_file() and "便携版" not in path.name
+            }
+        )
+        flow_file = candidates[0] if len(candidates) == 1 else None
+    if flow_file is None or not flow_file.is_relative_to(business):
+        raise RuntimeError("到账流转表副本不存在，请重新生成日清。")
     workspace = str(business)
     # The preparation snapshot is a pre-write guard. Verify it immediately before
     # the confirmed mutation so a stale or externally changed workbook is rejected.
@@ -1323,46 +1740,46 @@ def _apply_confirmed(
         raise PostWriteVerificationError(
             f"计划内写入已完成，但写入后校验基线更新失败；请勿重复确认写入。原始错误：{exc}"
         ) from exc
-    candidates = [
-        path
-        for folder in (business / "02_我的表副本", business / "04_产出")
-        for path in folder.glob("*")
-        if path.is_file()
-        and path.suffix.lower() in {".xlsx", ".xlsm", ".xls", ".json", ".txt"}
-        and ("备份" not in path.name)
-    ]
     artifacts: list[dict[str, Any]] = []
-    next_files: list[dict[str, Any]] = []
-    for path in candidates:
-        artifact = _register_artifact(db, workflow, path, action.id)
-        artifacts.append(artifact)
+    deliverables: list[tuple[str, Path]] = []
+    if ledger_years:
+        deliverables.extend(
+            (ANNUAL_LEDGER_ROLE, path) for _, path in sorted(ledger_years.items())
+        )
+    elif legacy_ledger.is_file():
+        deliverables.append((ANNUAL_LEDGER_ROLE, legacy_ledger))
+    deliverables.append((RECEIPT_FLOW_ROLE, flow_file))
+    for _, path in deliverables:
         if (
-            getattr(workflow, "batch_id", None)
-            and path.parent.name == "02_我的表副本"
-            and path.suffix.lower()
-            in {
-                ".xlsx",
-                ".xlsm",
-                ".xls",
-            }
+            not path.is_file()
+            or not path.is_relative_to(business)
+            or "便携版" in path.name
+            or "备份" in path.parts
         ):
-            next_files.append(
-                {
-                    "file_id": artifact["file_id"],
-                    "name": artifact["name"],
-                    "size_bytes": artifact["size_bytes"],
-                    "sha256": artifact["sha256"],
-                }
-            )
-    if getattr(workflow, "batch_id", None) and len(next_files) < 2:
+            raise RuntimeError("结果工作簿路径无效，拒绝登记非交付文件。")
+        artifacts.append(_register_artifact(db, workflow, path, action.id))
+
+    next_files: dict[str, list[dict[str, Any]]] = {
+        ANNUAL_LEDGER_ROLE: [],
+        RECEIPT_FLOW_ROLE: [],
+    }
+    if getattr(workflow, "batch_id", None):
+        for role, artifact in zip(
+            (item[0] for item in deliverables), artifacts, strict=True
+        ):
+            next_files[role].append({**artifact, "batch_output": True})
+    if getattr(workflow, "batch_id", None) and (
+        len(next_files.get(ANNUAL_LEDGER_ROLE, [])) < 1
+        or len(next_files.get(RECEIPT_FLOW_ROLE, [])) != 1
+    ):
         raise PostWriteVerificationError(
-            "本日写入已完成，但没有找到可传递给下一日的两份工作副本；批次已暂停，"
+            "本日写入已完成，但没有找到可传递给下一日的年度盈亏表和到账流转表；批次已暂停，"
             "请勿重复执行本日任务。"
         )
     return {
         "workspace": str(business),
         "artifacts": artifacts,
-        "next_files": {"finance_workbooks": next_files},
+        "next_files": next_files,
     }
 
 
@@ -1407,7 +1824,9 @@ def _advance_batch(
         return
 
     next_files = result.get("next_files", {})
-    if len(next_files.get("finance_workbooks", [])) < 2:
+    if len(next_files.get(ANNUAL_LEDGER_ROLE, [])) < 1 or len(
+        next_files.get(RECEIPT_FLOW_ROLE, [])
+    ) != 1:
         raise PostWriteVerificationError(
             "本日写入已完成，但工作副本传递不完整；批次已暂停，请勿重复执行本日任务。"
         )
@@ -1445,6 +1864,7 @@ def retry_workflow_batch(
     db: Session,
     batch: WorkflowBatch,
 ) -> WorkflowBatch:
+    assert_workflow_skill_execution_enabled(batch.skill_id)
     if batch.state != "failed":
         raise HTTPException(status_code=409, detail="只有失败并暂停的批次可以继续。")
     children = sorted(batch.workflows, key=lambda item: item.batch_sequence)
@@ -1502,6 +1922,7 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
         action.finished_at = datetime.now(UTC)
         return
     try:
+        assert_workflow_execution_enabled(workflow)
         if action.name == "prepare_worklist":
             result = _prepare_worklist(db, action, workflow)
             context = _load(workflow.context_json, {})
@@ -1513,15 +1934,19 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
             stop = bool(context.get("stop_after_action"))
             auto_apply = bool(context.get("started_from_form")) and not bool(
                 context.get("requires_confirmation", True)
-            ) and not workflow_requires_approval(workflow)
+            )
             summary = result.get("summary", {})
             if stop:
+                context["current_step"] = "stopped"
+                context["current_step_label"] = "核销日清已生成，按要求停止"
                 workflow.stage = "cancelled"
                 workflow.state = "cancelled"
                 workflow.progress = 100
                 workflow.progress_message = "日清生成后按要求停止"
                 reply = "《核销日清》已经生成，但按你的停止要求，本次不会进入写表阶段。"
             elif auto_apply:
+                context["current_step"] = "write_files"
+                context["current_step_label"] = "正在写入工作副本"
                 workflow.stage = "applying"
                 workflow.state = "running"
                 workflow.progress = 85
@@ -1530,9 +1955,11 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
                 reply = (
                     f"✅ 核销日期 {_date_label(workflow.reconciliation_date)} "
                     "的日清与写前校验已通过，"
-                    "正在按 Skill 规则写入隔离工作副本并生成订单差异表。"
+                    "正在按 Skill 规则写入隔离工作副本。"
                 )
             else:
+                context["current_step"] = "awaiting_confirmation"
+                context["current_step_label"] = "核销日清已生成，等待人工确认"
                 workflow.stage = "awaiting_apply_confirmation"
                 workflow.state = "waiting_confirmation"
                 workflow.progress = 100
@@ -1551,7 +1978,6 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
                 )
             _message(db, workflow, "assistant", reply, {"kind": "worklist_ready"})
         elif action.name == "apply_confirmed":
-            assert_workflow_action_approval(db, action, workflow)
             result = _apply_confirmed(db, action, workflow)
             context = _load(workflow.context_json, {})
             context.update(result)
@@ -1562,13 +1988,18 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
             workflow.stage = "completed"
             workflow.state = "succeeded"
             workflow.progress = 100
-            workflow.progress_message = "盈亏和流转写入完成，订单差异表已生成"
+            workflow.progress_message = "盈亏和流转写入完成，结果文件已生成"
+            context["current_step"] = "completed"
+            context["current_step_label"] = "写入完成，结果文件已生成"
+            context.pop("step_error", None)
+            context.pop("error_detail", None)
+            workflow.context_json = _json(context)
             _message(
                 db,
                 workflow,
                 "assistant",
-                "统一写入完成：先盈亏明细、生成《订单写入差异》，"
-                "再写流转安全子集；回读校验已通过。结果文件已放到右侧下载区。",
+                "统一写入完成：先写盈亏明细，再写到账流转表安全子集；"
+                "回读校验已通过。到账流转表、年度盈亏核算表和《核销日清》已放到右侧下载区。",
                 {"kind": "workflow_completed"},
             )
             _advance_batch(db, workflow, result)
@@ -1579,54 +2010,55 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
         action.finished_at = datetime.now(UTC)
         workflow.error_message = ""
     except subprocess.TimeoutExpired:
+        detail = _workflow_error_detail(workflow, "脚本执行超时。")
         action.state = "failed"
-        action.error_message = "脚本执行超时。"
+        action.error_message = detail.message()
         action.finished_at = datetime.now(UTC)
         workflow.state = "failed"
         workflow.stage = "failed"
-        workflow.error_message = action.error_message
         workflow.progress_message = "动作执行超时"
+        _store_workflow_error(workflow, detail)
         _fail_batch(db, workflow, action.error_message)
         _message(
             db,
             workflow,
             "assistant",
-            "这一步执行超时，财务工作簿原件没有被修改。请检查材料后回复“重出日清”。",
-            {"kind": "action_failed"},
+            f"{detail.message()} 请检查材料后回复“重出日清”。",
+            {"kind": "action_failed", "error": detail.as_dict()},
         )
     except PostWriteVerificationError as exc:
+        detail = _workflow_error_detail(workflow, exc)
         action.state = "failed"
-        action.error_message = str(exc)[:500]
+        action.error_message = detail.message()
         action.finished_at = datetime.now(UTC)
         workflow.state = "failed"
         workflow.stage = "failed"
-        workflow.error_message = action.error_message
         workflow.progress_message = "写入已完成，等待恢复写入后校验"
+        _store_workflow_error(workflow, detail)
         _fail_batch(db, workflow, action.error_message)
         _message(
             db,
             workflow,
             "assistant",
-            "计划内写入已经完成，但写入后校验基线更新失败。请勿再次确认或重出日清，"
-            "以免重复写入；请联系管理员恢复本次校验。",
-            {"kind": "post_write_verification_failed"},
+            f"{detail.message()} 计划内写入已经完成，请勿重复执行，联系管理员恢复校验基线。",
+            {"kind": "post_write_verification_failed", "error": detail.as_dict()},
         )
     except Exception as exc:
+        detail = _workflow_error_detail(workflow, exc)
         action.state = "failed"
-        action.error_message = str(exc)[:500]
+        action.error_message = detail.message()
         action.finished_at = datetime.now(UTC)
         workflow.state = "failed"
         workflow.stage = "failed"
-        workflow.error_message = action.error_message
         workflow.progress_message = "动作没有完成"
+        _store_workflow_error(workflow, detail)
         _fail_batch(db, workflow, action.error_message)
         _message(
             db,
             workflow,
             "assistant",
-            f"这一步没有完成：{action.error_message}。财务工作簿原件没有被修改。"
-            "请检查材料后回复“重出日清”。",
-            {"kind": "action_failed"},
+            f"{detail.message()} 请先查看错误步骤和原因，再决定是否重出日清。",
+            {"kind": "action_failed", "error": detail.as_dict()},
         )
 
 

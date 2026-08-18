@@ -32,14 +32,15 @@ interface PlatformUserManagementProps {
   initialAuditEvents: AuditEvent[];
 }
 
-type PermissionState = Required<Omit<SkillPermissionWrite, 'skill_id'>> & { enabled: boolean };
+type PermissionState = Required<Omit<SkillPermissionWrite, 'skill_id' | 'requires_approval'>> & {
+  enabled: boolean;
+};
 
 const EMPTY_PERMISSION: PermissionState = {
   enabled: false,
   can_run: true,
   can_upload: true,
-  can_create_draft: true,
-  requires_approval: false
+  can_create_draft: true
 };
 
 const ACTION_LABELS: Record<string, string> = {
@@ -91,8 +92,7 @@ function permissionsFor(user: AdminUser, skills: SkillSummary[]): Record<string,
               enabled: true,
               can_run: item.can_run ?? true,
               can_upload: item.can_upload ?? true,
-              can_create_draft: item.can_create_draft ?? true,
-              requires_approval: item.requires_approval ?? false
+              can_create_draft: item.can_create_draft ?? true
             }
           : { ...EMPTY_PERMISSION }
       ];
@@ -205,8 +205,7 @@ export function PlatformUserManagement({
         skill_id: skillId,
         can_run: value.can_run,
         can_upload: value.can_upload,
-        can_create_draft: value.can_create_draft,
-        requires_approval: value.requires_approval
+        can_create_draft: value.can_create_draft
       }));
     const response = await fetch(
       `/api/platform/admin/users/${encodeURIComponent(selected.id)}/skill-permissions`,
@@ -534,7 +533,6 @@ export function PlatformUserManagement({
                           <th className='p-2'>运行</th>
                           <th className='p-2'>上传</th>
                           <th className='p-2'>建草稿</th>
-                          <th className='p-2'>需审批</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -555,25 +553,20 @@ export function PlatformUserManagement({
                                 <p className='font-medium'>{skill.name}</p>
                                 <p className='text-xs text-muted-foreground'>{skill.id}</p>
                               </td>
-                              {(
-                                [
-                                  'can_run',
-                                  'can_upload',
-                                  'can_create_draft',
-                                  'requires_approval'
-                                ] as const
-                              ).map((field) => (
-                                <td key={field} className='p-2'>
-                                  <Checkbox
-                                    aria-label={`${skill.name} ${field}`}
-                                    checked={item[field]}
-                                    disabled={!item.enabled}
-                                    onCheckedChange={(checked) =>
-                                      updatePermission(skill.id, { [field]: checked === true })
-                                    }
-                                  />
-                                </td>
-                              ))}
+                              {(['can_run', 'can_upload', 'can_create_draft'] as const).map(
+                                (field) => (
+                                  <td key={field} className='p-2'>
+                                    <Checkbox
+                                      aria-label={`${skill.name} ${field}`}
+                                      checked={item[field]}
+                                      disabled={!item.enabled}
+                                      onCheckedChange={(checked) =>
+                                        updatePermission(skill.id, { [field]: checked === true })
+                                      }
+                                    />
+                                  </td>
+                                )
+                              )}
                             </tr>
                           );
                         })}

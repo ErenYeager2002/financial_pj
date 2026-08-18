@@ -1,8 +1,25 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Response
+import sys
+
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from ..agent_model_gateway import (
+    AgentModelStreamStats,
+    build_agent_model_payload,
+    iter_agent_model_stream,
+    open_agent_model_stream,
+    resolve_agent_model_config,
+    save_agent_model_trace,
+)
+from ..assistant_chat_service import (
+    append_message,
+    get_conversation,
+    get_latest_conversation,
+)
 from ..assistant_profile_service import (
     admin_profile,
     assistant_status,
@@ -11,23 +28,138 @@ from ..assistant_profile_service import (
 )
 from ..audit_service import record_audit
 from ..auth import UserContext, get_current_user, require_admin
-from ..contracts import AdminAssistantProfile, AssistantStatus, RunDetail, TaskDraft
-from ..database import get_db
+from ..contracts import (
+    AdminAssistantProfile,
+    AssistantConversationRead,
+    AssistantMessageRead,
+    AssistantStatus,
+    RunDetail,
+    SkillDetail,
+    TaskDraft,
+)
+from ..database import SessionLocal, get_db
 from ..draft_service import (
     confirm_task_draft,
     delete_task_draft,
     get_task_draft,
+    list_agent_skill_details,
     prepare_task_draft,
     update_task_draft,
 )
 from ..run_service import serialize_run
 from ..schemas_assistant import (
     AdminAssistantProfileWrite,
+    AgentModelRequest,
+    AgentPrepareRequest,
+    AssistantMessageWrite,
     AssistantPrepareRequest,
     TaskDraftUpdate,
 )
 
 router = APIRouter(tags=["assistant"])
+
+
+@router.get(
+    "/api/assistant/conversations/latest",
+    response_model=AssistantConversationRead | None,
+)
+def latest_assistant_conversation(
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> AssistantConversationRead | None:
+    return get_latest_conversation(db, user)
+
+
+@router.get(
+    "/api/assistant/conversations/{session_id}",
+    response_model=AssistantConversationRead,
+)
+def assistant_conversation(
+    session_id: str,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> AssistantConversationRead:
+    return get_conversation(db, user, session_id)
+
+
+@router.post(
+    "/api/assistant/conversations/{session_id}/messages",
+    response_model=AssistantMessageRead,
+    status_code=201,
+)
+def append_assistant_conversation_message(
+    session_id: str,
+    body: AssistantMessageWrite,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> AssistantMessageRead:
+    message = append_message(
+        db,
+        user,
+        session_id,
+        body.role,
+        body.content,
+        body.data,
+    )
+    db.commit()
+    return message
+
+
+@router.post(
+    "/api/assistant/model",
+    responses={
+        200: {
+            "description": "模型流式响应。",
+            "content": {"text/event-stream": {"schema": {"type": "string"}}},
+        }
+    },
+)
+def stream_agent_model(
+    body: AgentModelRequest,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> StreamingResponse:
+    """给服务端 Pi Runtime 提供受部门模型配置约束的 SSE 上游。"""
+    config = resolve_agent_model_config(db, user, body.connection_id, body.model)
+    try:
+        payload = build_agent_model_payload(config, body.model_dump(exclude_none=True))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    stream_context = open_agent_model_stream(config, payload)
+    stats = AgentModelStreamStats()
+    try:
+        response = stream_context.__enter__()
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        stream_context.__exit__(*sys.exc_info())
+        stats.fail(f"upstream_http_{getattr(exc.response, 'status_code', 'error')}")
+        save_agent_model_trace(db, user, config, stats)
+        db.commit()
+        raise HTTPException(status_code=502, detail="模型服务当前不可用。") from exc
+    except Exception as exc:
+        stream_context.__exit__(*sys.exc_info())
+        stats.fail(type(exc).__name__)
+        save_agent_model_trace(db, user, config, stats)
+        db.commit()
+        raise HTTPException(status_code=502, detail="模型网关连接失败。") from exc
+
+    def body_iterator():
+        try:
+            yield from iter_agent_model_stream(response, stats)
+        finally:
+            if stats.status == "running":
+                stats.fail("stream_cancelled")
+            with SessionLocal() as trace_db:
+                save_agent_model_trace(trace_db, user, config, stats)
+                trace_db.commit()
+            stream_context.__exit__(None, None, None)
+
+    return StreamingResponse(
+        body_iterator(),
+        media_type=response.headers.get("content-type", "text/event-stream"),
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get("/api/assistant/status", response_model=AssistantStatus)
@@ -36,6 +168,46 @@ def get_assistant_status(
     user: UserContext = Depends(get_current_user),
 ) -> AssistantStatus:
     return assistant_status(db, user)
+
+
+@router.get("/api/assistant/skills", response_model=list[SkillDetail])
+def list_assistant_skills(
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> list[SkillDetail]:
+    """Return the Skill directory that the current Platform User may turn into a draft."""
+    return list_agent_skill_details(db, user)
+
+
+@router.post("/api/assistant/prepare-from-recommendation", response_model=TaskDraft)
+def prepare_from_agent_recommendation(
+    body: AgentPrepareRequest,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> TaskDraft:
+    """校验 Pi 工具返回的推荐，并复用现有草稿安全边界。"""
+    draft = prepare_task_draft(
+        db,
+        user,
+        body.message,
+        body.file_ids,
+        recommendation=body.recommendation,
+        trace_purpose="agent_tool",
+    )
+    record_audit(
+        db,
+        actor=user,
+        action="draft.prepare.agent",
+        resource_type="task_draft",
+        resource_id=draft.id,
+        details={
+            "skill_id": draft.skill_id,
+            "state": draft.state,
+            "file_count": len(draft.file_hashes),
+        },
+    )
+    db.commit()
+    return draft
 
 
 @router.post("/api/assistant/prepare", response_model=TaskDraft)

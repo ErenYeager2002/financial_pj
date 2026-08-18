@@ -83,6 +83,9 @@ from .schemas import (
     RunCreate,
     ServiceCredentialRead,
     ServiceCredentialWrite,
+    WorkflowAgentActionRequest,
+    WorkflowAgentActionResponse,
+    WorkflowAgentContext,
     WorkflowBatchRead,
     WorkflowBatchStart,
     WorkflowCreate,
@@ -100,7 +103,9 @@ from .service_credential_service import (
 from .settings import settings
 from .storage import delete_upload, save_upload
 from .workbench_service import get_workbench
+from .workflow_constants import is_background_model_connection
 from .workflow_service import (
+    apply_workflow_agent_action,
     create_workflow,
     get_workflow_batch_or_404,
     get_workflow_or_404,
@@ -414,17 +419,34 @@ def delete_service_credential(
 async def upload_file(
     upload: UploadFile = File(...),
     role: str = Form(default=""),
+    skill_id: str = Form(default=""),
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ) -> PlatformFile:
-    record = await save_upload(db, upload, user)
+    skill_id = skill_id.strip()
+    skill = registry.get(skill_id, include_unpublished=user.is_admin) if skill_id else None
+    if skill_id and not skill:
+        raise HTTPException(status_code=422, detail="上传文件关联的 Skill 不存在或当前不可用。")
+    record = await save_upload(
+        db,
+        upload,
+        user,
+        skill_id=skill.manifest.id if skill else "",
+        skill_name=skill.manifest.name if skill else "",
+        skill_version=skill.manifest.version if skill else "",
+    )
     record_audit(
         db,
         actor=user,
         action="file.upload",
         resource_type="file",
         resource_id=record.id,
-        details={"kind": record.kind, "size_bytes": record.size_bytes, "sha256": record.sha256},
+        details={
+            "kind": record.kind,
+            "size_bytes": record.size_bytes,
+            "sha256": record.sha256,
+            "skill_id": record.skill_id,
+        },
     )
     db.commit()
     return serialize_file(db, record).model_copy(
@@ -605,6 +627,62 @@ def get_workflow(
     user: UserContext = Depends(get_current_user),
 ) -> WorkflowRead:
     return serialize_workflow(get_workflow_or_404(db, workflow_id, user))
+
+
+@app.post(
+    "/api/workflows/{workflow_id}/agent/actions",
+    response_model=WorkflowAgentActionResponse,
+)
+def workflow_agent_action(
+    workflow_id: str,
+    body: WorkflowAgentActionRequest,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> WorkflowAgentActionResponse:
+    """Apply one allowlisted Agent request; scripts remain Worker-owned."""
+    workflow = get_workflow_or_404(db, workflow_id, user)
+    assert_skill_permission(db, user, workflow.skill_id)
+    result = apply_workflow_agent_action(
+        db,
+        workflow,
+        body.action,
+        body.arguments.model_dump(),
+        user,
+    )
+    return WorkflowAgentActionResponse(
+        workflow=serialize_workflow(workflow),
+        action=result.action,
+        await_confirmation=result.await_confirmation,
+        confirmation_kind=result.confirmation_kind,
+        message=result.message,
+    )
+
+
+@app.get(
+    "/api/workflows/{workflow_id}/agent/context",
+    response_model=WorkflowAgentContext,
+)
+def workflow_agent_context(
+    workflow_id: str,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> WorkflowAgentContext:
+    """Return server-only model binding data without adding it to the public workflow DTO."""
+    workflow = get_workflow_or_404(db, workflow_id, user)
+    assert_skill_permission(db, user, workflow.skill_id)
+    return WorkflowAgentContext(
+        workflow=serialize_workflow(workflow),
+        connection_id=(
+            None
+            if is_background_model_connection(workflow.model_connection_id)
+            else workflow.model_connection_id
+        ),
+        model=(
+            ""
+            if is_background_model_connection(workflow.model_connection_id)
+            else workflow.model_name
+        ),
+    )
 
 
 @app.put("/api/workflows/{workflow_id}/files", response_model=WorkflowRead)

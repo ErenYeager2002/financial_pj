@@ -56,10 +56,19 @@ class FakeVerificationResponse:
         }
 
 
-def upload(client: TestClient, role: str, name: str, content: bytes) -> str:
+def upload(
+    client: TestClient,
+    role: str,
+    name: str,
+    content: bytes,
+    skill_id: str = "",
+) -> str:
+    data = {"role": role}
+    if skill_id:
+        data["skill_id"] = skill_id
     response = client.post(
         "/api/files",
-        data={"role": role},
+        data=data,
         files={
             "upload": (
                 name,
@@ -296,8 +305,11 @@ def test_upload_run_worker_and_download(monkeypatch) -> None:
         )
         assert connection.status_code == 200
         connection_id = connection.json()["id"]
-        bank_id = upload(client, "bank_file", "银行流水.xlsx", bank)
-        ledger_id = upload(client, "ledger_file", "财务总账.xlsx", ledger)
+        bank_id = upload(client, "bank_file", "银行流水.xlsx", bank, "reconcile-bank")
+        ledger_id = upload(client, "ledger_file", "财务总账.xlsx", ledger, "reconcile-bank")
+        input_file = client.get(f"/api/files/{bank_id}")
+        assert input_file.status_code == 200
+        assert input_file.json()["skill_id"] == "reconcile-bank"
 
         created = client.post(
             "/api/runs",
@@ -344,6 +356,10 @@ def test_upload_run_worker_and_download(monkeypatch) -> None:
         }
 
         artifact = result["result"]["output_files"][0]
+        artifact_record = client.get(f"/api/files/{artifact['file_id']}")
+        assert artifact_record.status_code == 200
+        assert artifact_record.json()["skill_id"] == "reconcile-bank"
+        assert artifact_record.json()["run_id"] == run_id
         downloaded = client.get(artifact["download_url"])
         assert downloaded.status_code == 200
         workbook = load_workbook(BytesIO(downloaded.content), data_only=True)

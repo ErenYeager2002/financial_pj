@@ -34,6 +34,13 @@ def _csv_env(name: str) -> tuple[str, ...]:
     return tuple(item.strip() for item in os.getenv(name, "").split(",") if item.strip())
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass(frozen=True)
 class Settings:
     app_name: str = os.getenv("FINANCIAL_APP_NAME", "财务 Skill 运行平台")
@@ -77,6 +84,12 @@ class Settings:
     llm_model: str = os.getenv("FINANCIAL_LLM_MODEL", "")
     llm_provider: str = os.getenv("FINANCIAL_LLM_PROVIDER", "")
     zhiyun_base_url: str = os.getenv("FINANCIAL_ZHIYUN_BASE_URL", "").rstrip("/")
+    # AR reconciliation stays available to synthetic tests only until the
+    # production read-only gate is explicitly lifted.
+    ar_hexiao_execution_enabled: bool = _env_bool(
+        "FINANCIAL_AR_HEXIAO_EXECUTION_ENABLED",
+        os.getenv("FINANCIAL_ENV", "development").strip().lower() == "test",
+    )
 
     # 会话与认证
     session_cookie_name: str = os.getenv("FINANCIAL_SESSION_COOKIE", "financial_session")

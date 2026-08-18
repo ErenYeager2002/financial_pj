@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-// @ts-expect-error Node's built-in TypeScript runner requires the explicit extension.
 import { isRunnableSkill } from '../src/features/run-setup/run-eligibility.ts';
 
 function skill(overrides: Record<string, unknown> = {}) {

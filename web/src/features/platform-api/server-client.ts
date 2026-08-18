@@ -9,7 +9,7 @@ interface PlatformRequestOptions {
   timeoutMs?: number | null;
 }
 
-function platformBaseUrl(): string {
+export function platformServerBaseUrl(): string {
   const value = process.env.FINANCIAL_PLATFORM_API_URL?.trim();
   if (!value) {
     throw new PlatformApiError(500, '财务平台 API 地址尚未配置。');
@@ -74,7 +74,7 @@ export async function platformServerResponse(
       ? configuredTimeout
       : DEFAULT_TIMEOUT_MS;
   const timeoutMs = options.timeoutMs === undefined ? defaultTimeout : options.timeoutMs;
-  const response = await fetch(`${platformBaseUrl()}${platformPath(path)}`, {
+  const response = await fetch(`${platformServerBaseUrl()}${platformPath(path)}`, {
     ...init,
     headers,
     cache: 'no-store',

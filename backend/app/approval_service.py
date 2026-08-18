@@ -166,7 +166,21 @@ def _workflow_evidence(
     if not business.is_dir() or not business.is_relative_to(root):
         raise HTTPException(status_code=409, detail="工作流变更预览目录已经缺失。")
     checked_plan = _safe_workflow_path(workflow, context.get("checked_plan"), "校验后计划")
-    ledger = _safe_workflow_path(workflow, context.get("ledger"), "财务工作副本")
+    raw_ledger_years = context.get("ledger_years")
+    ledger_years: dict[str, Path] = {}
+    if isinstance(raw_ledger_years, dict) and raw_ledger_years:
+        for raw_year, raw_path in sorted(raw_ledger_years.items(), key=lambda item: str(item[0])):
+            ledger_years[str(raw_year)] = _safe_workflow_path(
+                workflow,
+                raw_path,
+                f"{raw_year}年财务工作副本",
+            )
+    else:
+        ledger_years["legacy"] = _safe_workflow_path(
+            workflow,
+            context.get("ledger"),
+            "财务工作副本",
+        )
     raw_artifacts = context.get("artifacts", [])
     artifacts = []
     if isinstance(raw_artifacts, list):
@@ -205,9 +219,14 @@ def _workflow_evidence(
         "inputs": _input_evidence(db, workflow),
         "business_workspace_sha256": _tree_hash(business),
         "checked_plan_sha256": sha256_file(checked_plan),
-        "ledger_sha256": sha256_file(ledger),
         "preview_sha256": preview_hash,
     }
+    if isinstance(raw_ledger_years, dict) and raw_ledger_years:
+        snapshot["ledger_years_sha256"] = {
+            year: sha256_file(path) for year, path in ledger_years.items()
+        }
+    else:
+        snapshot["ledger_sha256"] = sha256_file(ledger_years["legacy"])
     return snapshot, preview, _hash_payload(snapshot), preview_hash
 
 

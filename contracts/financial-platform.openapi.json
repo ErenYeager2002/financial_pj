@@ -399,6 +399,201 @@
         "title": "AdminUserUpdate",
         "type": "object"
       },
+      "AgentModelRequest": {
+        "additionalProperties": false,
+        "description": "Pi 的 OpenAI Chat Completions 请求白名单。",
+        "properties": {
+          "connection_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connection Id"
+          },
+          "max_completion_tokens": {
+            "anyOf": [
+              {
+                "maximum": 32768.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Completion Tokens"
+          },
+          "max_tokens": {
+            "anyOf": [
+              {
+                "maximum": 32768.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Tokens"
+          },
+          "messages": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "maxItems": 64,
+            "minItems": 1,
+            "title": "Messages",
+            "type": "array"
+          },
+          "model": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Model",
+            "type": "string"
+          },
+          "parallel_tool_calls": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parallel Tool Calls"
+          },
+          "reasoning_effort": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning Effort"
+          },
+          "response_format": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Response Format"
+          },
+          "stream": {
+            "default": true,
+            "title": "Stream",
+            "type": "boolean"
+          },
+          "stream_options": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stream Options"
+          },
+          "temperature": {
+            "anyOf": [
+              {
+                "maximum": 2.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temperature"
+          },
+          "tool_choice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Choice"
+          },
+          "tools": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "maxItems": 32,
+            "title": "Tools",
+            "type": "array"
+          },
+          "top_p": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Top P"
+          }
+        },
+        "required": [
+          "model",
+          "messages"
+        ],
+        "title": "AgentModelRequest",
+        "type": "object"
+      },
+      "AgentPrepareRequest": {
+        "properties": {
+          "file_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "File Ids",
+            "type": "array"
+          },
+          "message": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          },
+          "recommendation": {
+            "$ref": "#/components/schemas/AssistantRecommendation"
+          }
+        },
+        "required": [
+          "message",
+          "recommendation"
+        ],
+        "title": "AgentPrepareRequest",
+        "type": "object"
+      },
       "ApprovalDecisionRequest": {
         "properties": {
           "decision": {
@@ -568,6 +763,113 @@
         "title": "ApprovalRecord",
         "type": "object"
       },
+      "AssistantConversationRead": {
+        "properties": {
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/AssistantMessageRead"
+            },
+            "title": "Messages",
+            "type": "array"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "session_id"
+        ],
+        "title": "AssistantConversationRead",
+        "type": "object"
+      },
+      "AssistantMessageRead": {
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "data": {
+            "additionalProperties": true,
+            "title": "Data",
+            "type": "object"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "user",
+              "assistant",
+              "system"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "session_id",
+          "role",
+          "content",
+          "created_at"
+        ],
+        "title": "AssistantMessageRead",
+        "type": "object"
+      },
+      "AssistantMessageWrite": {
+        "properties": {
+          "content": {
+            "maxLength": 20000,
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "data": {
+            "additionalProperties": true,
+            "title": "Data",
+            "type": "object"
+          },
+          "role": {
+            "enum": [
+              "user",
+              "assistant",
+              "system"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "content"
+        ],
+        "title": "AssistantMessageWrite",
+        "type": "object"
+      },
       "AssistantPrepareRequest": {
         "properties": {
           "file_ids": {
@@ -589,6 +891,70 @@
           "message"
         ],
         "title": "AssistantPrepareRequest",
+        "type": "object"
+      },
+      "AssistantRecommendation": {
+        "properties": {
+          "candidates": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 3,
+            "title": "Candidates",
+            "type": "array"
+          },
+          "clarification": {
+            "default": "",
+            "maxLength": 1000,
+            "title": "Clarification",
+            "type": "string"
+          },
+          "confidence": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence",
+            "type": "number"
+          },
+          "confirmation_text": {
+            "default": "",
+            "maxLength": 1000,
+            "title": "Confirmation Text",
+            "type": "string"
+          },
+          "file_roles": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              ]
+            },
+            "title": "File Roles",
+            "type": "object"
+          },
+          "parameters": {
+            "additionalProperties": true,
+            "title": "Parameters",
+            "type": "object"
+          },
+          "skill_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Skill Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "skill_id",
+          "confidence"
+        ],
+        "title": "AssistantRecommendation",
         "type": "object"
       },
       "AssistantStatus": {
@@ -663,6 +1029,11 @@
           "role": {
             "default": "",
             "title": "Role",
+            "type": "string"
+          },
+          "skill_id": {
+            "default": "",
+            "title": "Skill Id",
             "type": "string"
           },
           "upload": {
@@ -1301,6 +1672,33 @@
           "size_bytes": {
             "title": "Size Bytes",
             "type": "integer"
+          },
+          "skill_id": {
+            "default": "",
+            "title": "Skill Id",
+            "type": "string"
+          },
+          "skill_name": {
+            "default": "",
+            "title": "Skill Name",
+            "type": "string"
+          },
+          "skill_version": {
+            "default": "",
+            "title": "Skill Version",
+            "type": "string"
+          },
+          "workflow_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Workflow Id"
           }
         },
         "required": [
@@ -1422,6 +1820,33 @@
           "size_bytes": {
             "title": "Size Bytes",
             "type": "integer"
+          },
+          "skill_id": {
+            "default": "",
+            "title": "Skill Id",
+            "type": "string"
+          },
+          "skill_name": {
+            "default": "",
+            "title": "Skill Name",
+            "type": "string"
+          },
+          "skill_version": {
+            "default": "",
+            "title": "Skill Version",
+            "type": "string"
+          },
+          "workflow_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Workflow Id"
           }
         },
         "required": [
@@ -3728,6 +4153,204 @@
         "title": "WorkflowActionRead",
         "type": "object"
       },
+      "WorkflowAgentActionResponse": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "await_confirmation": {
+            "title": "Await Confirmation",
+            "type": "boolean"
+          },
+          "confirmation_kind": {
+            "default": "",
+            "enum": [
+              "",
+              "date",
+              "apply"
+            ],
+            "title": "Confirmation Kind",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "workflow": {
+            "$ref": "#/components/schemas/WorkflowRead"
+          }
+        },
+        "required": [
+          "workflow",
+          "action",
+          "await_confirmation",
+          "message"
+        ],
+        "title": "WorkflowAgentActionResponse",
+        "type": "object"
+      },
+      "WorkflowAgentConfirmationArguments": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "date",
+              "apply"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "default": "",
+            "maxLength": 1000,
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "WorkflowAgentConfirmationArguments",
+        "type": "object"
+      },
+      "WorkflowAgentConfirmationRequest": {
+        "properties": {
+          "action": {
+            "const": "request_user_confirmation",
+            "title": "Action",
+            "type": "string"
+          },
+          "arguments": {
+            "$ref": "#/components/schemas/WorkflowAgentConfirmationArguments"
+          }
+        },
+        "required": [
+          "action",
+          "arguments"
+        ],
+        "title": "WorkflowAgentConfirmationRequest",
+        "type": "object"
+      },
+      "WorkflowAgentContext": {
+        "properties": {
+          "connection_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connection Id"
+          },
+          "model": {
+            "default": "",
+            "title": "Model",
+            "type": "string"
+          },
+          "workflow": {
+            "$ref": "#/components/schemas/WorkflowRead"
+          }
+        },
+        "required": [
+          "workflow"
+        ],
+        "title": "WorkflowAgentContext",
+        "type": "object"
+      },
+      "WorkflowAgentEmptyArguments": {
+        "additionalProperties": false,
+        "properties": {},
+        "title": "WorkflowAgentEmptyArguments",
+        "type": "object"
+      },
+      "WorkflowAgentRegenerationArguments": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "default": "",
+            "maxLength": 1000,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "title": "WorkflowAgentRegenerationArguments",
+        "type": "object"
+      },
+      "WorkflowAgentRegenerationRequest": {
+        "properties": {
+          "action": {
+            "const": "request_regeneration",
+            "title": "Action",
+            "type": "string"
+          },
+          "arguments": {
+            "$ref": "#/components/schemas/WorkflowAgentRegenerationArguments"
+          }
+        },
+        "required": [
+          "action",
+          "arguments"
+        ],
+        "title": "WorkflowAgentRegenerationRequest",
+        "type": "object"
+      },
+      "WorkflowAgentSetDateArguments": {
+        "additionalProperties": false,
+        "properties": {
+          "date": {
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "title": "Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "date"
+        ],
+        "title": "WorkflowAgentSetDateArguments",
+        "type": "object"
+      },
+      "WorkflowAgentSetDateRequest": {
+        "properties": {
+          "action": {
+            "const": "set_reconciliation_date",
+            "title": "Action",
+            "type": "string"
+          },
+          "arguments": {
+            "$ref": "#/components/schemas/WorkflowAgentSetDateArguments"
+          }
+        },
+        "required": [
+          "action",
+          "arguments"
+        ],
+        "title": "WorkflowAgentSetDateRequest",
+        "type": "object"
+      },
+      "WorkflowAgentStageRequest": {
+        "properties": {
+          "action": {
+            "enum": [
+              "get_workflow_stage",
+              "prepare_daily_reconciliation"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "arguments": {
+            "$ref": "#/components/schemas/WorkflowAgentEmptyArguments"
+          }
+        },
+        "required": [
+          "action",
+          "arguments"
+        ],
+        "title": "WorkflowAgentStageRequest",
+        "type": "object"
+      },
       "WorkflowBatchRead": {
         "properties": {
           "created_at": {
@@ -3843,14 +4466,21 @@
             "title": "Model"
           },
           "model_connection_id": {
-            "title": "Model Connection Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Connection Id"
           },
           "reconciliation_dates": {
             "items": {
               "type": "string"
             },
-            "maxItems": 7,
+            "maxItems": 31,
             "minItems": 1,
             "title": "Reconciliation Dates",
             "type": "array"
@@ -3862,7 +4492,6 @@
         },
         "required": [
           "skill_id",
-          "model_connection_id",
           "reconciliation_dates"
         ],
         "title": "WorkflowBatchStart",
@@ -4068,6 +4697,16 @@
             "title": "Created At",
             "type": "string"
           },
+          "current_step": {
+            "default": "",
+            "title": "Current Step",
+            "type": "string"
+          },
+          "current_step_label": {
+            "default": "",
+            "title": "Current Step Label",
+            "type": "string"
+          },
           "error_message": {
             "title": "Error Message",
             "type": "string"
@@ -4137,6 +4776,18 @@
             "title": "State",
             "type": "string"
           },
+          "step_error": {
+            "default": "",
+            "title": "Step Error",
+            "type": "string"
+          },
+          "step_error_detail": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Step Error Detail",
+            "type": "object"
+          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -4191,8 +4842,15 @@
             "title": "Model"
           },
           "model_connection_id": {
-            "title": "Model Connection Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Connection Id"
           },
           "reconciliation_date": {
             "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
@@ -4206,7 +4864,6 @@
         },
         "required": [
           "skill_id",
-          "model_connection_id",
           "reconciliation_date"
         ],
         "title": "WorkflowStart",
@@ -5006,6 +5663,174 @@
         ]
       }
     },
+    "/api/assistant/conversations/latest": {
+      "get": {
+        "operationId": "latest_assistant_conversation_api_assistant_conversations_latest_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/AssistantConversationRead"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Latest Assistant Conversation Api Assistant Conversations Latest Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Latest Assistant Conversation",
+        "tags": [
+          "assistant"
+        ]
+      }
+    },
+    "/api/assistant/conversations/{session_id}": {
+      "get": {
+        "operationId": "assistant_conversation_api_assistant_conversations__session_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantConversationRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Assistant Conversation",
+        "tags": [
+          "assistant"
+        ]
+      }
+    },
+    "/api/assistant/conversations/{session_id}/messages": {
+      "post": {
+        "operationId": "append_assistant_conversation_message_api_assistant_conversations__session_id__messages_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantMessageWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantMessageRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Append Assistant Conversation Message",
+        "tags": [
+          "assistant"
+        ]
+      }
+    },
+    "/api/assistant/model": {
+      "post": {
+        "description": "给服务端 Pi Runtime 提供受部门模型配置约束的 SSE 上游。",
+        "operationId": "stream_agent_model_api_assistant_model_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentModelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "模型流式响应。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stream Agent Model",
+        "tags": [
+          "assistant"
+        ]
+      }
+    },
     "/api/assistant/prepare": {
       "post": {
         "operationId": "prepare_api_assistant_prepare_post",
@@ -5042,6 +5867,74 @@
           }
         },
         "summary": "Prepare",
+        "tags": [
+          "assistant"
+        ]
+      }
+    },
+    "/api/assistant/prepare-from-recommendation": {
+      "post": {
+        "description": "校验 Pi 工具返回的推荐，并复用现有草稿安全边界。",
+        "operationId": "prepare_from_agent_recommendation_api_assistant_prepare_from_recommendation_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentPrepareRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskDraft"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Prepare From Agent Recommendation",
+        "tags": [
+          "assistant"
+        ]
+      }
+    },
+    "/api/assistant/skills": {
+      "get": {
+        "description": "Return the Skill directory that the current Platform User may turn into a draft.",
+        "operationId": "list_assistant_skills_api_assistant_skills_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SkillDetail"
+                  },
+                  "title": "Response List Assistant Skills Api Assistant Skills Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Assistant Skills",
         "tags": [
           "assistant"
         ]
@@ -6824,6 +7717,120 @@
           }
         },
         "summary": "Get Workflow"
+      }
+    },
+    "/api/workflows/{workflow_id}/agent/actions": {
+      "post": {
+        "description": "Apply one allowlisted Agent request; scripts remain Worker-owned.",
+        "operationId": "workflow_agent_action_api_workflows__workflow_id__agent_actions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workflow_id",
+            "required": true,
+            "schema": {
+              "title": "Workflow Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "discriminator": {
+                  "mapping": {
+                    "get_workflow_stage": "#/components/schemas/WorkflowAgentStageRequest",
+                    "prepare_daily_reconciliation": "#/components/schemas/WorkflowAgentStageRequest",
+                    "request_regeneration": "#/components/schemas/WorkflowAgentRegenerationRequest",
+                    "request_user_confirmation": "#/components/schemas/WorkflowAgentConfirmationRequest",
+                    "set_reconciliation_date": "#/components/schemas/WorkflowAgentSetDateRequest"
+                  },
+                  "propertyName": "action"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/WorkflowAgentSetDateRequest"
+                  },
+                  {
+                    "$ref": "#/components/schemas/WorkflowAgentStageRequest"
+                  },
+                  {
+                    "$ref": "#/components/schemas/WorkflowAgentRegenerationRequest"
+                  },
+                  {
+                    "$ref": "#/components/schemas/WorkflowAgentConfirmationRequest"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowAgentActionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Workflow Agent Action"
+      }
+    },
+    "/api/workflows/{workflow_id}/agent/context": {
+      "get": {
+        "description": "Return server-only model binding data without adding it to the public workflow DTO.",
+        "operationId": "workflow_agent_context_api_workflows__workflow_id__agent_context_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workflow_id",
+            "required": true,
+            "schema": {
+              "title": "Workflow Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowAgentContext"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Workflow Agent Context"
       }
     },
     "/api/workflows/{workflow_id}/confirm": {

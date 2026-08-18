@@ -51,7 +51,7 @@ DISPLAY_METADATA: dict[str, dict[str, Any]] = {
         "popular": True,
     },
     "ar-hexiao-daily": {
-        "output_summary": "核销日清、变更清单和工作副本",
+        "output_summary": "写入后的到账流转表、年度盈亏核算表和核销日清",
         "action_label": "开始核销",
         "estimated_minutes": 10,
         "popular": False,
@@ -342,6 +342,7 @@ EXECUTABLES: dict[str, dict[str, Any]] = {
                 "type": "directory",
                 "flag": "--out-dir",
                 "path": "重命名结果",
+                "required_globs": ["*.pdf"],
                 "archive": True,
                 "archive_name": "代扣代缴申报表重命名结果.zip",
             },
@@ -504,15 +505,21 @@ CATALOG_ONLY: dict[str, dict[str, Any]] = {
         ["应收核销", "自动写入", "多阶段"],
         [
             file_spec(
-                "finance_workbooks",
-                "盈亏与流转表副本",
+                "profit_loss_ledgers",
+                "年度盈亏核算表",
                 ["xlsx", "xlsm", "xls"],
                 multiple=True,
-                min_files=2,
+                min_files=1,
                 description=(
-                    "至少上传一份年度盈亏核算表和一份到账流转表副本；"
-                    "盈亏表数量不限，每年一份，可同时上传往年表。"
+                    "可上传多个年度的盈亏核算表，每个年度保留一份；首次上传后后续任务会自动复用，"
+                    "也可以按需增加或替换。"
                 ),
+            ),
+            file_spec(
+                "receipt_flow_table",
+                "到账流转表",
+                ["xlsx", "xlsm", "xls"],
+                description="只保留一份到账流转表；首次上传后后续任务会自动复用，需要更换时再上传新表。",
             ),
         ],
         {"type": "object", "additionalProperties": False, "properties": {}},

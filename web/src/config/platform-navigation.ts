@@ -2,6 +2,7 @@ export type PlatformRole = 'finance_user' | 'skill_admin';
 
 export type PlatformNavigationIcon =
   | 'dashboard'
+  | 'kanban'
   | 'forms'
   | 'clock'
   | 'page'
@@ -36,7 +37,13 @@ const EMPLOYEE_GROUPS: PlatformNavigationGroup[] = [
       { title: 'Skill 中心', url: '/dashboard/skills', icon: 'forms', shortcut: ['s', 'k'] },
       { title: '我的任务', url: '/dashboard/runs', icon: 'clock', shortcut: ['r', 'r'] },
       { title: '文件中心', url: '/dashboard/files', icon: 'page', shortcut: ['f', 'f'] },
-      { title: 'AI 助手', url: '/dashboard/ai-chat', icon: 'sparkles', shortcut: ['a', 'i'] }
+      { title: 'AI 助手', url: '/dashboard/ai-chat', icon: 'sparkles', shortcut: ['a', 'i'] },
+      {
+        title: '后台任务',
+        url: '/dashboard/workflows',
+        icon: 'kanban',
+        shortcut: ['w', 'f']
+      }
     ]
   },
   {
@@ -56,18 +63,6 @@ const EMPLOYEE_GROUPS: PlatformNavigationGroup[] = [
 
 const ADMIN_GROUPS: PlatformNavigationGroup[] = [
   EMPLOYEE_GROUPS[0],
-  {
-    id: 'todo',
-    label: '待办',
-    items: [
-      {
-        title: '待我审批',
-        url: '/dashboard/approvals',
-        icon: 'checks',
-        shortcut: ['a', 'p']
-      }
-    ]
-  },
   {
     id: 'management',
     label: '管理',

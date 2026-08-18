@@ -4,6 +4,8 @@ import { platformRouteError } from '@/features/platform-api/route-handler';
 import { listFiles } from '@/features/files/api/server';
 import { uploadFileForSkill } from '@/features/run-setup/api/server';
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 export async function GET(request: Request) {
   try {
     const params = new URL(request.url).searchParams;
@@ -31,11 +33,23 @@ export async function POST(request: Request) {
     const form = await request.formData();
     const skillId = form.get('skill_id');
     const role = form.get('role');
+    const workflowId = form.get('workflow_id');
+    const workflowUpload = form.get('workflow_upload');
     const upload = form.get('upload');
     if (typeof skillId !== 'string' || typeof role !== 'string' || !(upload instanceof File)) {
       throw new PlatformApiError(400, '上传请求缺少 Skill、文件用途或文件。');
     }
-    return NextResponse.json(await uploadFileForSkill(skillId, role, upload));
+    if (workflowId !== null && (typeof workflowId !== 'string' || !UUID.test(workflowId))) {
+      throw new PlatformApiError(400, '工作流标识格式无效。');
+    }
+    return NextResponse.json(
+      await uploadFileForSkill(
+        skillId,
+        role,
+        upload,
+        (typeof workflowId === 'string' && workflowId.length > 0) || workflowUpload === 'true'
+      )
+    );
   } catch (error) {
     return platformRouteError(error, '文件上传失败。');
   }

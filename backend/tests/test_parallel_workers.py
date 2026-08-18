@@ -5,6 +5,7 @@ import threading
 import uuid
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from scripts import serve_control
 from scripts.serve_control import worker_specs
 from sqlalchemy import select
@@ -18,6 +19,22 @@ from app.workflow_service import claim_next_workflow_action
 
 def setup_module() -> None:
     init_db()
+
+
+@pytest.fixture(autouse=True)
+def _cancel_pending_jobs() -> None:
+    """Prevent earlier workflow tests from changing this module's FIFO assertions."""
+    with SessionLocal() as db:
+        now = datetime.now(UTC)
+        for run in db.scalars(select(RunRecord).where(RunRecord.state == "queued")).all():
+            run.state = "cancelled"
+            run.finished_at = now
+        for action in db.scalars(
+            select(WorkflowAction).where(WorkflowAction.state == "queued")
+        ).all():
+            action.state = "cancelled"
+            action.finished_at = now
+        db.commit()
 
 
 def _manifest(*, risk: str = "read_only", concurrency_limit: int = 1) -> str:
@@ -108,7 +125,7 @@ def _workflow(skill_id: str, concurrency_limit: int = 1) -> tuple[WorkflowSessio
     return workflow, action
 
 
-def test_worker_rejects_standard_write_run_without_approval_snapshot() -> None:
+def test_worker_claims_standard_write_run_without_approval_snapshot() -> None:
     with SessionLocal() as db:
         run = _queued_run(
             skill_id=f"write-gate-{uuid.uuid4()}",
@@ -117,10 +134,14 @@ def test_worker_rejects_standard_write_run_without_approval_snapshot() -> None:
         )
         db.add(run)
         db.commit()
-        assert claim_next_run(db, ("python",), "write-gate-worker") is None
+        claimed = claim_next_run(db, ("python",), "write-gate-worker")
+        assert claimed is not None
+        assert claimed.id == run.id
         db.refresh(run)
-        assert run.state == "failed"
-        assert "缺少批准快照" in run.error_message
+        assert run.state == "running"
+        run.state = "succeeded"
+        run.lease_expires_at = None
+        db.commit()
 
 
 def test_two_workers_execute_tasks_with_real_overlap(monkeypatch) -> None:
@@ -291,7 +312,16 @@ def test_workflow_limit_and_different_skills_can_be_claimed() -> None:
     first_workflow, first_action = _workflow(f"workflow-limit-{uuid.uuid4()}")
     second_workflow, second_action = _workflow(first_workflow.skill_id)
     other_workflow, other_action = _workflow(f"workflow-other-{uuid.uuid4()}")
+    queued_at = datetime.now(UTC)
+    first_action.queued_at = queued_at - timedelta(seconds=3)
+    second_action.queued_at = queued_at - timedelta(seconds=2)
+    other_action.queued_at = queued_at - timedelta(seconds=1)
     with SessionLocal() as db:
+        for stale in db.scalars(
+            select(WorkflowAction).where(WorkflowAction.state == "queued")
+        ).all():
+            stale.state = "cancelled"
+            stale.finished_at = queued_at
         db.add_all(
             [
                 first_workflow,

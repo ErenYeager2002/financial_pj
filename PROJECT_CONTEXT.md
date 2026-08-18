@@ -24,6 +24,18 @@
   `data/credential.key`，前端只显示脱敏提示。
 - 任务模型：用户可在每次 Skill 运行时选择连接与模型，运行审计保留供应商和模型名。
 
+## 2026-08-17 · Pi Agent Runtime
+
+- 当前 Next.js 用户界面位于 `web/`，通过服务端 BFF 使用独立的 `agent-runtime/`；运行时依赖 `@earendil-works/pi-agent-core` 和 `@earendil-works/pi-ai`，不引入 `pi-coding-agent`。
+- 普通 AI 助手只加载当前用户可创建草稿的已发布、标准、只读且不修改上传文件的 Skill；工作流 Skill 不进入普通 Agent 目录。
+- 模型密钥由 Python `/api/assistant/model` 网关按部门连接解密和调用，Pi、浏览器和审计记录只保留连接、模型、状态、耗时和 Token 等非敏感信息。
+- 工作流 Agent 只能请求阶段查询、日期设置、日清准备、重新生成和用户确认；动作仍由 FastAPI 校验并交给现有 Workflow/Worker。`ar-hexiao-daily` 当前只做合成和只读验证，不执行真实智云取数或工作簿写入。
+- 工作流 Agent 页面位于 `/dashboard/workflows`，创建会话不会直接启动 Worker；页面确认按钮只把用户确认交给平台原有状态机。
+- 生产 Compose 默认 `AGENT_RUNTIME=pi`，只有灰度旧实现时才设置 `AGENT_RUNTIME=legacy` 并用
+  `AGENT_RUNTIME_PI_USERS` 按 Clerk User ID 选择 Pi；Pi 尚未产生文本或业务工具事件时才允许回退旧实现。
+- 新任务不再等待管理员审批；工作流失败会在进度卡片中显示员工、Skill、失败步骤和脱敏原因。
+  文件中心按 Skill 分组展示运行产出，每次产出创建独立文件记录并保留历史版本。
+
 ## 界面约定
 
 - 默认采用浅色企业财务工作台：蓝色主操作、绿色安全/成功状态、浅灰页面背景。

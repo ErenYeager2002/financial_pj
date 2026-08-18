@@ -27,6 +27,7 @@ x-backend: &backend
     FINANCIAL_CLERK_AUTHORIZED_PARTIES: ${FINANCIAL_CLERK_AUTHORIZED_PARTIES}
     FINANCIAL_TRUSTED_ORIGINS: ${FINANCIAL_TRUSTED_ORIGINS}
     FINANCIAL_ZHIYUN_BASE_URL: ${FINANCIAL_ZHIYUN_BASE_URL:-}
+    FINANCIAL_AR_HEXIAO_EXECUTION_ENABLED: ${FINANCIAL_AR_HEXIAO_EXECUTION_ENABLED:-false}
     FINANCIAL_NETWORK_POLICY_MODE: ${FINANCIAL_NETWORK_POLICY_MODE:-strict}
     FINANCIAL_SESSION_COOKIE_SECURE: "true"
     FINANCIAL_WORKER_COUNTS: python:2,http:2,workflow:2
@@ -179,8 +180,8 @@ services:
   next:
     image: financial-platform-next:stage10
     build:
-      context: ${NEXT_APP_DIR:-../../web}
-      dockerfile: Dockerfile
+      context: ${NEXT_BUILD_CONTEXT:-../..}
+      dockerfile: ${NEXT_DOCKERFILE:-web/Dockerfile.monorepo}
       args:
         NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
         NEXT_PUBLIC_CLERK_SIGN_IN_URL: /auth/sign-in
@@ -191,6 +192,7 @@ services:
     read_only: true
     tmpfs:
       - /tmp:size=128m,mode=1777
+      - /app/.next/cache:size=128m,mode=1777
     environment:
       NODE_ENV: production
       PORT: "3000"
@@ -204,6 +206,9 @@ services:
       NEXT_PUBLIC_APP_URL: ${PLATFORM_PUBLIC_ORIGIN:-https://localhost:8443}
       FINANCIAL_PLATFORM_API_URL: http://api:8000
       FINANCIAL_PLATFORM_REQUEST_TIMEOUT_MS: "30000"
+      AGENT_RUNTIME: ${AGENT_RUNTIME:-pi}
+      AGENT_RUNTIME_PI_USERS: ${AGENT_RUNTIME_PI_USERS:-}
+      AGENT_RUNTIME_FALLBACK: ${AGENT_RUNTIME_FALLBACK:-legacy}
       NEXT_PUBLIC_SENTRY_DISABLED: "true"
     networks:
       - edge

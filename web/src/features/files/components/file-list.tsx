@@ -40,9 +40,26 @@ export function FileList({ result, kind, query }: FileListProps) {
   const router = useRouter();
   const [deletingId, setDeletingId] = useState('');
   const [error, setError] = useState('');
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
   const files = result.items ?? [];
+  const groups = Array.from(
+    files
+      .reduce((map, file) => {
+        const key = file.skill_id || 'unassigned';
+        const current = map.get(key) ?? {
+          label: file.skill_name || file.skill_id || '未归类文件',
+          files: [] as typeof files
+        };
+        current.files.push(file);
+        map.set(key, current);
+        return map;
+      }, new Map<string, { label: string; files: typeof files }>())
+      .entries()
+  );
 
   async function deleteFile(fileId: string) {
+    const file = files.find((item) => item.id === fileId);
+    if (!file || !window.confirm(`确认删除文件“${file.name}”吗？删除后不能恢复。`)) return;
     setDeletingId(fileId);
     setError('');
     const response = await fetch(`/api/platform/files/${encodeURIComponent(fileId)}`, {
@@ -72,59 +89,107 @@ export function FileList({ result, kind, query }: FileListProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>文件记录</CardTitle>
+        <div className='flex flex-wrap items-center justify-between gap-2'>
+          <CardTitle>文件记录</CardTitle>
+          <div className='flex gap-2'>
+            <Button
+              type='button'
+              size='sm'
+              variant='ghost'
+              onClick={() => setCollapsedGroups(new Set())}
+            >
+              全部展开
+            </Button>
+            <Button
+              type='button'
+              size='sm'
+              variant='ghost'
+              onClick={() => setCollapsedGroups(new Set(groups.map(([key]) => key)))}
+            >
+              全部收起
+            </Button>
+          </div>
+        </div>
         <CardDescription>
-          共 {result.total} 个文件；保留日期用于后续清理策略，当前不会自动删除文件。
+          共 {result.total} 个文件；按 Skill 分组，可展开查看，删除前会再次确认。
         </CardDescription>
       </CardHeader>
       <CardContent>
         {error && <p className='mb-3 text-sm text-destructive'>{error}</p>}
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>文件</TableHead>
-              <TableHead>类型</TableHead>
-              <TableHead>大小</TableHead>
-              <TableHead>创建时间</TableHead>
-              <TableHead>保留至</TableHead>
-              <TableHead className='text-right'>操作</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {files.map((file) => (
-              <TableRow key={file.id}>
-                <TableCell>
-                  <p className='max-w-72 truncate font-medium'>{file.name}</p>
-                  <p className='text-xs text-muted-foreground'>
-                    SHA-256 {file.sha256.slice(0, 12)}…
-                  </p>
-                </TableCell>
-                <TableCell>{file.kind === 'output' ? '结果文件' : '上传文件'}</TableCell>
-                <TableCell>{formatBytes(file.size_bytes)}</TableCell>
-                <TableCell>{formatDate(file.created_at ?? undefined)}</TableCell>
-                <TableCell>{formatDate(file.expires_at ?? undefined)}</TableCell>
-                <TableCell className='space-x-2 text-right'>
-                  <a
-                    href={`/api/platform/files/${encodeURIComponent(file.id)}/download`}
-                    className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                  >
-                    下载
-                  </a>
-                  <Button
-                    type='button'
-                    size='sm'
-                    variant='destructive'
-                    disabled={!file.can_delete || deletingId === file.id}
-                    title={file.delete_block_reason || '删除未被任务引用的上传文件'}
-                    onClick={() => void deleteFile(file.id)}
-                  >
-                    {deletingId === file.id ? '删除中…' : '删除'}
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+        <div className='space-y-6'>
+          {groups.map(([key, group]) => (
+            <details
+              key={key}
+              open={!collapsedGroups.has(key)}
+              className='overflow-hidden rounded-lg border'
+              onToggle={(event) => {
+                const open = event.currentTarget.open;
+                setCollapsedGroups((current) => {
+                  const next = new Set(current);
+                  if (open) next.delete(key);
+                  else next.add(key);
+                  return next;
+                });
+              }}
+            >
+              <summary className='cursor-pointer list-none px-4 py-3 hover:bg-muted/40'>
+                <span className='flex flex-wrap items-center gap-2'>
+                  <span aria-hidden='true'>{collapsedGroups.has(key) ? '▸' : '▾'}</span>
+                  <span className='font-medium'>{group.label}</span>
+                  <span className='text-xs text-muted-foreground'>{group.files.length} 个文件</span>
+                </span>
+              </summary>
+              <div className='overflow-x-auto border-t px-2 pb-2'>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>文件</TableHead>
+                    <TableHead>类型</TableHead>
+                    <TableHead>大小</TableHead>
+                    <TableHead>创建时间</TableHead>
+                    <TableHead>保留至</TableHead>
+                    <TableHead className='text-right'>操作</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {group.files.map((file) => (
+                    <TableRow key={file.id}>
+                      <TableCell>
+                        <p className='max-w-72 truncate font-medium'>{file.name}</p>
+                        <p className='text-xs text-muted-foreground'>
+                          SHA-256 {file.sha256.slice(0, 12)}…
+                        </p>
+                      </TableCell>
+                      <TableCell>{file.kind === 'output' ? '结果文件' : '上传文件'}</TableCell>
+                      <TableCell>{formatBytes(file.size_bytes)}</TableCell>
+                      <TableCell>{formatDate(file.created_at ?? undefined)}</TableCell>
+                      <TableCell>{formatDate(file.expires_at ?? undefined)}</TableCell>
+                      <TableCell className='space-x-2 text-right'>
+                        <a
+                          href={`/api/platform/files/${encodeURIComponent(file.id)}/download`}
+                          className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                        >
+                          下载
+                        </a>
+                        <Button
+                          type='button'
+                          size='sm'
+                          variant='destructive'
+                          disabled={!file.can_delete || deletingId === file.id}
+                          title={file.delete_block_reason || '删除未被任务引用的上传文件'}
+                          onClick={() => void deleteFile(file.id)}
+                        >
+                          {deletingId === file.id ? '删除中…' : '删除'}
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              </div>
+            </details>
+          ))}
+        </div>
         {result.pages > 1 && (
           <Pagination className='mt-4'>
             <PaginationContent>

@@ -279,6 +279,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/assistant/conversations/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Latest Assistant Conversation */
+        get: operations["latest_assistant_conversation_api_assistant_conversations_latest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/assistant/conversations/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Assistant Conversation */
+        get: operations["assistant_conversation_api_assistant_conversations__session_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/assistant/conversations/{session_id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Append Assistant Conversation Message */
+        post: operations["append_assistant_conversation_message_api_assistant_conversations__session_id__messages_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/assistant/model": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stream Agent Model
+         * @description 给服务端 Pi Runtime 提供受部门模型配置约束的 SSE 上游。
+         */
+        post: operations["stream_agent_model_api_assistant_model_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/assistant/prepare": {
         parameters: {
             query?: never;
@@ -290,6 +361,46 @@ export interface paths {
         put?: never;
         /** Prepare */
         post: operations["prepare_api_assistant_prepare_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/assistant/prepare-from-recommendation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Prepare From Agent Recommendation
+         * @description 校验 Pi 工具返回的推荐，并复用现有草稿安全边界。
+         */
+        post: operations["prepare_from_agent_recommendation_api_assistant_prepare_from_recommendation_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/assistant/skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Assistant Skills
+         * @description Return the Skill directory that the current Platform User may turn into a draft.
+         */
+        get: operations["list_assistant_skills_api_assistant_skills_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -955,6 +1066,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/workflows/{workflow_id}/agent/actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Workflow Agent Action
+         * @description Apply one allowlisted Agent request; scripts remain Worker-owned.
+         */
+        post: operations["workflow_agent_action_api_workflows__workflow_id__agent_actions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workflows/{workflow_id}/agent/context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Workflow Agent Context
+         * @description Return server-only model binding data without adding it to the public workflow DTO.
+         */
+        get: operations["workflow_agent_context_api_workflows__workflow_id__agent_context_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/workflows/{workflow_id}/confirm": {
         parameters: {
             query?: never;
@@ -1208,6 +1359,61 @@ export interface components {
             /** Status */
             status?: ("active" | "disabled") | null;
         };
+        /**
+         * AgentModelRequest
+         * @description Pi 的 OpenAI Chat Completions 请求白名单。
+         */
+        AgentModelRequest: {
+            /** Connection Id */
+            connection_id?: string | null;
+            /** Max Completion Tokens */
+            max_completion_tokens?: number | null;
+            /** Max Tokens */
+            max_tokens?: number | null;
+            /** Messages */
+            messages: {
+                [key: string]: unknown;
+            }[];
+            /** Model */
+            model: string;
+            /** Parallel Tool Calls */
+            parallel_tool_calls?: boolean | null;
+            /** Reasoning Effort */
+            reasoning_effort?: string | null;
+            /** Response Format */
+            response_format?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Stream
+             * @default true
+             */
+            stream: boolean;
+            /** Stream Options */
+            stream_options?: {
+                [key: string]: unknown;
+            } | null;
+            /** Temperature */
+            temperature?: number | null;
+            /** Tool Choice */
+            tool_choice?: string | {
+                [key: string]: unknown;
+            } | null;
+            /** Tools */
+            tools?: {
+                [key: string]: unknown;
+            }[];
+            /** Top P */
+            top_p?: number | null;
+        };
+        /** AgentPrepareRequest */
+        AgentPrepareRequest: {
+            /** File Ids */
+            file_ids?: string[];
+            /** Message */
+            message: string;
+            recommendation: components["schemas"]["AssistantRecommendation"];
+        };
         /** ApprovalDecisionRequest */
         ApprovalDecisionRequest: {
             /**
@@ -1297,12 +1503,88 @@ export interface components {
              */
             workflow_id: string | null;
         };
+        /** AssistantConversationRead */
+        AssistantConversationRead: {
+            /** Messages */
+            messages?: components["schemas"]["AssistantMessageRead"][];
+            /** Session Id */
+            session_id: string;
+            /**
+             * Updated At
+             * @default null
+             */
+            updated_at: string | null;
+        };
+        /** AssistantMessageRead */
+        AssistantMessageRead: {
+            /** Content */
+            content: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Data */
+            data?: {
+                [key: string]: unknown;
+            };
+            /** Id */
+            id: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "user" | "assistant" | "system";
+            /** Session Id */
+            session_id: string;
+        };
+        /** AssistantMessageWrite */
+        AssistantMessageWrite: {
+            /** Content */
+            content: string;
+            /** Data */
+            data?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "user" | "assistant" | "system";
+        };
         /** AssistantPrepareRequest */
         AssistantPrepareRequest: {
             /** File Ids */
             file_ids?: string[];
             /** Message */
             message: string;
+        };
+        /** AssistantRecommendation */
+        AssistantRecommendation: {
+            /** Candidates */
+            candidates?: string[];
+            /**
+             * Clarification
+             * @default
+             */
+            clarification: string;
+            /** Confidence */
+            confidence: number;
+            /**
+             * Confirmation Text
+             * @default
+             */
+            confirmation_text: string;
+            /** File Roles */
+            file_roles?: {
+                [key: string]: string | string[];
+            };
+            /** Parameters */
+            parameters?: {
+                [key: string]: unknown;
+            };
+            /** Skill Id */
+            skill_id: string;
         };
         /** AssistantStatus */
         AssistantStatus: {
@@ -1342,6 +1624,11 @@ export interface components {
              * @default
              */
             role: string;
+            /**
+             * Skill Id
+             * @default
+             */
+            skill_id: string;
             /** Upload */
             upload: string;
         };
@@ -1630,6 +1917,26 @@ export interface components {
             sha256: string;
             /** Size Bytes */
             size_bytes: number;
+            /**
+             * Skill Id
+             * @default
+             */
+            skill_id: string;
+            /**
+             * Skill Name
+             * @default
+             */
+            skill_name: string;
+            /**
+             * Skill Version
+             * @default
+             */
+            skill_version: string;
+            /**
+             * Workflow Id
+             * @default null
+             */
+            workflow_id: string | null;
         };
         /** PlatformFileDetail */
         PlatformFileDetail: {
@@ -1684,6 +1991,26 @@ export interface components {
             sha256: string;
             /** Size Bytes */
             size_bytes: number;
+            /**
+             * Skill Id
+             * @default
+             */
+            skill_id: string;
+            /**
+             * Skill Name
+             * @default
+             */
+            skill_name: string;
+            /**
+             * Skill Version
+             * @default
+             */
+            skill_version: string;
+            /**
+             * Workflow Id
+             * @default null
+             */
+            workflow_id: string | null;
         };
         /** PlatformFilePage */
         PlatformFilePage: {
@@ -2686,6 +3013,97 @@ export interface components {
             /** State */
             state: string;
         };
+        /** WorkflowAgentActionResponse */
+        WorkflowAgentActionResponse: {
+            /** Action */
+            action: string;
+            /** Await Confirmation */
+            await_confirmation: boolean;
+            /**
+             * Confirmation Kind
+             * @default
+             * @enum {string}
+             */
+            confirmation_kind: "" | "date" | "apply";
+            /** Message */
+            message: string;
+            workflow: components["schemas"]["WorkflowRead"];
+        };
+        /** WorkflowAgentConfirmationArguments */
+        WorkflowAgentConfirmationArguments: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "date" | "apply";
+            /**
+             * Message
+             * @default
+             */
+            message: string;
+        };
+        /** WorkflowAgentConfirmationRequest */
+        WorkflowAgentConfirmationRequest: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            action: "request_user_confirmation";
+            arguments: components["schemas"]["WorkflowAgentConfirmationArguments"];
+        };
+        /** WorkflowAgentContext */
+        WorkflowAgentContext: {
+            /** Connection Id */
+            connection_id?: string | null;
+            /**
+             * Model
+             * @default
+             */
+            model: string;
+            workflow: components["schemas"]["WorkflowRead"];
+        };
+        /** WorkflowAgentEmptyArguments */
+        WorkflowAgentEmptyArguments: Record<string, never>;
+        /** WorkflowAgentRegenerationArguments */
+        WorkflowAgentRegenerationArguments: {
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+        };
+        /** WorkflowAgentRegenerationRequest */
+        WorkflowAgentRegenerationRequest: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            action: "request_regeneration";
+            arguments: components["schemas"]["WorkflowAgentRegenerationArguments"];
+        };
+        /** WorkflowAgentSetDateArguments */
+        WorkflowAgentSetDateArguments: {
+            /** Date */
+            date: string;
+        };
+        /** WorkflowAgentSetDateRequest */
+        WorkflowAgentSetDateRequest: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            action: "set_reconciliation_date";
+            arguments: components["schemas"]["WorkflowAgentSetDateArguments"];
+        };
+        /** WorkflowAgentStageRequest */
+        WorkflowAgentStageRequest: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            action: "get_workflow_stage" | "prepare_daily_reconciliation";
+            arguments: components["schemas"]["WorkflowAgentEmptyArguments"];
+        };
         /** WorkflowBatchRead */
         WorkflowBatchRead: {
             /**
@@ -2734,7 +3152,7 @@ export interface components {
             /** Model */
             model?: string | null;
             /** Model Connection Id */
-            model_connection_id: string;
+            model_connection_id?: string | null;
             /** Reconciliation Dates */
             reconciliation_dates: string[];
             /** Skill Id */
@@ -2830,6 +3248,16 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /**
+             * Current Step
+             * @default
+             */
+            current_step: string;
+            /**
+             * Current Step Label
+             * @default
+             */
+            current_step_label: string;
             /** Error Message */
             error_message: string;
             /** Files */
@@ -2868,6 +3296,15 @@ export interface components {
             /** State */
             state: string;
             /**
+             * Step Error
+             * @default
+             */
+            step_error: string;
+            /** Step Error Detail */
+            step_error_detail?: {
+                [key: string]: string;
+            };
+            /**
              * Updated At
              * Format: date-time
              */
@@ -2882,7 +3319,7 @@ export interface components {
             /** Model */
             model?: string | null;
             /** Model Connection Id */
-            model_connection_id: string;
+            model_connection_id?: string | null;
             /** Reconciliation Date */
             reconciliation_date: string;
             /** Skill Id */
@@ -2901,9 +3338,15 @@ export type AdminSkillDetail = components['schemas']['AdminSkillDetail'];
 export type AdminUserCreate = components['schemas']['AdminUserCreate'];
 export type AdminUserRead = components['schemas']['AdminUserRead'];
 export type AdminUserUpdate = components['schemas']['AdminUserUpdate'];
+export type AgentModelRequest = components['schemas']['AgentModelRequest'];
+export type AgentPrepareRequest = components['schemas']['AgentPrepareRequest'];
 export type ApprovalDecisionRequest = components['schemas']['ApprovalDecisionRequest'];
 export type ApprovalRecord = components['schemas']['ApprovalRecord'];
+export type AssistantConversationRead = components['schemas']['AssistantConversationRead'];
+export type AssistantMessageRead = components['schemas']['AssistantMessageRead'];
+export type AssistantMessageWrite = components['schemas']['AssistantMessageWrite'];
 export type AssistantPrepareRequest = components['schemas']['AssistantPrepareRequest'];
+export type AssistantRecommendation = components['schemas']['AssistantRecommendation'];
 export type AssistantStatus = components['schemas']['AssistantStatus'];
 export type AuditEventRead = components['schemas']['AuditEventRead'];
 export type BodyUploadFileApiFilesPost = components['schemas']['Body_upload_file_api_files_post'];
@@ -2967,6 +3410,16 @@ export type Workbench = components['schemas']['Workbench'];
 export type WorkbenchCounts = components['schemas']['WorkbenchCounts'];
 export type WorkbenchSkillUsage = components['schemas']['WorkbenchSkillUsage'];
 export type WorkflowActionRead = components['schemas']['WorkflowActionRead'];
+export type WorkflowAgentActionResponse = components['schemas']['WorkflowAgentActionResponse'];
+export type WorkflowAgentConfirmationArguments = components['schemas']['WorkflowAgentConfirmationArguments'];
+export type WorkflowAgentConfirmationRequest = components['schemas']['WorkflowAgentConfirmationRequest'];
+export type WorkflowAgentContext = components['schemas']['WorkflowAgentContext'];
+export type WorkflowAgentEmptyArguments = components['schemas']['WorkflowAgentEmptyArguments'];
+export type WorkflowAgentRegenerationArguments = components['schemas']['WorkflowAgentRegenerationArguments'];
+export type WorkflowAgentRegenerationRequest = components['schemas']['WorkflowAgentRegenerationRequest'];
+export type WorkflowAgentSetDateArguments = components['schemas']['WorkflowAgentSetDateArguments'];
+export type WorkflowAgentSetDateRequest = components['schemas']['WorkflowAgentSetDateRequest'];
+export type WorkflowAgentStageRequest = components['schemas']['WorkflowAgentStageRequest'];
 export type WorkflowBatchRead = components['schemas']['WorkflowBatchRead'];
 export type WorkflowBatchStart = components['schemas']['WorkflowBatchStart'];
 export type WorkflowCreate = components['schemas']['WorkflowCreate'];
@@ -3532,6 +3985,126 @@ export interface operations {
             };
         };
     };
+    latest_assistant_conversation_api_assistant_conversations_latest_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantConversationRead"] | null;
+                };
+            };
+        };
+    };
+    assistant_conversation_api_assistant_conversations__session_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantConversationRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    append_assistant_conversation_message_api_assistant_conversations__session_id__messages_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistantMessageWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantMessageRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stream_agent_model_api_assistant_model_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentModelRequest"];
+            };
+        };
+        responses: {
+            /** @description 模型流式响应。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                    "text/event-stream": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     prepare_api_assistant_prepare_post: {
         parameters: {
             query?: never;
@@ -3561,6 +4134,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    prepare_from_agent_recommendation_api_assistant_prepare_from_recommendation_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentPrepareRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskDraft"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_assistant_skills_api_assistant_skills_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillDetail"][];
                 };
             };
         };
@@ -4960,6 +5586,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkflowRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    workflow_agent_action_api_workflows__workflow_id__agent_actions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowAgentSetDateRequest"] | components["schemas"]["WorkflowAgentStageRequest"] | components["schemas"]["WorkflowAgentRegenerationRequest"] | components["schemas"]["WorkflowAgentConfirmationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowAgentActionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    workflow_agent_context_api_workflows__workflow_id__agent_context_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowAgentContext"];
                 };
             };
             /** @description Validation Error */

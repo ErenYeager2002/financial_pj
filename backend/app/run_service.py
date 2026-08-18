@@ -13,7 +13,6 @@ from jsonschema import Draft202012Validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .approval_service import manifest_requires_approval
 from .auth import UserContext
 from .authorization import assert_skill_permission
 from .events import emit_event
@@ -256,23 +255,13 @@ def create_run(db: Session, request: RunCreate, user: UserContext) -> RunRecord:
     skill = registry.get(request.skill_id)
     if not skill:
         raise HTTPException(status_code=404, detail="Skill 不存在或尚未发布。")
-    permission = assert_skill_permission(db, user, request.skill_id)
+    assert_skill_permission(db, user, request.skill_id)
     if request.files:
         assert_skill_permission(db, user, request.skill_id, "can_upload")
     if skill.manifest.handler.adapter == "workflow":
         raise HTTPException(
             status_code=422,
             detail="该 Skill 需要通过对话式工作流创建任务。",
-        )
-    if manifest_requires_approval(skill.manifest) or bool(
-        permission and permission.requires_approval
-    ):
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "写入型、外部动作型或额外审批型标准任务尚未接入变更预览，"
-                "不能直接创建；请使用已接入审批的工作流。"
-            ),
         )
     if request.idempotency_key:
         existing = db.scalar(

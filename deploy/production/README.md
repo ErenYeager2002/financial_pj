@@ -8,7 +8,25 @@
 - Worker 只加入 `internal` 数据网络，不能直接访问公网；需要联网的 Skill 子进程只能通过出站代理；
 - 出站代理的 `strict` 模式只接受 HTTPS CONNECT，并按精确 FQDN 和 443 端口放行；`internal` 模式只允许显式配置的 RFC1918 IPv4、HTTP 协议和端口；空目标列表默认拒绝全部目标；
 - FastAPI 和 Next.js 可访问外部 Clerk，浏览器只访问同一 HTTPS 入口；
-- `ar-hexiao-daily` 在真实取数、受控写入专项回归和管理员批准完成前继续保持 disabled。
+- `ar-hexiao-daily` 通过平台 Workflow Worker 执行，不进入普通 Pi Skill 目录；启用后可在平台工作流中执行真实取数和受控写入。
+
+AI 助手生产默认使用服务端 Pi Agent Runtime（`AGENT_RUNTIME=pi`）。如需灰度旧实现，才设置
+`AGENT_RUNTIME=legacy`；在该模式下把测试账号的 Clerk User ID 填入 `AGENT_RUNTIME_PI_USERS`
+（逗号分隔），这些账号会继续使用 Pi，其余账号使用旧实现。`AGENT_RUNTIME_FALLBACK=legacy`
+时，Pi 在尚未调用业务工具就发生故障时自动回退旧实现；如果 Pi 已经调用工具，则不会重放
+旧流程，避免重复改变任务状态。
+Pi 只加载平台按当前用户过滤出的业务工具，模型密钥仍由 FastAPI 模型网关管理；切换运行时
+不会改变 Skill 发布和执行权限。
+
+网页中的 `/dashboard/workflows` 是工作流 Agent 入口：创建会话后先进入等待日期阶段，Agent
+只能请求五类受控动作，页面确认按钮仍调用平台已有状态机。运行任务不再等待管理员审批；
+写入型工作流仍保留发起人的写入确认和变更复核。执行失败时，任务卡片直接显示员工、Skill、
+失败步骤和原因。
+
+生产配置中的 `FINANCIAL_AR_HEXIAO_EXECUTION_ENABLED=false` 会在工作流创建、旧消息入口、
+批次重试、Agent 动作和 Workflow Worker 入口统一拒绝该 Skill 的真实执行；读取已有任务状态
+仍可用。当前本机联调配置已显式设为 `true`，因此可进行真实流程联调；正式环境只有在完成
+智云连接和写入副本验收后才应设为 `true`。不要仅依赖前端按钮禁用来保证这项限制。
 
 先生成被 Git 忽略且限制 ACL 的 `.env`：
 
@@ -76,8 +94,8 @@ D:\BESTEASY\financial_pj\.venv\Scripts\python.exe scripts\prepare_production_env
 上述示例域名必须替换为公司正式域名。智云地址只接受 HTTPS、真实 FQDN 和 443，禁止填写
 IP、通配符、本机 Hosts 别名或临时反向代理。生成后必须依次运行 `--check`、
 `docker compose ... config --quiet` 和现场连通性验收。正式对外部署仍要求真实智云
-FQDN；内网联调模式不替代该项验收。无论使用哪种模式，`ar-hexiao-daily` 都必须在
-受控写入专项回归和管理员批准前保持 disabled。
+FQDN；内网联调模式不替代该项验收。无论使用哪种模式，`ar-hexiao-daily` 都不得进入
+普通 Pi Skill 目录；真实取数和写入仍需按现有工作流确认与变更复核执行，不再要求管理员审批。
 
 平台正式域名还需要在 Clerk Dashboard 中加入允许来源和重定向地址；平台脚本只更新本地
 authorized party 与可信来源，不会代替 Clerk 控制台配置。

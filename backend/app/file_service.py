@@ -6,19 +6,32 @@ from sqlalchemy.orm import Session
 
 from .auth import UserContext
 from .contracts import PlatformFile, PlatformFileDetail
-from .models import FileRecord
+from .models import FileRecord, RunRecord
 from .resource_policy import assert_owner, owner_list_filter
 from .storage import file_delete_status, file_expiry, file_references
 
 
 def serialize_file(db: Session, record: FileRecord) -> PlatformFile:
     can_delete, delete_block_reason = file_delete_status(db, record)
+    skill_id = record.skill_id
+    skill_name = record.skill_name
+    skill_version = record.skill_version
+    if not skill_id and record.run_id:
+        run = db.get(RunRecord, record.run_id)
+        if run:
+            skill_id = run.skill_id
+            skill_name = run.skill_name
+            skill_version = run.skill_version
     return PlatformFile(
         id=record.id,
         name=record.original_name,
         size_bytes=record.size_bytes,
         sha256=record.sha256,
         kind=record.kind,
+        skill_id=skill_id,
+        skill_name=skill_name,
+        skill_version=skill_version,
+        workflow_id=record.workflow_id or None,
         content_type=record.content_type,
         run_id=record.run_id,
         created_at=record.created_at,

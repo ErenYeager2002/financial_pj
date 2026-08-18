@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-// @ts-expect-error Node's built-in TypeScript runner requires the explicit extension.
 import { getPlatformNavigation } from '../src/config/platform-navigation.ts';
 
 function itemTitles(role: 'finance_user' | 'skill_admin'): string[] {
@@ -34,17 +33,18 @@ test('财务员工只看到完成任务所需的生产导航', () => {
     '我的任务',
     '文件中心',
     'AI 助手',
+    '后台任务',
     '个人资料',
     '消息通知'
   ]);
 });
 
-test('Skill 管理员额外看到待办和治理入口', () => {
+test('Skill 管理员额外看到治理入口', () => {
   const groups = getPlatformNavigation('skill_admin');
 
   assert.deepEqual(
     groups.map((group) => group.label),
-    ['我的工作', '待办', '管理', '账号']
+    ['我的工作', '管理', '账号']
   );
   assert.deepEqual(itemTitles('skill_admin'), [
     '工作台',
@@ -52,7 +52,7 @@ test('Skill 管理员额外看到待办和治理入口', () => {
     '我的任务',
     '文件中心',
     'AI 助手',
-    '待我审批',
+    '后台任务',
     'Skill 治理',
     '发布与维护',
     '审核记录',
@@ -104,7 +104,8 @@ test('两种平台角色的菜单层级和链接符合生产规格', () => {
         { title: 'Skill 中心', url: '/dashboard/skills', items: [] },
         { title: '我的任务', url: '/dashboard/runs', items: [] },
         { title: '文件中心', url: '/dashboard/files', items: [] },
-        { title: 'AI 助手', url: '/dashboard/ai-chat', items: [] }
+        { title: 'AI 助手', url: '/dashboard/ai-chat', items: [] },
+        { title: '后台任务', url: '/dashboard/workflows', items: [] }
       ]
     },
     {
@@ -124,12 +125,9 @@ test('两种平台角色的菜单层级和链接符合生产规格', () => {
         { title: 'Skill 中心', url: '/dashboard/skills', items: [] },
         { title: '我的任务', url: '/dashboard/runs', items: [] },
         { title: '文件中心', url: '/dashboard/files', items: [] },
-        { title: 'AI 助手', url: '/dashboard/ai-chat', items: [] }
+        { title: 'AI 助手', url: '/dashboard/ai-chat', items: [] },
+        { title: '后台任务', url: '/dashboard/workflows', items: [] }
       ]
-    },
-    {
-      label: '待办',
-      items: [{ title: '待我审批', url: '/dashboard/approvals', items: [] }]
     },
     {
       label: '管理',

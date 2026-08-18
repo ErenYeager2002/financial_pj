@@ -192,7 +192,7 @@ Next.js 只增加显式平台路由，例如 `/api/platform/session`。后续上
 - 新增平台领域词汇表，固定 Platform User、Skill、Run、Run Event、Platform File、Task Draft、Approval Record 和 Audit Event 的含义，明确 Clerk 用户不等于平台用户、任务草稿不能直接执行。
 - FastAPI 新增 `PlatformUser`、`SkillSummary`、`SkillDetail`、`AdminSkillDetail`、`RunSummary`、`RunDetail`、`RunEventRead`、`PlatformFile`、`AuditEventRead`、`TaskDraft` 和 `ApprovalRecord` 契约。
 - `/api/session`、健康检查、Skill、上传、任务摘要/详情和 Registry 重载补齐显式响应模型；管理员与员工 Skill DTO 分离，员工 DTO 不含 handler、runtime、permissions、source、skill_hash 和输出实现结构。
-- 新增确定性 OpenAPI 导出与 `--check`，后端和 Next.js 各保存一份 `financial-platform.openapi.json`；Next.js 使用 `openapi-typescript` 生成 `src/features/platform-api/generated.ts`，业务代码只引用稳定别名。
+- 新增确定性 OpenAPI 导出与 `--check`；仓库根目录统一保存 `contracts/financial-platform.openapi.json`，Next.js 使用 `openapi-typescript` 生成 `src/features/platform-api/generated.ts`，业务代码只引用稳定别名。
 
 ### 2026-08-14 阶段四第一段执行记录
 
@@ -305,3 +305,18 @@ Next.js 只增加显式平台路由，例如 `/api/platform/session`。后续上
 - 新后端镜像为 `sha256:d485a4e81a2cbcd98c7e6fbf29f8c2115db7cc3527096b37982fd09a249a5318`。运行态中 Worker 直接连接公网返回 `Network is unreachable`，生产代理访问未批准域名返回 403；隔离临时代理只列出 `example.com` 时该主机返回 200，而 `www.example.com` 返回 403，验证后临时容器已删除。
 - API、出站代理、PostgreSQL 和 6 个 Worker 均正常运行；健康接口为 production、19 个 Skill、0 个 Registry 错误。PostgreSQL 6 线程并发探针仍只有 1 个 Worker 成功领取，幂等合成任务 `d464cc34-2813-4590-8a6f-2cd53ba98bb3` 再次通过。
 - 新增正式域名自动证书与公司证书两套 Caddy 模板，以及不会输出密钥的生产配置生成/校验工具。当前正式配置继续保留 localhost 和空业务白名单；真实智云 HTTPS FQDN、证书信任和现场 443 连通性未提供，因此 P2-05 保持“基础设施完成，待现场验收”，不得恢复写入型 Skill。
+
+### 2026-08-17 Pi Agent Runtime 与执行闸门复核记录
+
+- 新增独立 `agent-runtime` 包，使用 `@earendil-works/pi-agent-core` 和 `@earendil-works/pi-ai`；标准 AI 助手和工作流 Agent 均经 Next.js 服务端 BFF、FastAPI 权限校验和平台模型网关，浏览器不接触模型密钥、数据库连接、本地路径或 Clerk 服务端令牌。
+- `/dashboard/ai-chat` 只允许已发布、标准、只读且有 `can_create_draft` 权限的 Skill；`/dashboard/workflows` 只暴露五类受控动作，Worker 仍是唯一执行者，确认按钮继续调用原有确认与审批状态机。
+- 模型网关拒绝上游缓存、持久化、供应商路由和任意 provider options；SSE `text/event-stream` 已写入根 OpenAPI 契约，工作流动作请求改为按动作名区分的结构化类型。
+- `FINANCIAL_AR_HEXIAO_EXECUTION_ENABLED=false` 在生产 Compose 中默认启用，后端统一拦截工作流创建、启动、旧消息确认、批次重试、Agent 执行动作和 Worker 执行；本阶段没有启动 `ar-hexiao-daily`、访问智云、读取真实财务文件或写入工作簿。
+
+### 2026-08-17 当前执行链调整
+
+- 运行 Skill 不再进入管理员审批队列。新任务不会创建或强制审批记录；旧审批表、历史接口和旧状态仅保留为兼容读取，不能阻断新的 Worker 领取。写入型工作流仍需要发起人的写入确认和变更复核。
+- 任务失败统一记录员工、Skill、失败步骤和脱敏原因，工作流进度卡片直接展示这些信息，避免只显示通用的 500 错误。
+- `/dashboard/ai-chat` 恢复为可连续对话的模型聊天框，并提供运行中任务和指定任务状态查询工具。生产 Compose 默认 `AGENT_RUNTIME=pi`，模型密钥仍由服务端模型网关管理。
+- 文件中心按 Skill 分组展示文件；运行产出使用独立文件记录，保留历史版本，不覆盖已有文件。
+- Pi Runtime 6 项测试、后端完整测试、前端类型检查、OpenAPI 契约检查、Agent 事件解析、生产构建和 Compose 健康检查通过。前端严格 lint 仍只保留模板中既有的 5 条嵌套组件警告。

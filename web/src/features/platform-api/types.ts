@@ -6,6 +6,8 @@ import type {
   AdminUserUpdate as GeneratedAdminUserUpdate,
   ApprovalDecisionRequest as GeneratedApprovalDecisionRequest,
   ApprovalRecord as GeneratedApprovalRecord,
+  AssistantConversationRead as GeneratedAssistantConversation,
+  AssistantMessageRead as GeneratedAssistantMessage,
   AssistantStatus as GeneratedAssistantStatus,
   AuditEventRead as GeneratedAuditEvent,
   ModelConnectionRead as GeneratedModelConnection,
@@ -30,12 +32,16 @@ import type {
   SkillSummary as GeneratedSkillSummary,
   StepRunRead as GeneratedStepRun,
   WorkflowDefinitionRead as GeneratedWorkflowDefinition,
+  WorkflowRead as GeneratedWorkflowRead,
+  WorkflowAgentContext as GeneratedWorkflowAgentContext,
   TaskDraft as GeneratedTaskDraft,
   Workbench as GeneratedWorkbench
 } from './generated';
 
 export type PlatformUser = GeneratedPlatformUser;
 export type AssistantStatus = GeneratedAssistantStatus;
+export type AssistantConversation = GeneratedAssistantConversation;
+export type AssistantMessage = GeneratedAssistantMessage;
 export type AdminAssistantProfile = GeneratedAdminAssistantProfile;
 export type AdminUser = GeneratedAdminUser;
 export type AdminUserCreate = GeneratedAdminUserCreate;
@@ -60,6 +66,9 @@ export type RunApproval = GeneratedRunApproval;
 export type RunEvent = GeneratedRunEvent;
 export type RunStep = GeneratedStepRun;
 export type WorkflowDefinition = GeneratedWorkflowDefinition;
+export type WorkflowRead = GeneratedWorkflowRead;
+export type WorkflowBatchRead = import('./generated').WorkflowBatchRead;
+export type WorkflowAgentContext = GeneratedWorkflowAgentContext;
 export type PlatformFile = GeneratedPlatformFile;
 export type PlatformFileDetail = GeneratedPlatformFileDetail;
 export type PlatformFilePage = GeneratedPlatformFilePage;

@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from .assistant_profile_service import resolve_assistant_config
 from .auth import UserContext
 from .authorization import allowed_skill_ids, assert_skill_permission
-from .contracts import SkillSummary, TaskDraft
+from .contracts import SkillDetail, SkillSummary, TaskDraft
 from .model_providers import chat_completion_request
 from .models import FileRecord, ModelTraceRecord, RunRecord, TaskDraftRecord
 from .orchestrator import config_extra_body, interpret_parameters
@@ -67,6 +67,14 @@ def _safe_skills(db: Session, user: UserContext) -> list[RegisteredSkill]:
         and item.manifest.handler.adapter != "workflow"
         and item.manifest.risk.level == "read_only"
         and not item.manifest.risk.modifies_uploaded_files
+    ]
+
+
+def list_agent_skill_details(db: Session, user: UserContext) -> list[SkillDetail]:
+    """Return exactly the published, read-only Skills eligible for draft creation."""
+    return [
+        SkillDetail.model_validate(item.employee_dict(include_schema=True))
+        for item in _safe_skills(db, user)
     ]
 
 
@@ -278,13 +286,14 @@ def _model_trace(
     user: UserContext,
     config: Any,
     trace: RecommendationTrace,
+    purpose: str = "assistant_recommendation",
 ) -> ModelTraceRecord:
     return ModelTraceRecord(
         id=str(uuid.uuid4()),
         owner_id=user.user_id,
         department_id=user.department_id,
         connection_id=config.connection_id,
-        purpose="assistant_recommendation",
+        purpose=purpose,
         provider=config.provider,
         model=config.model,
         status=str(trace.get("status", "failed")),
@@ -437,6 +446,8 @@ def prepare_task_draft(
     message: str,
     file_ids: list[str],
     recommender: RecommendationClient | None = None,
+    recommendation: AssistantRecommendation | None = None,
+    trace_purpose: str = "assistant_recommendation",
 ) -> TaskDraft:
     skills = _safe_skills(db, user)
     if not skills:
@@ -445,19 +456,28 @@ def prepare_task_draft(
     config = resolve_assistant_config(db, user)
     trace: RecommendationTrace = {}
     try:
-        recommendation = _invoke_recommender(
-            recommender or _call_recommender,
-            _recommendation_payload(skills, message, selected, config.model),
-            config,
-            trace,
-        )
+        if recommendation is None:
+            recommendation = _invoke_recommender(
+                recommender or _call_recommender,
+                _recommendation_payload(skills, message, selected, config.model),
+                config,
+                trace,
+            )
+        else:
+            trace.update(
+                status="succeeded",
+                duration_ms=0,
+                input_tokens=0,
+                output_tokens=0,
+                failure_code="agent_tool",
+            )
     except Exception:
-        db.add(_model_trace(user, config, trace))
+        db.add(_model_trace(user, config, trace, trace_purpose))
         db.commit()
         raise
 
     # 模型调用事实先独立保存。后续业务校验拒绝结果时，该记录合法保持无父级。
-    model_trace = _model_trace(user, config, trace)
+    model_trace = _model_trace(user, config, trace, trace_purpose)
     db.add(model_trace)
     db.commit()
     by_id = {item.manifest.id: item for item in skills}
@@ -586,8 +606,6 @@ def confirm_task_draft(
         raise HTTPException(status_code=409, detail="Skill 版本已经变化，请重新生成草稿。")
     assert_skill_permission(db, user, record.skill_id, "can_create_draft")
     assert_skill_permission(db, user, record.skill_id, "can_run")
-    if skill.manifest.risk.requires_approval or skill.manifest.risk.level != "read_only":
-        raise HTTPException(status_code=409, detail="该任务需要审批，当前阶段不能从助手直接执行。")
     parameters = _load(record.parameters_json, {})
     _validate_parameters(skill, parameters)
     files = _load(record.files_json, {})

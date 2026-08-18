@@ -11,12 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { LoadingButton } from '@/components/ui/loading-button';
 import { Progress, ProgressLabel } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
-import {
-  runApprovalsQueryOptions,
-  runKeys,
-  runQueryOptions,
-  runStepsQueryOptions
-} from '@/features/runs/api/queries';
+import { runKeys, runQueryOptions, runStepsQueryOptions } from '@/features/runs/api/queries';
 import { retryRun } from '@/features/runs/api/service';
 import type { PlatformRunDetail, PlatformRunEvent } from '@/features/runs/api/types';
 import { parseRunOutputFiles } from '@/features/runs/run-output-files';
@@ -69,24 +64,13 @@ function stepStateLabel(state: string): string {
     queued: '排队中',
     running: '执行中',
     pending: '尚未开始',
-    waiting_approval: '等待审批',
+    waiting_approval: '继续执行',
     waiting_confirmation: '等待确认',
     succeeded: '已完成',
     failed: '失败',
     cancelled: '已取消',
     timed_out: '已超时',
     skipped: '已跳过'
-  };
-  return labels[state] ?? state;
-}
-
-function approvalStateLabel(state: string): string {
-  const labels: Record<string, string> = {
-    pending: '待审批',
-    approved: '已批准',
-    rejected: '已拒绝',
-    expired: '已过期',
-    revoked: '已撤销'
   };
   return labels[state] ?? state;
 }
@@ -102,11 +86,6 @@ export function RunDetailView({ runId }: RunDetailViewProps): React.JSX.Element 
   const { data: steps, refetch: refetchSteps } = useSuspenseQuery({
     ...runStepsQueryOptions(runId),
     refetchInterval: TERMINAL_RUN_STATES.has(run.state) ? false : 5_000,
-    refetchIntervalInBackground: false
-  });
-  const { data: approvals, refetch: refetchApprovals } = useSuspenseQuery({
-    ...runApprovalsQueryOptions(runId),
-    refetchInterval: TERMINAL_RUN_STATES.has(run.state) ? false : 10_000,
     refetchIntervalInBackground: false
   });
   const [events, setEvents] = useState<PlatformRunEvent[]>([]);
@@ -152,7 +131,6 @@ export function RunDetailView({ runId }: RunDetailViewProps): React.JSX.Element 
       }
       if (event.type === 'state' || TERMINAL_RUN_STATES.has(event.state)) {
         void refetchSteps();
-        void refetchApprovals();
       }
     };
 
@@ -164,7 +142,6 @@ export function RunDetailView({ runId }: RunDetailViewProps): React.JSX.Element 
           source.close();
           setConnection('complete');
           void refetchSteps();
-          void refetchApprovals();
         }
       });
     };
@@ -184,7 +161,7 @@ export function RunDetailView({ runId }: RunDetailViewProps): React.JSX.Element 
       source.removeEventListener('message', handleEvent as EventListener);
       source.close();
     };
-  }, [queryClient, refetch, refetchApprovals, refetchSteps, runId]);
+  }, [queryClient, refetch, refetchSteps, runId]);
 
   const files = parseRunOutputFiles(run);
   const runFiles = run.files ?? {};
@@ -364,53 +341,6 @@ export function RunDetailView({ runId }: RunDetailViewProps): React.JSX.Element 
             </ol>
           ) : (
             <p className='text-muted-foreground'>该任务尚未生成分步执行记录。</p>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>审批记录</CardTitle>
-          <CardDescription>仅显示当前任务的业务审批状态和变更摘要。</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {approvals.length ? (
-            <ol className='space-y-3'>
-              {approvals.map((approval) => (
-                <li key={approval.id} className='rounded-lg border p-3'>
-                  <div className='flex flex-wrap items-center gap-2'>
-                    <Badge variant={approval.status === 'rejected' ? 'destructive' : 'outline'}>
-                      {approvalStateLabel(approval.status)}
-                    </Badge>
-                    <span className='text-sm text-muted-foreground'>
-                      申请时间：
-                      {formatDate(approval.created_at, {
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })}
-                    </span>
-                    {approval.decided_by_name && (
-                      <span className='text-sm text-muted-foreground'>
-                        审批人：{approval.decided_by_name}
-                      </span>
-                    )}
-                  </div>
-                  {Object.keys(approval.preview ?? {}).length > 0 && (
-                    <dl className='mt-3 grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-3'>
-                      {Object.entries(approval.preview ?? {}).map(([key, value]) => (
-                        <div key={key} className='rounded-md bg-muted/40 p-2'>
-                          <dt className='text-muted-foreground'>{resultFieldLabel(key)}</dt>
-                          <dd>{metricText(value)}</dd>
-                        </div>
-                      ))}
-                    </dl>
-                  )}
-                  {approval.reason && <p className='mt-2 text-sm'>审批意见：{approval.reason}</p>}
-                </li>
-              ))}
-            </ol>
-          ) : (
-            <p className='text-muted-foreground'>该任务当前无需审批。</p>
           )}
         </CardContent>
       </Card>

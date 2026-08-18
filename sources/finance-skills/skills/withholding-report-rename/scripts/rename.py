@@ -344,6 +344,10 @@ def main():
         log("\n[dry-run] 没动任何文件。")
         return
 
+    if not ok:
+        log("✗ 没有识别成功的 PDF，未生成结果文件。")
+        sys.exit(2)
+
     # 输出夹
     if args.out_dir:
         out_dir = os.path.abspath(args.out_dir)

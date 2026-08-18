@@ -28,6 +28,11 @@ function safeSkill(skill: SkillDetail): SkillDetail {
   return skill;
 }
 
+function uploadableSkill(skill: SkillDetail, allowWorkflow: boolean): SkillDetail {
+  if (allowWorkflow && skill.execution_mode === 'guided_workflow') return skill;
+  return safeSkill(skill);
+}
+
 function fileExtension(name: string): string {
   const index = name.lastIndexOf('.');
   return index < 0 ? '' : name.slice(index + 1).toLowerCase();
@@ -36,14 +41,15 @@ function fileExtension(name: string): string {
 export async function uploadFileForSkill(
   skillId: string,
   role: string,
-  upload: File
+  upload: File,
+  allowWorkflow = false
 ): Promise<PlatformFile> {
   checkedId(skillId, 'Skill 标识');
   checkedId(role, '文件用途');
   if (!upload.name || upload.size <= 0) throw new PlatformApiError(400, '请选择非空文件。');
   if (upload.size > MAX_UPLOAD_BYTES) throw new PlatformApiError(413, '文件不能超过 100 MB。');
 
-  const skill = safeSkill(await getSkillCatalogItem(skillId));
+  const skill = uploadableSkill(await getSkillCatalogItem(skillId), allowWorkflow);
   const spec = skill.file_inputs?.find((item) => item.role === role);
   if (!spec) throw new PlatformApiError(400, '该 Skill 不接受此文件用途。');
   const extension = fileExtension(upload.name);
@@ -59,6 +65,7 @@ export async function uploadFileForSkill(
   }
 
   const form = new FormData();
+  form.set('skill_id', skillId);
   form.set('role', role);
   form.set('upload', upload);
   return platformServerRequest<PlatformFile>('/api/files', { method: 'POST', body: form });

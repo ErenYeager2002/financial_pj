@@ -4,7 +4,6 @@ import { dirname, resolve } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-// @ts-expect-error Node's built-in TypeScript runner requires the explicit extension.
 import { stepTypeLabel } from '../src/features/workflows/step-display.ts';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));

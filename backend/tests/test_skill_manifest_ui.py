@@ -28,9 +28,14 @@ def test_ar_hexiao_is_published_as_a_confirmed_workflow() -> None:
     assert skill.manifest.risk.requires_confirmation is True
     assert skill.manifest.risk.requires_change_review is True
     assert skill.manifest.risk.requires_approval is True
-    assert skill.manifest.file_inputs[0].role == "finance_workbooks"
+    assert [item.role for item in skill.manifest.file_inputs] == [
+        "profit_loss_ledgers",
+        "receipt_flow_table",
+    ]
     assert skill.manifest.file_inputs[0].multiple is True
-    assert skill.manifest.file_inputs[0].min_files == 2
+    assert skill.manifest.file_inputs[0].min_files == 1
+    assert skill.manifest.file_inputs[1].multiple is False
+    assert skill.manifest.file_inputs[1].min_files == 1
 
 
 def test_first_manifest_batch_has_expected_employee_metadata() -> None:

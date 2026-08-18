@@ -20,6 +20,9 @@ legacy/vite-frontend/*.tsbuildinfo
 legacy/vite-frontend/vite.config.js
 legacy/vite-frontend/vite.config.d.ts
 
+agent-runtime/node_modules/
+agent-runtime/dist/
+
 data/*
 !data/.gitkeep
 
@@ -35,3 +38,6 @@ financial.db-shm
 financial.db-wal
 .codex/
 .skill-sync/
+
+# Skill-local generated ledgers and output metadata
+skills/ar-hexiao-daily/vendor/工作区/

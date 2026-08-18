@@ -3,6 +3,8 @@ from __future__ import annotations
 import ipaddress
 import re
 import socket
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from re import Pattern
 from typing import Any
@@ -337,6 +339,34 @@ def secure_llm_request(
     return request(f"{base_url}{path}", **kwargs)
 
 
+@contextmanager
+def secure_llm_stream_request(
+    method: str,
+    provider: ProviderDefinition | None,
+    base_url: str,
+    path: str,
+    api_key: str,
+    json_body: dict[str, Any] | None = None,
+    timeout: float = 120.0,
+) -> Iterator[httpx.Response]:
+    """以流式方式访问模型服务，并复用与普通调用相同的地址校验。"""
+    is_custom = provider is not None and not provider.base_url
+    if is_custom:
+        base_url = validate_https_base_url(base_url)
+    headers = {"Authorization": f"Bearer {api_key}"}
+    with httpx.Client(
+        timeout=timeout,
+        follow_redirects=not is_custom,
+        headers=headers,
+    ) as client:
+        with client.stream(
+            method.upper(),
+            f"{base_url}{path}",
+            json=json_body,
+        ) as response:
+            yield response
+
+
 def chat_completion_request(
     provider_id: str,
     base_url: str,
@@ -347,6 +377,26 @@ def chat_completion_request(
     """运行态统一入口：自定义 OpenAI 兼容服务每次真实调用都经过安全校验。"""
     provider = get_provider(provider_id)
     return secure_llm_request(
+        "POST",
+        provider,
+        base_url,
+        "/chat/completions",
+        api_key,
+        json_body,
+        timeout,
+    )
+
+
+def chat_completion_stream_request(
+    provider_id: str,
+    base_url: str,
+    api_key: str,
+    json_body: dict[str, Any],
+    timeout: float = 120.0,
+) -> Iterator[httpx.Response]:
+    """运行态流式入口；调用方必须在 with 块中消费响应。"""
+    provider = get_provider(provider_id)
+    return secure_llm_stream_request(
         "POST",
         provider,
         base_url,

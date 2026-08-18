@@ -7,8 +7,6 @@ from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
 
-import pytest
-from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from helpers import auth_client
 from openpyxl import Workbook
@@ -133,6 +131,35 @@ def _request(workflow_id: str, actor: UserContext) -> ApprovalRecord:
         return record
 
 
+def test_multiyear_workflow_approval_uses_ledger_years_context() -> None:
+    with auth_client(username="approval-multiyear-owner") as owner:
+        session = owner.get("/api/session").json()
+        workflow_id, _ = _ready_workflow(owner)
+        with SessionLocal() as db:
+            workflow = db.get(WorkflowSession, workflow_id)
+            assert workflow is not None
+            context = json.loads(workflow.context_json)
+            ledger = Path(context["ledger"])
+            flow = ledger.parent / "到账流转表.xlsx"
+            flow.write_bytes(_workbook_bytes())
+            context.pop("ledger")
+            context["ledger_years"] = {"2026": str(ledger)}
+            context["flow_file"] = str(flow)
+            workflow.context_json = json.dumps(context, ensure_ascii=False)
+            db.commit()
+
+        approval = _request(
+            workflow_id,
+            UserContext(
+                user_id=session["user_id"],
+                display_name=session["display_name"],
+                role="finance_user",
+                department_id=session["department_id"],
+            ),
+        )
+        assert approval.status == "pending"
+
+
 def test_employee_cannot_read_or_decide_approvals() -> None:
     with auth_client() as employee:
         assert employee.get("/api/admin/approvals").status_code == 403
@@ -145,7 +172,7 @@ def test_employee_cannot_read_or_decide_approvals() -> None:
         )
 
 
-def test_standard_write_run_is_rejected_before_queueing(monkeypatch) -> None:
+def test_standard_write_run_is_queued_without_approval_gate(monkeypatch) -> None:
     manifest = SkillManifest.model_validate(
         {
             "schema_version": 1,
@@ -153,7 +180,7 @@ def test_standard_write_run_is_rejected_before_queueing(monkeypatch) -> None:
             "name": "合成写入任务",
             "version": "1.0.0",
             "status": "published",
-            "description": "只用于验证标准写入任务默认拒绝。",
+            "description": "只用于验证标准写入任务不再被审批门禁拦截。",
             "handler": {"adapter": "python", "entrypoint": "entry.py"},
             "risk": {"level": "write", "requires_approval": True},
         }
@@ -161,7 +188,17 @@ def test_standard_write_run_is_rejected_before_queueing(monkeypatch) -> None:
     monkeypatch.setattr(
         run_service.registry,
         "get",
-        lambda _skill_id: SimpleNamespace(manifest=manifest),
+        lambda _skill_id: SimpleNamespace(
+            manifest=manifest,
+            skill_hash="synthetic-write-hash",
+            commit_sha="synthetic-write-commit",
+            directory=Path(__file__).resolve().parents[2] / "skills" / "ar-hexiao-daily",
+        ),
+    )
+    monkeypatch.setattr(
+        run_service.registry,
+        "snapshot",
+        lambda skill: json.dumps(skill.manifest.model_dump(), ensure_ascii=False),
     )
     actor = UserContext(
         user_id="write-test-admin",
@@ -169,14 +206,14 @@ def test_standard_write_run_is_rejected_before_queueing(monkeypatch) -> None:
         role="skill_admin",
         department_id="finance",
     )
-    with SessionLocal() as db, pytest.raises(HTTPException) as caught:
-        run_service.create_run(
+    with SessionLocal() as db:
+        created = run_service.create_run(
             db,
             RunCreate(skill_id=manifest.id, message="执行合成写入任务"),
             actor,
         )
-    assert caught.value.status_code == 409
-    assert "不能直接创建" in caught.value.detail
+        assert created.state == "queued"
+        assert created.error_message == ""
 
 
 def test_requester_cannot_approve_own_write() -> None:
@@ -286,13 +323,15 @@ def test_expired_approval_cannot_be_decided() -> None:
         assert workflow is not None and workflow.stage == "awaiting_apply_confirmation"
 
 
-def test_worker_rejects_write_action_without_approval() -> None:
+def test_worker_claims_write_action_without_approval() -> None:
     with auth_client(username="approval-gate-owner") as owner:
         workflow_id, _ = _ready_workflow(owner)
     action_id = str(uuid.uuid4())
     with SessionLocal() as db:
         workflow = db.get(WorkflowSession, workflow_id)
         assert workflow is not None
+        workflow.state = "running"
+        workflow.stage = "applying"
         db.add(
             WorkflowAction(
                 id=action_id,
@@ -310,9 +349,13 @@ def test_worker_rejects_write_action_without_approval() -> None:
             )
         )
         db.commit()
-        assert claim_next_workflow_action(db, ("workflow",), "approval-gate-test") is None
+        claimed = claim_next_workflow_action(db, ("workflow",), "approval-gate-test")
+        assert claimed is not None
+        assert claimed.id == action_id
         action = db.get(WorkflowAction, action_id)
         workflow = db.get(WorkflowSession, workflow_id)
-        assert action is not None and action.state == "failed"
-        assert "有效的双人审批" in action.error_message
-        assert workflow is not None and workflow.stage == "awaiting_apply_confirmation"
+        assert action is not None and action.state == "running"
+        assert workflow is not None and workflow.stage == "applying"
+        action.state = "succeeded"
+        action.lease_expires_at = None
+        db.commit()

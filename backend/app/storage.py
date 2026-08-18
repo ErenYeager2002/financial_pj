@@ -37,7 +37,15 @@ def file_expiry(created_at: datetime | None) -> datetime | None:
     return created_at + timedelta(days=settings.file_retention_days)
 
 
-async def save_upload(db: Session, upload: UploadFile, user: UserContext) -> FileRecord:
+async def save_upload(
+    db: Session,
+    upload: UploadFile,
+    user: UserContext,
+    *,
+    skill_id: str = "",
+    skill_name: str = "",
+    skill_version: str = "",
+) -> FileRecord:
     file_id = str(uuid.uuid4())
     folder = upload_root(user.user_id, file_id)
     folder.mkdir(parents=True, exist_ok=False)
@@ -69,6 +77,9 @@ async def save_upload(db: Session, upload: UploadFile, user: UserContext) -> Fil
         content_type=upload.content_type or "application/octet-stream",
         size_bytes=size,
         sha256=digest.hexdigest(),
+        skill_id=skill_id,
+        skill_name=skill_name,
+        skill_version=skill_version,
     )
     db.add(record)
     db.commit()
@@ -82,6 +93,10 @@ def register_output(
     run_id: str,
     owner: UserContext,
     display_name: str | None = None,
+    skill_id: str = "",
+    skill_name: str = "",
+    skill_version: str = "",
+    workflow_id: str = "",
 ) -> FileRecord:
     resolved = path.resolve()
     expected_run_root = run_root(owner.user_id, run_id)
@@ -98,6 +113,10 @@ def register_output(
         size_bytes=resolved.stat().st_size,
         sha256=sha256_file(resolved),
         run_id=run_id,
+        skill_id=skill_id,
+        skill_name=skill_name,
+        skill_version=skill_version,
+        workflow_id=workflow_id,
     )
     db.add(record)
     db.flush()

@@ -4,6 +4,8 @@ import { PlatformApiError } from '@/features/platform-api/errors';
 import { platformServerRequest } from '@/features/platform-api/server-client';
 import type {
   AdminAssistantProfile,
+  AssistantConversation,
+  AssistantMessage,
   AssistantStatus,
   ModelConnection,
   PlatformSession,
@@ -12,6 +14,7 @@ import type {
 } from '@/features/platform-api/types';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const SESSION_ID = /^[A-Za-z0-9_-]{1,128}$/;
 
 function checkedUuid(value: string, label = '标识'): string {
   if (!UUID.test(value)) throw new PlatformApiError(400, `${label}格式无效。`);
@@ -34,6 +37,36 @@ async function requireAdmin(): Promise<void> {
 
 export function getAssistantStatus(): Promise<AssistantStatus> {
   return platformServerRequest<AssistantStatus>('/api/assistant/status');
+}
+
+export function getLatestAssistantConversation(): Promise<AssistantConversation | null> {
+  return platformServerRequest<AssistantConversation | null>('/api/assistant/conversations/latest');
+}
+
+export function getAssistantConversation(sessionId: string): Promise<AssistantConversation> {
+  if (!SESSION_ID.test(sessionId)) throw new PlatformApiError(400, 'AI 会话标识格式无效。');
+  return platformServerRequest<AssistantConversation>(
+    `/api/assistant/conversations/${encodeURIComponent(sessionId)}`
+  );
+}
+
+export function appendAssistantMessage(
+  sessionId: string,
+  role: 'user' | 'assistant',
+  content: string
+): Promise<AssistantMessage> {
+  if (!SESSION_ID.test(sessionId)) throw new PlatformApiError(400, 'AI 会话标识格式无效。');
+  const cleanContent = content.trim();
+  if (!cleanContent || cleanContent.length > 20000) {
+    throw new PlatformApiError(400, 'AI 消息内容长度无效。');
+  }
+  return platformServerRequest<AssistantMessage>(
+    `/api/assistant/conversations/${encodeURIComponent(sessionId)}/messages`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ role, content: cleanContent })
+    }
+  );
 }
 
 export function prepareAssistantDraft(value: unknown): Promise<TaskDraft> {

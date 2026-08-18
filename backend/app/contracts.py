@@ -294,6 +294,10 @@ class PlatformFile(BaseModel):
     size_bytes: int
     sha256: str
     kind: Literal["input", "output"] | str
+    skill_id: str = ""
+    skill_name: str = ""
+    skill_version: str = ""
+    workflow_id: str | None = None
     content_type: str = "application/octet-stream"
     run_id: str | None = None
     created_at: datetime | None = None
@@ -380,6 +384,21 @@ class AssistantStatus(BaseModel):
     configured: bool
 
 
+class AssistantMessageRead(BaseModel):
+    id: str
+    session_id: str
+    role: Literal["user", "assistant", "system"]
+    content: str
+    data: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+
+
+class AssistantConversationRead(BaseModel):
+    session_id: str
+    messages: list[AssistantMessageRead] = Field(default_factory=list)
+    updated_at: datetime | None = None
+
+
 class AdminAssistantProfile(BaseModel):
     configured: bool
     connection_id: str = ""
@@ -456,6 +475,8 @@ DOMAIN_CONTRACT_MODELS: tuple[type[BaseModel], ...] = (
     AuditEventRead,
     TaskDraft,
     AssistantStatus,
+    AssistantMessageRead,
+    AssistantConversationRead,
     AdminAssistantProfile,
     ApprovalRecord,
 )

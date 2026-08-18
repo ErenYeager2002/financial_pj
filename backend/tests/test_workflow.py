@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from datetime import date, timedelta
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
@@ -166,10 +167,12 @@ def test_apply_confirmed_verifies_before_write_and_refreshes_final_baseline(
     workspace = workflow_root / "actions" / "prepare" / "工作区"
     checked = workspace / "04_产出" / "写入计划_校验后.json"
     ledger = workspace / "02_我的表副本" / "盈亏核算表.xlsx"
+    flow = workspace / "02_我的表副本" / "到账流转表.xlsx"
     checked.parent.mkdir(parents=True)
     ledger.parent.mkdir(parents=True)
     checked.write_text("{}", encoding="utf-8")
     ledger.write_bytes(workbook_bytes())
+    flow.write_bytes(workbook_bytes())
     (workflow_root / "skill" / "vendor" / "scripts").mkdir(parents=True)
 
     calls: list[tuple[str, list[str]]] = []
@@ -204,6 +207,7 @@ def test_apply_confirmed_verifies_before_write_and_refreshes_final_baseline(
                     "workspace": str(workspace),
                     "checked_plan": str(checked),
                     "ledger": str(ledger),
+                    "flow_file": str(flow),
                 }
             }
         ),
@@ -219,7 +223,7 @@ def test_apply_confirmed_verifies_before_write_and_refreshes_final_baseline(
     assert result["workspace"] == str(workspace.resolve())
     assert {item["name"] for item in result["artifacts"]} == {
         "盈亏核算表.xlsx",
-        "写入计划_校验后.json",
+        "到账流转表.xlsx",
     }
     assert [(name, args[0]) for name, args in calls] == [
         ("verify_sources.py", "verify"),
@@ -248,6 +252,8 @@ def test_annual_ledgers_have_no_count_limit_and_are_passed_explicitly(
     }
     for ledger in ledgers.values():
         ledger.write_bytes(workbook_bytes())
+    flow = ledger_dir / "到账流转表.xlsx"
+    flow.write_bytes(workbook_bytes())
     (workflow_root / "skill" / "vendor" / "scripts").mkdir(parents=True)
 
     calls: list[tuple[str, list[str]]] = []
@@ -273,6 +279,7 @@ def test_annual_ledgers_have_no_count_limit_and_are_passed_explicitly(
         "workspace": str(workspace),
         "checked_plan": str(checked),
         "ledger_years": {str(year): str(path) for year, path in ledgers.items()},
+        "flow_file": str(flow),
     }
     action = SimpleNamespace(id="apply-action", input_json=json.dumps({"context": context}))
     workflow = SimpleNamespace(id=workflow_id, owner_id=owner_id)
@@ -297,6 +304,138 @@ def test_duplicate_annual_ledger_year_is_rejected(tmp_path: Path) -> None:
 
     with pytest.raises(RuntimeError, match="每个年度只能上传一份"):
         workflow_service._discover_annual_ledger_paths(tmp_path)
+
+
+def test_workflow_reuses_and_updates_the_two_material_roles(monkeypatch) -> None:
+    class FakeModelsResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {"data": [{"id": "qwen3.7-plus"}]}
+
+    monkeypatch.setattr(model_service.httpx, "get", lambda *_, **__: FakeModelsResponse())
+    monkeypatch.setattr(
+        model_service.httpx,
+        "post",
+        lambda *_, **__: FakeVerificationResponse(),
+    )
+    username = f"material-reuse-{uuid.uuid4().hex[:8]}"
+    with auth_client(username=username) as client:
+        connection = client.post(
+            "/api/model-connections",
+            json={"api_key": "sk-material-reuse-test"},
+        )
+        assert connection.status_code == 200, connection.text
+        first = client.post(
+            "/api/workflows",
+            json={
+                "skill_id": "ar-hexiao-daily",
+                "model_connection_id": connection.json()["id"],
+                "model": "qwen3.7-plus",
+            },
+        )
+        assert first.status_code == 200, first.text
+        first_id = first.json()["id"]
+        ledger_2025 = upload(client, "profit_loss_ledgers", "2025年盈亏核算表.xlsx")
+        flow = upload(client, "receipt_flow_table", "到账流转表.xlsx")
+        bound = client.put(
+            f"/api/workflows/{first_id}/files",
+            json={
+                "files": {
+                    "profit_loss_ledgers": [ledger_2025],
+                    "receipt_flow_table": [flow],
+                }
+            },
+        )
+        assert bound.status_code == 200, bound.text
+
+        second = client.post(
+            "/api/workflows",
+            json={
+                "skill_id": "ar-hexiao-daily",
+                "model_connection_id": connection.json()["id"],
+                "model": "qwen3.7-plus",
+            },
+        )
+        assert second.status_code == 200, second.text
+        assert second.json()["files"]["profit_loss_ledgers"][0]["file_id"] == ledger_2025
+        assert second.json()["files"]["receipt_flow_table"][0]["file_id"] == flow
+
+        ledger_2026 = upload(client, "profit_loss_ledgers", "2026年盈亏核算表.xlsx")
+        added = client.put(
+            f"/api/workflows/{second.json()['id']}/files",
+            json={"files": {"profit_loss_ledgers": [ledger_2026]}},
+        )
+        assert added.status_code == 200, added.text
+        assert {
+            item["file_id"] for item in added.json()["files"]["profit_loss_ledgers"]
+        } == {ledger_2025, ledger_2026}
+        replacement = upload(client, "receipt_flow_table", "到账流转表_新版.xlsx")
+        replaced = client.put(
+            f"/api/workflows/{second.json()['id']}/files",
+            json={"files": {"receipt_flow_table": [replacement]}},
+        )
+        assert replaced.status_code == 200, replaced.text
+        assert [
+            item["file_id"] for item in replaced.json()["files"]["receipt_flow_table"]
+        ] == [replacement]
+
+
+def test_background_start_accepts_one_or_many_past_dates_without_model_connection() -> None:
+    with auth_client(username=f"background-start-{uuid.uuid4().hex[:8]}") as client:
+        credential = client.put(
+            "/api/service-credentials/zhiyun",
+            json={"account": "background-test-user", "password": "background-test-password"},
+        )
+        assert credential.status_code == 200, credential.text
+        ledger_id = upload(client, "profit_loss_ledgers", "2026年盈亏核算表.xlsx")
+        flow_id = upload(client, "receipt_flow_table", "到账流转表.xlsx")
+        files = {
+            "profit_loss_ledgers": [ledger_id],
+            "receipt_flow_table": [flow_id],
+        }
+
+        single = client.post(
+            "/api/workflows/start",
+            json={
+                "skill_id": "ar-hexiao-daily",
+                "reconciliation_date": "2026-08-12",
+                "files": files,
+            },
+        )
+        assert single.status_code == 200, single.text
+        assert single.json()["model_provider"] == "platform"
+        assert single.json()["model_name"] == "后台 Skill Worker"
+        assert single.json()["stage"] == "preparing"
+        context = client.get(f"/api/workflows/{single.json()['id']}/agent/context")
+        assert context.status_code == 200, context.text
+        assert context.json()["connection_id"] is None
+        assert context.json()["model"] == ""
+
+        future = (date.today() + timedelta(days=1)).isoformat()
+        rejected = client.post(
+            "/api/workflows/start",
+            json={
+                "skill_id": "ar-hexiao-daily",
+                "reconciliation_date": future,
+                "files": files,
+            },
+        )
+        assert rejected.status_code == 422
+        assert "不能晚于今天" in rejected.text
+
+        batch = client.post(
+            "/api/workflow-batches/start",
+            json={
+                "skill_id": "ar-hexiao-daily",
+                "reconciliation_dates": ["2026-08-11", "2026-08-12"],
+                "files": files,
+            },
+        )
+        assert batch.status_code == 200, batch.text
+        assert batch.json()["reconciliation_dates"] == ["2026-08-11", "2026-08-12"]
+        assert batch.json()["model_provider"] == "platform"
 
 
 def test_unbound_upload_can_be_deleted() -> None:
@@ -403,6 +542,7 @@ def test_prepare_worklist_fetches_zhiyun_before_analysis(monkeypatch) -> None:
         ledgers.mkdir(parents=True, exist_ok=True)
         (business / "04_产出").mkdir(parents=True, exist_ok=True)
         (ledgers / "测试盈亏表.xlsx").write_bytes(b"test")
+        (ledgers / "测试到账流转表.xlsx").write_bytes(b"test")
 
     def fake_run_script(
         script_dir,
@@ -683,21 +823,15 @@ def test_conversational_workflow_hard_gates(monkeypatch) -> None:
             json={"content": "我已检查核销日清，确认写入"},
         )
         assert applying.status_code == 200, applying.text
-        assert applying.json()["stage"] == "waiting_approval"
-        assert applying.json()["state"] == "waiting_approval"
-        assert len(applying.json()["actions"]) == 1
-
-        approved = approve_pending_workflow(workflow_id)
-        assert approved["requested_by"] != approved["decided_by"]
-        after_approval = client.get(f"/api/workflows/{workflow_id}").json()
-        assert after_approval["stage"] == "applying"
-        assert len(after_approval["actions"]) == 2
+        assert applying.json()["stage"] == "applying"
+        assert applying.json()["state"] == "running"
+        assert len(applying.json()["actions"]) == 2
 
         execute_next_action(workflow_id)
         completed = client.get(f"/api/workflows/{workflow_id}").json()
         assert completed["stage"] == "completed"
         assert completed["state"] == "succeeded"
-        assert "订单写入差异" in completed["messages"][-1]["content"]
+        assert "到账流转表" in completed["messages"][-1]["content"]
 
         monkeypatch.setattr(
             workflow_service,
@@ -902,17 +1036,21 @@ def test_multi_date_batch_runs_children_in_order_and_chains_files(monkeypatch) -
             json={"content": "确认写入"},
         )
         assert confirmed.status_code == 200, confirmed.text
-        assert confirmed.json()["stage"] == "waiting_approval"
-        assert [item["name"] for item in confirmed.json()["actions"]] == ["prepare_worklist"]
+        assert confirmed.json()["stage"] == "applying"
+        assert [item["name"] for item in confirmed.json()["actions"]] == [
+            "prepare_worklist",
+            "apply_confirmed",
+        ]
         assert client.get(f"/api/workflows/{second['id']}").json()["stage"] == "queued"
 
-        approve_pending_workflow(first["id"])
         execute_next_action(first["id"])
         first_complete = client.get(f"/api/workflows/{first['id']}").json()
         second_started = client.get(f"/api/workflows/{second['id']}").json()
         assert first_complete["state"] == "succeeded"
         assert second_started["stage"] == "preparing"
-        assert second_started["files"]["finance_workbooks"][0]["file_id"] == ledger_id
+        assert ledger_id in {
+            item["file_id"] for item in second_started["files"]["profit_loss_ledgers"]
+        }
 
         execute_next_action(second["id"])
         second_prepare = client.get(f"/api/workflows/{second['id']}").json()
@@ -921,8 +1059,7 @@ def test_multi_date_batch_runs_children_in_order_and_chains_files(monkeypatch) -
             f"/api/workflows/{second['id']}/messages",
             json={"content": "确认写入"},
         )
-        assert confirmed_second.json()["stage"] == "waiting_approval"
-        approve_pending_workflow(second["id"])
+        assert confirmed_second.json()["stage"] == "applying"
         execute_next_action(second["id"])
         completed = client.get(f"/api/workflow-batches/{batch['id']}").json()
         assert completed["state"] == "succeeded"
