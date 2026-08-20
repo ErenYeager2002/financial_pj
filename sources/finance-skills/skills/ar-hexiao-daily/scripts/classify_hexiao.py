@@ -3019,8 +3019,7 @@ def _make_split_payment_chain(
     final_cumulative = prepared[-1][3]
     if (
         not preserve_baseline_blank_carry
-        and
-        0 < tiny_parent_total <= settlement_tail_tolerance
+        and 0 < tiny_parent_total <= settlement_tail_tolerance
         and abs(final_cumulative - latest) <= max(tolerance, TOL)
         and aggregate_is_settled
         and current_receivable is not None
@@ -3058,8 +3057,7 @@ def _make_split_payment_chain(
     absorbed_tail_payments: List[dict] = []
     if (
         not preserve_baseline_blank_carry
-        and
-        0 < tiny_parent_total <= settlement_tail_tolerance
+        and 0 < tiny_parent_total <= settlement_tail_tolerance
         and abs(final_cumulative - latest) <= max(tolerance, TOL)
     ):
         tiny_indexes = [
