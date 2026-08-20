@@ -2578,10 +2578,16 @@ def classify_one(
         round(float(deliver) - cumulative_received, 2)
         if deliver is not None else None
     )
+    delivery_above_baseline = (
+        deliver is not None
+        and initial_receivable is not None
+        and float(deliver) > float(initial_receivable) + max(thr, TOL)
+    )
     business_tail_settled = (
         settlement_delta is not None
         and abs(settlement_delta) > max(thr, TOL)
         and abs(settlement_delta) <= BUSINESS_SETTLEMENT_TOL
+        and not delivery_above_baseline
     )
     if business_tail_settled:
         result["settlement_tolerance_audit"] = {
@@ -2620,6 +2626,61 @@ def classify_one(
     ):
         remaining = round(float(deliver) - cumulative_received, 2)
         current_receivable = common.to_number(snap.get("yingshou"))
+        preserve_baseline_blank_carry = delivery_above_baseline
+        if preserve_baseline_blank_carry:
+            result["five_cols"] = {
+                "计提": None,
+                "回款明细": local_f,
+                "是否结账": "是",
+                "收款时间": r_time.isoformat() if r_time else None,
+                "收款方式": way,
+                "实收SOD": sod or snap.get("sod") or None,
+            }
+            result["row_operation"] = {
+                "type": "split_below",
+                "receivable_mode": "preserve_baseline_blank_carry",
+                "source_receivable": round(float(initial_receivable), 2),
+                "baseline_receivable": round(float(initial_receivable), 2),
+                "source_row_receivable": (
+                    round(float(current_receivable), 2)
+                    if current_receivable is not None else None
+                ),
+                "remaining_unreceived": remaining,
+                "existing_received": existing_received,
+                "current_received": local_f,
+                "cumulative_received": cumulative_received,
+                "latest_delivery": round(float(deliver), 2),
+                "business_rows": business_rows,
+                "inserted_five_cols": {
+                    "计提": None,
+                    "回款明细": None,
+                    "是否结账": "否",
+                    "收款时间": None,
+                    "收款方式": None,
+                    "实收SOD": sod or snap.get("sod") or None,
+                },
+            }
+            result["bucket"] = "auto"
+            result["code"] = "E5"
+            result["reason"] = partial_split_guidance(
+                float(deliver),
+                local_f,
+                initial_receivable=initial_receivable,
+                existing_received=existing_received,
+            )
+            result["current_values"] = {
+                "计提": snap.get("jiti"),
+                "回款明细": snap.get("huikuan"),
+                "差异": snap.get("chayi"),
+                "是否结账": str(snap.get("jiezhang") or "").strip()
+                if snap.get("jiezhang") is not None
+                else "",
+                "收款时间": str(snap.get("shoukuan_time") or "")[:10],
+                "收款方式": snap.get("shoukuan_way"),
+                "实收SOD": snap.get("sod"),
+            }
+            result["ledger_row_ref"] = row
+            return result
         if current_receivable is None:
             result["bucket"] = "hold"
             result["code"] = "E5"
@@ -2926,7 +2987,22 @@ def _make_split_payment_chain(
     opening_remaining = round(latest - initial_cumulative, 2)
     snap = ledger.row_snapshot.get(int(ref)) or {}
     current_receivable = common.to_number(snap.get("yingshou"))
-    source_receivable = opening_remaining
+    baseline_receivable, _, _ = ledger.business_totals(
+        str(group[0].get("so") or ""), str(group[0].get("sod") or ""), ref
+    )
+    preserve_baseline_blank_carry = (
+        baseline_receivable is not None
+        and latest > float(baseline_receivable) + max(tolerance, TOL)
+        and any(
+            (result.get("row_operation") or {}).get("receivable_mode")
+            == "preserve_baseline_blank_carry"
+            for result in group
+        )
+    )
+    source_receivable = (
+        round(float(baseline_receivable), 2)
+        if preserve_baseline_blank_carry else opening_remaining
+    )
 
     # 已有完整聚合结清行时，1 元以内的父回款尾差不再触发逐父 AR 拆行。
     # 例如 0.12 + 211463.88 = 211464.00：0.12 虽然实际到账，但业务口径
@@ -2942,6 +3018,8 @@ def _make_split_payment_chain(
     aggregate_is_settled = str(snap.get("jiezhang") or "").strip() == "是"
     final_cumulative = prepared[-1][3]
     if (
+        not preserve_baseline_blank_carry
+        and
         0 < tiny_parent_total <= settlement_tail_tolerance
         and abs(final_cumulative - latest) <= max(tolerance, TOL)
         and aggregate_is_settled
@@ -2979,6 +3057,8 @@ def _make_split_payment_chain(
     effective_prepared = list(prepared)
     absorbed_tail_payments: List[dict] = []
     if (
+        not preserve_baseline_blank_carry
+        and
         0 < tiny_parent_total <= settlement_tail_tolerance
         and abs(final_cumulative - latest) <= max(tolerance, TOL)
     ):
@@ -3027,7 +3107,7 @@ def _make_split_payment_chain(
         if settled and index != len(effective_prepared) - 1:
             return None, "分笔链在最后一笔之前已经结清，后续回款会造成超额"
         paid_receivable = previous_remaining if settled else round(previous_remaining - remaining, 2)
-        if paid_receivable < -max(tolerance, TOL):
+        if not preserve_baseline_blank_carry and paid_receivable < -max(tolerance, TOL):
             return None, "分笔后剩余应收反而增加，连续拆行不守恒"
         five = dict(result.get("five_cols") or {})
         # 已结清行的幂等判定会从盈亏表带回整行历史回款额；分笔链中每个
@@ -3048,7 +3128,13 @@ def _make_split_payment_chain(
             "writeoff_sequence_key": list(order_key),
             "current_received": amount,
             "cumulative_received": cumulative,
-            "receivable": round(max(paid_receivable, 0.0), 2),
+            "receivable": (
+                round(float(current_receivable), 2)
+                if preserve_baseline_blank_carry and index == 0 and current_receivable is not None
+                else None
+                if preserve_baseline_blank_carry
+                else round(max(paid_receivable, 0.0), 2)
+            ),
             "remaining_after": remaining,
             "settled": settled,
             "five_cols": five,
@@ -3056,7 +3142,7 @@ def _make_split_payment_chain(
         })
         previous_remaining = remaining
 
-    tail_audit = {
+    tail_audit = {} if preserve_baseline_blank_carry else {
         "tolerance": settlement_tail_tolerance,
         "absorbed_total": round(sum(x["amount"] for x in absorbed_tail_payments), 2),
         "absorbed_payments": absorbed_tail_payments,
@@ -3090,7 +3176,8 @@ def _make_split_payment_chain(
     final_unpaid = None
     if previous_remaining > max(tolerance, TOL):
         final_unpaid = {
-            "receivable": previous_remaining,
+            "receivable": None if preserve_baseline_blank_carry else previous_remaining,
+            "remaining_unreceived": previous_remaining,
             "five_cols": {
                 "计提": None, "回款明细": None, "是否结账": "否",
                 "收款时间": None, "收款方式": None,
@@ -3098,10 +3185,13 @@ def _make_split_payment_chain(
             },
         }
 
-    def row_matches(row_no: int, expected_receivable: float, expected_five: dict) -> bool:
+    def row_matches(row_no: int, expected_receivable: Optional[float], expected_five: dict) -> bool:
         actual = ledger.row_snapshot.get(int(row_no)) or {}
         actual_receivable = common.to_number(actual.get("yingshou"))
-        if actual_receivable is None or abs(float(actual_receivable) - float(expected_receivable)) > max(tolerance, TOL):
+        if actual_receivable is None or expected_receivable is None:
+            if actual_receivable is not None or expected_receivable is not None:
+                return False
+        elif abs(float(actual_receivable) - float(expected_receivable)) > max(tolerance, TOL):
             return False
         if str(actual.get("so") or "").strip() != str(group[0].get("so") or "").strip():
             return False
@@ -3127,10 +3217,10 @@ def _make_split_payment_chain(
         return common.norm_date(actual.get("shoukuan_time")) == common.norm_date(expected_five.get("收款时间"))
 
     expected_rows = [
-        (float(step["receivable"]), step.get("five_cols") or {}) for step in steps
+        (step.get("receivable"), step.get("five_cols") or {}) for step in steps
     ]
     if final_unpaid:
-        expected_rows.append((float(final_unpaid["receivable"]), final_unpaid.get("five_cols") or {}))
+        expected_rows.append((final_unpaid.get("receivable"), final_unpaid.get("five_cols") or {}))
     business_rows = sorted(ledger.business_rows(
         str(group[0].get("so") or ""), str(group[0].get("sod") or ""), ref
     ))
@@ -3145,15 +3235,26 @@ def _make_split_payment_chain(
     if len(materialized_starts) > 1:
         return None, "盈亏表中存在多条完整分笔链，无法唯一定位"
     materialized_start = materialized_starts[0] if materialized_starts else None
-    if (
-        current_receivable is None
-        or abs(float(current_receivable) - opening_remaining) > max(tolerance, TOL)
-    ) and materialized_start is None:
+    source_row_matches = preserve_baseline_blank_carry or (
+        current_receivable is not None
+        and abs(float(current_receivable) - opening_remaining) <= max(tolerance, TOL)
+    )
+    if not source_row_matches and materialized_start is None:
         return None, "当前未结清行应收与分笔链起点剩余金额不一致"
 
     operation = {
         "type": "split_payment_chain",
         "source_receivable": source_receivable,
+        "receivable_mode": (
+            "preserve_baseline_blank_carry"
+            if preserve_baseline_blank_carry else "conserve_receivable"
+        ),
+        "baseline_receivable": baseline_receivable,
+        "source_row_receivable": (
+            round(float(current_receivable), 2)
+            if current_receivable is not None else None
+        ),
+        "opening_unreceived": opening_remaining,
         # 写前校验用这份快照证明当前行仍是生成分笔链时看到的聚合基线。
         # 这样可以安全迁移旧版“多父回款合并在一行”的已填状态，同时拒绝
         # 校验前后被人工改动过的行。
