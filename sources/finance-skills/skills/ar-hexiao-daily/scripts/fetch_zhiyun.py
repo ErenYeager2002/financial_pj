@@ -43,6 +43,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -202,6 +203,37 @@ def resolve_date(s: str) -> str:
         return cur.isoformat()
     datetime.strptime(s, "%Y-%m-%d")
     return s
+
+
+def resolve_fetch_dates(
+    *,
+    single_date: str = "",
+    date_from: str = "",
+    date_to: str = "",
+    include_weekends: bool = False,
+) -> List[str]:
+    """把单日或日期范围解析为固定、升序的核销日期列表。"""
+    start_raw = (date_from or "").strip()
+    end_raw = (date_to or "").strip()
+    if bool(start_raw) != bool(end_raw):
+        raise ValueError("--date-from 与 --date-to 必须同时提供")
+    if start_raw:
+        if (single_date or "").strip():
+            raise ValueError("日期范围不能与 --date/--hexiao-date 同时使用")
+        start = date.fromisoformat(resolve_date(start_raw))
+        end = date.fromisoformat(resolve_date(end_raw))
+        if start > end:
+            raise ValueError("--date-from 不能晚于 --date-to")
+        days: List[str] = []
+        current = start
+        while current <= end:
+            if include_weekends or current.weekday() < 5:
+                days.append(current.isoformat())
+            current += timedelta(days=1)
+        if not days:
+            raise ValueError("日期范围内没有需要取数的核销日；周末任务请加 --all-days")
+        return days
+    return [resolve_date(single_date or "yesterday")]
 
 
 def login_with_password(
@@ -555,6 +587,120 @@ def write_xlsx(path: Path, headers: List[str], rows: List[List[Any]]) -> None:
     wb.save(str(path))
 
 
+def _row_contains_identifier(row: dict, identifier: str, extractor) -> bool:
+    return any(extractor(_plain(value)) == identifier for value in row.values())
+
+
+def search_supplement_identifiers(
+    client: ZhiyunClient,
+    ar_ids: Sequence[str],
+    so_ids: Sequence[str],
+) -> dict[str, dict[str, List[str]]]:
+    """按工作人员提供的编号精确搜索智云，只返回编号存在性。"""
+    found_ar_ids: List[str] = []
+    for ar_id in sorted(set(ar_ids)):
+        try:
+            hits = client.search_rows(WS_HUIKUAN, ar_id)
+        except Exception:
+            hits = []
+        if any(_plain(row.get(F_HK["ar"])) == ar_id for row in hits):
+            found_ar_ids.append(ar_id)
+
+    worksheet_ids = []
+    for relation in (REL_XIADAN, REL_HEXIAO_MINGXI, REL_SODLINE):
+        try:
+            worksheet_id = client.datasource_of(WS_HUIKUAN, relation)
+        except Exception:
+            worksheet_id = ""
+        if worksheet_id and worksheet_id not in worksheet_ids:
+            worksheet_ids.append(worksheet_id)
+    found_so_ids: List[str] = []
+    for so_id in sorted(set(so_ids)):
+        found = False
+        for worksheet_id in worksheet_ids:
+            try:
+                hits = client.search_rows(worksheet_id, so_id)
+            except Exception:
+                continue
+            if any(_row_contains_identifier(row, so_id, extract_so) for row in hits):
+                found = True
+                break
+        if found:
+            found_so_ids.append(so_id)
+    return {"found_ar_ids": found_ar_ids, "found_so_ids": found_so_ids}
+
+
+def exported_supplement_identifiers(out_dir: Path, day: str) -> dict[str, set[str]]:
+    """读取四张导出表中的 AR/SO 编号，用于判断补取前后变化。"""
+    from openpyxl import load_workbook
+
+    tag = day.replace("-", "")
+    ar_ids: set[str] = set()
+    so_ids: set[str] = set()
+
+    def collect(prefix: str, ar_columns: Sequence[int], so_columns: Sequence[int]) -> None:
+        matches = sorted(out_dir.glob(f"{prefix}_{tag}*.xlsx"), key=lambda item: item.name)
+        if not matches:
+            return
+        workbook = load_workbook(matches[-1], read_only=True, data_only=True)
+        try:
+            worksheet = workbook.active
+            for row in worksheet.iter_rows(min_row=2, values_only=True):
+                for column in ar_columns:
+                    if column < len(row):
+                        value = extract_ar(_plain(row[column]))
+                        if value:
+                            ar_ids.add(value)
+                for column in so_columns:
+                    if column < len(row):
+                        value = extract_so(_plain(row[column]))
+                        if value:
+                            so_ids.add(value)
+        finally:
+            workbook.close()
+
+    collect("回款记录", (0,), ())
+    collect("订单交付", (0,), (1,))
+    collect("核销明细", (2,), (8,))
+    collect("订单明细", (), (0,))
+    return {"ar_ids": ar_ids, "so_ids": so_ids}
+
+
+def build_supplement_result(
+    ar_ids: Sequence[str],
+    so_ids: Sequence[str],
+    *,
+    before: dict[str, set[str]],
+    after: dict[str, set[str]],
+    searched: dict[str, List[str]],
+) -> dict[str, List[str]]:
+    requested_ar = set(ar_ids)
+    requested_so = set(so_ids)
+    before_ar = set(before.get("ar_ids", set()))
+    before_so = set(before.get("so_ids", set()))
+    after_ar = set(after.get("ar_ids", set()))
+    after_so = set(after.get("so_ids", set()))
+    return {
+        "requested": {"ar_ids": sorted(requested_ar), "so_ids": sorted(requested_so)},
+        "found": {
+            "ar_ids": sorted(set(searched.get("found_ar_ids", []))),
+            "so_ids": sorted(set(searched.get("found_so_ids", []))),
+        },
+        "added": {
+            "ar_ids": sorted(requested_ar & (after_ar - before_ar)),
+            "so_ids": sorted(requested_so & (after_so - before_so)),
+        },
+        "existing": {
+            "ar_ids": sorted(requested_ar & before_ar & after_ar),
+            "so_ids": sorted(requested_so & before_so & after_so),
+        },
+        "unresolved": {
+            "ar_ids": sorted(requested_ar - after_ar),
+            "so_ids": sorted(requested_so - after_so),
+        },
+    }
+
+
 def historical_writeoffs_for_sos(
     client: ZhiyunClient,
     worksheet_id: str,
@@ -615,7 +761,13 @@ def historical_writeoffs_for_sos(
     return out
 
 
-def fetch_day(client: ZhiyunClient, day: str, out_dir: Path) -> dict:
+def fetch_day(
+    client: ZhiyunClient,
+    day: str,
+    out_dir: Path,
+    supplement_ar_ids: Sequence[str] = (),
+    supplement_so_ids: Sequence[str] = (),
+) -> dict:
     """拉一天的四张表 + 摘要 json。返回计数摘要（无客户名/金额明细）。"""
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -632,6 +784,19 @@ def fetch_day(client: ZhiyunClient, day: str, out_dir: Path) -> dict:
         raise FetchError(f"回款记录里找不到「{REL_XIADAN}」关联字段——智云表结构变了，停下别猜")
 
     hk_rows, hk_total = client.filter_rows_by_date(WS_HUIKUAN, F_HK["hexiao_date"], day)
+    known_payment_rows = {str(row.get("rowid") or "") for row in hk_rows}
+    for ar_id in supplement_ar_ids:
+        exact = [
+            row
+            for row in client.search_rows(WS_HUIKUAN, ar_id)
+            if _plain(row.get(F_HK["ar"])) == ar_id
+            and _plain(row.get(F_HK["hexiao_date"]))[:10] == day
+        ]
+        for row in exact:
+            row_id = str(row.get("rowid") or "")
+            if row_id and row_id not in known_payment_rows:
+                hk_rows.append(row)
+                known_payment_rows.add(row_id)
 
     # ── ① 回款记录 ────────────────────────────────────────────
     hk_headers = [
@@ -670,7 +835,7 @@ def fetch_day(client: ZhiyunClient, day: str, out_dir: Path) -> dict:
     xd_out: List[List[Any]] = []
     mx_out: List[List[Any]] = []
     mx_seen_record_ids = set()
-    all_so: List[str] = []
+    all_so: List[str] = list(dict.fromkeys(supplement_so_ids))
     ars_without_orders: List[str] = []
     settlement_recovered_ars: List[str] = []
     settlement_rows_used = 0
@@ -948,14 +1113,93 @@ def resolve_credentials(args) -> Tuple[str, str]:
     return user, pwd
 
 
+def report_fetched_day(
+    day: str,
+    out_dir: Path,
+    summary: dict,
+    supplement_result: Optional[dict] = None,
+) -> None:
+    """报告并登记一个已完整导出的核销日；多日取数不得在空批处提前结束。"""
+    print("✅ 智云只读取数完成（未写系统）")
+    print(f"📁 核销日期: {day}   目录: {out_dir.resolve()}")
+    if supplement_result is not None:
+        result_path = out_dir / f"补取结果_{day.replace('-', '')}.json"
+        result_path.write_text(
+            json.dumps(supplement_result, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        print(
+            "补取复核完成：新增 "
+            f"{len(supplement_result['added']['ar_ids']) + len(supplement_result['added']['so_ids'])} 个，"
+            "仍未找到 "
+            f"{len(supplement_result['unresolved']['ar_ids']) + len(supplement_result['unresolved']['so_ids'])} 个。"
+        )
+
+    if not summary["回款记录笔数"]:
+        print(
+            f"ℹ️ {day} 这天**一笔核销都没有**（不是出错）。常见于周末、假期、"
+            "或销售当天没来得及核。这天就算处理完了，已记进跑批台账。"
+        )
+        try:
+            sys.path.insert(0, str(Path(__file__).resolve().parent))
+            import batch_ledger
+            import common as _c
+
+            batch_ledger.record(
+                out_dir.parent,
+                _c.norm_date(day),
+                "classified",
+                payments=0,
+                note="空批：那天没有任何核销",
+            )
+        except Exception:
+            pass
+        return
+
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import batch_ledger
+        import common as _c
+
+        batch_ledger.record(
+            out_dir.parent,
+            _c.norm_date(day),
+            "fetched",
+            payments=summary["回款记录笔数"],
+        )
+    except Exception:
+        pass
+    print(
+        f"   回款记录 {summary['回款记录笔数']} 笔 · 订单关联 {summary['下单行数']} 行"
+        f"（结算回查 {summary.get('结算回查行数', 0)} 行）"
+        f"（{summary['涉及SO数']} 个 SO）· 核销明细 {summary['核销明细行数']} 行"
+        f" · 订单明细 {summary['订单明细SOD行数']} 个 SOD"
+    )
+    if summary.get("跨父回款历史核销补取行数"):
+        print(f"   历史累计：跨父回款补取 {summary['跨父回款历史核销补取行数']} 行")
+    print(f"   回款类型分布: {summary['回款类型分布']}")
+    if summary["无下单行的AR"]:
+        print(
+            f"   ⚠ 有 {len(summary['无下单行的AR'])} 笔到账在下单和结算中都没抓到单号，"
+            "判定会报异常不会漏"
+        )
+    if summary["查不到SOD的SO"]:
+        print(
+            f"   ⚠ 有 {len(summary['查不到SOD的SO'])} 个 SO 查不到 SOD，将退化成按 SO 匹配"
+        )
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(
         description="智云只读取数（单入口：回款记录按核销日期 + 关联子表）"
     )
     ap.add_argument(
-        "--date", "--hexiao-date", dest="date", default="yesterday",
-        help="**核销日期** YYYY-MM-DD / yesterday / last-workday（不是到账日期）",
+        "--date", "--hexiao-date", dest="date", default="",
+        help="单个核销日期 YYYY-MM-DD / yesterday / last-workday；不传时默认 yesterday",
     )
+    ap.add_argument("--date-from", default="", help="批量取数开始核销日期（与 --date-to 同用）")
+    ap.add_argument("--date-to", default="", help="批量取数结束核销日期（与 --date-from 同用）")
+    ap.add_argument("--all-days", action="store_true", help="批量取数时包含周末；默认只取工作日")
     ap.add_argument(
         "--skip-gap-check", action="store_true",
         help="不查漏天（默认会查：有从没跑过的核销日就先报出来）",
@@ -964,6 +1208,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         "--force", action="store_true",
         help="这天的四件套已在 01_智云导出/ 里也强制重新取一遍",
     )
+    ap.add_argument("--supplement-ar", action="append", default=[], help="按完整 AR 编号补取并复核")
+    ap.add_argument("--supplement-so", action="append", default=[], help="按完整 SO 编号补取并复核")
     ap.add_argument(
         "--accept-unversioned-existing",
         action="store_true",
@@ -982,7 +1228,25 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--headed", action="store_true", help="有头浏览器登录（调试）")
     args = ap.parse_args(argv)
 
-    day = resolve_date(args.date)
+    ar_ids = list(dict.fromkeys(str(value).strip().upper() for value in args.supplement_ar if str(value).strip()))
+    so_ids = list(dict.fromkeys(str(value).strip().upper() for value in args.supplement_so if str(value).strip()))
+    if any(not re.fullmatch(r"AR[A-Z0-9_-]{3,30}", value) for value in ar_ids):
+        ap.error("补取 AR 编号格式无效")
+    if any(not re.fullmatch(r"SO[A-Z0-9_-]{3,30}", value) for value in so_ids):
+        ap.error("补取 SO 编号格式无效")
+    supplement_mode = bool(ar_ids or so_ids)
+
+    try:
+        days = resolve_fetch_dates(
+            single_date=args.date,
+            date_from=args.date_from,
+            date_to=args.date_to,
+            include_weekends=args.all_days,
+        )
+    except ValueError as exc:
+        ap.error(str(exc))
+    if supplement_mode and len(days) != 1:
+        ap.error("按 AR/SO 补取只支持单个核销日，不能与日期范围同时使用")
     if args.out:
         out_dir = Path(args.out)
     elif args.workspace:
@@ -990,8 +1254,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     else:
         out_dir = Path(__file__).resolve().parent.parent / "工作区" / "01_智云导出"
 
-    # ① 把"跑哪天"固定下来；相对说法只在任务入口解析一次，不再中途询问。
-    print(f"★ 本次取的是**核销日期 = {day}** 的到账（销售在这一天核销的；不是到账日期）")
+    # ① 在入口固定全部核销日；取数可以共用一次登录，判定和写表仍逐日串行。
+    if len(days) == 1:
+        print(f"★ 本次取的是**核销日期 = {days[0]}** 的到账（不是到账日期）")
+    else:
+        print(
+            f"★ 本次一次登录取 {len(days)} 个核销日：{days[0]} → {days[-1]}；"
+            "每天仍生成独立四件套"
+        )
 
     # ② 漏天检查：`--date yesterday` 只看昨天，她请假/周末/系统故障跳过的那几天
     #    没有任何机制发现。漏一天 = 那天的到账永远不会回填，而且事后看不出来。
@@ -1002,47 +1272,54 @@ def main(argv: Optional[List[str]] = None) -> int:
             import batch_ledger
             import common as _c
 
-            info = batch_ledger.find_gaps(workspace, through=_c.norm_date(day))
-            gaps = [g for g in info["gaps"] if g.isoformat() != day]
+            selected_days = set(days)
+            info = batch_ledger.find_gaps(workspace, through=_c.norm_date(days[-1]))
+            gaps = [g for g in info["gaps"] if g.isoformat() not in selected_days]
             if gaps:
                 print("⚠ 这几个核销日**从来没跑过**（会漏掉那天的到账）：")
                 for g in gaps[:10]:
                     print(f"     · {_c.date_cn(g)}")
                 if len(gaps) > 10:
                     print(f"     …另有 {len(gaps) - 10} 天")
-                print("   → 一天一批补，从最早那天开始：--date <那天>。别几天合成一批。")
+                print("   → 把漏日纳入本次日期范围；取数可一次完成，后续仍从早到晚逐日处理。")
         except Exception as e:
             print(f"WARN: 漏天检查跳过（{type(e).__name__}）", file=sys.stderr)
 
-    # ③ 只有当前版本四件套才跳过；旧版/无版本文件默认重新抓取。
-    existing_any_version = already_fetched(
-        out_dir,
-        day,
-        accept_unversioned=True,
-    )
-    have = already_fetched(
-        out_dir,
-        day,
-        accept_unversioned=args.accept_unversioned_existing,
-    )
-    if (
-        len(existing_any_version) == 4
-        and len(have) != 4
-        and not args.accept_unversioned_existing
-    ):
-        print(
-            f"⚠ {day} 已有四件套，但没有当前取数版本 "
-            f"{EXPORT_SCHEMA_VERSION}；本次禁止复用，立即重新抓取。"
+    # ③ 每天独立检查四件套；只要有一天需要重取，就复用同一次登录继续取完。
+    pending_days: List[str] = []
+    for day in days:
+        existing_any_version = already_fetched(
+            out_dir,
+            day,
+            accept_unversioned=True,
         )
-    if len(have) == 4 and not args.force:
-        print(
-            f"✅ {day} 的智云四件套已经在 {out_dir} 里了，**不用再取数**：\n   "
-            + "\n   ".join(have)
-            + "\n👉 直接往下跑判定即可（要强制重取加 --force）"
+        have = already_fetched(
+            out_dir,
+            day,
+            accept_unversioned=args.accept_unversioned_existing,
         )
+        if (
+            len(existing_any_version) == 4
+            and len(have) != 4
+            and not args.accept_unversioned_existing
+        ):
+            print(
+                f"⚠ {day} 已有四件套，但没有当前取数版本 "
+                f"{EXPORT_SCHEMA_VERSION}；本次禁止复用，立即重新抓取。"
+            )
+        if len(have) == 4 and not args.force and not supplement_mode:
+            print(f"✅ {day} 的当前版本四件套已存在，本次跳过重复取数")
+            continue
+        if have:
+            print(
+                f"注意：{out_dir} 里已有 {len(have)}/4 份 {day} 文件，"
+                "本次会重新取完整四件套。"
+            )
+        pending_days.append(day)
+
+    if not pending_days:
+        print("✅ 本次所有核销日都已有当前版本四件套，无需登录智云")
         return 0
-    if have:
-        print(f"注意：{out_dir} 里已有 {len(have)}/4 份该日文件，缺的那几份会重新取。")
 
     cookie = (os.environ.get("MD_PSS_ID") or "").strip()
     account_id = (args.account_id or "").strip()
@@ -1067,64 +1344,44 @@ def main(argv: Optional[List[str]] = None) -> int:
         except Exception as e:
             print(f"ERROR: 取字段失败（内网不通/无权限？）: {e}", file=sys.stderr)
             return 2
-        summary = fetch_day(client, day, out_dir)
+        for day in pending_days:
+            before_identifiers = (
+                exported_supplement_identifiers(out_dir, day)
+                if supplement_mode else {}
+            )
+            searched = (
+                search_supplement_identifiers(client, ar_ids, so_ids)
+                if supplement_mode else {}
+            )
+            try:
+                summary = fetch_day(client, day, out_dir, ar_ids, so_ids)
+            except Exception as exc:
+                print(
+                    f"ERROR: 核销日期 {day} 取数失败（{type(exc).__name__}）：{exc}",
+                    file=sys.stderr,
+                )
+                return 2
+            supplement_result = None
+            if supplement_mode:
+                after_identifiers = exported_supplement_identifiers(out_dir, day)
+                supplement_result = build_supplement_result(
+                    ar_ids,
+                    so_ids,
+                    before=before_identifiers,
+                    after=after_identifiers,
+                    searched=searched,
+                )
+            report_fetched_day(day, out_dir, summary, supplement_result)
     finally:
         cookie = ""
         del cookie
 
-    print("✅ 智云只读取数完成（未写系统）")
-    print(f"📁 核销日期: {day}   目录: {out_dir.resolve()}")
-
-    # 空批要说明白：「那天销售一笔都没核销」和「取数取失败了」看着都是 0 笔，
-    # 但一个是收工、一个是事故。不区分她会以为跑过了就不管了。
-    if not summary["回款记录笔数"]:
-        print(
-            f"ℹ️ {day} 这天**一笔核销都没有**（不是出错）。常见于周末、假期、"
-            "或销售当天没来得及核。这天就算处理完了，已记进跑批台账。"
-        )
-        try:
-            sys.path.insert(0, str(Path(__file__).resolve().parent))
-            import batch_ledger
-            import common as _c
-
-            batch_ledger.record(
-                out_dir.parent, _c.norm_date(day), "classified", payments=0,
-                note="空批：那天没有任何核销",
-            )
-        except Exception:
-            pass
-        return 0
-
-    try:
-        sys.path.insert(0, str(Path(__file__).resolve().parent))
-        import batch_ledger
-        import common as _c
-
-        batch_ledger.record(
-            out_dir.parent, _c.norm_date(day), "fetched",
-            payments=summary["回款记录笔数"],
-        )
-    except Exception:
-        pass
     print(
-        f"   回款记录 {summary['回款记录笔数']} 笔 · 订单关联 {summary['下单行数']} 行"
-        f"（结算回查 {summary.get('结算回查行数', 0)} 行）"
-        f"（{summary['涉及SO数']} 个 SO）· 核销明细 {summary['核销明细行数']} 行"
-        f" · 订单明细 {summary['订单明细SOD行数']} 个 SOD"
+        f"✅ 本次 {len(pending_days)} 个核销日已在同一次登录中取完；"
+        "后续判定和写表仍须从早到晚逐日执行"
     )
-    if summary.get("跨父回款历史核销补取行数"):
-        print(
-            f"   历史累计：跨父回款补取 "
-            f"{summary['跨父回款历史核销补取行数']} 行"
-        )
-    print(f"   回款类型分布: {summary['回款类型分布']}")
-    if summary["无下单行的AR"]:
-        print(f"   ⚠ 有 {len(summary['无下单行的AR'])} 笔到账在下单和结算中都没抓到单号，判定会报异常不会漏")
-    if summary["查不到SOD的SO"]:
-        print(f"   ⚠ 有 {len(summary['查不到SOD的SO'])} 个 SO 查不到 SOD，将退化成按 SO 匹配")
     print(
-        f"👉 下一步：把盈亏/流转表副本放进 02_我的表副本/，"
-        f"再跑判定（核销日期 {day}）"
+        "👉 下一步：按上述核销日期从早到晚逐日执行判定、日清和工作副本写入"
     )
     return 0
 
