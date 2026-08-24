@@ -184,6 +184,32 @@ def test_apply_all_writes_two_annual_ledgers_and_builds_combined_reports(tmp_pat
     assert (out_dir / "订单写入差异_20260810.xlsx").is_file()
 
 
+def test_apply_all_keeps_formula_text_static_in_combined_annual_change_report(tmp_path):
+    """年度报告中的公式说明是文本，合并后也不得变成 Excel 公式。"""
+    report = tmp_path / "年度变更清单.xlsx"
+    source = openpyxl.Workbook()
+    source.active.title = "变更清单"
+    source.active["A1"] = "公式原文"
+    source.active["A2"] = "=L4638-M4638"
+    source.active["A2"].data_type = "s"
+    source.save(str(report))
+    source.close()
+
+    target = tmp_path / "多年度变更清单.xlsx"
+    AA._merge_annual_reports(
+        [(2025, tmp_path / "2025年盈亏表.xlsx", report)],
+        target,
+        "变更清单",
+    )
+
+    merged = openpyxl.load_workbook(str(target), data_only=False)
+    change_sheet = merged["2025_1_变更清单"]
+    formula_text = change_sheet["A2"]
+    assert formula_text.value == "=L4638-M4638"
+    assert formula_text.data_type == "s"
+    merged.close()
+
+
 def test_default_jiezhang_no_is_still_writable(tmp_path):
     """她表未收款的行**预置「是否结账=否」**、回款列全空 → 这是"还没填"，必须可写。
     2026-07-24 真实 24 号数据实测 bug：validate 把预置的「否」当"已填过"，4 笔可填全被误判冲突、

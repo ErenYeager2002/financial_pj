@@ -10,7 +10,7 @@
 
 安全设计：
   输入 = 她给的盈亏副本（只读打开）+ 校验后的计划
-  平台交付 = 写入后的盈亏核算表；变更清单和订单写入差异表仅保留在工作区内部审计，且不生成便携副本
+  输出 = 04_产出/盈亏核算表_已回填_日期.xlsx（新文件）+ 变更清单 + 订单写入差异表
   用 OOXML 补丁只改明细格，避免 openpyxl 毁图/透视
 
 写完立刻回读逐格比对；对不上非 0 退出。
@@ -188,6 +188,9 @@ def write_plan(
         op = it.get("row_operation") or {}
         if op.get("type") == "split_payment_chain":
             steps = op.get("steps") or []
+            special_chain = (
+                op.get("receivable_mode") == "preserve_baseline_blank_carry"
+            )
             step_index = int(it.get("split_chain_index") or 0)
             chain_base = applied_r - step_index
             chain_rows = list(range(
@@ -204,7 +207,8 @@ def write_plan(
                 first_five = normalized_five(steps[0].get("five_cols") or {})
                 for key, value in first_five.items():
                     edits.append((r, cols[key], value))
-                edits.append((r, cols["应收"], float(steps[0]["receivable"])))
+                if not special_chain:
+                    edits.append((r, cols["应收"], float(steps[0]["receivable"])))
                 first_sod = first_five.get("实收SOD") or it.get("sod")
                 if first_sod:
                     edits.append((r, cols["SOD"], first_sod))
@@ -222,7 +226,9 @@ def write_plan(
                     row_no = applied_r + offset
                     next_five = normalized_five(next_step.get("five_cols") or {})
                     overrides = {cols[key]: value for key, value in next_five.items()}
-                    overrides[cols["应收"]] = float(next_step["receivable"])
+                    overrides[cols["应收"]] = (
+                        None if special_chain else float(next_step["receivable"])
+                    )
                     next_sod = next_five.get("实收SOD") or next_step.get("sod")
                     if next_sod:
                         overrides[cols["SOD"]] = next_sod
@@ -241,7 +247,9 @@ def write_plan(
                 if final_unpaid:
                     unpaid_five = normalized_five(final_unpaid.get("five_cols") or {})
                     overrides = {cols[key]: value for key, value in unpaid_five.items()}
-                    overrides[cols["应收"]] = float(final_unpaid["receivable"])
+                    overrides[cols["应收"]] = (
+                        None if special_chain else float(final_unpaid["receivable"])
+                    )
                     unpaid_sod = unpaid_five.get("实收SOD") or it.get("sod")
                     if unpaid_sod:
                         overrides[cols["SOD"]] = unpaid_sod
@@ -293,14 +301,20 @@ def write_plan(
             if "差异" in cols:
                 edits.append((r, cols["差异"], None))
         elif op.get("type") == "split_below":
-            edits.append((r, cols["应收"], float(op["paid_receivable"])))
+            special_mode = (
+                op.get("receivable_mode") == "preserve_baseline_blank_carry"
+            )
+            if not special_mode:
+                edits.append((r, cols["应收"], float(op["paid_receivable"])))
             # 部分回款阶段两侧计提与业务值差异都必须留空。旧版测试表可以没有
             # “差异”列；存在时显式把源行和复制出的未回款行保持为空。
             if "差异" in cols:
                 edits.append((r, cols["差异"], None))
             inserted_five = op.get("inserted_five_cols") or {}
             overrides = {
-                cols["应收"]: float(op["unpaid_receivable"]),
+                cols["应收"]: (
+                    None if special_mode else float(op["unpaid_receivable"])
+                ),
                 cols["计提"]: None,
                 cols["回款明细"]: None,
                 cols["是否结账"]: "否",
@@ -410,7 +424,7 @@ def _finalize_output(
     *,
     baseline: Path,
 ):
-    """补齐计算链；本 Skill 不生成便携副本。"""
+    """补齐计算链；有历史外链时再派生独立便携副本。"""
     import workbook_finalize
     import xlsx_patch
 
@@ -421,7 +435,11 @@ def _finalize_output(
     lost = xlsx_patch.parts_diff(baseline, path)
     if lost:
         raise ValueError(f"计算链处理后工作簿部件缺失：{lost[:5]}")
-    return finalized, None
+    portable = None
+    if workbook_finalize.external_link_count(path):
+        audit = workbook_finalize.create_portable_copy(path, portable_out)
+        portable = (portable_out, audit)
+    return finalized, portable
 
 
 def precheck_before_write(plan: dict, items: List[dict], src: Path) -> List[str]:
@@ -542,13 +560,26 @@ def verify_written(out: Path, items: List[dict]) -> List[str]:
             )
         op = it.get("row_operation") or {}
         if op.get("type") == "split_below":
+            if (
+                op.get("receivable_mode") == "preserve_baseline_blank_carry"
+                and _norm(row.get("应收金额")) != _norm(op.get("source_row_receivable"))
+            ):
+                problems.append(
+                    f"第 {r} 行 应收金额：期望保留原始应收 "
+                    f"{_norm(op.get('source_row_receivable'))!r} "
+                    f"实际 {_norm(row.get('应收金额'))!r}"
+                )
             inserted_r = int(it.get("_inserted_row_ref") or (r + 1))
             inserted = rows.get(inserted_r)
             if inserted is None:
                 problems.append(f"第 {inserted_r} 行应为新增未回款行，但写完读不到")
                 continue
             expected = {
-                "应收金额": op.get("unpaid_receivable"),
+                "应收金额": (
+                    None
+                    if op.get("receivable_mode") == "preserve_baseline_blank_carry"
+                    else op.get("unpaid_receivable")
+                ),
                 "计提": None, "回款明细": None, "是否结账": "否",
                 "收款时间": None, "收款方式": None, "SOD": sod,
             }
@@ -697,7 +728,11 @@ def _comparison_objects(items: List[dict]) -> List[dict]:
 
         operation = item.get("row_operation") or {}
         if operation.get("type") == "split_below":
-            expected["应收金额"] = operation.get("paid_receivable")
+            expected["应收金额"] = (
+                operation.get("source_row_receivable")
+                if operation.get("receivable_mode") == "preserve_baseline_blank_carry"
+                else operation.get("paid_receivable")
+            )
             expected["计提"] = None
             expected["差异"] = None
         elif operation.get("type") == "split_payment_chain":
@@ -729,7 +764,11 @@ def _comparison_objects(items: List[dict]) -> List[dict]:
                     "expected": {
                         "SO": item.get("so") or "",
                         "SOD": sod,
-                        "应收金额": operation.get("unpaid_receivable"),
+                        "应收金额": (
+                            None
+                            if operation.get("receivable_mode") == "preserve_baseline_blank_carry"
+                            else operation.get("unpaid_receivable")
+                        ),
                         "计提": None,
                         "回款明细": None,
                         "是否结账": "否",
