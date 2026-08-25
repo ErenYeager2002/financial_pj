@@ -1345,7 +1345,7 @@ def test_other_providers_do_not_receive_qwen_specific_params(monkeypatch) -> Non
     )
     assert captured["model"] == "deepseek-v4-flash"
     assert "enable_thinking" not in captured
-    assert "thinking" not in captured
+    assert captured["thinking"] == {"type": "disabled"}
     assert redirect_flags == [False]
 
 
@@ -1376,6 +1376,7 @@ def test_workflow_decision_does_not_inject_qwen_params_for_deepseek(monkeypatch)
     assert decision.action == "reply"
     assert captured["model"] == "deepseek-v4-flash"
     assert "enable_thinking" not in captured
+    assert captured["thinking"] == {"type": "disabled"}
 
 
 def test_extra_body_cannot_override_protected_fields(monkeypatch) -> None:

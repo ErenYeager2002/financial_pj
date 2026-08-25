@@ -220,6 +220,7 @@ PROVIDERS: tuple[ProviderDefinition, ...] = (
 _PROVIDERS_BY_ID: dict[str, ProviderDefinition] = {item.id: item for item in PROVIDERS}
 
 _QWEN3_PATTERN = re.compile(r"^qwen3(?:\.\d+)?-")
+_DEEPSEEK_V4_PATTERN = re.compile(r"^deepseek-v4(?:-|$)")
 _KIMI_K2_PATTERN = re.compile(r"^kimi-k2[\d.]")
 _MINIMAX_M3_PATTERN = re.compile(r"^MiniMax-M3(?:[.-]|$)")
 
@@ -257,6 +258,8 @@ def filter_candidate_models(provider: ProviderDefinition, raw_models: list[str])
 def build_extra_body(provider_id: str, model: str) -> dict[str, Any]:
     if provider_id == "qwen" and _QWEN3_PATTERN.match(model):
         return {"enable_thinking": False}
+    if provider_id == "deepseek" and _DEEPSEEK_V4_PATTERN.match(model):
+        return {"thinking": {"type": "disabled"}}
     if provider_id == "moonshot" and _KIMI_K2_PATTERN.match(model):
         return {"thinking": {"type": "disabled"}}
     if provider_id == "minimax" and _MINIMAX_M3_PATTERN.match(model):
