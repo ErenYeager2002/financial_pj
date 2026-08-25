@@ -1,0 +1,257 @@
+name: financial-platform-dev
+
+x-backend-environment: &backend-environment
+  PYTHONPATH: /app/backend
+  PYTHONUNBUFFERED: "1"
+  PYTHONDONTWRITEBYTECODE: "1"
+  FINANCIAL_PROJECT_ROOT: /app
+  FINANCIAL_APP_NAME: 财务 Skill 运行平台（开发）
+  FINANCIAL_ENV: development
+  FINANCIAL_DATA_DIR: /var/lib/financial-platform
+  FINANCIAL_SKILL_DIR: /app/skills
+  FINANCIAL_DATABASE_URL: postgresql+psycopg://financial:${POSTGRES_PASSWORD}@postgres:5432/financial
+  FINANCIAL_AUTH_MODE: ${FINANCIAL_AUTH_MODE:-clerk}
+  FINANCIAL_SESSION_COOKIE: ${FINANCIAL_SESSION_COOKIE:-financial_session}
+  FINANCIAL_CLERK_ISSUER: ${FINANCIAL_CLERK_ISSUER}
+  FINANCIAL_CLERK_AUTHORIZED_PARTIES: http://localhost:3000,http://127.0.0.1:3000
+  FINANCIAL_DEV_CLERK_AUTO_PROVISION_ADMIN: ${FINANCIAL_DEV_CLERK_AUTO_PROVISION_ADMIN:-false}
+  FINANCIAL_TRUSTED_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
+  FINANCIAL_SESSION_COOKIE_SECURE: "false"
+  FINANCIAL_NETWORK_POLICY_MODE: ${FINANCIAL_NETWORK_POLICY_MODE:-strict}
+  FINANCIAL_ZHIYUN_BASE_URL: ${FINANCIAL_ZHIYUN_BASE_URL:-}
+  FINANCIAL_AR_HEXIAO_EXECUTION_ENABLED: ${FINANCIAL_DEV_AR_HEXIAO_EXECUTION_ENABLED:-false}
+  FINANCIAL_TASK_DISCOVERY_ENABLED: ${FINANCIAL_DEV_TASK_DISCOVERY_ENABLED:-false}
+  FINANCIAL_TASK_DISCOVERY_HOLIDAYS: ${FINANCIAL_TASK_DISCOVERY_HOLIDAYS:-}
+  FINANCIAL_WORKER_COUNTS: python:1,http:1,workflow:1
+
+x-backend: &backend
+  image: financial-platform-backend:dev
+  build:
+    context: ../..
+    dockerfile: deploy/docker/Dockerfile
+  restart: unless-stopped
+  read_only: true
+  tmpfs:
+    - /tmp:size=256m,mode=1777
+  shm_size: 512m
+  env_file:
+    - path: ../../.env
+      required: false
+  environment: *backend-environment
+  volumes:
+    - ../../backend:/app/backend:ro
+    - ../../scripts:/app/scripts:ro
+    - ../../skills:/app/skills:ro
+    - ../../alembic.ini:/app/alembic.ini:ro
+    - ../../data/development:/var/lib/financial-platform
+  networks:
+    - data
+
+x-worker: &worker
+  <<: *backend
+  networks:
+    - data
+    - edge
+  depends_on:
+    migrate:
+      condition: service_completed_successfully
+    egress-proxy:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: docker.m.daocloud.io/library/postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: financial
+      POSTGRES_USER: financial
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U financial -d financial"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    security_opt:
+      - no-new-privileges:true
+
+  migrate:
+    <<: *backend
+    restart: "no"
+    command:
+      - /bin/sh
+      - -ec
+      - cd /app && python -m alembic -c /app/alembic.ini upgrade head
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  egress-proxy:
+    <<: *backend
+    profiles: ["tasks"]
+    command:
+      - watchfiles
+      - --filter
+      - python
+      - --grace-period
+      - "1"
+      - python /app/scripts/egress_proxy.py --host 0.0.0.0 --port 8080
+      - /app/scripts
+    networks:
+      - data
+      - edge
+    depends_on: {}
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import socket; socket.create_connection(('127.0.0.1', 8080), timeout=3).close()"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
+  api:
+    <<: *backend
+    volumes:
+      - ../../backend:/app/backend:ro
+      - ../../scripts:/app/scripts:ro
+      - ../../skills:/app/skills
+      - ../../alembic.ini:/app/alembic.ini:ro
+      - ../../data/development:/var/lib/financial-platform
+    command:
+      - uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --reload
+      - --reload-dir
+      - /app/backend/app
+      - --reload-dir
+      - /app/scripts
+      - --proxy-headers
+      - --forwarded-allow-ips=*
+    ports:
+      - 127.0.0.1:8000:8000
+    networks:
+      - data
+      - edge
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  worker-python:
+    <<: *worker
+    profiles: ["tasks"]
+    command:
+      - python
+      - -m
+      - app.worker
+      - --pools
+      - python
+      - --worker-id
+      - dev-python-1
+
+  worker-http:
+    <<: *worker
+    profiles: ["tasks"]
+    command:
+      - python
+      - -m
+      - app.worker
+      - --pools
+      - http
+      - --worker-id
+      - dev-http-1
+
+  worker-workflow:
+    <<: *worker
+    profiles: ["tasks"]
+    command:
+      - python
+      - -m
+      - app.worker
+      - --pools
+      - workflow
+      - --worker-id
+      - dev-workflow-1
+
+  worker-task-discovery:
+    <<: *worker
+    profiles: ["tasks"]
+    command:
+      - python
+      - -m
+      - app.task_discovery_worker
+
+  next:
+    image: docker.m.daocloud.io/library/node:22-slim
+    restart: unless-stopped
+    working_dir: /workspace/web
+    command:
+      - sh
+      - /workspace/web/scripts/dev-container-entrypoint.sh
+    environment:
+      NODE_ENV: development
+      PORT: "3000"
+      HOSTNAME: 0.0.0.0
+      NEXT_TELEMETRY_DISABLED: "1"
+      WATCHPACK_POLLING: "true"
+      CHOKIDAR_USEPOLLING: "true"
+      HUSKY: "0"
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY}
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
+      NEXT_PUBLIC_CLERK_SIGN_IN_URL: /auth/sign-in
+      NEXT_PUBLIC_CLERK_SIGN_UP_URL: /auth/sign-up
+      NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL: /dashboard/overview
+      NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL: /dashboard/overview
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+      FINANCIAL_AUTH_MODE: ${FINANCIAL_AUTH_MODE:-clerk}
+      FINANCIAL_SESSION_COOKIE: ${FINANCIAL_SESSION_COOKIE:-financial_session}
+      FINANCIAL_PLATFORM_API_URL: http://api:8000
+      FINANCIAL_PLATFORM_REQUEST_TIMEOUT_MS: "30000"
+      AGENT_RUNTIME: ${AGENT_RUNTIME:-pi}
+      AGENT_RUNTIME_PI_USERS: ${AGENT_RUNTIME_PI_USERS:-}
+      AGENT_RUNTIME_FALLBACK: ${AGENT_RUNTIME_FALLBACK:-legacy}
+      NEXT_PUBLIC_SENTRY_DISABLED: "true"
+    volumes:
+      - ../../web:/workspace/web
+      - ../../agent-runtime:/workspace/agent-runtime
+      - ../../contracts:/workspace/contracts:ro
+      - next-node-modules:/workspace/web/node_modules
+      - next-cache:/workspace/web/.next
+      - agent-runtime-node-modules:/workspace/agent-runtime/node_modules
+    ports:
+      - 127.0.0.1:3000:3000
+    networks:
+      - edge
+    depends_on:
+      api:
+        condition: service_healthy
+
+networks:
+  data:
+    internal: true
+  edge:
+
+volumes:
+  postgres-data:
+  next-node-modules:
+  next-cache:
+  agent-runtime-node-modules:
