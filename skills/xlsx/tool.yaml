@@ -1,8 +1,8 @@
 schema_version: 1
 id: xlsx
 name: Excel 基础能力
-version: 1.0.0
-status: disabled
+version: 1.0.5
+status: published
 category: 文档能力
 description: Excel 创建、编辑、公式重算和视觉检查的 Agent 基础指南。
 tags:
@@ -10,25 +10,25 @@ tags:
 - 基础能力
 file_inputs: []
 input_schema:
-  type: object
   additionalProperties: true
   properties: {}
-output_schema:
   type: object
+output_schema:
+  properties:
+    output_files:
+      type: array
+    status:
+      const: success
+    summary:
+      type: object
+    warnings:
+      type: array
   required:
   - status
   - summary
   - output_files
   - warnings
-  properties:
-    status:
-      const: success
-    summary:
-      type: object
-    output_files:
-      type: array
-    warnings:
-      type: array
+  type: object
 handler:
   adapter: python
   entrypoint: scripts/entry.py
@@ -38,13 +38,40 @@ runtime:
   memory_mb: 2048
   concurrency_limit: 1
   network_access: false
+  network_allowlist: []
+  network_targets: []
 risk:
   level: read_only
   requires_confirmation: false
+  requires_change_review: false
+  requires_approval: false
+  modifies_uploaded_files: false
 permissions:
   run: finance_user
   manage: skill_admin
-upstream:
-  repository: https://github.com/EvanLee2004/finance-skills
-  path: skills/xlsx
+ui:
+  employee_name: Excel 基础能力
+  short_description: Excel 创建、编辑、公式重算和视觉检查的 Agent 基础指南。
+  categories:
+  - 文档能力
+  estimated_minutes: 2
+  output_summary: 处理结果文件和业务摘要
+  action_label: 开始处理
+  popular: false
+safety_constraints: {}
+progress_stages:
+- key: reading_files
+  label: 正在读取文件
+- key: validating_fields
+  label: 正在检查字段
+- key: processing
+  label: 正在处理数据
+- key: generating_output
+  label: 正在生成结果文件
+result_presentation:
+  metrics: []
 blocked_reason: 基础能力包不是单一业务工具，需要文档型 Agent 运行时。
+upstream:
+  commit: 08ec3a6580324bbb90680b55e9cac7f5393ebdeb
+  path: skills/xlsx
+  repository: https://gitee.com/Lee157/finance-skills.git

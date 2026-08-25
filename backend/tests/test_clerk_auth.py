@@ -12,18 +12,19 @@ from helpers import auth_client
 
 from app import auth as auth_module
 from app import clerk_auth as clerk_auth_module
-from app.auth_service import create_user
+from app.auth_service import create_user, get_user_by_clerk_id
 from app.clerk_auth import ClerkIdentity, ClerkTokenError, verify_clerk_token
 from app.database import SessionLocal, init_db
 from app.main import app
+from app.routers import admin_users as admin_users_router_module
+from app.routers import auth as auth_router_module
 
 
 def _auth_mode(monkeypatch: pytest.MonkeyPatch, mode: str) -> None:
-    monkeypatch.setattr(
-        auth_module,
-        "settings",
-        replace(auth_module.settings, auth_mode=mode),
-    )
+    selected = replace(auth_module.settings, auth_mode=mode)
+    monkeypatch.setattr(auth_module, "settings", selected)
+    monkeypatch.setattr(auth_router_module, "settings", selected)
+    monkeypatch.setattr(admin_users_router_module, "settings", selected)
 
 
 def _mapped_user(
@@ -32,6 +33,7 @@ def _mapped_user(
     clerk_user_id: str,
     clerk_organization_id: str | None = None,
     status: str = "active",
+    role: str = "finance_user",
 ) -> None:
     init_db()
     with SessionLocal() as db:
@@ -40,6 +42,7 @@ def _mapped_user(
             username=username,
             password="unused-clerk-password",
             display_name="Clerk 测试用户",
+            role=role,
             clerk_user_id=clerk_user_id,
             clerk_organization_id=clerk_organization_id,
         )
@@ -83,6 +86,69 @@ def test_hybrid_mode_rejects_unmapped_clerk_identity(
 
     assert response.status_code == 403
     assert "尚未绑定" in response.text
+
+
+def test_development_can_auto_provision_unmapped_clerk_admin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        auth_module,
+        "settings",
+        replace(
+            auth_module.settings,
+            auth_mode="clerk",
+            environment="development",
+            dev_clerk_auto_provision_admin=True,
+        ),
+    )
+    monkeypatch.setattr(
+        auth_module,
+        "verify_clerk_token",
+        lambda _token: ClerkIdentity(
+            user_id="user_dev_auto_provision",
+            organization_id="org_development",
+        ),
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/api/session", headers={"Authorization": "Bearer valid-token"})
+
+    assert response.status_code == 200, response.text
+    assert response.json()["role"] == "skill_admin"
+    assert response.json()["auth_provider"] == "clerk"
+    with SessionLocal() as db:
+        user = get_user_by_clerk_id(db, "user_dev_auto_provision")
+        assert user is not None
+        assert user.role == "skill_admin"
+        assert user.clerk_organization_id == "org_development"
+
+
+def test_production_never_auto_provisions_unmapped_clerk_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        auth_module,
+        "settings",
+        replace(
+            auth_module.settings,
+            auth_mode="clerk",
+            environment="production",
+            dev_clerk_auto_provision_admin=True,
+        ),
+    )
+    monkeypatch.setattr(
+        auth_module,
+        "verify_clerk_token",
+        lambda _token: ClerkIdentity(user_id="user_production_unmapped"),
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/api/session", headers={"Authorization": "Bearer valid-token"})
+
+    assert response.status_code == 403
+    assert "尚未绑定" in response.text
+    with SessionLocal() as db:
+        assert get_user_by_clerk_id(db, "user_production_unmapped") is None
 
 
 def test_invalid_bearer_never_falls_back_to_valid_cookie(
@@ -237,3 +303,42 @@ def test_real_clerk_jwt_signature_and_authorized_party(
     )
     with pytest.raises(ClerkTokenError, match="来源"):
         verify_clerk_token(wrong_party)
+
+
+def test_clerk_mode_disables_local_login(monkeypatch: pytest.MonkeyPatch) -> None:
+    with TestClient(app) as client:
+        _auth_mode(monkeypatch, "clerk")
+        response = client.post(
+            "/api/auth/login",
+            json={"username": "any-user", "password": "any-password"},
+        )
+        assert response.status_code == 404
+
+
+def test_clerk_mode_disables_local_password_reset(monkeypatch: pytest.MonkeyPatch) -> None:
+    _mapped_user(
+        username="clerk-password-admin",
+        clerk_user_id="user_clerk_password_admin",
+        role="skill_admin",
+    )
+    with SessionLocal() as db:
+        target = create_user(
+            db,
+            username="clerk-password-target",
+            password="unused-local-password",
+        )
+        db.commit()
+        target_id = target.id
+    _auth_mode(monkeypatch, "clerk")
+    monkeypatch.setattr(
+        auth_module,
+        "verify_clerk_token",
+        lambda _token: ClerkIdentity(user_id="user_clerk_password_admin"),
+    )
+    with TestClient(app) as client:
+        response = client.post(
+            f"/api/admin/users/{target_id}/reset-password",
+            headers={"Authorization": "Bearer valid-clerk-token"},
+            json={"initial_password": "one-time-password-123"},
+        )
+    assert response.status_code == 409

@@ -12,6 +12,11 @@ export function WorkbenchOverview({ data }: { data: Workbench }) {
   const pendingRuns = data.pending_runs ?? [];
   const recentResults = data.recent_results ?? [];
   const recentFiles = data.recent_files ?? [];
+  const taskReminders = data.task_reminders ?? {
+    pending_dates: 0,
+    active_skills: 0,
+    failed_checks: 0
+  };
   const cards = [
     ['待确认任务', data.counts.waiting_confirmation, '需要确认后才会进入执行队列'],
     ['正在处理', data.counts.active, '排队或正在执行的任务'],
@@ -30,6 +35,30 @@ export function WorkbenchOverview({ data }: { data: Workbench }) {
           创建任务
         </Link>
       </div>
+
+      <Card>
+        <CardHeader>
+          <div className='flex flex-wrap items-center justify-between gap-3'>
+            <div>
+              <CardTitle>任务提醒</CardTitle>
+              <CardDescription>
+                {taskReminders.pending_dates
+                  ? `${taskReminders.active_skills} 个 Skill 有 ${taskReminders.pending_dates} 个待处理日期`
+                  : '当前没有待处理日期'}
+                {taskReminders.failed_checks
+                  ? `，另有 ${taskReminders.failed_checks} 次检查失败`
+                  : ''}
+              </CardDescription>
+            </div>
+            <Link
+              href='/dashboard/runs'
+              className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+            >
+              打开任务中心
+            </Link>
+          </div>
+        </CardHeader>
+      </Card>
 
       <div className='grid gap-4 sm:grid-cols-2 xl:grid-cols-4'>
         {cards.map(([label, value, description]) => (
@@ -65,10 +94,10 @@ export function WorkbenchOverview({ data }: { data: Workbench }) {
                   <div className='flex shrink-0 items-center gap-2'>
                     <Badge variant='outline'>使用 {item.run_count} 次</Badge>
                     <Link
-                      href={`/dashboard/skills/${encodeURIComponent(item.skill.id)}`}
+                      href={`/dashboard/skills/${encodeURIComponent(item.skill.id)}/run`}
                       className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
                     >
-                      查看
+                      运行
                     </Link>
                   </div>
                 </div>

@@ -13,7 +13,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .auth import UserContext
-from .models import FileRecord, RunRecord, WorkflowAction, WorkflowSession
+from .models import (
+    FileRecord,
+    RunRecord,
+    WorkflowAction,
+    WorkflowMaterialSetFile,
+    WorkflowSession,
+)
 from .resource_policy import assert_owner, run_root, upload_root
 from .settings import settings
 
@@ -177,6 +183,13 @@ def file_references(
 def file_delete_status(db: Session, record: FileRecord) -> tuple[bool, str]:
     if record.kind != "input":
         return False, "结果文件随任务记录保留，不能单独删除。"
+    material_reference = db.scalar(
+        select(WorkflowMaterialSetFile.id).where(
+            WorkflowMaterialSetFile.file_id == record.id
+        )
+    )
+    if material_reference:
+        return False, "文件属于业务材料版本；为保留当前版本和历史版本，不能删除。"
     run_ids, workflow_ids = file_references(db, record)
     if run_ids or workflow_ids:
         return False, "文件仍被任务使用；为保留审计和重试证据，不能删除。"

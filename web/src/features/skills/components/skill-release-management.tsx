@@ -1,7 +1,7 @@
 'use client';
 
 import { type FormEvent, useState } from 'react';
-import { IconCheck, IconGitBranch, IconPackageImport } from '@tabler/icons-react';
+import { IconGitBranch, IconPackageImport } from '@tabler/icons-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -15,7 +15,11 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import type { SkillRelease, SkillReleaseInboxItem } from '@/features/platform-api/types';
+import type {
+  SkillRelease,
+  SkillReleaseInboxItem,
+  SkillRollout
+} from '@/features/platform-api/types';
 import { formatDate } from '@/lib/format';
 
 interface Props {
@@ -25,8 +29,8 @@ interface Props {
 }
 
 const STATE_LABELS: Record<SkillRelease['state'], string> = {
-  validated: '待审核',
-  reviewed: '审核通过',
+  validated: '已生成',
+  reviewed: '可发布',
   rejected: '已退回',
   published: '当前发布',
   superseded: '历史版本',
@@ -46,6 +50,7 @@ export function SkillReleaseManagement({ initialReleases = [], initialInbox = []
   const [publishing, setPublishing] = useState<SkillRelease | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [rolloutState, setRolloutState] = useState<SkillRollout['state'] | ''>('');
 
   function replaceRelease(updated: SkillRelease) {
     setReleases((current) => {
@@ -144,21 +149,38 @@ export function SkillReleaseManagement({ initialReleases = [], initialInbox = []
     setBusy(true);
     setError('');
     const form = new FormData(event.currentTarget);
-    const response = await fetch(`/api/platform/admin/skill-releases/${publishing.id}/publish`, {
+    const response = await fetch(`/api/platform/admin/skill-releases/${publishing.id}/rollout`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ confirmation: form.get('confirmation') })
     });
     if (!response.ok) {
-      setError(await responseMessage(response, 'Skill 版本发布失败。'));
+      setError(await responseMessage(response, 'Skill 发布任务创建失败。'));
       setBusy(false);
       return;
     }
-    const updated = (await response.json()) as SkillRelease;
-    replaceRelease(updated);
+    let rollout = (await response.json()) as SkillRollout;
+    setRolloutState(rollout.state);
+    for (let attempt = 0; attempt < 300 && !isTerminalRollout(rollout.state); attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      const status = await fetch(`/api/platform/admin/skill-rollouts/${rollout.id}`);
+      if (!status.ok) {
+        setError(await responseMessage(status, 'Skill 发布状态读取失败。'));
+        setBusy(false);
+        return;
+      }
+      rollout = (await status.json()) as SkillRollout;
+      setRolloutState(rollout.state);
+    }
+    if (rollout.state !== 'succeeded') {
+      setError(rollout.error_message || 'Skill 发布未成功，目标 Skill 保持禁用或已恢复原版本。');
+      setBusy(false);
+      return;
+    }
     const refreshed = await fetch('/api/platform/admin/skill-releases');
     if (refreshed.ok) setReleases((await refreshed.json()) as SkillRelease[]);
     setPublishing(null);
+    setRolloutState('');
     setBusy(false);
   }
 
@@ -227,16 +249,16 @@ export function SkillReleaseManagement({ initialReleases = [], initialInbox = []
         <section className='space-y-3' aria-labelledby='skill-review-records-title'>
           <div>
             <h2 id='skill-review-records-title' className='text-lg font-semibold'>
-              审核与发布记录
+              Skill 发布记录
             </h2>
             <p className='text-sm text-muted-foreground'>
-              查看版本来源、校验结果、审核意见和当前发布状态。
+              查看版本来源、校验结果和当前发布状态。
             </p>
           </div>
           {releases.length === 0 ? (
             <Card>
               <CardContent className='py-8 text-sm text-muted-foreground'>
-                当前没有 Skill 审核记录。
+                当前没有 Skill 发布记录。
               </CardContent>
             </Card>
           ) : (
@@ -267,49 +289,12 @@ export function SkillReleaseManagement({ initialReleases = [], initialInbox = []
                     </div>
                     {release.review_notes && (
                       <p className='rounded bg-muted p-2'>
-                        审核意见：
+                        发布说明：
                         {release.review_notes === '自动保存的线上回退基线'
                           ? '自动保存的发布前线上版本归档'
                           : release.review_notes}
                       </p>
                     )}
-                    <div className='flex flex-wrap gap-2'>
-                      {['validated', 'rejected'].includes(release.state) && (
-                        <>
-                          <Button
-                            type='button'
-                            variant='outline'
-                            onClick={() => {
-                              setError('');
-                              setEditing(release);
-                            }}
-                          >
-                            编辑元数据
-                          </Button>
-                          <Button
-                            type='button'
-                            onClick={() => {
-                              setError('');
-                              setReviewing(release);
-                            }}
-                          >
-                            审核
-                          </Button>
-                        </>
-                      )}
-                      {release.state === 'reviewed' && (
-                        <Button
-                          type='button'
-                          onClick={() => {
-                            setError('');
-                            setPublishing(release);
-                          }}
-                        >
-                          <IconCheck />
-                          发布版本
-                        </Button>
-                      )}
-                    </div>
                   </CardContent>
                 </Card>
               ))}
@@ -499,18 +484,23 @@ export function SkillReleaseManagement({ initialReleases = [], initialInbox = []
           {publishing && (
             <form onSubmit={(event) => void submitAction(event)} className='space-y-4'>
               <DialogHeader>
-                <DialogTitle>发布 Skill 版本</DialogTitle>
+                <DialogTitle>停用并发布 Skill 版本</DialogTitle>
                 <DialogDescription>
-                  系统会再次检查包哈希和活动任务，并在发布失败时恢复当前线上版本。
+                  系统先停止接收该 Skill 的新任务，等待现有任务结束，再切换版本并重新启用。
                 </DialogDescription>
               </DialogHeader>
               <p className='rounded bg-muted p-3 text-sm'>
                 请输入：
                 <strong>
-                  发布 {publishing.skill_id} {publishing.version}
+                  停用并发布 {publishing.skill_id} {publishing.version}
                 </strong>
               </p>
               <Input name='confirmation' required autoComplete='off' />
+              {rolloutState && (
+                <p role='status' className='text-sm text-muted-foreground'>
+                  当前进度：{rolloutStateLabel(rolloutState)}
+                </p>
+              )}
               {error && (
                 <p role='alert' className='text-sm text-destructive'>
                   {error}
@@ -527,4 +517,20 @@ export function SkillReleaseManagement({ initialReleases = [], initialInbox = []
       </Dialog>
     </section>
   );
+}
+
+function isTerminalRollout(state: SkillRollout['state']) {
+  return ['succeeded', 'failed', 'failed_disabled'].includes(state);
+}
+
+function rolloutStateLabel(state: SkillRollout['state']) {
+  return {
+    queued: '等待 Worker',
+    draining: '等待现有任务结束',
+    activating: '切换版本',
+    verifying: '验证新版本',
+    succeeded: '发布完成并已启用',
+    failed: '发布失败，已恢复原版本',
+    failed_disabled: '发布失败，保持禁用'
+  }[state];
 }

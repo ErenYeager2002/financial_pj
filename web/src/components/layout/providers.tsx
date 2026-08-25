@@ -5,6 +5,7 @@ import { shadcn } from '@clerk/ui/themes';
 import React from 'react';
 import { ActiveThemeProvider } from '../themes/active-theme';
 import QueryProvider from './query-provider';
+import type { AuthMode } from '@/features/auth/auth-mode';
 
 const clerkLocalization = {
   ...zhCN,
@@ -28,17 +29,25 @@ const clerkLocalization = {
   }
 };
 
+const allowedRedirectOrigins = process.env.NEXT_PUBLIC_APP_URL
+  ? [process.env.NEXT_PUBLIC_APP_URL]
+  : undefined;
+
 export default function Providers({
   activeThemeValue,
+  authMode,
   children
 }: {
   activeThemeValue: string;
+  authMode: AuthMode;
   children: React.ReactNode;
 }) {
+  const content = <QueryProvider>{children}</QueryProvider>;
   return (
     <>
       <ActiveThemeProvider initialTheme={activeThemeValue}>
-        <ClerkProvider
+        {authMode === 'session' ? content : <ClerkProvider
+          allowedRedirectOrigins={allowedRedirectOrigins}
           localization={clerkLocalization}
           appearance={{
             theme: shadcn,
@@ -61,8 +70,8 @@ export default function Providers({
             }
           }}
         >
-          <QueryProvider>{children}</QueryProvider>
-        </ClerkProvider>
+          {content}
+        </ClerkProvider>}
       </ActiveThemeProvider>
     </>
   );

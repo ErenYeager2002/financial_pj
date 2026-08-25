@@ -69,6 +69,21 @@
         "title": "AdminAssistantProfileWrite",
         "type": "object"
       },
+      "AdminPasswordReset": {
+        "properties": {
+          "initial_password": {
+            "maxLength": 256,
+            "minLength": 8,
+            "title": "Initial Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "initial_password"
+        ],
+        "title": "AdminPasswordReset",
+        "type": "object"
+      },
       "AdminSkillDetail": {
         "additionalProperties": true,
         "description": "管理员 Skill DTO；员工接口不得返回这些执行和来源字段。",
@@ -1024,6 +1039,20 @@
         "title": "AuditEventRead",
         "type": "object"
       },
+      "Body_upload_avatar_api_profile_avatar_post": {
+        "properties": {
+          "upload": {
+            "contentMediaType": "application/octet-stream",
+            "title": "Upload",
+            "type": "string"
+          }
+        },
+        "required": [
+          "upload"
+        ],
+        "title": "Body_upload_avatar_api_profile_avatar_post",
+        "type": "object"
+      },
       "Body_upload_file_api_files_post": {
         "properties": {
           "role": {
@@ -1068,6 +1097,94 @@
           "new_password"
         ],
         "title": "ChangePasswordRequest",
+        "type": "object"
+      },
+      "FeatureControlRead": {
+        "properties": {
+          "blocked_reason": {
+            "default": "",
+            "title": "Blocked Reason",
+            "type": "string"
+          },
+          "category": {
+            "enum": [
+              "automation",
+              "execution",
+              "authentication"
+            ],
+            "title": "Category",
+            "type": "string"
+          },
+          "changed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Changed At"
+          },
+          "changed_by": {
+            "default": "",
+            "title": "Changed By",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "editable": {
+            "title": "Editable",
+            "type": "boolean"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "administrator",
+              "deployment"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "description",
+          "category",
+          "enabled",
+          "editable",
+          "source"
+        ],
+        "title": "FeatureControlRead",
+        "type": "object"
+      },
+      "FeatureControlUpdateRequest": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "FeatureControlUpdateRequest",
         "type": "object"
       },
       "FileInputSpec": {
@@ -1954,6 +2071,19 @@
             "title": "Auth Provider",
             "type": "string"
           },
+          "avatar_updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Avatar Updated At"
+          },
           "department_id": {
             "title": "Department Id",
             "type": "string"
@@ -2831,6 +2961,18 @@
             "title": "Auth Provider",
             "type": "string"
           },
+          "avatar_updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Updated At"
+          },
           "department_id": {
             "title": "Department Id",
             "type": "string"
@@ -2869,6 +3011,88 @@
           "department_id"
         ],
         "title": "SessionRead",
+        "type": "object"
+      },
+      "SkillAvailabilityRead": {
+        "properties": {
+          "active_work_count": {
+            "title": "Active Work Count",
+            "type": "integer"
+          },
+          "changed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Changed At"
+          },
+          "changed_by": {
+            "title": "Changed By",
+            "type": "string"
+          },
+          "generation": {
+            "title": "Generation",
+            "type": "integer"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "skill_id": {
+            "title": "Skill Id",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "enabled",
+              "draining",
+              "disabled",
+              "failed_disabled"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "skill_id",
+          "state",
+          "generation",
+          "reason",
+          "changed_by",
+          "changed_at",
+          "active_work_count"
+        ],
+        "title": "SkillAvailabilityRead",
+        "type": "object"
+      },
+      "SkillAvailabilityTransitionRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 500,
+            "minLength": 2,
+            "title": "Reason",
+            "type": "string"
+          },
+          "target_state": {
+            "enum": [
+              "enabled",
+              "draining",
+              "disabled"
+            ],
+            "title": "Target State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_state",
+          "reason"
+        ],
+        "title": "SkillAvailabilityTransitionRequest",
         "type": "object"
       },
       "SkillDetail": {
@@ -3400,6 +3624,438 @@
         "title": "SkillRiskSummary",
         "type": "object"
       },
+      "SkillRolloutRead": {
+        "properties": {
+          "attempt_count": {
+            "title": "Attempt Count",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error_message": {
+            "title": "Error Message",
+            "type": "string"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "next_attempt_at": {
+            "format": "date-time",
+            "title": "Next Attempt At",
+            "type": "string"
+          },
+          "previous_skill_hash": {
+            "title": "Previous Skill Hash",
+            "type": "string"
+          },
+          "release_id": {
+            "title": "Release Id",
+            "type": "string"
+          },
+          "requested_by": {
+            "title": "Requested By",
+            "type": "string"
+          },
+          "skill_id": {
+            "title": "Skill Id",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "state": {
+            "enum": [
+              "queued",
+              "draining",
+              "activating",
+              "verifying",
+              "succeeded",
+              "failed",
+              "failed_disabled"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "target_commit": {
+            "title": "Target Commit",
+            "type": "string"
+          },
+          "target_tree_hash": {
+            "title": "Target Tree Hash",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "release_id",
+          "skill_id",
+          "state",
+          "attempt_count",
+          "previous_skill_hash",
+          "target_commit",
+          "target_tree_hash",
+          "error_message",
+          "requested_by",
+          "created_at",
+          "updated_at",
+          "next_attempt_at",
+          "started_at",
+          "finished_at"
+        ],
+        "title": "SkillRolloutRead",
+        "type": "object"
+      },
+      "SkillRolloutStartRequest": {
+        "properties": {
+          "confirmation": {
+            "maxLength": 255,
+            "minLength": 8,
+            "title": "Confirmation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "confirmation"
+        ],
+        "title": "SkillRolloutStartRequest",
+        "type": "object"
+      },
+      "SkillSourceBindingConfirmRequest": {
+        "properties": {
+          "expected_commit": {
+            "pattern": "^[0-9a-f]{40}$",
+            "title": "Expected Commit",
+            "type": "string"
+          },
+          "repository_url": {
+            "maxLength": 512,
+            "minLength": 12,
+            "title": "Repository Url",
+            "type": "string"
+          },
+          "skill_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+            "title": "Skill Id",
+            "type": "string"
+          },
+          "source_path": {
+            "maxLength": 512,
+            "minLength": 8,
+            "title": "Source Path",
+            "type": "string"
+          },
+          "tracking_ref": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Tracking Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "skill_id",
+          "repository_url",
+          "tracking_ref",
+          "source_path",
+          "expected_commit"
+        ],
+        "title": "SkillSourceBindingConfirmRequest",
+        "type": "object"
+      },
+      "SkillSourceBindingRead": {
+        "properties": {
+          "binding_status": {
+            "enum": [
+              "candidate",
+              "bound",
+              "broken",
+              "excluded"
+            ],
+            "title": "Binding Status",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "title": "Created By",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "last_seen_commit": {
+            "title": "Last Seen Commit",
+            "type": "string"
+          },
+          "last_seen_tree_hash": {
+            "title": "Last Seen Tree Hash",
+            "type": "string"
+          },
+          "packager_profile": {
+            "title": "Packager Profile",
+            "type": "string"
+          },
+          "provider": {
+            "const": "gitee",
+            "title": "Provider",
+            "type": "string"
+          },
+          "published_commit": {
+            "title": "Published Commit",
+            "type": "string"
+          },
+          "published_tree_hash": {
+            "title": "Published Tree Hash",
+            "type": "string"
+          },
+          "repository_url": {
+            "title": "Repository Url",
+            "type": "string"
+          },
+          "skill_id": {
+            "title": "Skill Id",
+            "type": "string"
+          },
+          "source_path": {
+            "title": "Source Path",
+            "type": "string"
+          },
+          "source_type": {
+            "const": "git",
+            "title": "Source Type",
+            "type": "string"
+          },
+          "tracking_ref": {
+            "title": "Tracking Ref",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "updated_by": {
+            "title": "Updated By",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "skill_id",
+          "source_type",
+          "provider",
+          "repository_url",
+          "source_path",
+          "tracking_ref",
+          "binding_status",
+          "packager_profile",
+          "last_seen_commit",
+          "last_seen_tree_hash",
+          "published_commit",
+          "published_tree_hash",
+          "created_by",
+          "updated_by",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "SkillSourceBindingRead",
+        "type": "object"
+      },
+      "SkillSourceCandidateRead": {
+        "properties": {
+          "match_state": {
+            "enum": [
+              "candidate",
+              "bound",
+              "conflict",
+              "unmatched",
+              "excluded"
+            ],
+            "title": "Match State",
+            "type": "string"
+          },
+          "platform_skill_id": {
+            "default": "",
+            "title": "Platform Skill Id",
+            "type": "string"
+          },
+          "reason": {
+            "default": "",
+            "title": "Reason",
+            "type": "string"
+          },
+          "source_name": {
+            "title": "Source Name",
+            "type": "string"
+          },
+          "source_path": {
+            "title": "Source Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_name",
+          "source_path",
+          "match_state"
+        ],
+        "title": "SkillSourceCandidateRead",
+        "type": "object"
+      },
+      "SkillSourceDiscoveryRead": {
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/SkillSourceCandidateRead"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "commit": {
+            "title": "Commit",
+            "type": "string"
+          },
+          "repository_url": {
+            "title": "Repository Url",
+            "type": "string"
+          },
+          "tracking_ref": {
+            "title": "Tracking Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repository_url",
+          "tracking_ref",
+          "commit",
+          "candidates"
+        ],
+        "title": "SkillSourceDiscoveryRead",
+        "type": "object"
+      },
+      "SkillSourceDiscoveryRequest": {
+        "properties": {
+          "repository_url": {
+            "maxLength": 512,
+            "minLength": 12,
+            "title": "Repository Url",
+            "type": "string"
+          },
+          "tracking_ref": {
+            "default": "main",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Tracking Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repository_url"
+        ],
+        "title": "SkillSourceDiscoveryRequest",
+        "type": "object"
+      },
+      "SkillSourcePrepareReleaseRequest": {
+        "properties": {
+          "version": {
+            "maxLength": 64,
+            "minLength": 5,
+            "pattern": "^\\d+\\.\\d+\\.\\d+(?:[-+][0-9A-Za-z.-]+)?$",
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "title": "SkillSourcePrepareReleaseRequest",
+        "type": "object"
+      },
+      "SkillSourceUpdateCheckRead": {
+        "properties": {
+          "commit": {
+            "title": "Commit",
+            "type": "string"
+          },
+          "published_commit": {
+            "title": "Published Commit",
+            "type": "string"
+          },
+          "published_tree_hash": {
+            "title": "Published Tree Hash",
+            "type": "string"
+          },
+          "repository_url": {
+            "title": "Repository Url",
+            "type": "string"
+          },
+          "skill_id": {
+            "title": "Skill Id",
+            "type": "string"
+          },
+          "source_path": {
+            "title": "Source Path",
+            "type": "string"
+          },
+          "tracking_ref": {
+            "title": "Tracking Ref",
+            "type": "string"
+          },
+          "tree_hash": {
+            "title": "Tree Hash",
+            "type": "string"
+          },
+          "update_available": {
+            "title": "Update Available",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "skill_id",
+          "repository_url",
+          "source_path",
+          "tracking_ref",
+          "commit",
+          "tree_hash",
+          "published_commit",
+          "published_tree_hash",
+          "update_available"
+        ],
+        "title": "SkillSourceUpdateCheckRead",
+        "type": "object"
+      },
       "SkillSummary": {
         "properties": {
           "action_label": {
@@ -3753,6 +4409,290 @@
         "title": "StepRunRead",
         "type": "object"
       },
+      "TaskCenterItem": {
+        "properties": {
+          "business_date_count": {
+            "default": 0,
+            "title": "Business Date Count",
+            "type": "integer"
+          },
+          "business_date_end": {
+            "default": "",
+            "title": "Business Date End",
+            "type": "string"
+          },
+          "business_date_start": {
+            "default": "",
+            "title": "Business Date Start",
+            "type": "string"
+          },
+          "business_task_id": {
+            "default": "",
+            "title": "Business Task Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "detail_href": {
+            "title": "Detail Href",
+            "type": "string"
+          },
+          "error_summary": {
+            "default": "",
+            "title": "Error Summary",
+            "type": "string"
+          },
+          "original_stage": {
+            "default": "",
+            "title": "Original Stage",
+            "type": "string"
+          },
+          "original_state": {
+            "title": "Original State",
+            "type": "string"
+          },
+          "progress": {
+            "title": "Progress",
+            "type": "integer"
+          },
+          "progress_message": {
+            "title": "Progress Message",
+            "type": "string"
+          },
+          "reference_id": {
+            "title": "Reference Id",
+            "type": "string"
+          },
+          "reference_type": {
+            "enum": [
+              "run",
+              "workflow",
+              "workflow_batch"
+            ],
+            "title": "Reference Type",
+            "type": "string"
+          },
+          "skill_id": {
+            "title": "Skill Id",
+            "type": "string"
+          },
+          "skill_name": {
+            "title": "Skill Name",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "view_state": {
+            "enum": [
+              "pending",
+              "running",
+              "failed",
+              "succeeded",
+              "cancelled"
+            ],
+            "title": "View State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reference_type",
+          "reference_id",
+          "detail_href",
+          "skill_id",
+          "skill_name",
+          "view_state",
+          "original_state",
+          "progress",
+          "progress_message",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "TaskCenterItem",
+        "type": "object"
+      },
+      "TaskCenterPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TaskCenterItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "pages": {
+            "title": "Pages",
+            "type": "integer"
+          },
+          "state_counts": {
+            "$ref": "#/components/schemas/TaskCenterStateCounts"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "page",
+          "page_size",
+          "pages",
+          "state_counts"
+        ],
+        "title": "TaskCenterPage",
+        "type": "object"
+      },
+      "TaskCenterStateCounts": {
+        "properties": {
+          "cancelled": {
+            "default": 0,
+            "title": "Cancelled",
+            "type": "integer"
+          },
+          "failed": {
+            "default": 0,
+            "title": "Failed",
+            "type": "integer"
+          },
+          "pending": {
+            "default": 0,
+            "title": "Pending",
+            "type": "integer"
+          },
+          "running": {
+            "default": 0,
+            "title": "Running",
+            "type": "integer"
+          },
+          "succeeded": {
+            "default": 0,
+            "title": "Succeeded",
+            "type": "integer"
+          }
+        },
+        "title": "TaskCenterStateCounts",
+        "type": "object"
+      },
+      "TaskDiscoveryCheckQueued": {
+        "properties": {
+          "business_dates": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Business Dates",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "state",
+          "business_dates"
+        ],
+        "title": "TaskDiscoveryCheckQueued",
+        "type": "object"
+      },
+      "TaskDiscoveryCheckRequest": {
+        "properties": {
+          "business_dates": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 31,
+            "minItems": 1,
+            "title": "Business Dates",
+            "type": "array"
+          },
+          "skill_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Skill Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "skill_id",
+          "business_dates"
+        ],
+        "title": "TaskDiscoveryCheckRequest",
+        "type": "object"
+      },
+      "TaskDiscoveryFailureRead": {
+        "properties": {
+          "attempt_count": {
+            "title": "Attempt Count",
+            "type": "integer"
+          },
+          "business_dates": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Business Dates",
+            "type": "array"
+          },
+          "error_message": {
+            "title": "Error Message",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "last_checked_at": {
+            "format": "date-time",
+            "title": "Last Checked At",
+            "type": "string"
+          },
+          "owner_id": {
+            "title": "Owner Id",
+            "type": "string"
+          },
+          "owner_name": {
+            "title": "Owner Name",
+            "type": "string"
+          },
+          "skill_id": {
+            "title": "Skill Id",
+            "type": "string"
+          },
+          "skill_name": {
+            "title": "Skill Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "skill_id",
+          "skill_name",
+          "owner_id",
+          "owner_name",
+          "error_message",
+          "attempt_count",
+          "last_checked_at"
+        ],
+        "title": "TaskDiscoveryFailureRead",
+        "type": "object"
+      },
       "TaskDraft": {
         "properties": {
           "candidates": {
@@ -3965,6 +4905,198 @@
         "title": "TaskDraftUpdate",
         "type": "object"
       },
+      "TaskReminderBoard": {
+        "properties": {
+          "check_failures": {
+            "items": {
+              "$ref": "#/components/schemas/TaskDiscoveryFailureRead"
+            },
+            "title": "Check Failures",
+            "type": "array"
+          },
+          "reminders": {
+            "items": {
+              "$ref": "#/components/schemas/TaskReminderRead"
+            },
+            "title": "Reminders",
+            "type": "array"
+          }
+        },
+        "title": "TaskReminderBoard",
+        "type": "object"
+      },
+      "TaskReminderRead": {
+        "properties": {
+          "batch_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Id"
+          },
+          "business_date": {
+            "title": "Business Date",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "last_checked_at": {
+            "format": "date-time",
+            "title": "Last Checked At",
+            "type": "string"
+          },
+          "owner_id": {
+            "title": "Owner Id",
+            "type": "string"
+          },
+          "owner_name": {
+            "title": "Owner Name",
+            "type": "string"
+          },
+          "record_count": {
+            "title": "Record Count",
+            "type": "integer"
+          },
+          "reopened": {
+            "default": false,
+            "title": "Reopened",
+            "type": "boolean"
+          },
+          "skill_id": {
+            "title": "Skill Id",
+            "type": "string"
+          },
+          "skill_name": {
+            "title": "Skill Name",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "workflow_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Id"
+          }
+        },
+        "required": [
+          "id",
+          "skill_id",
+          "skill_name",
+          "owner_id",
+          "owner_name",
+          "business_date",
+          "record_count",
+          "state",
+          "last_checked_at"
+        ],
+        "title": "TaskReminderRead",
+        "type": "object"
+      },
+      "TaskReminderSubscriptionRead": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "last_check_status": {
+            "title": "Last Check Status",
+            "type": "string"
+          },
+          "last_checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Checked At"
+          },
+          "last_successful_business_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Successful Business Date"
+          },
+          "owner_id": {
+            "title": "Owner Id",
+            "type": "string"
+          },
+          "owner_name": {
+            "title": "Owner Name",
+            "type": "string"
+          },
+          "schedule_time": {
+            "title": "Schedule Time",
+            "type": "string"
+          },
+          "skill_id": {
+            "title": "Skill Id",
+            "type": "string"
+          },
+          "skill_name": {
+            "title": "Skill Name",
+            "type": "string"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "skill_id",
+          "skill_name",
+          "owner_id",
+          "owner_name",
+          "enabled",
+          "timezone",
+          "schedule_time",
+          "last_check_status"
+        ],
+        "title": "TaskReminderSubscriptionRead",
+        "type": "object"
+      },
+      "TaskReminderSubscriptionWrite": {
+        "properties": {
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "owner_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Owner Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "owner_id"
+        ],
+        "title": "TaskReminderSubscriptionWrite",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -4037,6 +5169,9 @@
             },
             "title": "Recent Results",
             "type": "array"
+          },
+          "task_reminders": {
+            "$ref": "#/components/schemas/WorkbenchTaskReminderSummary"
           }
         },
         "required": [
@@ -4104,6 +5239,27 @@
           "skill"
         ],
         "title": "WorkbenchSkillUsage",
+        "type": "object"
+      },
+      "WorkbenchTaskReminderSummary": {
+        "properties": {
+          "active_skills": {
+            "default": 0,
+            "title": "Active Skills",
+            "type": "integer"
+          },
+          "failed_checks": {
+            "default": 0,
+            "title": "Failed Checks",
+            "type": "integer"
+          },
+          "pending_dates": {
+            "default": 0,
+            "title": "Pending Dates",
+            "type": "integer"
+          }
+        },
+        "title": "WorkbenchTaskReminderSummary",
         "type": "object"
       },
       "WorkflowActionRead": {
@@ -4351,16 +5507,81 @@
         "title": "WorkflowAgentStageRequest",
         "type": "object"
       },
+      "WorkflowBatchFetchedDataSupplement": {
+        "properties": {
+          "ar_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Ar Ids",
+            "type": "array"
+          },
+          "reconciliation_date": {
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "title": "Reconciliation Date",
+            "type": "string"
+          },
+          "so_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "So Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "reconciliation_date"
+        ],
+        "title": "WorkflowBatchFetchedDataSupplement",
+        "type": "object"
+      },
       "WorkflowBatchRead": {
         "properties": {
+          "can_retry": {
+            "default": false,
+            "title": "Can Retry",
+            "type": "boolean"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
             "type": "string"
           },
+          "display_id": {
+            "title": "Display Id",
+            "type": "string"
+          },
           "error_message": {
             "title": "Error Message",
             "type": "string"
+          },
+          "fetched_data_available": {
+            "default": false,
+            "title": "Fetched Data Available",
+            "type": "boolean"
+          },
+          "fetched_data_review_status": {
+            "default": "",
+            "title": "Fetched Data Review Status",
+            "type": "string"
+          },
+          "fetched_data_summary_by_date": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Fetched Data Summary By Date",
+            "type": "object"
+          },
+          "fetched_data_supplement_history": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Fetched Data Supplement History",
+            "type": "array"
           },
           "id": {
             "title": "Id",
@@ -4393,6 +5614,21 @@
             "title": "Reconciliation Dates",
             "type": "array"
           },
+          "retry_block_reason": {
+            "default": "",
+            "title": "Retry Block Reason",
+            "type": "string"
+          },
+          "retry_message": {
+            "default": "",
+            "title": "Retry Message",
+            "type": "string"
+          },
+          "retryable": {
+            "default": false,
+            "title": "Retryable",
+            "type": "boolean"
+          },
           "skill_id": {
             "title": "Skill Id",
             "type": "string"
@@ -4424,6 +5660,7 @@
         },
         "required": [
           "id",
+          "display_id",
           "owner_id",
           "skill_id",
           "skill_name",
@@ -4483,6 +5720,13 @@
             "maxItems": 31,
             "minItems": 1,
             "title": "Reconciliation Dates",
+            "type": "array"
+          },
+          "replace_roles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Replace Roles",
             "type": "array"
           },
           "skill_id": {
@@ -4593,6 +5837,489 @@
         "title": "WorkflowDefinitionRead",
         "type": "object"
       },
+      "WorkflowFetchedDataArGroup": {
+        "properties": {
+          "ar_id": {
+            "title": "Ar Id",
+            "type": "string"
+          },
+          "issues": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "orders": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowFetchedDataOrderGroup"
+            },
+            "title": "Orders",
+            "type": "array"
+          },
+          "payments": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowFetchedPayment"
+            },
+            "title": "Payments",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ar_id"
+        ],
+        "title": "WorkflowFetchedDataArGroup",
+        "type": "object"
+      },
+      "WorkflowFetchedDataOrderGroup": {
+        "properties": {
+          "deliveries": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowFetchedDelivery"
+            },
+            "title": "Deliveries",
+            "type": "array"
+          },
+          "issues": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "order_details": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowFetchedOrderDetail"
+            },
+            "title": "Order Details",
+            "type": "array"
+          },
+          "so_id": {
+            "title": "So Id",
+            "type": "string"
+          },
+          "writeoffs": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowFetchedWriteoff"
+            },
+            "title": "Writeoffs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "so_id"
+        ],
+        "title": "WorkflowFetchedDataOrderGroup",
+        "type": "object"
+      },
+      "WorkflowFetchedDataRead": {
+        "properties": {
+          "ar_groups": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowFetchedDataArGroup"
+            },
+            "title": "Ar Groups",
+            "type": "array"
+          },
+          "dataset": {
+            "title": "Dataset",
+            "type": "string"
+          },
+          "dataset_label": {
+            "title": "Dataset Label",
+            "type": "string"
+          },
+          "datasets": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowFetchedDataSet"
+            },
+            "title": "Datasets",
+            "type": "array"
+          },
+          "headers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Headers",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "reconciliation_date": {
+            "title": "Reconciliation Date",
+            "type": "string"
+          },
+          "rows": {
+            "items": {
+              "items": {},
+              "type": "array"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "summary": {
+            "additionalProperties": true,
+            "title": "Summary",
+            "type": "object"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "reconciliation_date",
+          "dataset",
+          "dataset_label",
+          "headers",
+          "rows",
+          "total",
+          "offset",
+          "limit",
+          "datasets"
+        ],
+        "title": "WorkflowFetchedDataRead",
+        "type": "object"
+      },
+      "WorkflowFetchedDataSet": {
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "total"
+        ],
+        "title": "WorkflowFetchedDataSet",
+        "type": "object"
+      },
+      "WorkflowFetchedDataSupplement": {
+        "properties": {
+          "ar_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Ar Ids",
+            "type": "array"
+          },
+          "so_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "So Ids",
+            "type": "array"
+          }
+        },
+        "title": "WorkflowFetchedDataSupplement",
+        "type": "object"
+      },
+      "WorkflowFetchedDelivery": {
+        "properties": {
+          "ar_id": {
+            "title": "Ar Id",
+            "type": "string"
+          },
+          "currency": {
+            "default": "",
+            "title": "Currency",
+            "type": "string"
+          },
+          "delivery_amount_original": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivery Amount Original"
+          },
+          "delivery_date": {
+            "default": "",
+            "title": "Delivery Date",
+            "type": "string"
+          },
+          "delivery_date_status": {
+            "default": "",
+            "title": "Delivery Date Status",
+            "type": "string"
+          },
+          "exchange_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exchange Rate"
+          },
+          "order_name": {
+            "default": "",
+            "title": "Order Name",
+            "type": "string"
+          },
+          "so_id": {
+            "title": "So Id",
+            "type": "string"
+          },
+          "source": {
+            "default": "",
+            "title": "Source",
+            "type": "string"
+          },
+          "written_off_local": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Written Off Local"
+          },
+          "written_off_original": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Written Off Original"
+          }
+        },
+        "required": [
+          "ar_id",
+          "so_id"
+        ],
+        "title": "WorkflowFetchedDelivery",
+        "type": "object"
+      },
+      "WorkflowFetchedOrderDetail": {
+        "properties": {
+          "currency": {
+            "default": "",
+            "title": "Currency",
+            "type": "string"
+          },
+          "delivery_amount_original": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivery Amount Original"
+          },
+          "project_status": {
+            "default": "",
+            "title": "Project Status",
+            "type": "string"
+          },
+          "so_id": {
+            "title": "So Id",
+            "type": "string"
+          },
+          "sod_id": {
+            "title": "Sod Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "so_id",
+          "sod_id"
+        ],
+        "title": "WorkflowFetchedOrderDetail",
+        "type": "object"
+      },
+      "WorkflowFetchedPayment": {
+        "properties": {
+          "amount_local": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Local"
+          },
+          "amount_original": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Original"
+          },
+          "ar_id": {
+            "title": "Ar Id",
+            "type": "string"
+          },
+          "arrival_date": {
+            "default": "",
+            "title": "Arrival Date",
+            "type": "string"
+          },
+          "currency": {
+            "default": "",
+            "title": "Currency",
+            "type": "string"
+          },
+          "customer": {
+            "default": "",
+            "title": "Customer",
+            "type": "string"
+          },
+          "fee_original": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fee Original"
+          },
+          "historical_parent_only": {
+            "default": false,
+            "title": "Historical Parent Only",
+            "type": "boolean"
+          },
+          "payment_type": {
+            "default": "",
+            "title": "Payment Type",
+            "type": "string"
+          },
+          "reconciliation_date": {
+            "default": "",
+            "title": "Reconciliation Date",
+            "type": "string"
+          },
+          "salesperson": {
+            "default": "",
+            "title": "Salesperson",
+            "type": "string"
+          },
+          "writeoff_status": {
+            "default": "",
+            "title": "Writeoff Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ar_id"
+        ],
+        "title": "WorkflowFetchedPayment",
+        "type": "object"
+      },
+      "WorkflowFetchedWriteoff": {
+        "properties": {
+          "amount_local": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Local"
+          },
+          "amount_original": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Original"
+          },
+          "ar_id": {
+            "title": "Ar Id",
+            "type": "string"
+          },
+          "currency": {
+            "default": "",
+            "title": "Currency",
+            "type": "string"
+          },
+          "exchange_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exchange Rate"
+          },
+          "order_name": {
+            "default": "",
+            "title": "Order Name",
+            "type": "string"
+          },
+          "reconciliation_date": {
+            "default": "",
+            "title": "Reconciliation Date",
+            "type": "string"
+          },
+          "revoked": {
+            "default": false,
+            "title": "Revoked",
+            "type": "boolean"
+          },
+          "so_id": {
+            "title": "So Id",
+            "type": "string"
+          },
+          "writeoff_id": {
+            "title": "Writeoff Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "writeoff_id",
+          "ar_id",
+          "so_id"
+        ],
+        "title": "WorkflowFetchedWriteoff",
+        "type": "object"
+      },
       "WorkflowFilesUpdate": {
         "properties": {
           "files": {
@@ -4604,9 +6331,130 @@
             },
             "title": "Files",
             "type": "object"
+          },
+          "replace_roles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Replace Roles",
+            "type": "array"
           }
         },
         "title": "WorkflowFilesUpdate",
+        "type": "object"
+      },
+      "WorkflowMaterialFileRead": {
+        "properties": {
+          "file_id": {
+            "title": "File Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "profit_loss_ledgers",
+              "receipt_flow_table"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year"
+          }
+        },
+        "required": [
+          "role",
+          "file_id",
+          "name",
+          "size_bytes",
+          "sha256"
+        ],
+        "title": "WorkflowMaterialFileRead",
+        "type": "object"
+      },
+      "WorkflowMaterialSetRead": {
+        "properties": {
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowMaterialFileRead"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "parent_set_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Set Id"
+          },
+          "published_at": {
+            "format": "date-time",
+            "title": "Published At",
+            "type": "string"
+          },
+          "skill_id": {
+            "title": "Skill Id",
+            "type": "string"
+          },
+          "source_workflow_display_id": {
+            "default": "",
+            "title": "Source Workflow Display Id",
+            "type": "string"
+          },
+          "source_workflow_id": {
+            "default": "",
+            "title": "Source Workflow Id",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "current",
+              "superseded"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "skill_id",
+          "version",
+          "state",
+          "published_at"
+        ],
+        "title": "WorkflowMaterialSetRead",
         "type": "object"
       },
       "WorkflowMessageCreate": {
@@ -4707,9 +6555,36 @@
             "title": "Current Step Label",
             "type": "string"
           },
+          "display_id": {
+            "title": "Display Id",
+            "type": "string"
+          },
           "error_message": {
             "title": "Error Message",
             "type": "string"
+          },
+          "fetched_data_available": {
+            "default": false,
+            "title": "Fetched Data Available",
+            "type": "boolean"
+          },
+          "fetched_data_review_status": {
+            "default": "",
+            "title": "Fetched Data Review Status",
+            "type": "string"
+          },
+          "fetched_data_summary": {
+            "additionalProperties": true,
+            "title": "Fetched Data Summary",
+            "type": "object"
+          },
+          "fetched_data_supplement_history": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Fetched Data Supplement History",
+            "type": "array"
           },
           "files": {
             "additionalProperties": true,
@@ -4719,6 +6594,33 @@
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "material_set_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material Set Id"
+          },
+          "material_source_workflow_id": {
+            "default": "",
+            "title": "Material Source Workflow Id",
+            "type": "string"
+          },
+          "material_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material Version"
           },
           "messages": {
             "items": {
@@ -4755,6 +6657,11 @@
             "default": true,
             "title": "Requires Confirmation",
             "type": "boolean"
+          },
+          "result_summary": {
+            "additionalProperties": true,
+            "title": "Result Summary",
+            "type": "object"
           },
           "skill_id": {
             "title": "Skill Id",
@@ -4796,6 +6703,7 @@
         },
         "required": [
           "id",
+          "display_id",
           "owner_id",
           "skill_id",
           "skill_name",
@@ -4816,6 +6724,75 @@
           "updated_at"
         ],
         "title": "WorkflowRead",
+        "type": "object"
+      },
+      "WorkflowReusableFilesRead": {
+        "properties": {
+          "files": {
+            "additionalProperties": true,
+            "title": "Files",
+            "type": "object"
+          },
+          "material_set_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material Set Id"
+          },
+          "material_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material Version"
+          },
+          "missing_roles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Roles",
+            "type": "array"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "ready": {
+            "title": "Ready",
+            "type": "boolean"
+          },
+          "skill_id": {
+            "title": "Skill Id",
+            "type": "string"
+          },
+          "source_workflow_id": {
+            "default": "",
+            "title": "Source Workflow Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "skill_id",
+          "ready"
+        ],
+        "title": "WorkflowReusableFilesRead",
         "type": "object"
       },
       "WorkflowStart": {
@@ -4856,6 +6833,13 @@
             "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
             "title": "Reconciliation Date",
             "type": "string"
+          },
+          "replace_roles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Replace Roles",
+            "type": "array"
           },
           "skill_id": {
             "title": "Skill Id",
@@ -5130,6 +7114,83 @@
         "summary": "List Audit Events",
         "tags": [
           "admin-audit"
+        ]
+      }
+    },
+    "/api/admin/feature-controls": {
+      "get": {
+        "operationId": "admin_list_feature_controls_api_admin_feature_controls_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FeatureControlRead"
+                  },
+                  "title": "Response Admin List Feature Controls Api Admin Feature Controls Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Admin List Feature Controls",
+        "tags": [
+          "admin-feature-controls"
+        ]
+      }
+    },
+    "/api/admin/feature-controls/{key}": {
+      "put": {
+        "operationId": "admin_update_feature_control_api_admin_feature_controls__key__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeatureControlUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeatureControlRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Admin Update Feature Control",
+        "tags": [
+          "admin-feature-controls"
         ]
       }
     },
@@ -5466,6 +7527,675 @@
         ]
       }
     },
+    "/api/admin/skill-releases/{release_id}/rollout": {
+      "post": {
+        "operationId": "admin_start_skill_rollout_api_admin_skill_releases__release_id__rollout_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "release_id",
+            "required": true,
+            "schema": {
+              "title": "Release Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillRolloutStartRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillRolloutRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Admin Start Skill Rollout",
+        "tags": [
+          "admin-skill-rollouts"
+        ]
+      }
+    },
+    "/api/admin/skill-rollouts/{rollout_id}": {
+      "get": {
+        "operationId": "admin_get_skill_rollout_api_admin_skill_rollouts__rollout_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rollout_id",
+            "required": true,
+            "schema": {
+              "title": "Rollout Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillRolloutRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Admin Get Skill Rollout",
+        "tags": [
+          "admin-skill-rollouts"
+        ]
+      }
+    },
+    "/api/admin/skill-sources/bindings": {
+      "get": {
+        "operationId": "admin_list_skill_source_bindings_api_admin_skill_sources_bindings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SkillSourceBindingRead"
+                  },
+                  "title": "Response Admin List Skill Source Bindings Api Admin Skill Sources Bindings Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Admin List Skill Source Bindings",
+        "tags": [
+          "admin-skill-sources"
+        ]
+      },
+      "post": {
+        "operationId": "admin_confirm_skill_source_binding_api_admin_skill_sources_bindings_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillSourceBindingConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillSourceBindingRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Admin Confirm Skill Source Binding",
+        "tags": [
+          "admin-skill-sources"
+        ]
+      }
+    },
+    "/api/admin/skill-sources/bindings/{skill_id}/check-update": {
+      "post": {
+        "operationId": "admin_check_skill_source_update_api_admin_skill_sources_bindings__skill_id__check_update_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillSourceUpdateCheckRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Admin Check Skill Source Update",
+        "tags": [
+          "admin-skill-sources"
+        ]
+      }
+    },
+    "/api/admin/skill-sources/bindings/{skill_id}/prepare-release": {
+      "post": {
+        "operationId": "admin_prepare_bound_skill_release_api_admin_skill_sources_bindings__skill_id__prepare_release_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillSourcePrepareReleaseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillReleaseRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Admin Prepare Bound Skill Release",
+        "tags": [
+          "admin-skill-sources"
+        ]
+      }
+    },
+    "/api/admin/skill-sources/discover": {
+      "post": {
+        "operationId": "admin_discover_skill_sources_api_admin_skill_sources_discover_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillSourceDiscoveryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillSourceDiscoveryRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Admin Discover Skill Sources",
+        "tags": [
+          "admin-skill-sources"
+        ]
+      }
+    },
+    "/api/admin/skills/availability": {
+      "get": {
+        "operationId": "admin_list_skill_availability_api_admin_skills_availability_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SkillAvailabilityRead"
+                  },
+                  "title": "Response Admin List Skill Availability Api Admin Skills Availability Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Admin List Skill Availability",
+        "tags": [
+          "admin-skills"
+        ]
+      }
+    },
+    "/api/admin/skills/{skill_id}/availability": {
+      "get": {
+        "operationId": "admin_get_skill_availability_api_admin_skills__skill_id__availability_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillAvailabilityRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Admin Get Skill Availability",
+        "tags": [
+          "admin-skills"
+        ]
+      },
+      "post": {
+        "operationId": "admin_transition_skill_availability_api_admin_skills__skill_id__availability_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillAvailabilityTransitionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillAvailabilityRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Admin Transition Skill Availability",
+        "tags": [
+          "admin-skills"
+        ]
+      }
+    },
+    "/api/admin/skills/{skill_id}/update": {
+      "post": {
+        "operationId": "admin_update_disabled_skill_api_admin_skills__skill_id__update_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillReleaseRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Admin Update Disabled Skill",
+        "tags": [
+          "admin-skills"
+        ]
+      }
+    },
+    "/api/admin/task-reminder-subscriptions/{skill_id}": {
+      "get": {
+        "operationId": "admin_get_task_reminder_subscription_api_admin_task_reminder_subscriptions__skill_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskReminderSubscriptionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Admin Get Task Reminder Subscription",
+        "tags": [
+          "task-reminders"
+        ]
+      },
+      "put": {
+        "operationId": "admin_save_task_reminder_subscription_api_admin_task_reminder_subscriptions__skill_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskReminderSubscriptionWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskReminderSubscriptionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Admin Save Task Reminder Subscription",
+        "tags": [
+          "task-reminders"
+        ]
+      }
+    },
+    "/api/admin/task-reminder-subscriptions/{skill_id}/credential": {
+      "delete": {
+        "operationId": "admin_delete_task_reminder_owner_credential_api_admin_task_reminder_subscriptions__skill_id__credential_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Admin Delete Task Reminder Owner Credential",
+        "tags": [
+          "task-reminders"
+        ]
+      },
+      "get": {
+        "operationId": "admin_get_task_reminder_owner_credential_api_admin_task_reminder_subscriptions__skill_id__credential_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceCredentialRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Admin Get Task Reminder Owner Credential",
+        "tags": [
+          "task-reminders"
+        ]
+      },
+      "put": {
+        "operationId": "admin_save_task_reminder_owner_credential_api_admin_task_reminder_subscriptions__skill_id__credential_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceCredentialWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceCredentialRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Admin Save Task Reminder Owner Credential",
+        "tags": [
+          "task-reminders"
+        ]
+      }
+    },
     "/api/admin/users": {
       "get": {
         "operationId": "admin_list_users_api_admin_users_get",
@@ -5577,6 +8307,58 @@
           }
         },
         "summary": "Admin Update User",
+        "tags": [
+          "admin-users"
+        ]
+      }
+    },
+    "/api/admin/users/{user_id}/reset-password": {
+      "post": {
+        "operationId": "admin_reset_user_password_api_admin_users__user_id__reset_password_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminPasswordReset"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUserRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Admin Reset User Password",
         "tags": [
           "admin-users"
         ]
@@ -6183,6 +8965,16 @@
               "title": "Query",
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "latest_only",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Latest Only",
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -6566,6 +9358,64 @@
           }
         },
         "summary": "Model Providers"
+      }
+    },
+    "/api/profile/avatar": {
+      "get": {
+        "operationId": "get_avatar_api_profile_avatar_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Avatar",
+        "tags": [
+          "profile"
+        ]
+      },
+      "post": {
+        "operationId": "upload_avatar_api_profile_avatar_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_avatar_api_profile_avatar_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformUser"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload Avatar",
+        "tags": [
+          "profile"
+        ]
       }
     },
     "/api/runs": {
@@ -7217,6 +10067,164 @@
         "summary": "Interpret"
       }
     },
+    "/api/task-center": {
+      "get": {
+        "operationId": "list_task_center_items_api_task_center_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "view_state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "pending",
+                    "running",
+                    "failed",
+                    "succeeded",
+                    "cancelled"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "View State"
+            }
+          },
+          {
+            "in": "query",
+            "name": "item_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "run",
+                    "workflow",
+                    "workflow_batch"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Item Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "skill_id",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "business_date_from",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Business Date From",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "business_date_to",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Business Date To",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "updated_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Updated From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "updated_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Updated To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskCenterPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Task Center Items"
+      }
+    },
     "/api/task-drafts/{draft_id}": {
       "delete": {
         "operationId": "delete_draft_api_task_drafts__draft_id__delete",
@@ -7384,6 +10392,110 @@
         ]
       }
     },
+    "/api/task-reminders": {
+      "get": {
+        "operationId": "list_task_reminders_api_task_reminders_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskReminderBoard"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Task Reminders",
+        "tags": [
+          "task-reminders"
+        ]
+      }
+    },
+    "/api/task-reminders/checks": {
+      "post": {
+        "operationId": "queue_task_discovery_check_api_task_reminders_checks_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskDiscoveryCheckRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskDiscoveryCheckQueued"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Queue Task Discovery Check",
+        "tags": [
+          "task-reminders"
+        ]
+      }
+    },
+    "/api/task-reminders/checks/{check_id}/retry": {
+      "post": {
+        "operationId": "retry_task_discovery_check_api_task_reminders_checks__check_id__retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "check_id",
+            "required": true,
+            "schema": {
+              "title": "Check Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskDiscoveryCheckQueued"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry Task Discovery Check",
+        "tags": [
+          "task-reminders"
+        ]
+      }
+    },
     "/api/workbench": {
       "get": {
         "operationId": "workbench_api_workbench_get",
@@ -7523,6 +10635,231 @@
         "summary": "Get Workflow Batch"
       }
     },
+    "/api/workflow-batches/{batch_id}/cancel": {
+      "post": {
+        "operationId": "cancel_workflow_batch_session_api_workflow_batches__batch_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowBatchRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Workflow Batch Session"
+      }
+    },
+    "/api/workflow-batches/{batch_id}/fetched-data": {
+      "get": {
+        "operationId": "get_workflow_batch_fetched_data_api_workflow_batches__batch_id__fetched_data_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "reconciliation_date",
+            "required": true,
+            "schema": {
+              "title": "Reconciliation Date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "dataset",
+            "required": false,
+            "schema": {
+              "default": "ar_groups",
+              "title": "Dataset",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Query",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "issues_only",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Issues Only",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowFetchedDataRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Workflow Batch Fetched Data"
+      }
+    },
+    "/api/workflow-batches/{batch_id}/fetched-data/confirm": {
+      "post": {
+        "operationId": "confirm_workflow_batch_fetched_data_api_workflow_batches__batch_id__fetched_data_confirm_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowBatchRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Workflow Batch Fetched Data"
+      }
+    },
+    "/api/workflow-batches/{batch_id}/fetched-data/supplement": {
+      "post": {
+        "operationId": "supplement_workflow_batch_fetched_data_api_workflow_batches__batch_id__fetched_data_supplement_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowBatchFetchedDataSupplement"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowBatchRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Supplement Workflow Batch Fetched Data"
+      }
+    },
     "/api/workflow-batches/{batch_id}/retry": {
       "post": {
         "operationId": "retry_workflow_batch_session_api_workflow_batches__batch_id__retry_post",
@@ -7640,6 +10977,146 @@
           }
         },
         "summary": "New Workflow"
+      }
+    },
+    "/api/workflows/material-sets": {
+      "get": {
+        "operationId": "get_workflow_material_sets_api_workflows_material_sets_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WorkflowMaterialSetRead"
+                  },
+                  "title": "Response Get Workflow Material Sets Api Workflows Material Sets Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Workflow Material Sets"
+      }
+    },
+    "/api/workflows/material-sets/{material_set_id}/restore": {
+      "post": {
+        "operationId": "restore_workflow_material_set_api_workflows_material_sets__material_set_id__restore_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "material_set_id",
+            "required": true,
+            "schema": {
+              "title": "Material Set Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowMaterialSetRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Restore Workflow Material Set"
+      }
+    },
+    "/api/workflows/reusable-files": {
+      "get": {
+        "operationId": "get_reusable_workflow_files_api_workflows_reusable_files_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowReusableFilesRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Reusable Workflow Files"
       }
     },
     "/api/workflows/start": {
@@ -7833,6 +11310,45 @@
         "summary": "Workflow Agent Context"
       }
     },
+    "/api/workflows/{workflow_id}/cancel": {
+      "post": {
+        "operationId": "cancel_workflow_session_api_workflows__workflow_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workflow_id",
+            "required": true,
+            "schema": {
+              "title": "Workflow Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Workflow Session"
+      }
+    },
     "/api/workflows/{workflow_id}/confirm": {
       "post": {
         "operationId": "confirm_workflow_result_api_workflows__workflow_id__confirm_post",
@@ -7870,6 +11386,183 @@
           }
         },
         "summary": "Confirm Workflow Result"
+      }
+    },
+    "/api/workflows/{workflow_id}/fetched-data": {
+      "get": {
+        "operationId": "get_workflow_fetched_data_api_workflows__workflow_id__fetched_data_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workflow_id",
+            "required": true,
+            "schema": {
+              "title": "Workflow Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "dataset",
+            "required": false,
+            "schema": {
+              "default": "ar_groups",
+              "title": "Dataset",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Query",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "issues_only",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Issues Only",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowFetchedDataRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Workflow Fetched Data"
+      }
+    },
+    "/api/workflows/{workflow_id}/fetched-data/confirm": {
+      "post": {
+        "operationId": "confirm_workflow_fetched_data_api_workflows__workflow_id__fetched_data_confirm_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workflow_id",
+            "required": true,
+            "schema": {
+              "title": "Workflow Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Workflow Fetched Data"
+      }
+    },
+    "/api/workflows/{workflow_id}/fetched-data/supplement": {
+      "post": {
+        "operationId": "supplement_workflow_fetched_data_api_workflows__workflow_id__fetched_data_supplement_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workflow_id",
+            "required": true,
+            "schema": {
+              "title": "Workflow Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowFetchedDataSupplement"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Supplement Workflow Fetched Data"
       }
     },
     "/api/workflows/{workflow_id}/files": {

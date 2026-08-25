@@ -23,9 +23,7 @@ def utcnow() -> datetime:
 
 class User(Base):
     __tablename__ = "users"
-    __table_args__ = (
-        Index("ux_users_id_department", "id", "department_id", unique=True),
-    )
+    __table_args__ = (Index("ux_users_id_department", "id", "department_id", unique=True),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     username: Mapped[str] = mapped_column(String(128), unique=True, index=True)
@@ -44,6 +42,11 @@ class User(Base):
     failed_attempts: Mapped[int] = mapped_column(Integer, default=0)
     locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     password_changed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    avatar_storage_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    avatar_content_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    avatar_updated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

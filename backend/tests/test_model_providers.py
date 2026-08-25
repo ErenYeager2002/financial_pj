@@ -687,6 +687,8 @@ def test_tool_calling_verification_only_on_final_selected_model(monkeypatch) -> 
     def fake_post(url, **kwargs):
         del url
         posts.append(kwargs["json"])
+        if kwargs["json"].get("thinking") != {"type": "disabled"}:
+            return FakeHttpErrorResponse(400)
         return FakeOkResponse()
 
     monkeypatch.setattr(model_service.httpx, "get", fake_get)
@@ -707,6 +709,7 @@ def test_tool_calling_verification_only_on_final_selected_model(monkeypatch) -> 
         "function": {"name": "tool_call_supported"},
     }
     assert payload["max_tokens"] == 32
+    assert payload["thinking"] == {"type": "disabled"}
     assert "enable_thinking" not in payload
     with auth_client(role="skill_admin") as client:
         cleanup_all_connections(client)

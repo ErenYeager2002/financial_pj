@@ -11,7 +11,11 @@ import yaml
 TEST_DATA_DIR = Path(tempfile.mkdtemp(prefix="financial-skill-tests-")).resolve()
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 TEST_SKILL_DIR = TEST_DATA_DIR / "skills"
-shutil.copytree(PROJECT_ROOT / "skills", TEST_SKILL_DIR)
+shutil.copytree(
+    PROJECT_ROOT / "skills",
+    TEST_SKILL_DIR,
+    ignore=shutil.ignore_patterns("__pycache__", ".pytest_cache", ".ruff_cache"),
+)
 workflow_manifest = TEST_SKILL_DIR / "ar-hexiao-daily" / "tool.yaml"
 workflow_payload = yaml.safe_load(workflow_manifest.read_text(encoding="utf-8"))
 workflow_runtime = workflow_payload.setdefault("runtime", {})

@@ -7,6 +7,7 @@ import zipfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from types import SimpleNamespace
 
 import yaml
 from helpers import auth_client
@@ -101,6 +102,34 @@ def test_employee_cannot_manage_skill_releases() -> None:
             ).status_code
             == 403
         )
+
+
+def test_publish_guard_uses_user_scoped_lock_when_shared_lock_is_not_writable(
+    tmp_path: Path, monkeypatch
+) -> None:
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    shared_lock = data_dir / ".skill-release.publish.lock"
+    shared_lock.write_bytes(b"\0")
+    real_access = skill_release_service.os.access
+    monkeypatch.setattr(
+        skill_release_service,
+        "settings",
+        SimpleNamespace(data_dir=data_dir),
+    )
+    monkeypatch.setattr(
+        skill_release_service.os,
+        "access",
+        lambda path, mode: False
+        if Path(path).resolve() == shared_lock.resolve()
+        else real_access(path, mode),
+    )
+    monkeypatch.setattr(skill_release_service.os, "getuid", lambda: 10001, raising=False)
+
+    with skill_release_service._publish_guard():
+        pass
+
+    assert (data_dir / ".skill-release.publish.10001.lock").is_file()
 
 
 def test_release_import_rejects_path_traversal() -> None:

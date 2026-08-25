@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Kbd } from '@/components/ui/kbd';
 import { startThemeTransition } from '@/lib/theme-transition';
+import { isThemeToggleShortcut } from './theme-shortcut';
 
 export function ThemeModeToggle() {
   const { setTheme, resolvedTheme } = useTheme();
@@ -25,7 +26,7 @@ export function ThemeModeToggle() {
   // Cmd/Ctrl+Shift+D toggles the theme; kbar separately handles the 'D D' sequence
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key.toLowerCase() !== 'd' || !e.shiftKey || !(e.metaKey || e.ctrlKey)) return;
+      if (!isThemeToggleShortcut(e)) return;
       const target = e.target as HTMLElement | null;
       if (
         target instanceof HTMLInputElement ||

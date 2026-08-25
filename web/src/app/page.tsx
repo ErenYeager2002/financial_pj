@@ -1,12 +1,12 @@
-import { auth } from '@clerk/nextjs/server';
 import { redirect } from 'next/navigation';
+import { getPlatformSession } from '@/features/auth/api/service';
 
 export default async function Page() {
-  const { userId } = await auth();
-
-  if (!userId) {
-    return redirect('/auth/sign-in');
-  } else {
-    redirect('/dashboard/overview');
+  try {
+    const session = await getPlatformSession();
+    redirect(session.must_change_password ? '/auth/change-password' : '/dashboard/overview');
+  } catch (error) {
+    if (error && typeof error === 'object' && 'digest' in error) throw error;
   }
+  redirect('/auth/sign-in');
 }

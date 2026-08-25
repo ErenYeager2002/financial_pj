@@ -74,6 +74,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/feature-controls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin List Feature Controls */
+        get: operations["admin_list_feature_controls_api_admin_feature_controls_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/feature-controls/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Admin Update Feature Control */
+        put: operations["admin_update_feature_control_api_admin_feature_controls__key__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/observability/summary": {
         parameters: {
             query?: never;
@@ -210,6 +244,198 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/skill-releases/{release_id}/rollout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Admin Start Skill Rollout */
+        post: operations["admin_start_skill_rollout_api_admin_skill_releases__release_id__rollout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/skill-rollouts/{rollout_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin Get Skill Rollout */
+        get: operations["admin_get_skill_rollout_api_admin_skill_rollouts__rollout_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/skill-sources/bindings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin List Skill Source Bindings */
+        get: operations["admin_list_skill_source_bindings_api_admin_skill_sources_bindings_get"];
+        put?: never;
+        /** Admin Confirm Skill Source Binding */
+        post: operations["admin_confirm_skill_source_binding_api_admin_skill_sources_bindings_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/skill-sources/bindings/{skill_id}/check-update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Admin Check Skill Source Update */
+        post: operations["admin_check_skill_source_update_api_admin_skill_sources_bindings__skill_id__check_update_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/skill-sources/bindings/{skill_id}/prepare-release": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Admin Prepare Bound Skill Release */
+        post: operations["admin_prepare_bound_skill_release_api_admin_skill_sources_bindings__skill_id__prepare_release_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/skill-sources/discover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Admin Discover Skill Sources */
+        post: operations["admin_discover_skill_sources_api_admin_skill_sources_discover_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/skills/availability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin List Skill Availability */
+        get: operations["admin_list_skill_availability_api_admin_skills_availability_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/skills/{skill_id}/availability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin Get Skill Availability */
+        get: operations["admin_get_skill_availability_api_admin_skills__skill_id__availability_get"];
+        put?: never;
+        /** Admin Transition Skill Availability */
+        post: operations["admin_transition_skill_availability_api_admin_skills__skill_id__availability_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/skills/{skill_id}/update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Admin Update Disabled Skill */
+        post: operations["admin_update_disabled_skill_api_admin_skills__skill_id__update_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/task-reminder-subscriptions/{skill_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin Get Task Reminder Subscription */
+        get: operations["admin_get_task_reminder_subscription_api_admin_task_reminder_subscriptions__skill_id__get"];
+        /** Admin Save Task Reminder Subscription */
+        put: operations["admin_save_task_reminder_subscription_api_admin_task_reminder_subscriptions__skill_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/task-reminder-subscriptions/{skill_id}/credential": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin Get Task Reminder Owner Credential */
+        get: operations["admin_get_task_reminder_owner_credential_api_admin_task_reminder_subscriptions__skill_id__credential_get"];
+        /** Admin Save Task Reminder Owner Credential */
+        put: operations["admin_save_task_reminder_owner_credential_api_admin_task_reminder_subscriptions__skill_id__credential_put"];
+        post?: never;
+        /** Admin Delete Task Reminder Owner Credential */
+        delete: operations["admin_delete_task_reminder_owner_credential_api_admin_task_reminder_subscriptions__skill_id__credential_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/users": {
         parameters: {
             query?: never;
@@ -243,6 +469,23 @@ export interface paths {
         head?: never;
         /** Admin Update User */
         patch: operations["admin_update_user_api_admin_users__user_id__patch"];
+        trace?: never;
+    };
+    "/api/admin/users/{user_id}/reset-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Admin Reset User Password */
+        post: operations["admin_reset_user_password_api_admin_users__user_id__reset_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/admin/users/{user_id}/skill-permissions": {
@@ -669,6 +912,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/profile/avatar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Avatar */
+        get: operations["get_avatar_api_profile_avatar_get"];
+        put?: never;
+        /** Upload Avatar */
+        post: operations["upload_avatar_api_profile_avatar_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/runs": {
         parameters: {
             query?: never;
@@ -893,6 +1154,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/task-center": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Task Center Items */
+        get: operations["list_task_center_items_api_task_center_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/task-drafts/{draft_id}": {
         parameters: {
             query?: never;
@@ -923,6 +1201,57 @@ export interface paths {
         put?: never;
         /** Confirm Draft */
         post: operations["confirm_draft_api_task_drafts__draft_id__confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/task-reminders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Task Reminders */
+        get: operations["list_task_reminders_api_task_reminders_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/task-reminders/checks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Queue Task Discovery Check */
+        post: operations["queue_task_discovery_check_api_task_reminders_checks_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/task-reminders/checks/{check_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry Task Discovery Check */
+        post: operations["retry_task_discovery_check_api_task_reminders_checks__check_id__retry_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -997,6 +1326,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/workflow-batches/{batch_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Workflow Batch Session */
+        post: operations["cancel_workflow_batch_session_api_workflow_batches__batch_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workflow-batches/{batch_id}/fetched-data": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Workflow Batch Fetched Data */
+        get: operations["get_workflow_batch_fetched_data_api_workflow_batches__batch_id__fetched_data_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workflow-batches/{batch_id}/fetched-data/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm Workflow Batch Fetched Data */
+        post: operations["confirm_workflow_batch_fetched_data_api_workflow_batches__batch_id__fetched_data_confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workflow-batches/{batch_id}/fetched-data/supplement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Supplement Workflow Batch Fetched Data */
+        post: operations["supplement_workflow_batch_fetched_data_api_workflow_batches__batch_id__fetched_data_supplement_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/workflow-batches/{batch_id}/retry": {
         parameters: {
             query?: never;
@@ -1026,6 +1423,57 @@ export interface paths {
         put?: never;
         /** New Workflow */
         post: operations["new_workflow_api_workflows_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workflows/material-sets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Workflow Material Sets */
+        get: operations["get_workflow_material_sets_api_workflows_material_sets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workflows/material-sets/{material_set_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore Workflow Material Set */
+        post: operations["restore_workflow_material_set_api_workflows_material_sets__material_set_id__restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workflows/reusable-files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Reusable Workflow Files */
+        get: operations["get_reusable_workflow_files_api_workflows_reusable_files_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1106,6 +1554,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/workflows/{workflow_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Workflow Session */
+        post: operations["cancel_workflow_session_api_workflows__workflow_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/workflows/{workflow_id}/confirm": {
         parameters: {
             query?: never;
@@ -1117,6 +1582,57 @@ export interface paths {
         put?: never;
         /** Confirm Workflow Result */
         post: operations["confirm_workflow_result_api_workflows__workflow_id__confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workflows/{workflow_id}/fetched-data": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Workflow Fetched Data */
+        get: operations["get_workflow_fetched_data_api_workflows__workflow_id__fetched_data_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workflows/{workflow_id}/fetched-data/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm Workflow Fetched Data */
+        post: operations["confirm_workflow_fetched_data_api_workflows__workflow_id__fetched_data_confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workflows/{workflow_id}/fetched-data/supplement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Supplement Workflow Fetched Data */
+        post: operations["supplement_workflow_fetched_data_api_workflows__workflow_id__fetched_data_supplement_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1231,6 +1747,11 @@ export interface components {
             connection_id: string;
             /** Model */
             model: string;
+        };
+        /** AdminPasswordReset */
+        AdminPasswordReset: {
+            /** Initial Password */
+            initial_password: string;
         };
         /**
          * AdminSkillDetail
@@ -1617,6 +2138,11 @@ export interface components {
             /** Resource Type */
             resource_type: string;
         };
+        /** Body_upload_avatar_api_profile_avatar_post */
+        Body_upload_avatar_api_profile_avatar_post: {
+            /** Upload */
+            upload: string;
+        };
         /** Body_upload_file_api_files_post */
         Body_upload_file_api_files_post: {
             /**
@@ -1638,6 +2164,49 @@ export interface components {
             current_password: string;
             /** New Password */
             new_password: string;
+        };
+        /** FeatureControlRead */
+        FeatureControlRead: {
+            /**
+             * Blocked Reason
+             * @default
+             */
+            blocked_reason: string;
+            /**
+             * Category
+             * @enum {string}
+             */
+            category: "automation" | "execution" | "authentication";
+            /**
+             * Changed At
+             * @default null
+             */
+            changed_at: string | null;
+            /**
+             * Changed By
+             * @default
+             */
+            changed_by: string;
+            /** Description */
+            description: string;
+            /** Editable */
+            editable: boolean;
+            /** Enabled */
+            enabled: boolean;
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "administrator" | "deployment";
+        };
+        /** FeatureControlUpdateRequest */
+        FeatureControlUpdateRequest: {
+            /** Enabled */
+            enabled: boolean;
         };
         /** FileInputSpec */
         FileInputSpec: {
@@ -2052,6 +2621,11 @@ export interface components {
              * @enum {string}
              */
             auth_provider: "session" | "clerk";
+            /**
+             * Avatar Updated At
+             * @default null
+             */
+            avatar_updated_at: string | null;
             /** Department Id */
             department_id: string;
             /** Display Name */
@@ -2442,6 +3016,8 @@ export interface components {
              * @enum {string}
              */
             auth_provider: "session" | "clerk";
+            /** Avatar Updated At */
+            avatar_updated_at?: string | null;
             /** Department Id */
             department_id: string;
             /** Display Name */
@@ -2460,6 +3036,36 @@ export interface components {
             user_id: string;
             /** Username */
             username: string;
+        };
+        /** SkillAvailabilityRead */
+        SkillAvailabilityRead: {
+            /** Active Work Count */
+            active_work_count: number;
+            /** Changed At */
+            changed_at: string | null;
+            /** Changed By */
+            changed_by: string;
+            /** Generation */
+            generation: number;
+            /** Reason */
+            reason: string;
+            /** Skill Id */
+            skill_id: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "enabled" | "draining" | "disabled" | "failed_disabled";
+        };
+        /** SkillAvailabilityTransitionRequest */
+        SkillAvailabilityTransitionRequest: {
+            /** Reason */
+            reason: string;
+            /**
+             * Target State
+             * @enum {string}
+             */
+            target_state: "enabled" | "draining" | "disabled";
         };
         /** SkillDetail */
         SkillDetail: {
@@ -2686,6 +3292,190 @@ export interface components {
              */
             requires_confirmation: boolean;
         };
+        /** SkillRolloutRead */
+        SkillRolloutRead: {
+            /** Attempt Count */
+            attempt_count: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Error Message */
+            error_message: string;
+            /** Finished At */
+            finished_at: string | null;
+            /** Id */
+            id: string;
+            /**
+             * Next Attempt At
+             * Format: date-time
+             */
+            next_attempt_at: string;
+            /** Previous Skill Hash */
+            previous_skill_hash: string;
+            /** Release Id */
+            release_id: string;
+            /** Requested By */
+            requested_by: string;
+            /** Skill Id */
+            skill_id: string;
+            /** Started At */
+            started_at: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "queued" | "draining" | "activating" | "verifying" | "succeeded" | "failed" | "failed_disabled";
+            /** Target Commit */
+            target_commit: string;
+            /** Target Tree Hash */
+            target_tree_hash: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** SkillRolloutStartRequest */
+        SkillRolloutStartRequest: {
+            /** Confirmation */
+            confirmation: string;
+        };
+        /** SkillSourceBindingConfirmRequest */
+        SkillSourceBindingConfirmRequest: {
+            /** Expected Commit */
+            expected_commit: string;
+            /** Repository Url */
+            repository_url: string;
+            /** Skill Id */
+            skill_id: string;
+            /** Source Path */
+            source_path: string;
+            /** Tracking Ref */
+            tracking_ref: string;
+        };
+        /** SkillSourceBindingRead */
+        SkillSourceBindingRead: {
+            /**
+             * Binding Status
+             * @enum {string}
+             */
+            binding_status: "candidate" | "bound" | "broken" | "excluded";
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string;
+            /** Id */
+            id: string;
+            /** Last Seen Commit */
+            last_seen_commit: string;
+            /** Last Seen Tree Hash */
+            last_seen_tree_hash: string;
+            /** Packager Profile */
+            packager_profile: string;
+            /**
+             * Provider
+             * @constant
+             */
+            provider: "gitee";
+            /** Published Commit */
+            published_commit: string;
+            /** Published Tree Hash */
+            published_tree_hash: string;
+            /** Repository Url */
+            repository_url: string;
+            /** Skill Id */
+            skill_id: string;
+            /** Source Path */
+            source_path: string;
+            /**
+             * Source Type
+             * @constant
+             */
+            source_type: "git";
+            /** Tracking Ref */
+            tracking_ref: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Updated By */
+            updated_by: string;
+        };
+        /** SkillSourceCandidateRead */
+        SkillSourceCandidateRead: {
+            /**
+             * Match State
+             * @enum {string}
+             */
+            match_state: "candidate" | "bound" | "conflict" | "unmatched" | "excluded";
+            /**
+             * Platform Skill Id
+             * @default
+             */
+            platform_skill_id: string;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+            /** Source Name */
+            source_name: string;
+            /** Source Path */
+            source_path: string;
+        };
+        /** SkillSourceDiscoveryRead */
+        SkillSourceDiscoveryRead: {
+            /** Candidates */
+            candidates: components["schemas"]["SkillSourceCandidateRead"][];
+            /** Commit */
+            commit: string;
+            /** Repository Url */
+            repository_url: string;
+            /** Tracking Ref */
+            tracking_ref: string;
+        };
+        /** SkillSourceDiscoveryRequest */
+        SkillSourceDiscoveryRequest: {
+            /** Repository Url */
+            repository_url: string;
+            /**
+             * Tracking Ref
+             * @default main
+             */
+            tracking_ref: string;
+        };
+        /** SkillSourcePrepareReleaseRequest */
+        SkillSourcePrepareReleaseRequest: {
+            /** Version */
+            version: string;
+        };
+        /** SkillSourceUpdateCheckRead */
+        SkillSourceUpdateCheckRead: {
+            /** Commit */
+            commit: string;
+            /** Published Commit */
+            published_commit: string;
+            /** Published Tree Hash */
+            published_tree_hash: string;
+            /** Repository Url */
+            repository_url: string;
+            /** Skill Id */
+            skill_id: string;
+            /** Source Path */
+            source_path: string;
+            /** Tracking Ref */
+            tracking_ref: string;
+            /** Tree Hash */
+            tree_hash: string;
+            /** Update Available */
+            update_available: boolean;
+        };
         /** SkillSummary */
         SkillSummary: {
             /** Action Label */
@@ -2824,6 +3614,155 @@ export interface components {
             /** Step Type */
             step_type: string;
         };
+        /** TaskCenterItem */
+        TaskCenterItem: {
+            /**
+             * Business Date Count
+             * @default 0
+             */
+            business_date_count: number;
+            /**
+             * Business Date End
+             * @default
+             */
+            business_date_end: string;
+            /**
+             * Business Date Start
+             * @default
+             */
+            business_date_start: string;
+            /**
+             * Business Task Id
+             * @default
+             */
+            business_task_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Detail Href */
+            detail_href: string;
+            /**
+             * Error Summary
+             * @default
+             */
+            error_summary: string;
+            /**
+             * Original Stage
+             * @default
+             */
+            original_stage: string;
+            /** Original State */
+            original_state: string;
+            /** Progress */
+            progress: number;
+            /** Progress Message */
+            progress_message: string;
+            /** Reference Id */
+            reference_id: string;
+            /**
+             * Reference Type
+             * @enum {string}
+             */
+            reference_type: "run" | "workflow" | "workflow_batch";
+            /** Skill Id */
+            skill_id: string;
+            /** Skill Name */
+            skill_name: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /**
+             * View State
+             * @enum {string}
+             */
+            view_state: "pending" | "running" | "failed" | "succeeded" | "cancelled";
+        };
+        /** TaskCenterPage */
+        TaskCenterPage: {
+            /** Items */
+            items?: components["schemas"]["TaskCenterItem"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Pages */
+            pages: number;
+            state_counts: components["schemas"]["TaskCenterStateCounts"];
+            /** Total */
+            total: number;
+        };
+        /** TaskCenterStateCounts */
+        TaskCenterStateCounts: {
+            /**
+             * Cancelled
+             * @default 0
+             */
+            cancelled: number;
+            /**
+             * Failed
+             * @default 0
+             */
+            failed: number;
+            /**
+             * Pending
+             * @default 0
+             */
+            pending: number;
+            /**
+             * Running
+             * @default 0
+             */
+            running: number;
+            /**
+             * Succeeded
+             * @default 0
+             */
+            succeeded: number;
+        };
+        /** TaskDiscoveryCheckQueued */
+        TaskDiscoveryCheckQueued: {
+            /** Business Dates */
+            business_dates: string[];
+            /** Id */
+            id: string;
+            /** State */
+            state: string;
+        };
+        /** TaskDiscoveryCheckRequest */
+        TaskDiscoveryCheckRequest: {
+            /** Business Dates */
+            business_dates: string[];
+            /** Skill Id */
+            skill_id: string;
+        };
+        /** TaskDiscoveryFailureRead */
+        TaskDiscoveryFailureRead: {
+            /** Attempt Count */
+            attempt_count: number;
+            /** Business Dates */
+            business_dates?: string[];
+            /** Error Message */
+            error_message: string;
+            /** Id */
+            id: string;
+            /**
+             * Last Checked At
+             * Format: date-time
+             */
+            last_checked_at: string;
+            /** Owner Id */
+            owner_id: string;
+            /** Owner Name */
+            owner_name: string;
+            /** Skill Id */
+            skill_id: string;
+            /** Skill Name */
+            skill_name: string;
+        };
         /** TaskDraft */
         TaskDraft: {
             /** Candidates */
@@ -2928,6 +3867,79 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
+        /** TaskReminderBoard */
+        TaskReminderBoard: {
+            /** Check Failures */
+            check_failures?: components["schemas"]["TaskDiscoveryFailureRead"][];
+            /** Reminders */
+            reminders?: components["schemas"]["TaskReminderRead"][];
+        };
+        /** TaskReminderRead */
+        TaskReminderRead: {
+            /** Batch Id */
+            batch_id?: string | null;
+            /** Business Date */
+            business_date: string;
+            /** Id */
+            id: string;
+            /**
+             * Last Checked At
+             * Format: date-time
+             */
+            last_checked_at: string;
+            /** Owner Id */
+            owner_id: string;
+            /** Owner Name */
+            owner_name: string;
+            /** Record Count */
+            record_count: number;
+            /**
+             * Reopened
+             * @default false
+             */
+            reopened: boolean;
+            /** Skill Id */
+            skill_id: string;
+            /** Skill Name */
+            skill_name: string;
+            /** State */
+            state: string;
+            /** Workflow Id */
+            workflow_id?: string | null;
+        };
+        /** TaskReminderSubscriptionRead */
+        TaskReminderSubscriptionRead: {
+            /** Enabled */
+            enabled: boolean;
+            /** Last Check Status */
+            last_check_status: string;
+            /** Last Checked At */
+            last_checked_at?: string | null;
+            /** Last Successful Business Date */
+            last_successful_business_date?: string | null;
+            /** Owner Id */
+            owner_id: string;
+            /** Owner Name */
+            owner_name: string;
+            /** Schedule Time */
+            schedule_time: string;
+            /** Skill Id */
+            skill_id: string;
+            /** Skill Name */
+            skill_name: string;
+            /** Timezone */
+            timezone: string;
+        };
+        /** TaskReminderSubscriptionWrite */
+        TaskReminderSubscriptionWrite: {
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /** Owner Id */
+            owner_id: string;
+        };
         /** ValidationError */
         ValidationError: {
             /** Context */
@@ -2952,6 +3964,7 @@ export interface components {
             recent_files?: components["schemas"]["PlatformFile"][];
             /** Recent Results */
             recent_results?: components["schemas"]["RunSummary"][];
+            task_reminders?: components["schemas"]["WorkbenchTaskReminderSummary"];
         };
         /** WorkbenchCounts */
         WorkbenchCounts: {
@@ -2994,6 +4007,24 @@ export interface components {
              */
             run_count: number;
             skill: components["schemas"]["SkillSummary"];
+        };
+        /** WorkbenchTaskReminderSummary */
+        WorkbenchTaskReminderSummary: {
+            /**
+             * Active Skills
+             * @default 0
+             */
+            active_skills: number;
+            /**
+             * Failed Checks
+             * @default 0
+             */
+            failed_checks: number;
+            /**
+             * Pending Dates
+             * @default 0
+             */
+            pending_dates: number;
         };
         /** WorkflowActionRead */
         WorkflowActionRead: {
@@ -3104,15 +4135,51 @@ export interface components {
             action: "get_workflow_stage" | "prepare_daily_reconciliation";
             arguments: components["schemas"]["WorkflowAgentEmptyArguments"];
         };
+        /** WorkflowBatchFetchedDataSupplement */
+        WorkflowBatchFetchedDataSupplement: {
+            /** Ar Ids */
+            ar_ids?: string[];
+            /** Reconciliation Date */
+            reconciliation_date: string;
+            /** So Ids */
+            so_ids?: string[];
+        };
         /** WorkflowBatchRead */
         WorkflowBatchRead: {
+            /**
+             * Can Retry
+             * @default false
+             */
+            can_retry: boolean;
             /**
              * Created At
              * Format: date-time
              */
             created_at: string;
+            /** Display Id */
+            display_id: string;
             /** Error Message */
             error_message: string;
+            /**
+             * Fetched Data Available
+             * @default false
+             */
+            fetched_data_available: boolean;
+            /**
+             * Fetched Data Review Status
+             * @default
+             */
+            fetched_data_review_status: string;
+            /** Fetched Data Summary By Date */
+            fetched_data_summary_by_date?: {
+                [key: string]: {
+                    [key: string]: unknown;
+                };
+            };
+            /** Fetched Data Supplement History */
+            fetched_data_supplement_history?: {
+                [key: string]: unknown;
+            }[];
             /** Id */
             id: string;
             /** Model Name */
@@ -3127,6 +4194,21 @@ export interface components {
             progress_message: string;
             /** Reconciliation Dates */
             reconciliation_dates: string[];
+            /**
+             * Retry Block Reason
+             * @default
+             */
+            retry_block_reason: string;
+            /**
+             * Retry Message
+             * @default
+             */
+            retry_message: string;
+            /**
+             * Retryable
+             * @default false
+             */
+            retryable: boolean;
             /** Skill Id */
             skill_id: string;
             /** Skill Name */
@@ -3155,6 +4237,8 @@ export interface components {
             model_connection_id?: string | null;
             /** Reconciliation Dates */
             reconciliation_dates: string[];
+            /** Replace Roles */
+            replace_roles?: string[];
             /** Skill Id */
             skill_id: string;
         };
@@ -3198,12 +4282,277 @@ export interface components {
             /** Workflow Key */
             workflow_key: string;
         };
+        /** WorkflowFetchedDataArGroup */
+        WorkflowFetchedDataArGroup: {
+            /** Ar Id */
+            ar_id: string;
+            /** Issues */
+            issues?: string[];
+            /** Orders */
+            orders?: components["schemas"]["WorkflowFetchedDataOrderGroup"][];
+            /** Payments */
+            payments?: components["schemas"]["WorkflowFetchedPayment"][];
+        };
+        /** WorkflowFetchedDataOrderGroup */
+        WorkflowFetchedDataOrderGroup: {
+            /** Deliveries */
+            deliveries?: components["schemas"]["WorkflowFetchedDelivery"][];
+            /** Issues */
+            issues?: string[];
+            /** Order Details */
+            order_details?: components["schemas"]["WorkflowFetchedOrderDetail"][];
+            /** So Id */
+            so_id: string;
+            /** Writeoffs */
+            writeoffs?: components["schemas"]["WorkflowFetchedWriteoff"][];
+        };
+        /** WorkflowFetchedDataRead */
+        WorkflowFetchedDataRead: {
+            /** Ar Groups */
+            ar_groups?: components["schemas"]["WorkflowFetchedDataArGroup"][];
+            /** Dataset */
+            dataset: string;
+            /** Dataset Label */
+            dataset_label: string;
+            /** Datasets */
+            datasets: components["schemas"]["WorkflowFetchedDataSet"][];
+            /** Headers */
+            headers: string[];
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+            /** Reconciliation Date */
+            reconciliation_date: string;
+            /** Rows */
+            rows: unknown[][];
+            /** Summary */
+            summary?: {
+                [key: string]: unknown;
+            };
+            /** Total */
+            total: number;
+        };
+        /** WorkflowFetchedDataSet */
+        WorkflowFetchedDataSet: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Total */
+            total: number;
+        };
+        /** WorkflowFetchedDataSupplement */
+        WorkflowFetchedDataSupplement: {
+            /** Ar Ids */
+            ar_ids?: string[];
+            /** So Ids */
+            so_ids?: string[];
+        };
+        /** WorkflowFetchedDelivery */
+        WorkflowFetchedDelivery: {
+            /** Ar Id */
+            ar_id: string;
+            /**
+             * Currency
+             * @default
+             */
+            currency: string;
+            /** Delivery Amount Original */
+            delivery_amount_original?: number | null;
+            /**
+             * Delivery Date
+             * @default
+             */
+            delivery_date: string;
+            /**
+             * Delivery Date Status
+             * @default
+             */
+            delivery_date_status: string;
+            /** Exchange Rate */
+            exchange_rate?: number | null;
+            /**
+             * Order Name
+             * @default
+             */
+            order_name: string;
+            /** So Id */
+            so_id: string;
+            /**
+             * Source
+             * @default
+             */
+            source: string;
+            /** Written Off Local */
+            written_off_local?: number | null;
+            /** Written Off Original */
+            written_off_original?: number | null;
+        };
+        /** WorkflowFetchedOrderDetail */
+        WorkflowFetchedOrderDetail: {
+            /**
+             * Currency
+             * @default
+             */
+            currency: string;
+            /** Delivery Amount Original */
+            delivery_amount_original?: number | null;
+            /**
+             * Project Status
+             * @default
+             */
+            project_status: string;
+            /** So Id */
+            so_id: string;
+            /** Sod Id */
+            sod_id: string;
+        };
+        /** WorkflowFetchedPayment */
+        WorkflowFetchedPayment: {
+            /** Amount Local */
+            amount_local?: number | null;
+            /** Amount Original */
+            amount_original?: number | null;
+            /** Ar Id */
+            ar_id: string;
+            /**
+             * Arrival Date
+             * @default
+             */
+            arrival_date: string;
+            /**
+             * Currency
+             * @default
+             */
+            currency: string;
+            /**
+             * Customer
+             * @default
+             */
+            customer: string;
+            /** Fee Original */
+            fee_original?: number | null;
+            /**
+             * Historical Parent Only
+             * @default false
+             */
+            historical_parent_only: boolean;
+            /**
+             * Payment Type
+             * @default
+             */
+            payment_type: string;
+            /**
+             * Reconciliation Date
+             * @default
+             */
+            reconciliation_date: string;
+            /**
+             * Salesperson
+             * @default
+             */
+            salesperson: string;
+            /**
+             * Writeoff Status
+             * @default
+             */
+            writeoff_status: string;
+        };
+        /** WorkflowFetchedWriteoff */
+        WorkflowFetchedWriteoff: {
+            /** Amount Local */
+            amount_local?: number | null;
+            /** Amount Original */
+            amount_original?: number | null;
+            /** Ar Id */
+            ar_id: string;
+            /**
+             * Currency
+             * @default
+             */
+            currency: string;
+            /** Exchange Rate */
+            exchange_rate?: number | null;
+            /**
+             * Order Name
+             * @default
+             */
+            order_name: string;
+            /**
+             * Reconciliation Date
+             * @default
+             */
+            reconciliation_date: string;
+            /**
+             * Revoked
+             * @default false
+             */
+            revoked: boolean;
+            /** So Id */
+            so_id: string;
+            /** Writeoff Id */
+            writeoff_id: string;
+        };
         /** WorkflowFilesUpdate */
         WorkflowFilesUpdate: {
             /** Files */
             files?: {
                 [key: string]: string[];
             };
+            /** Replace Roles */
+            replace_roles?: string[];
+        };
+        /** WorkflowMaterialFileRead */
+        WorkflowMaterialFileRead: {
+            /** File Id */
+            file_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "profit_loss_ledgers" | "receipt_flow_table";
+            /** Sha256 */
+            sha256: string;
+            /** Size Bytes */
+            size_bytes: number;
+            /** Year */
+            year?: number | null;
+        };
+        /** WorkflowMaterialSetRead */
+        WorkflowMaterialSetRead: {
+            /** Files */
+            files?: components["schemas"]["WorkflowMaterialFileRead"][];
+            /** Id */
+            id: string;
+            /** Parent Set Id */
+            parent_set_id?: string | null;
+            /**
+             * Published At
+             * Format: date-time
+             */
+            published_at: string;
+            /** Skill Id */
+            skill_id: string;
+            /**
+             * Source Workflow Display Id
+             * @default
+             */
+            source_workflow_display_id: string;
+            /**
+             * Source Workflow Id
+             * @default
+             */
+            source_workflow_id: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "current" | "superseded";
+            /** Version */
+            version: number;
         };
         /** WorkflowMessageCreate */
         WorkflowMessageCreate: {
@@ -3258,14 +4607,43 @@ export interface components {
              * @default
              */
             current_step_label: string;
+            /** Display Id */
+            display_id: string;
             /** Error Message */
             error_message: string;
+            /**
+             * Fetched Data Available
+             * @default false
+             */
+            fetched_data_available: boolean;
+            /**
+             * Fetched Data Review Status
+             * @default
+             */
+            fetched_data_review_status: string;
+            /** Fetched Data Summary */
+            fetched_data_summary?: {
+                [key: string]: unknown;
+            };
+            /** Fetched Data Supplement History */
+            fetched_data_supplement_history?: {
+                [key: string]: unknown;
+            }[];
             /** Files */
             files: {
                 [key: string]: unknown;
             };
             /** Id */
             id: string;
+            /** Material Set Id */
+            material_set_id?: string | null;
+            /**
+             * Material Source Workflow Id
+             * @default
+             */
+            material_source_workflow_id: string;
+            /** Material Version */
+            material_version?: number | null;
             /** Messages */
             messages: components["schemas"]["WorkflowMessageRead"][];
             /** Model Name */
@@ -3285,6 +4663,10 @@ export interface components {
              * @default true
              */
             requires_confirmation: boolean;
+            /** Result Summary */
+            result_summary?: {
+                [key: string]: unknown;
+            };
             /** Skill Id */
             skill_id: string;
             /** Skill Name */
@@ -3310,6 +4692,30 @@ export interface components {
              */
             updated_at: string;
         };
+        /** WorkflowReusableFilesRead */
+        WorkflowReusableFilesRead: {
+            /** Files */
+            files?: {
+                [key: string]: unknown;
+            };
+            /** Material Set Id */
+            material_set_id?: string | null;
+            /** Material Version */
+            material_version?: number | null;
+            /** Missing Roles */
+            missing_roles?: string[];
+            /** Published At */
+            published_at?: string | null;
+            /** Ready */
+            ready: boolean;
+            /** Skill Id */
+            skill_id: string;
+            /**
+             * Source Workflow Id
+             * @default
+             */
+            source_workflow_id: string;
+        };
         /** WorkflowStart */
         WorkflowStart: {
             /** Files */
@@ -3322,6 +4728,8 @@ export interface components {
             model_connection_id?: string | null;
             /** Reconciliation Date */
             reconciliation_date: string;
+            /** Replace Roles */
+            replace_roles?: string[];
             /** Skill Id */
             skill_id: string;
         };
@@ -3334,6 +4742,7 @@ export interface components {
 }
 export type AdminAssistantProfile = components['schemas']['AdminAssistantProfile'];
 export type AdminAssistantProfileWrite = components['schemas']['AdminAssistantProfileWrite'];
+export type AdminPasswordReset = components['schemas']['AdminPasswordReset'];
 export type AdminSkillDetail = components['schemas']['AdminSkillDetail'];
 export type AdminUserCreate = components['schemas']['AdminUserCreate'];
 export type AdminUserRead = components['schemas']['AdminUserRead'];
@@ -3349,8 +4758,11 @@ export type AssistantPrepareRequest = components['schemas']['AssistantPrepareReq
 export type AssistantRecommendation = components['schemas']['AssistantRecommendation'];
 export type AssistantStatus = components['schemas']['AssistantStatus'];
 export type AuditEventRead = components['schemas']['AuditEventRead'];
+export type BodyUploadAvatarApiProfileAvatarPost = components['schemas']['Body_upload_avatar_api_profile_avatar_post'];
 export type BodyUploadFileApiFilesPost = components['schemas']['Body_upload_file_api_files_post'];
 export type ChangePasswordRequest = components['schemas']['ChangePasswordRequest'];
+export type FeatureControlRead = components['schemas']['FeatureControlRead'];
+export type FeatureControlUpdateRequest = components['schemas']['FeatureControlUpdateRequest'];
 export type FileInputSpec = components['schemas']['FileInputSpec'];
 export type HttpValidationError = components['schemas']['HTTPValidationError'];
 export type HandlerSpec = components['schemas']['HandlerSpec'];
@@ -3387,6 +4799,8 @@ export type SafetyConstraintSpec = components['schemas']['SafetyConstraintSpec']
 export type ServiceCredentialRead = components['schemas']['ServiceCredentialRead'];
 export type ServiceCredentialWrite = components['schemas']['ServiceCredentialWrite'];
 export type SessionRead = components['schemas']['SessionRead'];
+export type SkillAvailabilityRead = components['schemas']['SkillAvailabilityRead'];
+export type SkillAvailabilityTransitionRequest = components['schemas']['SkillAvailabilityTransitionRequest'];
 export type SkillDetail = components['schemas']['SkillDetail'];
 export type SkillPermissionRead = components['schemas']['SkillPermissionRead'];
 export type SkillPermissionWrite = components['schemas']['SkillPermissionWrite'];
@@ -3398,17 +4812,37 @@ export type SkillReleasePublishRequest = components['schemas']['SkillReleasePubl
 export type SkillReleaseRead = components['schemas']['SkillReleaseRead'];
 export type SkillReleaseReviewRequest = components['schemas']['SkillReleaseReviewRequest'];
 export type SkillRiskSummary = components['schemas']['SkillRiskSummary'];
+export type SkillRolloutRead = components['schemas']['SkillRolloutRead'];
+export type SkillRolloutStartRequest = components['schemas']['SkillRolloutStartRequest'];
+export type SkillSourceBindingConfirmRequest = components['schemas']['SkillSourceBindingConfirmRequest'];
+export type SkillSourceBindingRead = components['schemas']['SkillSourceBindingRead'];
+export type SkillSourceCandidateRead = components['schemas']['SkillSourceCandidateRead'];
+export type SkillSourceDiscoveryRead = components['schemas']['SkillSourceDiscoveryRead'];
+export type SkillSourceDiscoveryRequest = components['schemas']['SkillSourceDiscoveryRequest'];
+export type SkillSourcePrepareReleaseRequest = components['schemas']['SkillSourcePrepareReleaseRequest'];
+export type SkillSourceUpdateCheckRead = components['schemas']['SkillSourceUpdateCheckRead'];
 export type SkillSummary = components['schemas']['SkillSummary'];
 export type SkillUiSpec = components['schemas']['SkillUiSpec'];
 export type StepDefinitionRead = components['schemas']['StepDefinitionRead'];
 export type StepMetricRead = components['schemas']['StepMetricRead'];
 export type StepRunRead = components['schemas']['StepRunRead'];
+export type TaskCenterItem = components['schemas']['TaskCenterItem'];
+export type TaskCenterPage = components['schemas']['TaskCenterPage'];
+export type TaskCenterStateCounts = components['schemas']['TaskCenterStateCounts'];
+export type TaskDiscoveryCheckQueued = components['schemas']['TaskDiscoveryCheckQueued'];
+export type TaskDiscoveryCheckRequest = components['schemas']['TaskDiscoveryCheckRequest'];
+export type TaskDiscoveryFailureRead = components['schemas']['TaskDiscoveryFailureRead'];
 export type TaskDraft = components['schemas']['TaskDraft'];
 export type TaskDraftUpdate = components['schemas']['TaskDraftUpdate'];
+export type TaskReminderBoard = components['schemas']['TaskReminderBoard'];
+export type TaskReminderRead = components['schemas']['TaskReminderRead'];
+export type TaskReminderSubscriptionRead = components['schemas']['TaskReminderSubscriptionRead'];
+export type TaskReminderSubscriptionWrite = components['schemas']['TaskReminderSubscriptionWrite'];
 export type ValidationError = components['schemas']['ValidationError'];
 export type Workbench = components['schemas']['Workbench'];
 export type WorkbenchCounts = components['schemas']['WorkbenchCounts'];
 export type WorkbenchSkillUsage = components['schemas']['WorkbenchSkillUsage'];
+export type WorkbenchTaskReminderSummary = components['schemas']['WorkbenchTaskReminderSummary'];
 export type WorkflowActionRead = components['schemas']['WorkflowActionRead'];
 export type WorkflowAgentActionResponse = components['schemas']['WorkflowAgentActionResponse'];
 export type WorkflowAgentConfirmationArguments = components['schemas']['WorkflowAgentConfirmationArguments'];
@@ -3420,14 +4854,27 @@ export type WorkflowAgentRegenerationRequest = components['schemas']['WorkflowAg
 export type WorkflowAgentSetDateArguments = components['schemas']['WorkflowAgentSetDateArguments'];
 export type WorkflowAgentSetDateRequest = components['schemas']['WorkflowAgentSetDateRequest'];
 export type WorkflowAgentStageRequest = components['schemas']['WorkflowAgentStageRequest'];
+export type WorkflowBatchFetchedDataSupplement = components['schemas']['WorkflowBatchFetchedDataSupplement'];
 export type WorkflowBatchRead = components['schemas']['WorkflowBatchRead'];
 export type WorkflowBatchStart = components['schemas']['WorkflowBatchStart'];
 export type WorkflowCreate = components['schemas']['WorkflowCreate'];
 export type WorkflowDefinitionRead = components['schemas']['WorkflowDefinitionRead'];
+export type WorkflowFetchedDataArGroup = components['schemas']['WorkflowFetchedDataArGroup'];
+export type WorkflowFetchedDataOrderGroup = components['schemas']['WorkflowFetchedDataOrderGroup'];
+export type WorkflowFetchedDataRead = components['schemas']['WorkflowFetchedDataRead'];
+export type WorkflowFetchedDataSet = components['schemas']['WorkflowFetchedDataSet'];
+export type WorkflowFetchedDataSupplement = components['schemas']['WorkflowFetchedDataSupplement'];
+export type WorkflowFetchedDelivery = components['schemas']['WorkflowFetchedDelivery'];
+export type WorkflowFetchedOrderDetail = components['schemas']['WorkflowFetchedOrderDetail'];
+export type WorkflowFetchedPayment = components['schemas']['WorkflowFetchedPayment'];
+export type WorkflowFetchedWriteoff = components['schemas']['WorkflowFetchedWriteoff'];
 export type WorkflowFilesUpdate = components['schemas']['WorkflowFilesUpdate'];
+export type WorkflowMaterialFileRead = components['schemas']['WorkflowMaterialFileRead'];
+export type WorkflowMaterialSetRead = components['schemas']['WorkflowMaterialSetRead'];
 export type WorkflowMessageCreate = components['schemas']['WorkflowMessageCreate'];
 export type WorkflowMessageRead = components['schemas']['WorkflowMessageRead'];
 export type WorkflowRead = components['schemas']['WorkflowRead'];
+export type WorkflowReusableFilesRead = components['schemas']['WorkflowReusableFilesRead'];
 export type WorkflowStart = components['schemas']['WorkflowStart'];
 export type $defs = Record<string, never>;
 export interface operations {
@@ -3589,6 +5036,61 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AuditEventRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_list_feature_controls_api_admin_feature_controls_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureControlRead"][];
+                };
+            };
+        };
+    };
+    admin_update_feature_control_api_admin_feature_controls__key__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FeatureControlUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureControlRead"];
                 };
             };
             /** @description Validation Error */
@@ -3842,6 +5344,502 @@ export interface operations {
             };
         };
     };
+    admin_start_skill_rollout_api_admin_skill_releases__release_id__rollout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                release_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillRolloutStartRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillRolloutRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_get_skill_rollout_api_admin_skill_rollouts__rollout_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rollout_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillRolloutRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_list_skill_source_bindings_api_admin_skill_sources_bindings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillSourceBindingRead"][];
+                };
+            };
+        };
+    };
+    admin_confirm_skill_source_binding_api_admin_skill_sources_bindings_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillSourceBindingConfirmRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillSourceBindingRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_check_skill_source_update_api_admin_skill_sources_bindings__skill_id__check_update_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillSourceUpdateCheckRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_prepare_bound_skill_release_api_admin_skill_sources_bindings__skill_id__prepare_release_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillSourcePrepareReleaseRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillReleaseRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_discover_skill_sources_api_admin_skill_sources_discover_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillSourceDiscoveryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillSourceDiscoveryRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_list_skill_availability_api_admin_skills_availability_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillAvailabilityRead"][];
+                };
+            };
+        };
+    };
+    admin_get_skill_availability_api_admin_skills__skill_id__availability_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillAvailabilityRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_transition_skill_availability_api_admin_skills__skill_id__availability_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillAvailabilityTransitionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillAvailabilityRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_update_disabled_skill_api_admin_skills__skill_id__update_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillReleaseRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_get_task_reminder_subscription_api_admin_task_reminder_subscriptions__skill_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskReminderSubscriptionRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_save_task_reminder_subscription_api_admin_task_reminder_subscriptions__skill_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TaskReminderSubscriptionWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskReminderSubscriptionRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_get_task_reminder_owner_credential_api_admin_task_reminder_subscriptions__skill_id__credential_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceCredentialRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_save_task_reminder_owner_credential_api_admin_task_reminder_subscriptions__skill_id__credential_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ServiceCredentialWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceCredentialRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_delete_task_reminder_owner_credential_api_admin_task_reminder_subscriptions__skill_id__credential_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     admin_list_users_api_admin_users_get: {
         parameters: {
             query?: never;
@@ -3907,6 +5905,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["AdminUserUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_reset_user_password_api_admin_users__user_id__reset_password_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminPasswordReset"];
             };
         };
         responses: {
@@ -4373,6 +6406,7 @@ export interface operations {
                 page_size?: number;
                 kind?: string;
                 query?: string;
+                latest_only?: boolean;
             };
             header?: never;
             path?: never;
@@ -4708,6 +6742,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ModelProviderRead"][];
+                };
+            };
+        };
+    };
+    get_avatar_api_profile_avatar_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    upload_avatar_api_profile_avatar_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_avatar_api_profile_avatar_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlatformUser"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -5199,6 +7286,45 @@ export interface operations {
             };
         };
     };
+    list_task_center_items_api_task_center_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+                view_state?: ("pending" | "running" | "failed" | "succeeded" | "cancelled") | null;
+                item_type?: ("run" | "workflow" | "workflow_batch") | null;
+                skill_id?: string;
+                business_date_from?: string;
+                business_date_to?: string;
+                updated_from?: string | null;
+                updated_to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskCenterPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_draft_api_task_drafts__draft_id__get: {
         parameters: {
             query?: never;
@@ -5312,6 +7438,90 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_task_reminders_api_task_reminders_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskReminderBoard"];
+                };
+            };
+        };
+    };
+    queue_task_discovery_check_api_task_reminders_checks_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TaskDiscoveryCheckRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskDiscoveryCheckQueued"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_task_discovery_check_api_task_reminders_checks__check_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                check_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskDiscoveryCheckQueued"];
                 };
             };
             /** @description Validation Error */
@@ -5440,6 +7650,141 @@ export interface operations {
             };
         };
     };
+    cancel_workflow_batch_session_api_workflow_batches__batch_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowBatchRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_workflow_batch_fetched_data_api_workflow_batches__batch_id__fetched_data_get: {
+        parameters: {
+            query: {
+                reconciliation_date: string;
+                dataset?: string;
+                offset?: number;
+                limit?: number;
+                query?: string;
+                issues_only?: boolean;
+            };
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowFetchedDataRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_workflow_batch_fetched_data_api_workflow_batches__batch_id__fetched_data_confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowBatchRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    supplement_workflow_batch_fetched_data_api_workflow_batches__batch_id__fetched_data_supplement_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowBatchFetchedDataSupplement"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowBatchRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     retry_workflow_batch_session_api_workflow_batches__batch_id__retry_post: {
         parameters: {
             query?: never;
@@ -5522,6 +7867,102 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkflowRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_workflow_material_sets_api_workflows_material_sets_get: {
+        parameters: {
+            query: {
+                skill_id: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowMaterialSetRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_workflow_material_set_api_workflows_material_sets__material_set_id__restore_post: {
+        parameters: {
+            query: {
+                skill_id: string;
+            };
+            header?: never;
+            path: {
+                material_set_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowMaterialSetRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_reusable_workflow_files_api_workflows_reusable_files_get: {
+        parameters: {
+            query: {
+                skill_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowReusableFilesRead"];
                 };
             };
             /** @description Validation Error */
@@ -5665,6 +8106,37 @@ export interface operations {
             };
         };
     };
+    cancel_workflow_session_api_workflows__workflow_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     confirm_workflow_result_api_workflows__workflow_id__confirm_post: {
         parameters: {
             query?: never;
@@ -5675,6 +8147,109 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_workflow_fetched_data_api_workflows__workflow_id__fetched_data_get: {
+        parameters: {
+            query?: {
+                dataset?: string;
+                offset?: number;
+                limit?: number;
+                query?: string;
+                issues_only?: boolean;
+            };
+            header?: never;
+            path: {
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowFetchedDataRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_workflow_fetched_data_api_workflows__workflow_id__fetched_data_confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    supplement_workflow_fetched_data_api_workflows__workflow_id__fetched_data_supplement_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowFetchedDataSupplement"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

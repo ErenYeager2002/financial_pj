@@ -1,23 +1,26 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..admin_user_service import (
     create_department_user,
     list_department_users,
     replace_department_user_permissions,
+    reset_department_user_password,
     update_department_user,
 )
 from ..auth import UserContext, get_current_user, require_admin
 from ..database import get_db
 from ..schemas_auth import (
+    AdminPasswordReset,
     AdminUserCreate,
     AdminUserRead,
     AdminUserUpdate,
     SkillPermissionRead,
     SkillPermissionsReplace,
 )
+from ..settings import settings
 
 router = APIRouter(prefix="/api/admin/users", tags=["admin-users"])
 
@@ -50,6 +53,19 @@ def admin_update_user(
 ) -> AdminUserRead:
     require_admin(current)
     return update_department_user(db, current, user_id, body)
+
+
+@router.post("/{user_id}/reset-password", response_model=AdminUserRead)
+def admin_reset_user_password(
+    user_id: str,
+    body: AdminPasswordReset,
+    db: Session = Depends(get_db),
+    current: UserContext = Depends(get_current_user),
+) -> AdminUserRead:
+    require_admin(current)
+    if settings.auth_mode == "clerk":
+        raise HTTPException(status_code=409, detail="Clerk 模式不使用本地密码重置。")
+    return reset_department_user_password(db, current, user_id, body)
 
 
 @router.put("/{user_id}/skill-permissions", response_model=list[SkillPermissionRead])

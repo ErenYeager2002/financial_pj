@@ -6,16 +6,75 @@ import { format, startOfDay } from 'date-fns';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Calendar } from '@/components/ui/calendar';
+import { Calendar, CalendarDayButton } from '@/components/ui/calendar';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Icons } from '@/components/icons';
-import type { SkillDetail, WorkflowRead } from '@/features/platform-api/types';
+import { ZhiyunCredentialCard } from '@/features/workflow-agent/components/zhiyun-credential-card';
+import {
+  reusableMaterialSelection,
+  selectedMaterialUpdates,
+  type WorkflowMaterialFile
+} from '@/features/workflow-agent/workflow-materials';
+import {
+  addWorkflowDate,
+  workflowDateRangeSelection,
+  workflowDateRangeSummary,
+  toggleWorkflowDate,
+  validateWorkflowDateRange,
+  workflowInitialDateSelection,
+  workflowInitialDateSelectionKey,
+  workflowDateKey
+} from '@/features/workflow-agent/workflow-date-selection';
+import type {
+  SkillDetail,
+  WorkflowBatchRead,
+  WorkflowRead,
+  WorkflowReusableFilesRead
+} from '@/features/platform-api/types';
+import { cn } from '@/lib/utils';
 
 interface WorkflowLauncherProps {
   skills: SkillDetail[];
   workflows: WorkflowRead[];
+  batches: WorkflowBatchRead[];
   initialSkillId?: string;
+  initialDates?: string[];
+  initialReusableFiles: WorkflowReusableFilesRead | null;
 }
+
+interface WorkflowDateInteraction {
+  begin: (target: Date, event: React.PointerEvent<HTMLButtonElement>) => void;
+  enter: (target: Date, event: React.PointerEvent<HTMLButtonElement>) => void;
+  click: (target: Date, event: React.MouseEvent<HTMLButtonElement>) => void;
+  selectedKeys: ReadonlySet<string>;
+}
+
+const WorkflowDateInteractionContext = React.createContext<WorkflowDateInteraction | null>(null);
+
+function WorkflowCalendarDayButton(
+  props: React.ComponentProps<typeof CalendarDayButton>
+): React.JSX.Element {
+  const interaction = React.useContext(WorkflowDateInteractionContext);
+  const dateKey = workflowDateKey(props.day.date);
+  const selected = interaction?.selectedKeys.has(dateKey) ?? false;
+  return (
+    <CalendarDayButton
+      {...props}
+      data-workflow-date={dateKey}
+      data-workflow-selected={selected}
+      aria-pressed={selected}
+      className={cn(
+        props.className,
+        'data-[workflow-selected=true]:bg-primary data-[workflow-selected=true]:text-primary-foreground data-[workflow-selected=true]:ring-2 data-[workflow-selected=true]:ring-primary/40 data-[workflow-selected=true]:hover:bg-primary/90 data-[workflow-selected=true]:hover:text-primary-foreground'
+      )}
+      onPointerDown={(event) => interaction?.begin(props.day.date, event)}
+      onPointerEnter={(event) => interaction?.enter(props.day.date, event)}
+      onClick={(event) => interaction?.click(props.day.date, event)}
+    />
+  );
+}
+
+const WORKFLOW_CALENDAR_COMPONENTS = { DayButton: WorkflowCalendarDayButton };
 
 function stageLabel(stage: string): string {
   const labels: Record<string, string> = {
@@ -33,6 +92,18 @@ function stageLabel(stage: string): string {
   return labels[stage] ?? stage;
 }
 
+function batchStateLabel(state: string): string {
+  const labels: Record<string, string> = {
+    queued: '排队中',
+    running: '运行中',
+    cancelling: '取消中',
+    succeeded: '已完成',
+    failed: '失败',
+    cancelled: '已取消'
+  };
+  return labels[state] ?? state;
+}
+
 function responseMessage(response: Response, fallback: string): Promise<string> {
   return response
     .json()
@@ -48,7 +119,10 @@ function responseMessage(response: Response, fallback: string): Promise<string> 
 export function WorkflowLauncher({
   skills,
   workflows,
-  initialSkillId = ''
+  batches,
+  initialSkillId = '',
+  initialDates = [],
+  initialReusableFiles
 }: WorkflowLauncherProps): React.JSX.Element {
   const today = React.useMemo(() => startOfDay(new Date()), []);
   const selectedInitialSkill =
@@ -57,20 +131,249 @@ export function WorkflowLauncher({
       : (skills[0]?.id ?? '');
   const [skillId, setSkillId] = React.useState(selectedInitialSkill);
   const [selectedDates, setSelectedDates] = React.useState<Date[]>([]);
-  const [files, setFiles] = React.useState<Record<string, string[]>>({});
-  const [fileNames, setFileNames] = React.useState<Record<string, string[]>>({});
+  const [dateRangeStart, setDateRangeStart] = React.useState('');
+  const [dateRangeEnd, setDateRangeEnd] = React.useState('');
+  const [dateError, setDateError] = React.useState('');
+  const [materials, setMaterials] = React.useState<Record<string, WorkflowMaterialFile[]>>(() =>
+    reusableMaterialSelection(initialReusableFiles, selectedInitialSkill)
+  );
+  const [materialVersion, setMaterialVersion] = React.useState<number | null>(() =>
+    initialReusableFiles?.skill_id === selectedInitialSkill
+      ? (initialReusableFiles.material_version ?? null)
+      : null
+  );
+  const [materialsLoading, setMaterialsLoading] = React.useState(false);
+  const [materialsError, setMaterialsError] = React.useState('');
+  const [materialsRefreshKey, setMaterialsRefreshKey] = React.useState(0);
+  const [dirtyRoles, setDirtyRoles] = React.useState<Set<string>>(() => new Set());
   const [uploadingRole, setUploadingRole] = React.useState('');
+  const [deletingFileId, setDeletingFileId] = React.useState('');
   const [working, setWorking] = React.useState(false);
+  const [zhiyunCredentialConfigured, setZhiyunCredentialConfigured] = React.useState(false);
   const [error, setError] = React.useState('');
+  const appliedInitialDatesKeyRef = React.useRef('');
+  const dateDragRef = React.useRef<{
+    pointerId: number;
+    start: Date;
+    active: boolean;
+    timer: number;
+  } | null>(null);
+  const suppressDateClickRef = React.useRef(false);
   const selectedSkill = skills.find((skill) => skill.id === skillId);
+  const requiresZhiyunCredential = selectedSkill?.id === 'ar-hexiao-daily';
   const fileInputs = selectedSkill?.file_inputs ?? [];
+  const recentTasks = React.useMemo(
+    () =>
+      [
+        ...workflows.map((workflow) => ({ kind: 'workflow' as const, item: workflow })),
+        ...batches.map((batch) => ({ kind: 'batch' as const, item: batch }))
+      ]
+        .toSorted(
+          (left, right) =>
+            new Date(right.item.updated_at).getTime() - new Date(left.item.updated_at).getTime()
+        )
+        .slice(0, 50),
+    [batches, workflows]
+  );
 
   React.useEffect(() => {
-    setSelectedDates([]);
-    setFiles({});
-    setFileNames({});
+    const parsedInitialDates = workflowInitialDateSelection(
+      initialDates,
+      skillId,
+      selectedInitialSkill,
+      today,
+      appliedInitialDatesKeyRef.current
+    );
+    if (skillId === selectedInitialSkill) {
+      appliedInitialDatesKeyRef.current = workflowInitialDateSelectionKey(
+        selectedInitialSkill,
+        initialDates
+      );
+    } else {
+      appliedInitialDatesKeyRef.current = '';
+    }
+    if (parsedInitialDates !== null) {
+      setSelectedDates(parsedInitialDates);
+      setDateRangeStart(parsedInitialDates.length ? workflowDateKey(parsedInitialDates[0]) : '');
+      setDateRangeEnd(
+        parsedInitialDates.length ? workflowDateKey(parsedInitialDates.at(-1) as Date) : ''
+      );
+    }
+    setDateError('');
     setError('');
-  }, [skillId]);
+    setMaterialsError('');
+    setDeletingFileId('');
+    setDirtyRoles(new Set());
+    if (!skillId) {
+      setMaterials({});
+      setMaterialVersion(null);
+      return;
+    }
+    const controller = new AbortController();
+    if (initialReusableFiles?.skill_id !== skillId) setMaterials({});
+    setMaterialsLoading(true);
+    void fetch(`/api/platform/workflows/reusable-files?skill_id=${encodeURIComponent(skillId)}`, {
+      signal: controller.signal
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(await responseMessage(response, '已保存任务材料加载失败。'));
+        }
+        return (await response.json()) as WorkflowReusableFilesRead;
+      })
+      .then((response) => {
+        setMaterials(reusableMaterialSelection(response, skillId));
+        setMaterialVersion(response.material_version ?? null);
+        setMaterialsError('');
+      })
+      .catch((loadError: unknown) => {
+        if (loadError instanceof DOMException && loadError.name === 'AbortError') return;
+        setMaterialsError(
+          loadError instanceof Error ? loadError.message : '已保存任务材料加载失败。'
+        );
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setMaterialsLoading(false);
+      });
+    return () => controller.abort();
+  }, [
+    initialDates,
+    initialReusableFiles,
+    materialsRefreshKey,
+    selectedInitialSkill,
+    skillId,
+    today
+  ]);
+
+  const addDraggedDate = React.useCallback(
+    (target: Date) =>
+      setSelectedDates((current) => {
+        const next = addWorkflowDate(current, target, today);
+        const ordered = next.toSorted((left, right) => left.getTime() - right.getTime());
+        setDateRangeStart(ordered.length ? format(ordered[0], 'yyyy-MM-dd') : '');
+        setDateRangeEnd(ordered.length ? format(ordered.at(-1) as Date, 'yyyy-MM-dd') : '');
+        setDateError('');
+        return next;
+      }),
+    [today]
+  );
+
+  const finishDateDrag = React.useCallback((pointerId?: number) => {
+    const current = dateDragRef.current;
+    if (!current || (pointerId !== undefined && current.pointerId !== pointerId)) return;
+    clearTimeout(current.timer);
+    if (current.active) {
+      suppressDateClickRef.current = true;
+      window.setTimeout(() => {
+        suppressDateClickRef.current = false;
+      }, 200);
+    }
+    dateDragRef.current = null;
+  }, []);
+
+  React.useEffect(() => {
+    const finish = (event: PointerEvent) => finishDateDrag(event.pointerId);
+    window.addEventListener('pointerup', finish);
+    window.addEventListener('pointercancel', finish);
+    return () => {
+      window.removeEventListener('pointerup', finish);
+      window.removeEventListener('pointercancel', finish);
+      finishDateDrag();
+    };
+  }, [finishDateDrag]);
+
+  const beginDateDrag = React.useCallback(
+    (target: Date, event: React.PointerEvent<HTMLButtonElement>) => {
+      if (startOfDay(target) > today || event.button !== 0) return;
+      finishDateDrag();
+      const drag = {
+        pointerId: event.pointerId,
+        start: target,
+        active: false,
+        timer: window.setTimeout(() => {
+          const current = dateDragRef.current;
+          if (!current || current.pointerId !== event.pointerId) return;
+          current.active = true;
+          addDraggedDate(current.start);
+        }, 320)
+      };
+      dateDragRef.current = drag;
+    },
+    [addDraggedDate, finishDateDrag, today]
+  );
+
+  const enterDateDuringDrag = React.useCallback(
+    (target: Date, event: React.PointerEvent<HTMLButtonElement>) => {
+      const current = dateDragRef.current;
+      if (!current || !current.active || current.pointerId !== event.pointerId) return;
+      addDraggedDate(target);
+    },
+    [addDraggedDate]
+  );
+
+  const moveDateDrag = React.useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      const current = dateDragRef.current;
+      if (!current || !current.active || current.pointerId !== event.pointerId) return;
+      const element = document
+        .elementFromPoint(event.clientX, event.clientY)
+        ?.closest<HTMLElement>('[data-workflow-date]');
+      const key = element?.dataset.workflowDate;
+      if (!key) return;
+      const [year, month, day] = key.split('-').map(Number);
+      if (year && month && day) addDraggedDate(new Date(year, month - 1, day));
+    },
+    [addDraggedDate]
+  );
+
+  const clickDate = React.useCallback(
+    (target: Date, event: React.MouseEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      if (suppressDateClickRef.current) {
+        suppressDateClickRef.current = false;
+        return;
+      }
+      setSelectedDates((current) => {
+        const next = toggleWorkflowDate(current, target, today);
+        const ordered = next.toSorted((left, right) => left.getTime() - right.getTime());
+        setDateRangeStart(ordered.length ? format(ordered[0], 'yyyy-MM-dd') : '');
+        setDateRangeEnd(ordered.length ? format(ordered.at(-1) as Date, 'yyyy-MM-dd') : '');
+        setDateError(validateWorkflowDateRange(next));
+        return next;
+      });
+    },
+    [today]
+  );
+
+  function updateDateRange(startValue: string, endValue: string) {
+    setDateRangeStart(startValue);
+    setDateRangeEnd(endValue);
+    const selection = workflowDateRangeSelection(startValue, endValue, today);
+    setDateError(selection.error || validateWorkflowDateRange(selection.dates));
+    if (!selection.error) setSelectedDates(selection.dates);
+  }
+
+  const selectedDateKeys = React.useMemo(
+    () => new Set(selectedDates.map(workflowDateKey)),
+    [selectedDates]
+  );
+
+  const dateInteraction = React.useMemo(
+    () => ({
+      begin: beginDateDrag,
+      enter: enterDateDuringDrag,
+      click: clickDate,
+      selectedKeys: selectedDateKeys
+    }),
+    [beginDateDrag, clickDate, enterDateDuringDrag, selectedDateKeys]
+  );
+
+  async function deleteUploadedFile(fileId: string) {
+    const response = await fetch(`/api/platform/files/${encodeURIComponent(fileId)}`, {
+      method: 'DELETE'
+    });
+    if (!response.ok) throw new Error(await responseMessage(response, '文件删除失败。'));
+  }
 
   async function uploadMaterial(
     role: string,
@@ -81,10 +384,11 @@ export function WorkflowLauncher({
     event.target.value = '';
     if (!selected.length || uploadingRole) return;
     const uploads = multiple ? selected : selected.slice(0, 1);
+    const previousFiles = materials[role] ?? [];
     setUploadingRole(role);
     setError('');
+    const uploaded: Array<{ id: string; name: string }> = [];
     try {
-      const uploaded: Array<{ id: string; name: string }> = [];
       for (const file of uploads) {
         const form = new FormData();
         form.set('skill_id', skillId);
@@ -100,22 +404,56 @@ export function WorkflowLauncher({
           name: typeof result.name === 'string' ? result.name : file.name
         });
       }
-      setFiles((current) => ({
+      setMaterials((current) => ({
         ...current,
         [role]: multiple
-          ? [...(current[role] ?? []), ...uploaded.map((item) => item.id)]
-          : uploaded.map((item) => item.id)
+          ? [
+              ...(current[role] ?? []),
+              ...uploaded.map((item) => ({ ...item, source: 'uploaded' as const }))
+            ]
+          : uploaded.map((item) => ({ ...item, source: 'uploaded' as const }))
       }));
-      setFileNames((current) => ({
-        ...current,
-        [role]: multiple
-          ? [...(current[role] ?? []), ...uploaded.map((item) => item.name)]
-          : uploaded.map((item) => item.name)
-      }));
+      setDirtyRoles((current) => new Set(current).add(role));
+      const previousUploadedIds = previousFiles
+        .filter((item) => item.source === 'uploaded')
+        .map((item) => item.id);
+      if (!multiple && previousUploadedIds.length) {
+        const cleanup = await Promise.allSettled(
+          previousUploadedIds.map((fileId) => deleteUploadedFile(fileId))
+        );
+        if (cleanup.some((result) => result.status === 'rejected')) {
+          setError('新文件已上传并生效，但旧文件未能自动删除，请到文件中心处理。');
+        }
+      }
     } catch (uploadError) {
+      const uploadedIds = uploaded.map((item) => item.id);
+      await Promise.allSettled(uploadedIds.map((fileId) => deleteUploadedFile(fileId)));
       setError(uploadError instanceof Error ? uploadError.message : '文件上传失败。');
     } finally {
       setUploadingRole('');
+    }
+  }
+
+  async function removeMaterial(role: string, material: WorkflowMaterialFile) {
+    if (working || uploadingRole || deletingFileId) return;
+    const message =
+      material.source === 'saved'
+        ? `确认本次任务不再使用“${material.name}”吗？旧任务中的文件不会被删除。`
+        : `确认删除本次上传的“${material.name}”吗？`;
+    if (!window.confirm(message)) return;
+    setDeletingFileId(material.id);
+    setError('');
+    try {
+      if (material.source === 'uploaded') await deleteUploadedFile(material.id);
+      setMaterials((current) => ({
+        ...current,
+        [role]: (current[role] ?? []).filter((item) => item.id !== material.id)
+      }));
+      setDirtyRoles((current) => new Set(current).add(role));
+    } catch (removeError) {
+      setError(removeError instanceof Error ? removeError.message : '文件删除失败。');
+    } finally {
+      setDeletingFileId('');
     }
   }
 
@@ -124,33 +462,48 @@ export function WorkflowLauncher({
       .filter((item) => startOfDay(item) <= today)
       .toSorted((left, right) => left.getTime() - right.getTime())
       .map((item) => format(item, 'yyyy-MM-dd'));
-    if (!dates.length || !skillId || working || uploadingRole) return;
+    if (!skillId || working || uploadingRole || deletingFileId) return;
+    if (!dates.length) {
+      setDateError('请至少选择一个核销日期。');
+      return;
+    }
+    if (requiresZhiyunCredential && !zhiyunCredentialConfigured) {
+      setError('请先安全保存智云账号和密码。');
+      return;
+    }
+    const dateRangeError = validateWorkflowDateRange(selectedDates);
+    if (dateRangeError) {
+      setDateError(dateRangeError);
+      return;
+    }
     setWorking(true);
     setError('');
+    setDateError('');
     try {
+      const { files, replace_roles } = selectedMaterialUpdates(materials, dirtyRoles);
       const endpoint =
         dates.length === 1
           ? '/api/platform/workflows/start'
           : '/api/platform/workflow-batches/start';
       const body =
         dates.length === 1
-          ? { skill_id: skillId, reconciliation_date: dates[0], files }
-          : { skill_id: skillId, reconciliation_dates: dates, files };
+          ? { skill_id: skillId, reconciliation_date: dates[0], files, replace_roles }
+          : { skill_id: skillId, reconciliation_dates: dates, files, replace_roles };
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       });
-      if (!response.ok) throw new Error(await responseMessage(response, '后台任务启动失败。'));
+      if (!response.ok) throw new Error(await responseMessage(response, '任务启动失败。'));
       const result = (await response.json()) as { id?: unknown };
-      if (typeof result.id !== 'string') throw new Error('后台任务返回结果无效。');
+      if (typeof result.id !== 'string') throw new Error('任务返回结果无效。');
       window.location.assign(
         dates.length === 1
           ? `/dashboard/workflows/${encodeURIComponent(result.id)}`
           : `/dashboard/workflows/batches/${encodeURIComponent(result.id)}`
       );
     } catch (startError) {
-      setError(startError instanceof Error ? startError.message : '后台任务启动失败。');
+      setError(startError instanceof Error ? startError.message : '任务启动失败。');
     } finally {
       setWorking(false);
     }
@@ -162,13 +515,15 @@ export function WorkflowLauncher({
         .map((item) => format(item, 'yyyy-MM-dd'))
         .join('、')
     : '尚未选择';
+  const dateRangeSummary = workflowDateRangeSummary(selectedDates);
+  const todayValue = format(today, 'yyyy-MM-dd');
 
   return (
     <div className='grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(20rem,28rem)]'>
       <Card>
         <CardHeader>
           <CardTitle className='flex items-center gap-2'>
-            <Icons.sparkles className='size-5' /> 新建后台任务
+            <Icons.sparkles className='size-5' /> 新建应收核销任务
           </CardTitle>
           <CardDescription>
             选择日期和材料后直接提交 Worker。任务会在后台运行，页面只展示状态和错误位置。
@@ -191,37 +546,104 @@ export function WorkflowLauncher({
             </select>
           </label>
 
+          {requiresZhiyunCredential && (
+            <ZhiyunCredentialCard
+              disabled={working}
+              onConfiguredChange={setZhiyunCredentialConfigured}
+            />
+          )}
+
           <div className='rounded-lg border bg-muted/20 p-3'>
             <div className='flex items-start justify-between gap-3'>
               <div>
                 <p className='text-sm font-medium'>选择核销日期</p>
                 <p className='mt-1 text-xs text-muted-foreground'>
-                  可以选择一天或多天，今天之后的日期不可选。
+                  单击选择或取消一天；按住日期后滑动可连续选择多天。今天之后不可选。
                 </p>
               </div>
-              <Badge variant='secondary'>{selectedDates.length} 天</Badge>
+              <div className='flex shrink-0 items-center gap-2'>
+                <Badge variant='secondary'>{selectedDates.length} 天</Badge>
+                <Button
+                  type='button'
+                  variant='outline'
+                  size='sm'
+                  disabled={selectedDates.length === 0 || working}
+                  onClick={() => {
+                    setSelectedDates([]);
+                    setDateRangeStart('');
+                    setDateRangeEnd('');
+                    setDateError('');
+                  }}
+                >
+                  清除全部日期
+                </Button>
+              </div>
             </div>
-            <Calendar
-              mode='multiple'
-              selected={selectedDates}
-              onSelect={(dates) => setSelectedDates(dates ?? [])}
-              disabled={{ after: today }}
-              className='mx-auto mt-2'
-              autoFocus
-            />
+            <div className='mt-3 grid gap-3 sm:grid-cols-2'>
+              <label className='grid gap-1 text-sm'>
+                <span>开始日期</span>
+                <input
+                  type='date'
+                  value={dateRangeStart}
+                  max={todayValue}
+                  disabled={working}
+                  onChange={(event) => updateDateRange(event.target.value, dateRangeEnd)}
+                  className='h-10 rounded-md border bg-background px-3'
+                />
+              </label>
+              <label className='grid gap-1 text-sm'>
+                <span>结束日期</span>
+                <input
+                  type='date'
+                  value={dateRangeEnd}
+                  max={todayValue}
+                  disabled={working}
+                  onChange={(event) => updateDateRange(dateRangeStart, event.target.value)}
+                  className='h-10 rounded-md border bg-background px-3'
+                />
+              </label>
+            </div>
+            <p className='mt-2 text-xs text-muted-foreground' aria-live='polite'>
+              {dateRangeSummary.dateCount
+                ? `${dateRangeSummary.dateCount} 个核销日（包含周末）`
+                : '输入开始和结束日期可自动选择连续日期，周末也会包含。'}
+            </p>
+            {dateError && (
+              <p role='alert' className='mt-2 text-sm text-destructive'>
+                {dateError}
+              </p>
+            )}
+            <div className='touch-none' onPointerMove={moveDateDrag}>
+              <WorkflowDateInteractionContext.Provider value={dateInteraction}>
+                <Calendar
+                  mode='multiple'
+                  selected={selectedDates}
+                  disabled={{ after: today }}
+                  className='mx-auto mt-2'
+                  components={WORKFLOW_CALENDAR_COMPONENTS}
+                  autoFocus
+                />
+              </WorkflowDateInteractionContext.Provider>
+            </div>
             <p className='border-t pt-2 text-xs text-muted-foreground'>已选：{selectedDateLabel}</p>
           </div>
 
           {fileInputs.length > 0 && (
             <div className='space-y-3'>
               <div>
-                <p className='text-sm font-medium'>任务材料</p>
+                <div className='flex items-center gap-2'>
+                  <p className='text-sm font-medium'>任务材料</p>
+                  {materialVersion !== null && (
+                    <Badge variant='secondary'>当前业务版本 V{materialVersion}</Badge>
+                  )}
+                  {materialsLoading && <Badge variant='outline'>正在读取已保存文件</Badge>}
+                </div>
                 <p className='mt-1 text-xs text-muted-foreground'>
-                  首次上传后平台会自动复用；需要更换时再上传。
+                  成功任务会发布下一业务版本，后续任务自动使用该版本；需要更换时再上传。
                 </p>
               </div>
               {fileInputs.map((input) => {
-                const names = fileNames[input.role] ?? [];
+                const entries = materials[input.role] ?? [];
                 return (
                   <div key={input.role} className='rounded-lg border p-3'>
                     <div className='flex items-start justify-between gap-3'>
@@ -231,20 +653,52 @@ export function WorkflowLauncher({
                           {input.required && <span className='ml-1 text-destructive'>*</span>}
                         </p>
                         <p className='mt-1 text-xs text-muted-foreground'>{input.description}</p>
-                        {names.length > 0 && (
+                        {entries.length > 0 ? (
                           <div className='mt-2 space-y-1 text-xs text-muted-foreground'>
-                            {names.map((name, index) => (
-                              <p key={`${name}-${index}`} className='truncate'>
-                                {name}
-                              </p>
+                            {entries.map((material) => (
+                              <div
+                                key={material.id}
+                                className='flex items-center gap-2 rounded-md bg-muted/40 px-2 py-1'
+                              >
+                                <span className='min-w-0 flex-1 truncate'>{material.name}</span>
+                                <Badge variant='outline' className='shrink-0 font-normal'>
+                                  {material.source === 'saved' ? '已保存，将复用' : '本次上传'}
+                                </Badge>
+                                <Button
+                                  type='button'
+                                  variant='ghost'
+                                  size='icon'
+                                  className='min-h-11 min-w-11 shrink-0 text-muted-foreground hover:text-destructive'
+                                  aria-label={`从本次任务移除 ${material.name}`}
+                                  title={
+                                    material.source === 'saved'
+                                      ? '仅从本次任务移除'
+                                      : '删除本次上传文件'
+                                  }
+                                  disabled={
+                                    Boolean(uploadingRole) || Boolean(deletingFileId) || working
+                                  }
+                                  onClick={() => void removeMaterial(input.role, material)}
+                                >
+                                  {deletingFileId === material.id ? (
+                                    <Icons.spinner className='size-4 animate-spin' />
+                                  ) : (
+                                    <Icons.trash className='size-4' />
+                                  )}
+                                </Button>
+                              </div>
                             ))}
                           </div>
+                        ) : (
+                          <p className='mt-2 text-xs text-muted-foreground'>
+                            {materialsLoading ? '正在检查平台已保存文件…' : '当前没有可复用文件。'}
+                          </p>
                         )}
                       </div>
                       <label className='shrink-0 cursor-pointer rounded-md border px-3 py-2 text-xs font-medium transition-colors hover:bg-muted'>
                         {uploadingRole === input.role
                           ? '上传中…'
-                          : names.length
+                          : entries.length
                             ? '替换/新增'
                             : '选择文件'}
                         <input
@@ -252,7 +706,12 @@ export function WorkflowLauncher({
                           className='sr-only'
                           accept={input.extensions?.map((item) => `.${item}`).join(',')}
                           multiple={input.multiple}
-                          disabled={Boolean(uploadingRole) || working}
+                          disabled={
+                            materialsLoading ||
+                            Boolean(uploadingRole) ||
+                            Boolean(deletingFileId) ||
+                            working
+                          }
                           onChange={(event) =>
                             void uploadMaterial(input.role, input.multiple, event)
                           }
@@ -262,6 +721,25 @@ export function WorkflowLauncher({
                   </div>
                 );
               })}
+              {materialsError && (
+                <Alert variant='destructive'>
+                  <AlertTitle>已保存任务材料加载失败</AlertTitle>
+                  <AlertDescription className='space-y-2'>
+                    <p>{materialsError}</p>
+                    <Button
+                      type='button'
+                      variant='outline'
+                      size='sm'
+                      onClick={() => {
+                        setMaterialsError('');
+                        setMaterialsRefreshKey((current) => current + 1);
+                      }}
+                    >
+                      重新读取
+                    </Button>
+                  </AlertDescription>
+                </Alert>
+              )}
             </div>
           )}
 
@@ -275,13 +753,22 @@ export function WorkflowLauncher({
             type='button'
             className='min-h-10 w-full sm:w-auto'
             onClick={() => void start()}
-            disabled={working || Boolean(uploadingRole) || !skillId || selectedDates.length === 0}
+            disabled={
+              working ||
+              Boolean(uploadingRole) ||
+              Boolean(deletingFileId) ||
+              materialsLoading ||
+              Boolean(materialsError) ||
+              (requiresZhiyunCredential && !zhiyunCredentialConfigured) ||
+              !skillId ||
+              selectedDates.length === 0
+            }
           >
             {working
-              ? '提交后台任务…'
+              ? '提交任务…'
               : selectedDates.length > 1
                 ? `开始 ${selectedDates.length} 天任务`
-                : '开始后台任务'}
+                : '开始任务'}
           </Button>
         </CardContent>
       </Card>
@@ -292,25 +779,35 @@ export function WorkflowLauncher({
           <CardDescription>任务提交后可离开页面，Worker 会继续执行。</CardDescription>
         </CardHeader>
         <CardContent className='space-y-2'>
-          {workflows.length ? (
-            workflows.map((workflow) => (
-              <Link
-                key={workflow.id}
-                href={`/dashboard/workflows/${encodeURIComponent(workflow.id)}`}
-                className='block rounded-lg border p-3 transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring'
-              >
-                <div className='flex items-start justify-between gap-2'>
-                  <span className='font-medium'>{workflow.skill_name}</span>
-                  <Badge variant={workflow.state === 'failed' ? 'destructive' : 'outline'}>
-                    {stageLabel(workflow.stage)}
-                  </Badge>
-                </div>
-                <p className='mt-1 text-xs text-muted-foreground'>
-                  {workflow.reconciliation_date || '日期未设置'} · {workflow.progress}% ·{' '}
-                  {workflow.progress_message}
-                </p>
-              </Link>
-            ))
+          {recentTasks.length ? (
+            recentTasks.map((task) => {
+              const isBatch = task.kind === 'batch';
+              const target = isBatch
+                ? `/dashboard/workflows/batches/${encodeURIComponent(task.item.id)}`
+                : `/dashboard/workflows/${encodeURIComponent(task.item.id)}`;
+              const destructive = task.item.state === 'failed';
+              return (
+                <Link
+                  key={`${task.kind}-${task.item.id}`}
+                  href={target}
+                  className='block rounded-lg border p-3 transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring'
+                >
+                  <div className='flex items-start justify-between gap-2'>
+                    <span className='font-medium'>{task.item.skill_name}</span>
+                    <Badge variant={destructive ? 'destructive' : 'outline'}>
+                      {isBatch ? batchStateLabel(task.item.state) : stageLabel(task.item.stage)}
+                    </Badge>
+                  </div>
+                  <p className='mt-1 text-sm font-medium'>{task.item.display_id}</p>
+                  <p className='mt-1 text-xs text-muted-foreground'>
+                    {isBatch
+                      ? `${task.item.reconciliation_dates.length} 天批次`
+                      : task.item.reconciliation_date || '日期未设置'}{' '}
+                    · {task.item.progress}% · {task.item.progress_message}
+                  </p>
+                </Link>
+              );
+            })
           ) : (
             <p className='rounded-lg border border-dashed p-4 text-sm text-muted-foreground'>
               暂无任务记录。

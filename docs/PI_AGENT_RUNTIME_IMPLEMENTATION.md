@@ -28,7 +28,7 @@ AGENT_RUNTIME_FALLBACK=legacy
 
 只有需要灰度旧实现时才设置 `AGENT_RUNTIME=legacy`；此时把测试账号的 Clerk User ID 写入
 `AGENT_RUNTIME_PI_USERS`，多个 ID 用英文逗号分隔，这些账号使用 Pi，其余账号使用旧实现。
-Next.js 服务端优先使用 Clerk `userId` 做选择，只有本地会话没有 Clerk 身份时才使用平台用户 ID。
+Next.js 服务端优先使用 Clerk `userId` 做选择，只有 Clerk 身份不可用时才使用平台用户 ID。
 未知配置按旧实现处理。
 
 开启回退时，Pi 只有在尚未产生文本或业务工具事件就失败的情况下才会调用旧实现；已经调用工具的会话只返回错误，不会重复执行。

@@ -27,23 +27,49 @@ import {
 import { UserAvatarProfile } from '@/components/user-avatar-profile';
 import { useMediaQuery } from '@/hooks/use-media-query';
 import type { NavGroup } from '@/types';
-import { useClerk, useUser } from '@clerk/nextjs';
+import type { PlatformSession } from '@/features/platform-api/types';
+import { platformAvatarUser } from '@/features/profile/avatar';
+import { useClerk } from '@clerk/nextjs';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import * as React from 'react';
 import { Icons } from '../icons';
-import { OrgSwitcher } from '../org-switcher';
 
 interface AppSidebarProps {
   navGroups: NavGroup[];
+  session: PlatformSession;
 }
 
-export default function AppSidebar({ navGroups }: AppSidebarProps): React.JSX.Element {
+function ClerkLogoutItem() {
+  const { signOut } = useClerk();
+  return (
+    <DropdownMenuItem onClick={() => signOut({ redirectUrl: '/auth/sign-in' })}>
+      <Icons.logout aria-hidden className='mr-2 h-4 w-4' />
+      退出登录
+    </DropdownMenuItem>
+  );
+}
+
+function LocalLogoutItem() {
+  const router = useRouter();
+  async function logout() {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    router.replace('/auth/sign-in');
+    router.refresh();
+  }
+  return (
+    <DropdownMenuItem onClick={() => void logout()}>
+      <Icons.logout aria-hidden className='mr-2 h-4 w-4' />
+      退出登录
+    </DropdownMenuItem>
+  );
+}
+
+export default function AppSidebar({ navGroups, session }: AppSidebarProps): React.JSX.Element {
   const pathname = usePathname();
   const { isOpen } = useMediaQuery();
-  const { user } = useUser();
-  const { signOut } = useClerk();
   const router = useRouter();
+  const user = platformAvatarUser(session);
   const accountItems = navGroups.find((group) => group.id === 'account')?.items ?? [];
 
   React.useEffect(() => {
@@ -53,7 +79,20 @@ export default function AppSidebar({ navGroups }: AppSidebarProps): React.JSX.El
   return (
     <Sidebar collapsible='icon'>
       <SidebarHeader className='group-data-[collapsible=icon]:pt-4'>
-        <OrgSwitcher />
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              size='lg'
+              tooltip='财务 Skill 平台'
+              render={<Link href='/dashboard/overview' aria-label='财务 Skill 平台' />}
+            >
+              <span className='flex size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground'>
+                <Icons.logo className='size-4' />
+              </span>
+              <span className='font-semibold'>财务 Skill 平台</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
       </SidebarHeader>
       <SidebarContent className='overflow-x-hidden'>
         {navGroups.map((group) => (
@@ -125,7 +164,7 @@ export default function AppSidebar({ navGroups }: AppSidebarProps): React.JSX.El
                   />
                 }
               >
-                {user && <UserAvatarProfile className='h-8 w-8 rounded-lg' showInfo user={user} />}
+                <UserAvatarProfile className='h-8 w-8 rounded-lg' showInfo user={user} />
                 <Icons.chevronsDown className='ml-auto size-4' />
               </DropdownMenuTrigger>
               <DropdownMenuContent
@@ -137,9 +176,7 @@ export default function AppSidebar({ navGroups }: AppSidebarProps): React.JSX.El
                 <DropdownMenuGroup>
                   <DropdownMenuLabel className='p-0 font-normal'>
                     <div className='px-1 py-1.5'>
-                      {user && (
-                        <UserAvatarProfile className='h-8 w-8 rounded-lg' showInfo user={user} />
-                      )}
+                      <UserAvatarProfile className='h-8 w-8 rounded-lg' showInfo user={user} />
                     </div>
                   </DropdownMenuLabel>
                 </DropdownMenuGroup>
@@ -158,10 +195,7 @@ export default function AppSidebar({ navGroups }: AppSidebarProps): React.JSX.El
                 </DropdownMenuGroup>
                 <DropdownMenuSeparator />
                 <DropdownMenuGroup>
-                  <DropdownMenuItem onClick={() => signOut({ redirectUrl: '/auth/sign-in' })}>
-                    <Icons.logout aria-hidden className='mr-2 h-4 w-4' />
-                    退出登录
-                  </DropdownMenuItem>
+                  {session.auth_provider === 'clerk' ? <ClerkLogoutItem /> : <LocalLogoutItem />}
                 </DropdownMenuGroup>
               </DropdownMenuContent>
             </DropdownMenu>

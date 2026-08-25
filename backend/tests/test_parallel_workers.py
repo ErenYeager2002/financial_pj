@@ -6,16 +6,12 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from scripts import serve_control
-from scripts.serve_control import worker_specs
-from sqlalchemy import select
-
 from app import worker
 from app.database import SessionLocal, init_db
 from app.models import RunRecord, WorkflowAction, WorkflowSession
 from app.worker import claim_next_run, run_once
 from app.workflow_service import claim_next_workflow_action
-
+from sqlalchemy import select
 
 def setup_module() -> None:
     init_db()
@@ -359,36 +355,25 @@ def test_workflow_limit_and_different_skills_can_be_claimed() -> None:
         db.commit()
 
 
-def test_worker_process_plan_is_split_by_pool() -> None:
-    assert worker_specs({}) == [
-        ("python", "python-1"),
-        ("python", "python-2"),
-        ("http", "http-1"),
-        ("http", "http-2"),
-        ("workflow", "workflow-1"),
-        ("workflow", "workflow-2"),
-    ]
-    assert worker_specs({"FINANCIAL_WORKER_COUNTS": "python:3,rpa:1"}) == [
-        ("python", "python-1"),
-        ("python", "python-2"),
-        ("python", "python-3"),
-        ("rpa", "rpa-1"),
-    ]
+def test_workflow_worker_claims_queued_fetched_data_supplement() -> None:
+    workflow, action = _workflow(f"workflow-supplement-{uuid.uuid4()}")
+    workflow.stage = "supplementing_fetched_data"
+    action.name = "supplement_fetched_data"
+    with SessionLocal() as db:
+        db.add_all([workflow, action])
+        db.commit()
 
-
-def test_stale_runtime_pid_is_rejected_by_command_identity(monkeypatch) -> None:
-    monkeypatch.setattr(
-        serve_control,
-        "process_command_line",
-        lambda _pid: "C:\\Windows\\System32\\svchost.exe -k netsvcs",
-    )
-    assert not serve_control.process_matches(3468, "-m app.worker", "--worker-id", "python-1")
-    monkeypatch.setattr(
-        serve_control,
-        "process_command_line",
-        lambda _pid: (
-            "D:\\BESTEASY\\financial_pj\\.venv\\Scripts\\python.exe "
-            "-m app.worker --pools python --worker-id python-1"
-        ),
-    )
-    assert serve_control.process_matches(3468, "-m app.worker", "--worker-id", "python-1")
+    with SessionLocal() as db:
+        claimed = claim_next_workflow_action(
+            db,
+            ("workflow",),
+            "workflow-supplement-worker",
+        )
+        assert claimed is not None
+        assert claimed.id == action.id
+        assert claimed.state == "running"
+        assert claimed.worker_id == "workflow-supplement-worker"
+        assert claimed.attempt_count == 1
+        claimed.state = "succeeded"
+        claimed.lease_expires_at = None
+        db.commit()

@@ -16,6 +16,9 @@ def test_openapi_contains_frozen_domain_contracts() -> None:
         "SkillReleaseRead",
         "RunSummary",
         "RunDetail",
+        "TaskCenterItem",
+        "TaskCenterPage",
+        "TaskCenterStateCounts",
         "RunEventRead",
         "RunApprovalRead",
         "WorkflowDefinitionRead",
@@ -44,15 +47,15 @@ def test_core_routes_publish_explicit_contracts() -> None:
     session_schema = paths["/api/session"]["get"]["responses"]["200"]["content"][
         "application/json"
     ]["schema"]
-    run_list_schema = paths["/api/runs"]["get"]["responses"]["200"]["content"][
+    run_list_schema = paths["/api/runs"]["get"]["responses"]["200"]["content"]["application/json"][
+        "schema"
+    ]
+    run_steps_schema = paths["/api/runs/{run_id}/steps"]["get"]["responses"]["200"]["content"][
         "application/json"
     ]["schema"]
-    run_steps_schema = paths["/api/runs/{run_id}/steps"]["get"]["responses"]["200"][
-        "content"
-    ]["application/json"]["schema"]
-    upload_schema = paths["/api/files"]["post"]["responses"]["200"]["content"][
-        "application/json"
-    ]["schema"]
+    upload_schema = paths["/api/files"]["post"]["responses"]["200"]["content"]["application/json"][
+        "schema"
+    ]
     assert session_schema["$ref"].endswith("/PlatformUser")
     assert run_list_schema["$ref"].endswith("/RunPage")
     assert run_steps_schema["type"] == "array"
@@ -67,7 +70,13 @@ def test_core_routes_publish_explicit_contracts() -> None:
     assert "/api/admin/skill-releases" in paths
     assert "/api/admin/skill-releases/{release_id}/publish" in paths
     assert "/api/admin/skill-releases/{release_id}/rollback" not in paths
+    assert "/api/admin/skills/{skill_id}/update" in paths
     assert "/api/admin/approvals" in paths
     assert "/api/admin/approvals/{approval_id}/decision" in paths
     assert "/api/admin/workflow-definitions" in paths
     assert "/api/runs/{run_id}/approvals" in paths
+    task_center_schema = paths["/api/task-center"]["get"]["responses"]["200"]["content"][
+        "application/json"
+    ]["schema"]
+    assert task_center_schema["$ref"].endswith("/TaskCenterPage")
+    assert "/api/workflows/reusable-files" in paths

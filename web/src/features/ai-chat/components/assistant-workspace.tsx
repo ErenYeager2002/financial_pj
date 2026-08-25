@@ -279,7 +279,7 @@ export function AssistantWorkspace({
   function openTaskWizard() {
     if (!draft) return;
     router.push(
-      `/dashboard/skills/${encodeURIComponent(draft.skill_id)}?draft=${encodeURIComponent(draft.id)}`
+      `/dashboard/skills/${encodeURIComponent(draft.skill_id)}/run?draft=${encodeURIComponent(draft.id)}`
     );
   }
 

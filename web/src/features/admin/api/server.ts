@@ -5,6 +5,7 @@ import { platformServerRequest } from '@/features/platform-api/server-client';
 import type {
   AdminUser,
   AuditEvent,
+  FeatureControl,
   PlatformSession,
   SkillPermission
 } from '@/features/platform-api/types';
@@ -84,6 +85,19 @@ export async function updateAdminUser(userId: string, value: unknown): Promise<A
   });
 }
 
+export async function resetAdminUserPassword(userId: string, value: unknown): Promise<AdminUser> {
+  await requirePlatformAdmin();
+  const body = objectBody(value);
+  const password = typeof body.initial_password === 'string' ? body.initial_password : '';
+  if (password.length < 8 || password.length > 256) {
+    throw new PlatformApiError(400, '一次性密码必须为 8 到 256 个字符。');
+  }
+  return platformServerRequest<AdminUser>(
+    `/api/admin/users/${checkedUserId(userId)}/reset-password`,
+    { method: 'POST', body: JSON.stringify({ initial_password: password }) }
+  );
+}
+
 export async function replaceAdminUserPermissions(
   userId: string,
   value: unknown
@@ -129,4 +143,20 @@ export async function listAdminAuditEvents(
   if (action) params.set('action', action);
   if (actorId) params.set('actor_id', actorId);
   return platformServerRequest<AuditEvent[]>(`/api/admin/audit-events?${params}`);
+}
+
+export async function listFeatureControls(): Promise<FeatureControl[]> {
+  await requirePlatformAdmin();
+  return platformServerRequest<FeatureControl[]>('/api/admin/feature-controls');
+}
+
+export async function updateFeatureControl(key: string, enabled: boolean): Promise<FeatureControl> {
+  await requirePlatformAdmin();
+  if (!/^[a-z0-9-]{1,128}$/.test(key)) {
+    throw new PlatformApiError(400, '功能开关标识格式无效。');
+  }
+  return platformServerRequest<FeatureControl>(
+    `/api/admin/feature-controls/${encodeURIComponent(key)}`,
+    { method: 'PUT', body: JSON.stringify({ enabled }) }
+  );
 }

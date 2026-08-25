@@ -1,8 +1,8 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Icons } from '@/components/icons';
-import { StatsErrorAlert } from '@/features/overview/components/stats-error';
 import { useRouter } from 'next/navigation';
 import { useEffect, useTransition } from 'react';
 import * as Sentry from '@sentry/nextjs';
@@ -24,10 +24,11 @@ export default function OverviewError({ error, reset }: { error: Error; reset: (
   };
 
   return (
-    <StatsErrorAlert
-      message={`统计数据加载失败：${error.message}`}
-      action={
-        <>
+    <Alert variant='destructive'>
+      <AlertTitle>工作台加载失败</AlertTitle>
+      <AlertDescription className='flex items-center justify-between gap-4'>
+        <span>{error.message}</span>
+        <span className='flex items-center gap-2'>
           <Button variant='outline' size='sm' onClick={retry} disabled={isPending}>
             {isPending ? (
               <>
@@ -41,8 +42,8 @@ export default function OverviewError({ error, reset }: { error: Error; reset: (
           <span role='status' aria-live='polite' className='sr-only'>
             {isPending ? '正在重试' : ''}
           </span>
-        </>
-      }
-    />
+        </span>
+      </AlertDescription>
+    </Alert>
   );
 }

@@ -20,6 +20,7 @@ import {
   TableRow
 } from '@/components/ui/table';
 import type { PlatformFilePage } from '@/features/platform-api/types';
+import { WorkflowMaterialHistory } from '@/features/workflow-agent/components/workflow-material-history';
 import { formatDate } from '@/lib/format';
 import { cn, formatBytes } from '@/lib/utils';
 
@@ -111,7 +112,7 @@ export function FileList({ result, kind, query }: FileListProps) {
           </div>
         </div>
         <CardDescription>
-          共 {result.total} 个文件；按 Skill 分组，可展开查看，删除前会再次确认。
+          共 {result.total} 个当前文件；同名任务结果只显示最新版本，按 Skill 分组查看。
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -132,7 +133,10 @@ export function FileList({ result, kind, query }: FileListProps) {
                 });
               }}
             >
-              <summary className='cursor-pointer list-none px-4 py-3 hover:bg-muted/40'>
+              <summary
+                className='cursor-pointer list-none px-4 py-3 hover:bg-muted/40'
+                aria-label={`${group.label} 文件列表`}
+              >
                 <span className='flex flex-wrap items-center gap-2'>
                   <span aria-hidden='true'>{collapsedGroups.has(key) ? '▸' : '▾'}</span>
                   <span className='font-medium'>{group.label}</span>
@@ -140,52 +144,57 @@ export function FileList({ result, kind, query }: FileListProps) {
                 </span>
               </summary>
               <div className='overflow-x-auto border-t px-2 pb-2'>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>文件</TableHead>
-                    <TableHead>类型</TableHead>
-                    <TableHead>大小</TableHead>
-                    <TableHead>创建时间</TableHead>
-                    <TableHead>保留至</TableHead>
-                    <TableHead className='text-right'>操作</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {group.files.map((file) => (
-                    <TableRow key={file.id}>
-                      <TableCell>
-                        <p className='max-w-72 truncate font-medium'>{file.name}</p>
-                        <p className='text-xs text-muted-foreground'>
-                          SHA-256 {file.sha256.slice(0, 12)}…
-                        </p>
-                      </TableCell>
-                      <TableCell>{file.kind === 'output' ? '结果文件' : '上传文件'}</TableCell>
-                      <TableCell>{formatBytes(file.size_bytes)}</TableCell>
-                      <TableCell>{formatDate(file.created_at ?? undefined)}</TableCell>
-                      <TableCell>{formatDate(file.expires_at ?? undefined)}</TableCell>
-                      <TableCell className='space-x-2 text-right'>
-                        <a
-                          href={`/api/platform/files/${encodeURIComponent(file.id)}/download`}
-                          className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                        >
-                          下载
-                        </a>
-                        <Button
-                          type='button'
-                          size='sm'
-                          variant='destructive'
-                          disabled={!file.can_delete || deletingId === file.id}
-                          title={file.delete_block_reason || '删除未被任务引用的上传文件'}
-                          onClick={() => void deleteFile(file.id)}
-                        >
-                          {deletingId === file.id ? '删除中…' : '删除'}
-                        </Button>
-                      </TableCell>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>文件</TableHead>
+                      <TableHead>类型</TableHead>
+                      <TableHead>大小</TableHead>
+                      <TableHead>创建时间</TableHead>
+                      <TableHead>保留至</TableHead>
+                      <TableHead className='text-right'>操作</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {group.files.map((file) => (
+                      <TableRow key={file.id}>
+                        <TableCell>
+                          <p className='max-w-72 truncate font-medium'>{file.name}</p>
+                          <p className='text-xs text-muted-foreground'>
+                            SHA-256 {file.sha256.slice(0, 12)}…
+                          </p>
+                        </TableCell>
+                        <TableCell>{file.kind === 'output' ? '结果文件' : '上传文件'}</TableCell>
+                        <TableCell>{formatBytes(file.size_bytes)}</TableCell>
+                        <TableCell>{formatDate(file.created_at ?? undefined)}</TableCell>
+                        <TableCell>{formatDate(file.expires_at ?? undefined)}</TableCell>
+                        <TableCell className='space-x-2 text-right'>
+                          <a
+                            href={`/api/platform/files/${encodeURIComponent(file.id)}/download`}
+                            className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                          >
+                            下载
+                          </a>
+                          <Button
+                            type='button'
+                            size='sm'
+                            variant='destructive'
+                            disabled={!file.can_delete || deletingId === file.id}
+                            title={file.delete_block_reason || '删除未被任务引用的上传文件'}
+                            onClick={() => void deleteFile(file.id)}
+                          >
+                            {deletingId === file.id ? '删除中…' : '删除'}
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                {key !== 'unassigned' && (
+                  <div className='px-2 pb-2'>
+                    <WorkflowMaterialHistory skillId={key} />
+                  </div>
+                )}
               </div>
             </details>
           ))}

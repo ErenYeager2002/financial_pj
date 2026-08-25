@@ -1,48 +1,47 @@
-# Skill 受控发布与回退
+# Skill 受控更新
 
-本流程只允许管理员导入服务器收件箱中的 ZIP 包。管理页面不上传、编辑或执行任意代码。Skill 源码仍在 `finance-skills` 私有 Git 仓库维护，平台仓库只负责受控同步、结构校验、审核、发布和回退。
+Skill 源码由固定的 Gitee 仓库 `https://gitee.com/Lee157/finance-skills.git` 管理。平台按名称发现候选项，管理员首次确认 Skill 与 `skills/<skill-id>` 目录的绑定；确认后只允许按照已保存的仓库、目录和固定 Commit 拉取单个 Skill。管理页面不上传或编辑源码。
 
-## 发布前条件
+## 更新前条件
 
-1. 源码仓库没有未提交改动，目标 Skill 的修改已经提交。
-2. 平台同步脚本、Manifest 生成规则及版本号修改已经过代码复核。
-3. 使用能够覆盖目标 Skill 的真实测试命令，不能用空命令或仅返回成功的占位命令。
-4. 写入型、外部动作型或 RPA Skill 在阶段九验收前继续保持 `disabled`。
-5. 发布和回退时，目标 Skill 不得存在活动 Run、Workflow 或 Workflow Action。
+1. 目标修改已经推送到 Gitee 的 `main`。
+2. 首次绑定必须由管理员核对同名结果；名称冲突、平台无同名项和 `update-finance-skills` 不允许自动绑定。
+3. 目标 Skill 必须已经完成禁用，状态为 `disabled`，且没有活动任务。
+4. 更新包必须通过结构、Manifest、源码证据和 Skill 自带测试校验。
 
-## 生成发布包
+## 首次绑定
 
-以下 PowerShell 示例只同步一个 Skill 到隔离暂存目录。把尖括号内容替换为实际值：
+1. 管理员打开“Skill 发布与维护”，点击“按名称发现”。
+2. 平台从 Gitee 读取 `skills/*/SKILL.md`，以 frontmatter 中的 `name` 与平台 Skill ID 精确比对，并显示远端 Commit 和真实目录。
+3. 管理员逐项点击“确认绑定”。保存内容包括仓库、目录、跟踪分支、最近发现 Commit 和目录哈希。
+4. 已绑定项后续不再依赖名称搜索；若目录消失或 `SKILL.md` 名称改变，绑定标记为异常并停止打包。
+
+## 单 Skill 更新
+
+1. 管理员在“Skill 发布与维护”中，从更新选择框选择已经禁用且完成源码绑定的 Skill。
+2. 点击“拉取最新代码并更新”。平台只读取固定仓库的 `main`，拉取最新 Commit，计算目录哈希，并自动生成下一个补丁版本号。
+3. 平台在隔离目录检出固定 Commit，只复制绑定目录，生成平台 Manifest，执行该 Skill 的真实测试并生成发布包。
+4. 发布记录包含仓库、目录、Commit、源码目录哈希、包哈希和测试结果。证据不一致或测试失败时不会替换线上目录，目标 Skill 保持禁用。
+5. 校验通过后，平台原子替换对应 Skill 目录，刷新 Registry，更新绑定的已发布 Commit 和目录哈希；确认新版本可加载后自动恢复 `enabled`。
+
+命令行仅用于故障排查和离线复现，不负责生产目录切换：
 
 ```powershell
-$SourceRepo = 'D:\BESTEASY\financial_pj\sources\finance-skills'
-$StageRoot = Join-Path $env:TEMP 'financial-skill-release-<skill-id>'
-
-.\.venv\Scripts\python.exe scripts\sync_finance_skills.py `
-  --source "$SourceRepo\skills" `
-  --target $StageRoot `
-  --skill-id <skill-id>
-
-.\.venv\Scripts\python.exe scripts\stage_skill_release.py `
-  --skill-dir "$StageRoot\<skill-id>" `
-  --source-repo $SourceRepo `
-  --source-skill "$SourceRepo\skills\<skill-id>" `
-  --test-command <测试可执行文件> <测试参数>
+.\scripts\sync_from_gitee.ps1 -ValidateOnly
 ```
 
-生成工具会拒绝有未提交改动的源码仓库，执行测试后记录源码 Commit、源码树 SHA-256、测试命令、退出码和耗时，并把包写入 `data/skill-release-inbox`。发布包最大 50 MB；解压后最大 200 MB、最多 2000 个文件。
+旧脚本未带 `-ValidateOnly` 时会直接拒绝执行，不能再整仓覆盖生产 Skill，也不会为新流程创建替换备份。
 
 ## 管理员操作
 
-1. 打开 Next.js 的“Skill 目录”。管理员区域只列出服务器收件箱中的包。
-2. 选择“导入并校验”。系统检查 ZIP 路径、重复路径、符号链接、大小、Manifest、源码信息、测试证据和执行入口，并保存不可变包及内容哈希。
-3. 只在“编辑业务元数据”中修改名称、说明、分类、标签、员工展示、业务进度和结果展示。执行入口、适配器、运行限制、权限与代码不能在网页修改。
-4. 复核源码 Commit、包 SHA-256、测试证据和业务元数据，填写审核意见后批准或退回。
-5. 发布时输入完整确认文字 `发布 <skill-id> <version>`。系统再次验证包和内容哈希、测试证据及活动任务，并以跨进程锁串行切换目录。
-6. 回退时选择历史版本并输入 `回退 <skill-id> <version>`。系统执行相同完整性和活动任务检查；切换失败会恢复原目录。
+“Skill 可用状态”区域独立显示全部平台 Skill，不要求先绑定 Gitee 源码。点击“禁用 Skill”后，平台先进入 `draining` 并停止新任务；活动任务归零后，管理员点击“完成禁用”。排空期间可以刷新活动任务数，也可以点击“取消禁用”恢复接收任务。已禁用项可点击“重新启用”。每次操作都必须输入页面显示的 `禁用 <skill-id>` 或 `启用 <skill-id>`；`failed_disabled` 不提供直接启用按钮，必须先查明发布恢复失败的原因。
+
+1. “Skill 可用状态”区域独立显示全部平台 Skill。点击“禁用 Skill”后，平台先进入 `draining` 并停止新任务；活动任务归零后，管理员完成禁用。
+2. 更新按钮只接受 `disabled` 状态的已绑定 Skill，更新期间不会接收新任务。
+3. 更新失败时保留原目录和 `disabled` 状态，管理员处理原因后可以再次更新或手工启用。
 
 ## 审计与恢复
 
-导入、元数据更新、审核、发布、回退以及管理员读取收件箱和版本列表都会写入脱敏审计。审计只记录 Skill ID、版本、Commit、包哈希和结果，不记录源码内容、凭据或业务文件内容。
+发现、绑定、检查更新、打包、可用状态变更和更新都会写入脱敏审计。审计只记录 Skill ID、版本、Commit、目录哈希、包哈希和结果，不记录源码内容、凭据或业务文件内容。员工页面不返回仓库地址、Commit 或更新错误。
 
-数据库与 Skill 目录必须作为同一恢复点管理。正式部署前使用 `scripts\backup_database.ps1` 生成并校验备份；数据库迁移或版本切换失败时，先停止 API 和 Worker，再恢复同一时间点的数据库与目录。不得只恢复数据库或只恢复 Skill 目录。
+数据库与 Skill 目录仍需作为同一恢复点管理。平台发布任务本身不保留额外替换备份：目录切换期间只使用同盘临时目录，成功后立即删除；失败时立即恢复。灾难恢复必须使用正式部署快照，不能只恢复数据库或只恢复 Skill 目录。

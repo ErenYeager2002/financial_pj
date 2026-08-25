@@ -6,7 +6,7 @@ import { WorkflowBatchProgress } from '@/features/workflow-agent/components/work
 import type { WorkflowBatchRead } from '@/features/platform-api/types';
 
 export const metadata = {
-  title: '批量后台任务'
+  title: '应收核销批次详情'
 };
 
 interface PageProps {
@@ -21,7 +21,7 @@ export default async function Page({ params }: PageProps): Promise<React.JSX.Ele
     );
     return (
       <PageContainer
-        pageTitle='批量后台任务'
+        pageTitle='应收核销批次详情'
         pageDescription='按日期顺序执行并持续显示每一天的处理步骤'
       >
         <WorkflowBatchProgress initialBatch={batch} />

@@ -3,6 +3,9 @@ import { cn } from '@/lib/utils';
 import { Metadata } from 'next';
 import Link from 'next/link';
 import ClerkPasswordSignInForm from './clerk-password-sign-in-form';
+import LocalSignInForm from './local-sign-in-form';
+import HybridSignIn from './hybrid-sign-in';
+import type { AuthMode } from '../auth-mode';
 import { InteractiveGridPattern } from './interactive-grid';
 
 export const metadata: Metadata = {
@@ -10,7 +13,7 @@ export const metadata: Metadata = {
   description: '登录企业管理后台。'
 };
 
-export default function SignInViewPage() {
+export default function SignInViewPage({ mode }: { mode: AuthMode }) {
   return (
     <div className='relative flex min-h-screen flex-col items-center justify-center overflow-hidden md:grid lg:max-w-none lg:grid-cols-2 lg:px-0'>
       <Link
@@ -56,7 +59,7 @@ export default function SignInViewPage() {
       </div>
       <div className='flex h-full items-center justify-center p-4 lg:p-8'>
         <div className='flex w-full max-w-md flex-col items-center justify-center space-y-6'>
-          <ClerkPasswordSignInForm />
+          {mode === 'session' ? <LocalSignInForm /> : mode === 'hybrid' ? <HybridSignIn /> : <ClerkPasswordSignInForm />}
         </div>
       </div>
     </div>

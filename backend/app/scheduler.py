@@ -10,6 +10,7 @@ from .models import (
     RunEvent,
     RunRecord,
     SchedulerLock,
+    TaskDiscoveryCheck,
     WorkflowAction,
     WorkflowBatch,
     WorkflowMessage,
@@ -17,6 +18,7 @@ from .models import (
 )
 from .settings import settings
 from .step_runtime_service import finish_run_execution_step, queue_run_execution_step
+from .task_reminder_workflow_service import sync_reminder_from_workflow
 
 
 def acquire_claim_lock(db: Session) -> None:
@@ -131,6 +133,7 @@ def recover_expired_jobs(db: Session, now: datetime | None = None) -> None:
                     data_json='{"kind":"worker_lease_expired"}',
                 )
             )
+            sync_reminder_from_workflow(db, workflow)
 
 
 def active_run_count(db: Session, skill_id: str, now: datetime) -> int:
@@ -163,6 +166,46 @@ def active_workflow_count(db: Session, skill_id: str, now: datetime) -> int:
                 or_(
                     WorkflowAction.lease_expires_at.is_(None),
                     WorkflowAction.lease_expires_at >= now,
+                ),
+            )
+        )
+        or 0
+    )
+
+
+def active_or_queued_workflow_count(db: Session, skill_id: str) -> int:
+    action_count = int(
+        db.scalar(
+            select(func.count(WorkflowAction.id))
+            .join(WorkflowSession, WorkflowSession.id == WorkflowAction.workflow_id)
+            .where(
+                WorkflowSession.skill_id == skill_id,
+                WorkflowAction.state.in_(("queued", "running")),
+            )
+        )
+        or 0
+    )
+    cancelling_count = int(
+        db.scalar(
+            select(func.count(WorkflowSession.id)).where(
+                WorkflowSession.skill_id == skill_id,
+                WorkflowSession.state == "cancelling",
+            )
+        )
+        or 0
+    )
+    return action_count + cancelling_count
+
+
+def active_task_discovery_count(db: Session, skill_id: str, now: datetime) -> int:
+    return int(
+        db.scalar(
+            select(func.count(TaskDiscoveryCheck.id)).where(
+                TaskDiscoveryCheck.skill_id == skill_id,
+                TaskDiscoveryCheck.state == "running",
+                or_(
+                    TaskDiscoveryCheck.lease_expires_at.is_(None),
+                    TaskDiscoveryCheck.lease_expires_at >= now,
                 ),
             )
         )

@@ -1,4 +1,4 @@
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import PageContainer from '@/components/layout/page-container';
 import { PlatformApiError } from '@/features/platform-api/errors';
 import { platformServerRequest } from '@/features/platform-api/server-client';
@@ -6,7 +6,7 @@ import { WorkflowAgentPanel } from '@/features/workflow-agent/components/workflo
 import type { WorkflowRead } from '@/features/platform-api/types';
 
 export const metadata = {
-  title: '后台任务'
+  title: '应收核销任务详情'
 };
 
 interface PageProps {
@@ -17,10 +17,13 @@ export default async function Page({ params }: PageProps): Promise<React.JSX.Ele
   const { workflowId } = await params;
   try {
     const workflow = await platformServerRequest<WorkflowRead>(`/api/workflows/${workflowId}`);
+    if (workflow.batch_id) {
+      redirect(`/dashboard/workflows/batches/${encodeURIComponent(workflow.batch_id)}`);
+    }
     return (
       <PageContainer
-        pageTitle='后台任务'
-        pageDescription='查看后台 Worker 的实时步骤、产出和错误位置'
+        pageTitle='应收核销任务详情'
+        pageDescription='查看任务的实时步骤、产出和错误位置'
       >
         <WorkflowAgentPanel initialWorkflow={workflow} />
       </PageContainer>

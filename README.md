@@ -27,6 +27,70 @@ FastAPI、Next.js 和 Worker 不映射主机端口。不要通过公网隧道传
 .\scripts\stop.ps1
 ```
 
+## 开发模式
+
+频繁修改前端、后端或 Skill 时使用开发模式。它使用独立的 PostgreSQL 卷和
+`data/development` 文件目录，不读取生产数据库和生产平台文件；真实应收核销默认关闭。
+默认只启动 PostgreSQL、FastAPI 和 Next.js，前后端会监听本地源码变化，普通代码修改不需要重新构建镜像。执行任务时再按需启动 Worker 和受控外联代理。
+
+首次启动会从本机 `deploy/production/.env` 复制数据库等连接配置到 Git 忽略的
+`deploy/development/.env`，不会复制生产数据：
+
+```powershell
+Set-Location D:\BESTEASY\financial_pj
+.\scripts\dev.ps1 -Build
+```
+
+以后启动或查看代码修改：
+
+```powershell
+.\scripts\dev.ps1
+```
+
+浏览器打开 `http://localhost:3000`，API 健康检查为
+`http://localhost:8000/api/health`。普通源码修改会自动更新；只有修改
+`backend/pyproject.toml`、Dockerfile 或系统依赖后才需要再次使用 `-Build`。
+
+需要让同一局域网内的电脑临时访问开发平台时，使用显式的局域网模式。下面的示例以
+`WLAN` 网卡为例，平台会根据该网卡的 IPv4 地址生成访问地址：
+
+```powershell
+.\scripts\dev.ps1 -Mode Tasks -Lan -LanInterfaceAlias WLAN
+.\scripts\enable_lan_access.ps1 -Port 3000 -InterfaceAlias WLAN
+.\scripts\enable_lan_access.ps1 -Port 8000 -InterfaceAlias WLAN
+```
+
+其他电脑访问启动输出中的 `http://局域网IP:3000`。Clerk 开发实例必须允许该局域网 origin；
+修改配置后重新运行 `.\scripts\dev.ps1`，
+平台会恢复为只监听本机。局域网模式只允许专用网络的 LocalSubnet，禁止通过路由器端口
+转发、frp、ngrok 或其他公网隧道暴露平台。
+需要调试 Skill 或后台任务时运行：
+
+```powershell
+.\scripts\dev.ps1 -Mode Tasks
+```
+
+只想启动或刷新开发 Worker 时运行：
+
+```powershell
+.\scripts\dev.ps1 -RestartWorkers
+```
+
+新增、删除或移动 Next.js 路由后如果页面仍显示旧的 404，可只重置可再生的前端缓存：
+
+```powershell
+.\scripts\dev.ps1 -ResetFrontendCache
+```
+
+停止开发环境并保留开发数据：
+
+```powershell
+.\scripts\dev-stop.ps1
+```
+
+`-RemoveData` 只删除开发 Docker 数据卷，不会删除 `data/development`。开发模式仅用于
+调试，不要上传或处理真实财务文件。
+
 生产拓扑和正式域名配置见 [deploy/production/README.md](deploy/production/README.md)。
 部署包必须排除本机 `.env`、`data/`、`.venv/`、`web/.env*` 和历史财务文件。
 
@@ -67,7 +131,6 @@ financial_pj/
 ├── deploy/                      Compose、Caddy 与容器配置
 ├── scripts/                     初始化、备份、迁移和发布脚本
 ├── tools/                       项目专用校验工具
-├── legacy/vite-frontend/        只读旧界面参考
 └── data/                        数据、上传、备份和手工作业区；Git 忽略
 ```
 

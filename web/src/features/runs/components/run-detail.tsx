@@ -15,6 +15,7 @@ import { runKeys, runQueryOptions, runStepsQueryOptions } from '@/features/runs/
 import { retryRun } from '@/features/runs/api/service';
 import type { PlatformRunDetail, PlatformRunEvent } from '@/features/runs/api/types';
 import { parseRunOutputFiles } from '@/features/runs/run-output-files';
+import { executionExperienceForSkill } from '@/features/skills/execution-experience';
 import {
   resultFieldLabel,
   runStateLabel,
@@ -43,7 +44,7 @@ function inputFileNames(files: Record<string, unknown>): Array<{ role: string; n
 }
 
 function metricText(value: unknown): string {
-  if (value === null || value === undefined || value === '') return '—';
+  if (value === null || value === undefined || value === '') return '暂无';
   if (typeof value === 'boolean') return value ? '是' : '否';
   if (typeof value === 'string' || typeof value === 'number') return String(value);
   return JSON.stringify(value);
@@ -174,6 +175,7 @@ export function RunDetailView({ runId }: RunDetailViewProps): React.JSX.Element 
     label: labels.get(key) ?? resultFieldLabel(key),
     value
   }));
+  const experience = executionExperienceForSkill(run.skill_id);
 
   function handleRetry(): void {
     retryMutation.mutate();
@@ -219,14 +221,14 @@ export function RunDetailView({ runId }: RunDetailViewProps): React.JSX.Element 
               <p className='text-muted-foreground'>开始时间</p>
               <p>
                 {formatDate(run.started_at ?? undefined, { hour: '2-digit', minute: '2-digit' }) ||
-                  '—'}
+                  '暂无'}
               </p>
             </div>
             <div>
               <p className='text-muted-foreground'>完成时间</p>
               <p>
                 {formatDate(run.finished_at ?? undefined, { hour: '2-digit', minute: '2-digit' }) ||
-                  '—'}
+                  '暂无'}
               </p>
             </div>
           </div>
@@ -360,7 +362,9 @@ export function RunDetailView({ runId }: RunDetailViewProps): React.JSX.Element 
                       key={`${file.role}-${index}`}
                       className='flex justify-between gap-3 rounded-lg border p-2'
                     >
-                      <span className='text-muted-foreground'>{file.role}</span>
+                      <span className='text-muted-foreground'>
+                        {experience?.fileRoleLabels?.[file.role] ?? file.role}
+                      </span>
                       <span className='truncate'>{file.name}</span>
                     </li>
                   ))}
@@ -373,7 +377,9 @@ export function RunDetailView({ runId }: RunDetailViewProps): React.JSX.Element 
                 <dl className='space-y-2'>
                   {Object.entries(runParameters).map(([key, value]) => (
                     <div key={key} className='flex justify-between gap-3 rounded-lg border p-2'>
-                      <dt className='text-muted-foreground'>{resultFieldLabel(key)}</dt>
+                      <dt className='text-muted-foreground'>
+                        {experience?.parameterLabels?.[key] ?? resultFieldLabel(key)}
+                      </dt>
                       <dd>{metricText(value)}</dd>
                     </div>
                   ))}
@@ -436,8 +442,12 @@ export function RunDetailView({ runId }: RunDetailViewProps): React.JSX.Element 
       {(TERMINAL_RUN_STATES.has(run.state) || metrics.length > 0 || files.length > 0) && (
         <Card>
           <CardHeader>
-            <CardTitle>任务结果</CardTitle>
-            <CardDescription>结果文件下载会进行身份校验并记录审计。</CardDescription>
+            <CardTitle>{experience ? `${experience.creationTitle}结果` : '任务结果'}</CardTitle>
+            <CardDescription>
+              {experience
+                ? `重点查看：${experience.resultHighlights.join('、')}。结果文件下载会进行身份校验并记录审计。`
+                : '结果文件下载会进行身份校验并记录审计。'}
+            </CardDescription>
           </CardHeader>
           <CardContent className='space-y-5'>
             {metrics.length > 0 && (

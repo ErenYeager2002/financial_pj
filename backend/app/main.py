@@ -4,6 +4,7 @@ import asyncio
 import json
 import math
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
@@ -18,7 +19,7 @@ from sqlalchemy.orm import Session
 from .audit_service import record_audit
 from .auth import UserContext, get_current_user, get_sse_user, require_admin
 from .auth_service import bootstrap_admin
-from .authorization import allowed_skill_ids, assert_skill_permission
+from .authorization import allowed_skill_ids, assert_skill_permission, get_skill_permission
 from .contracts import (
     AdminSkillDetail,
     PlatformFile,
@@ -32,6 +33,9 @@ from .contracts import (
     RunPage,
     SkillDetail,
     StepRunRead,
+    TaskCenterPage,
+    TaskCenterReferenceType,
+    TaskCenterViewState,
     Workbench,
     domain_contract_schemas,
 )
@@ -52,6 +56,7 @@ from .redaction import sanitize_text, sanitize_value
 from .registry import registry
 from .resource_policy import assert_owner
 from .routers import admin_approvals as admin_approvals_router
+from .routers import admin_feature_controls as admin_feature_controls_router
 from .routers import admin_observability as admin_observability_router
 from .routers import admin_skills as admin_skills_router
 from .routers import admin_users as admin_users_router
@@ -59,6 +64,8 @@ from .routers import admin_workflows as admin_workflows_router
 from .routers import assistant as assistant_router
 from .routers import audit as audit_router
 from .routers import auth as auth_router
+from .routers import profile as profile_router
+from .routers import task_reminders as task_reminders_router
 from .run_approval_service import list_run_approvals
 from .run_service import (
     TERMINAL_STATES,
@@ -86,12 +93,17 @@ from .schemas import (
     WorkflowAgentActionRequest,
     WorkflowAgentActionResponse,
     WorkflowAgentContext,
+    WorkflowBatchFetchedDataSupplement,
     WorkflowBatchRead,
     WorkflowBatchStart,
     WorkflowCreate,
+    WorkflowFetchedDataRead,
+    WorkflowFetchedDataSupplement,
     WorkflowFilesUpdate,
+    WorkflowMaterialSetRead,
     WorkflowMessageCreate,
     WorkflowRead,
+    WorkflowReusableFilesRead,
     WorkflowStart,
 )
 from .security import origin_guard
@@ -102,22 +114,40 @@ from .service_credential_service import (
 )
 from .settings import settings
 from .storage import delete_upload, save_upload
+from .task_center_service import query_task_center
 from .workbench_service import get_workbench
 from .workflow_constants import is_background_model_connection
+from .workflow_material_service import (
+    MaterialVersionConflict,
+    list_material_sets,
+    restore_material_set,
+    serialize_material_set,
+)
+from .workflow_orchestrator import is_explicit_workflow_cancel_request
 from .workflow_service import (
     apply_workflow_agent_action,
+    cancel_workflow,
+    cancel_workflow_batch,
+    confirm_batch_fetched_data_review,
+    confirm_fetched_data_review,
     create_workflow,
     get_workflow_batch_or_404,
     get_workflow_or_404,
     list_workflow_batches,
     list_workflows,
+    read_batch_fetched_data,
+    read_workflow_fetched_data,
+    request_batch_fetched_data_supplement,
+    request_fetched_data_supplement,
     reset_workflow,
     retry_workflow_batch,
+    reusable_workflow_files,
     send_workflow_message,
     serialize_workflow,
     serialize_workflow_batch,
     start_workflow,
     start_workflow_batch,
+    supplement_audit_summary,
     update_workflow_files,
 )
 
@@ -145,8 +175,9 @@ async def lifespan(_: FastAPI):
     settings.ensure_directories()
     init_db()
     registry.refresh()
-    with SessionLocal() as db:
-        bootstrap_admin(db)
+    if settings.auth_mode in {"session", "hybrid"}:
+        with SessionLocal() as db:
+            bootstrap_admin(db)
     yield
 
 
@@ -178,13 +209,20 @@ def platform_openapi() -> dict[str, object]:
 
 app.openapi = platform_openapi
 app.include_router(auth_router.router)
+app.include_router(profile_router.router)
 app.include_router(admin_approvals_router.router)
+app.include_router(admin_feature_controls_router.router)
 app.include_router(admin_observability_router.router)
 app.include_router(admin_skills_router.router)
+app.include_router(admin_skills_router.source_router)
+app.include_router(admin_skills_router.availability_router)
+app.include_router(admin_skills_router.rollout_router)
 app.include_router(admin_users_router.router)
 app.include_router(admin_workflows_router.router)
 app.include_router(audit_router.router)
 app.include_router(assistant_router.router)
+app.include_router(task_reminders_router.router)
+app.include_router(task_reminders_router.admin_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
@@ -224,6 +262,7 @@ def session(
         department_id=user.department_id,
         must_change_password=bool(stored and stored.must_change_password),
         auth_provider=user.auth_provider,
+        avatar_updated_at=stored.avatar_updated_at if stored else None,
     )
 
 
@@ -460,6 +499,7 @@ def list_files(
     page_size: int = 20,
     kind: str = "",
     query: str = "",
+    latest_only: bool = False,
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ) -> PlatformFilePage:
@@ -474,6 +514,7 @@ def list_files(
         page_size=checked_page_size,
         kind=kind,
         query=query.strip()[:100],
+        latest_only=latest_only,
     )
     return PlatformFilePage(
         items=items,
@@ -588,7 +629,21 @@ def workflow_batches(
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ) -> list[WorkflowBatchRead]:
-    return [serialize_workflow_batch(item) for item in list_workflow_batches(db, user, limit)]
+    batches = list_workflow_batches(db, user, limit)
+    runnable_skill_ids = set() if user.is_admin else allowed_skill_ids(db, user)
+    return [
+        serialize_workflow_batch(
+            item,
+            retry_authorized=user.is_admin or item.skill_id in runnable_skill_ids,
+        )
+        for item in batches
+    ]
+
+
+def _serialize_workflow_batch_for_user(db: Session, user: UserContext, batch):
+    permission = None if user.is_admin else get_skill_permission(db, user.user_id, batch.skill_id)
+    retry_authorized = user.is_admin or bool(permission and permission.can_run)
+    return serialize_workflow_batch(batch, retry_authorized=retry_authorized)
 
 
 @app.post("/api/workflow-batches/start", response_model=WorkflowBatchRead)
@@ -597,7 +652,7 @@ def start_workflow_batch_session(
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ) -> WorkflowBatchRead:
-    return serialize_workflow_batch(start_workflow_batch(db, body, user))
+    return _serialize_workflow_batch_for_user(db, user, start_workflow_batch(db, body, user))
 
 
 @app.get("/api/workflow-batches/{batch_id}", response_model=WorkflowBatchRead)
@@ -606,7 +661,9 @@ def get_workflow_batch(
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ) -> WorkflowBatchRead:
-    return serialize_workflow_batch(get_workflow_batch_or_404(db, batch_id, user))
+    return _serialize_workflow_batch_for_user(
+        db, user, get_workflow_batch_or_404(db, batch_id, user)
+    )
 
 
 @app.post("/api/workflow-batches/{batch_id}/retry", response_model=WorkflowBatchRead)
@@ -617,7 +674,173 @@ def retry_workflow_batch_session(
 ) -> WorkflowBatchRead:
     batch = get_workflow_batch_or_404(db, batch_id, user)
     assert_skill_permission(db, user, batch.skill_id)
-    return serialize_workflow_batch(retry_workflow_batch(db, batch))
+    return _serialize_workflow_batch_for_user(db, user, retry_workflow_batch(db, batch))
+
+
+@app.post("/api/workflow-batches/{batch_id}/cancel", response_model=WorkflowBatchRead)
+def cancel_workflow_batch_session(
+    batch_id: str,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> WorkflowBatchRead:
+    return _serialize_workflow_batch_for_user(
+        db, user, cancel_workflow_batch(db, batch_id, user)
+    )
+
+
+@app.get(
+    "/api/workflow-batches/{batch_id}/fetched-data",
+    response_model=WorkflowFetchedDataRead,
+)
+def get_workflow_batch_fetched_data(
+    batch_id: str,
+    reconciliation_date: str,
+    dataset: str = "ar_groups",
+    offset: int = 0,
+    limit: int = 100,
+    query: str = "",
+    issues_only: bool = False,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> WorkflowFetchedDataRead:
+    batch = get_workflow_batch_or_404(db, batch_id, user)
+    assert_skill_permission(db, user, batch.skill_id)
+    return read_batch_fetched_data(
+        batch, reconciliation_date, dataset, offset, limit, query, issues_only
+    )
+
+
+@app.post(
+    "/api/workflow-batches/{batch_id}/fetched-data/confirm",
+    response_model=WorkflowBatchRead,
+)
+def confirm_workflow_batch_fetched_data(
+    batch_id: str,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> WorkflowBatchRead:
+    batch = get_workflow_batch_or_404(db, batch_id, user)
+    assert_skill_permission(db, user, batch.skill_id)
+    confirmed = confirm_batch_fetched_data_review(db, batch, user)
+    record_audit(
+        db,
+        actor=user,
+        action="workflow_batch.fetched_data.confirm",
+        resource_type="workflow_batch",
+        resource_id=batch.id,
+        details={"skill_id": batch.skill_id},
+    )
+    db.commit()
+    return _serialize_workflow_batch_for_user(db, user, confirmed)
+
+
+@app.post(
+    "/api/workflow-batches/{batch_id}/fetched-data/supplement",
+    response_model=WorkflowBatchRead,
+)
+def supplement_workflow_batch_fetched_data(
+    batch_id: str,
+    body: WorkflowBatchFetchedDataSupplement,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> WorkflowBatchRead:
+    batch = get_workflow_batch_or_404(db, batch_id, user)
+    assert_skill_permission(db, user, batch.skill_id)
+    requested, supplement = request_batch_fetched_data_supplement(
+        db,
+        batch,
+        body.reconciliation_date,
+        body.ar_ids,
+        body.so_ids,
+    )
+    record_audit(
+        db,
+        actor=user,
+        action="workflow_batch.fetched_data.supplement.requested",
+        resource_type="workflow_batch",
+        resource_id=batch.id,
+        details={
+            "skill_id": batch.skill_id,
+            "reconciliation_date": body.reconciliation_date,
+            "requested": supplement_audit_summary(supplement),
+        },
+    )
+    db.commit()
+    return _serialize_workflow_batch_for_user(db, user, requested)
+
+
+@app.post("/api/workflows/{workflow_id}/cancel", response_model=WorkflowRead)
+def cancel_workflow_session(
+    workflow_id: str,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> WorkflowRead:
+    return serialize_workflow(cancel_workflow(db, workflow_id, user))
+
+
+@app.get("/api/workflows/reusable-files", response_model=WorkflowReusableFilesRead)
+def get_reusable_workflow_files(
+    skill_id: str,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> WorkflowReusableFilesRead:
+    files, missing_roles, material = reusable_workflow_files(db, skill_id, user)
+    return WorkflowReusableFilesRead(
+        skill_id=skill_id,
+        files=files,
+        ready=not missing_roles,
+        missing_roles=missing_roles,
+        **material,
+    )
+
+
+@app.get("/api/workflows/material-sets", response_model=list[WorkflowMaterialSetRead])
+def get_workflow_material_sets(
+    skill_id: str,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> list[WorkflowMaterialSetRead]:
+    assert_skill_permission(db, user, skill_id)
+    return [
+        WorkflowMaterialSetRead(**serialize_material_set(db, item))
+        for item in list_material_sets(db, user, skill_id, limit=limit)
+    ]
+
+
+@app.post(
+    "/api/workflows/material-sets/{material_set_id}/restore",
+    response_model=WorkflowMaterialSetRead,
+)
+def restore_workflow_material_set(
+    material_set_id: str,
+    skill_id: str,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> WorkflowMaterialSetRead:
+    assert_skill_permission(db, user, skill_id, "can_upload")
+    try:
+        restored = restore_material_set(db, user, skill_id, material_set_id)
+    except MaterialVersionConflict as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    record_audit(
+        db,
+        actor=user,
+        action="workflow.material_set.restore",
+        resource_type="workflow_material_set",
+        resource_id=restored.id,
+        details={
+            "skill_id": skill_id,
+            "restored_from_material_set_id": material_set_id,
+            "new_version": restored.version,
+        },
+    )
+    db.commit()
+    return WorkflowMaterialSetRead(**serialize_material_set(db, restored))
 
 
 @app.get("/api/workflows/{workflow_id}", response_model=WorkflowRead)
@@ -627,6 +850,78 @@ def get_workflow(
     user: UserContext = Depends(get_current_user),
 ) -> WorkflowRead:
     return serialize_workflow(get_workflow_or_404(db, workflow_id, user))
+
+
+@app.get("/api/workflows/{workflow_id}/fetched-data", response_model=WorkflowFetchedDataRead)
+def get_workflow_fetched_data(
+    workflow_id: str,
+    dataset: str = "ar_groups",
+    offset: int = 0,
+    limit: int = 100,
+    query: str = "",
+    issues_only: bool = False,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> WorkflowFetchedDataRead:
+    workflow = get_workflow_or_404(db, workflow_id, user)
+    assert_skill_permission(db, user, workflow.skill_id)
+    return read_workflow_fetched_data(
+        workflow, dataset, offset, limit, query=query, issues_only=issues_only
+    )
+
+
+@app.post("/api/workflows/{workflow_id}/fetched-data/confirm", response_model=WorkflowRead)
+def confirm_workflow_fetched_data(
+    workflow_id: str,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> WorkflowRead:
+    workflow = get_workflow_or_404(db, workflow_id, user)
+    assert_skill_permission(db, user, workflow.skill_id)
+    confirmed = confirm_fetched_data_review(db, workflow, user)
+    record_audit(
+        db,
+        actor=user,
+        action="workflow.fetched_data.confirm",
+        resource_type="workflow",
+        resource_id=workflow.id,
+        details={
+            "skill_id": workflow.skill_id,
+            "reconciliation_date": workflow.reconciliation_date,
+        },
+    )
+    db.commit()
+    return serialize_workflow(confirmed)
+
+
+@app.post("/api/workflows/{workflow_id}/fetched-data/supplement", response_model=WorkflowRead)
+def supplement_workflow_fetched_data(
+    workflow_id: str,
+    body: WorkflowFetchedDataSupplement,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> WorkflowRead:
+    workflow = get_workflow_or_404(db, workflow_id, user)
+    assert_skill_permission(db, user, workflow.skill_id)
+    requested, supplement = request_fetched_data_supplement(
+        db,
+        workflow,
+        body.ar_ids,
+        body.so_ids,
+    )
+    record_audit(
+        db,
+        actor=user,
+        action="workflow.fetched_data.supplement",
+        resource_type="workflow",
+        resource_id=workflow.id,
+        details={
+            "skill_id": workflow.skill_id,
+            **supplement_audit_summary(supplement),
+        },
+    )
+    db.commit()
+    return serialize_workflow(requested)
 
 
 @app.post(
@@ -694,7 +989,9 @@ def set_workflow_files(
 ) -> WorkflowRead:
     workflow = get_workflow_or_404(db, workflow_id, user)
     assert_skill_permission(db, user, workflow.skill_id, "can_upload")
-    return serialize_workflow(update_workflow_files(db, workflow, body.files, user))
+    return serialize_workflow(
+        update_workflow_files(db, workflow, body.files, user, body.replace_roles)
+    )
 
 
 @app.post("/api/workflows/{workflow_id}/messages", response_model=WorkflowRead)
@@ -705,6 +1002,12 @@ def workflow_message(
     user: UserContext = Depends(get_current_user),
 ) -> WorkflowRead:
     workflow = get_workflow_or_404(db, workflow_id, user)
+    if is_explicit_workflow_cancel_request(body.content):
+        if workflow.batch_id:
+            batch = cancel_workflow_batch(db, workflow.batch_id, user)
+            current = next(item for item in batch.workflows if item.id == workflow.id)
+            return serialize_workflow(current)
+        return serialize_workflow(cancel_workflow(db, workflow.id, user))
     assert_skill_permission(db, user, workflow.skill_id)
     return serialize_workflow(send_workflow_message(db, workflow, body.content, user))
 
@@ -774,6 +1077,35 @@ def list_runs(
         page=checked_page,
         page_size=checked_page_size,
         pages=math.ceil(total / checked_page_size) if total else 0,
+    )
+
+
+@app.get("/api/task-center", response_model=TaskCenterPage)
+def list_task_center_items(
+    page: int = 1,
+    page_size: int = 20,
+    view_state: TaskCenterViewState | None = None,
+    item_type: TaskCenterReferenceType | None = None,
+    skill_id: str = "",
+    business_date_from: str = "",
+    business_date_to: str = "",
+    updated_from: datetime | None = None,
+    updated_to: datetime | None = None,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> TaskCenterPage:
+    return query_task_center(
+        db,
+        user,
+        page=max(page, 1),
+        page_size=min(max(page_size, 1), 100),
+        view_state=view_state,
+        item_type=item_type,
+        skill_id=skill_id.strip()[:128],
+        business_date_from=business_date_from.strip(),
+        business_date_to=business_date_to.strip(),
+        updated_from=updated_from,
+        updated_to=updated_to,
     )
 
 

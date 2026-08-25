@@ -2,17 +2,14 @@ export type PlatformRole = 'finance_user' | 'skill_admin';
 
 export type PlatformNavigationIcon =
   | 'dashboard'
-  | 'kanban'
   | 'forms'
   | 'clock'
   | 'page'
   | 'sparkles'
   | 'profile'
-  | 'notification'
   | 'checks'
   | 'settings'
-  | 'teams'
-  | 'workspace';
+  | 'teams';
 
 export interface PlatformNavigationItem {
   title: string;
@@ -37,27 +34,13 @@ const EMPLOYEE_GROUPS: PlatformNavigationGroup[] = [
       { title: 'Skill 中心', url: '/dashboard/skills', icon: 'forms', shortcut: ['s', 'k'] },
       { title: '我的任务', url: '/dashboard/runs', icon: 'clock', shortcut: ['r', 'r'] },
       { title: '文件中心', url: '/dashboard/files', icon: 'page', shortcut: ['f', 'f'] },
-      { title: 'AI 助手', url: '/dashboard/ai-chat', icon: 'sparkles', shortcut: ['a', 'i'] },
-      {
-        title: '后台任务',
-        url: '/dashboard/workflows',
-        icon: 'kanban',
-        shortcut: ['w', 'f']
-      }
+      { title: 'AI 助手', url: '/dashboard/ai-chat', icon: 'sparkles', shortcut: ['a', 'i'] }
     ]
   },
   {
     id: 'account',
     label: '账号',
-    items: [
-      { title: '个人资料', url: '/dashboard/profile', icon: 'profile', shortcut: ['m', 'm'] },
-      {
-        title: '消息通知',
-        url: '/dashboard/notifications',
-        icon: 'notification',
-        shortcut: ['n', 'n']
-      }
-    ]
+    items: [{ title: '个人资料', url: '/dashboard/profile', icon: 'profile', shortcut: ['m', 'm'] }]
   }
 ];
 
@@ -71,10 +54,7 @@ const ADMIN_GROUPS: PlatformNavigationGroup[] = [
         title: 'Skill 治理',
         url: '#',
         icon: 'settings',
-        items: [
-          { title: '发布与维护', url: '/dashboard/skill-governance', icon: 'forms' },
-          { title: '审核记录', url: '/dashboard/skill-reviews', icon: 'checks' }
-        ]
+        items: [{ title: '发布与维护', url: '/dashboard/skill-governance', icon: 'forms' }]
       },
       {
         title: '用户与权限',
@@ -82,11 +62,24 @@ const ADMIN_GROUPS: PlatformNavigationGroup[] = [
         icon: 'teams',
         shortcut: ['u', 'u']
       },
-      { title: '企业空间', url: '/dashboard/workspaces', icon: 'workspace' }
+      {
+        title: '模型连接',
+        url: '/dashboard/model-connections',
+        icon: 'settings'
+      },
+      {
+        title: '功能开关',
+        url: '/dashboard/feature-controls',
+        icon: 'settings'
+      }
     ]
   },
   EMPLOYEE_GROUPS[1]
 ];
+
+const INTERNAL_ROUTE_TITLES: Record<string, string> = {
+  '/dashboard/workflows': '创建应收核销任务'
+};
 
 export function getPlatformNavigation(role: PlatformRole): PlatformNavigationGroup[] {
   return role === 'skill_admin' ? ADMIN_GROUPS : EMPLOYEE_GROUPS;
@@ -100,5 +93,5 @@ export function getPlatformRouteTitle(path: string): string | undefined {
       if (child) return child.title;
     }
   }
-  return undefined;
+  return INTERNAL_ROUTE_TITLES[path];
 }

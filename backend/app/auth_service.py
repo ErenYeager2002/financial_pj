@@ -9,6 +9,7 @@ from pathlib import Path
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerifyMismatchError
 from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .auth_models import User, UserSession
@@ -23,6 +24,13 @@ SESSION_LAST_USED_THROTTLE_SECONDS = 300
 def _now_naive() -> datetime:
     """SQLite 读取 DateTime(timezone=True) 会丢失时区信息，统一用 naive UTC 比较。"""
     return datetime.now(UTC).replace(tzinfo=None)
+
+
+def _naive_utc(value: datetime) -> datetime:
+    """Normalize SQLite naive UTC and PostgreSQL timezone-aware values."""
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(UTC).replace(tzinfo=None)
 
 
 def hash_password(password: str) -> str:
@@ -81,8 +89,42 @@ def get_user_by_clerk_id(db: Session, clerk_user_id: str) -> User | None:
     return db.scalar(select(User).where(User.clerk_user_id == clerk_user_id))
 
 
+def get_or_create_development_clerk_admin(
+    db: Session,
+    *,
+    clerk_user_id: str,
+    clerk_organization_id: str = "",
+) -> User:
+    """为隔离的本地开发数据库幂等建立 Clerk 管理员映射。"""
+    existing = get_user_by_clerk_id(db, clerk_user_id)
+    if existing is not None:
+        return existing
+
+    identity_hash = hashlib.sha256(clerk_user_id.encode("utf-8")).hexdigest()[:16]
+    try:
+        user = create_user(
+            db,
+            username=f"dev-clerk-{identity_hash}",
+            password=secrets.token_urlsafe(32),
+            display_name="开发管理员",
+            role="skill_admin",
+            department_id="finance",
+            clerk_user_id=clerk_user_id,
+            clerk_organization_id=clerk_organization_id or None,
+        )
+        db.commit()
+        return user
+    except IntegrityError:
+        # Next.js 首次渲染可能并发请求多个接口；另一请求可能已经完成建档。
+        db.rollback()
+        existing = get_user_by_clerk_id(db, clerk_user_id)
+        if existing is None:
+            raise
+        return existing
+
+
 def _user_locked(user: User) -> bool:
-    return bool(user.locked_until and user.locked_until > _now_naive())
+    return bool(user.locked_until and _naive_utc(user.locked_until) > _now_naive())
 
 
 def login(db: Session, username: str, password: str) -> User | None:
@@ -139,7 +181,7 @@ def get_session_user(db: Session, token: str) -> User | None:
     now = _now_naive()
     if session.revoked_at is not None:
         return None
-    if session.expires_at < now:
+    if _naive_utc(session.expires_at) < now:
         return None
     user = db.get(User, session.user_id)
     if not user or user.status != "active":
@@ -147,7 +189,8 @@ def get_session_user(db: Session, token: str) -> User | None:
     # 限频刷新 last_used_at：只有超过阈值才写库，避免轮询持续写 SQLite。
     if (
         session.last_used_at is None
-        or (now - session.last_used_at).total_seconds() >= SESSION_LAST_USED_THROTTLE_SECONDS
+        or (now - _naive_utc(session.last_used_at)).total_seconds()
+        >= SESSION_LAST_USED_THROTTLE_SECONDS
     ):
         session.last_used_at = now
         db.commit()
@@ -163,15 +206,21 @@ def revoke_session(db: Session, token: str) -> None:
         db.commit()
 
 
-def revoke_all_user_sessions(db: Session, user_id: str) -> int:
-    return _revoke_sessions(db, user_id, keep_token=None)
+def revoke_all_user_sessions(db: Session, user_id: str, *, commit: bool = True) -> int:
+    return _revoke_sessions(db, user_id, keep_token=None, commit=commit)
 
 
 def revoke_all_user_sessions_except(db: Session, user_id: str, keep_token: str) -> int:
-    return _revoke_sessions(db, user_id, keep_token=keep_token)
+    return _revoke_sessions(db, user_id, keep_token=keep_token, commit=True)
 
 
-def _revoke_sessions(db: Session, user_id: str, keep_token: str | None) -> int:
+def _revoke_sessions(
+    db: Session,
+    user_id: str,
+    keep_token: str | None,
+    *,
+    commit: bool,
+) -> int:
     query = select(UserSession).where(
         UserSession.user_id == user_id,
         UserSession.revoked_at.is_(None),
@@ -182,7 +231,8 @@ def _revoke_sessions(db: Session, user_id: str, keep_token: str | None) -> int:
     now = _now_naive()
     for session in sessions:
         session.revoked_at = now
-    db.commit()
+    if commit:
+        db.commit()
     return len(sessions)
 
 

@@ -1,19 +1,30 @@
 'use client';
 
 import * as React from 'react';
+import Link from 'next/link';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Icons } from '@/components/icons';
+import { WorkflowFetchedDataDialog } from '@/features/workflow-agent/components/workflow-fetched-data-dialog';
+import { WorkflowMaterialHistory } from '@/features/workflow-agent/components/workflow-material-history';
 import { WorkflowProgressCard } from '@/features/workflow-agent/components/workflow-progress-card';
-import type { WorkflowRead } from '@/features/platform-api/types';
+import { workflowStatusLabel } from '@/features/workflow-agent/workflow-batch-selection';
+import type { WorkflowBatchRead, WorkflowRead } from '@/features/platform-api/types';
 
 interface WorkflowAgentPanelProps {
   initialWorkflow: WorkflowRead;
 }
 
-type BindingEntry = { file_id?: unknown; name?: unknown };
+type BindingEntry = {
+  file_id?: unknown;
+  name?: unknown;
+  year?: unknown;
+  sha256?: unknown;
+  source_workflow_id?: unknown;
+  published_at?: unknown;
+};
 
 const MATERIAL_ROLES = [
   {
@@ -68,6 +79,11 @@ function isTerminal(workflow: WorkflowRead): boolean {
   return ['succeeded', 'failed', 'cancelled'].includes(workflow.state);
 }
 
+function summaryValue(summary: Record<string, unknown>, key: string): string {
+  const value = summary[key];
+  return value === undefined || value === null || value === '' ? '未提供' : String(value);
+}
+
 export function WorkflowAgentPanel({
   initialWorkflow
 }: WorkflowAgentPanelProps): React.JSX.Element {
@@ -76,8 +92,14 @@ export function WorkflowAgentPanel({
   const [activity, setActivity] = React.useState('');
   const [confirmationBusy, setConfirmationBusy] = React.useState(false);
   const [uploadingRole, setUploadingRole] = React.useState('');
+  const [deletingFileId, setDeletingFileId] = React.useState('');
   const [refreshing, setRefreshing] = React.useState(false);
-  const filesEditable = ['awaiting_files', 'failed'].includes(workflow.stage);
+  const [cancelling, setCancelling] = React.useState(false);
+  const [fetchedDataOpen, setFetchedDataOpen] = React.useState(false);
+  const writeInProgress = workflow.stage === 'applying';
+  const filesEditable = ['awaiting_date', 'awaiting_date_confirmation', 'awaiting_files'].includes(
+    workflow.stage
+  );
 
   const refresh = React.useCallback(
     async (silent = false) => {
@@ -116,11 +138,51 @@ export function WorkflowAgentPanel({
       );
       if (!response.ok) throw new Error(await responseMessage(response, '确认写入失败。'));
       setWorkflow((await response.json()) as WorkflowRead);
-      setActivity('已提交确认，后台任务将继续执行写入。');
+      setActivity('已提交确认，任务将继续执行写入。');
     } catch (confirmError) {
       setError(confirmError instanceof Error ? confirmError.message : '确认写入失败。');
     } finally {
       setConfirmationBusy(false);
+    }
+  }
+
+  async function cancelTask() {
+    if (cancelling || isTerminal(workflow) || writeInProgress) return;
+    const cancellingBatch = Boolean(workflow.batch_id);
+    const prompt = cancellingBatch
+      ? '该任务属于多日期批次。确认取消整个批次吗？未开始的日期不会继续运行，当前原子动作不会被中途截断。'
+      : '确认取消当前任务吗？尚未开始的动作不会执行；正在运行的取数动作结束后停止。';
+    if (!window.confirm(prompt)) return;
+    setCancelling(true);
+    setError('');
+    try {
+      const endpoint = cancellingBatch
+        ? `/api/platform/workflow-batches/${encodeURIComponent(workflow.batch_id as string)}/cancel`
+        : `/api/platform/workflows/${encodeURIComponent(workflow.id)}/cancel`;
+      const response = await fetch(endpoint, { method: 'POST' });
+      if (!response.ok) throw new Error(await responseMessage(response, '取消任务失败。'));
+      if (cancellingBatch) {
+        const batch = (await response.json()) as WorkflowBatchRead;
+        const current = batch.workflows.find((item) => item.id === workflow.id);
+        if (current) setWorkflow(current);
+        setActivity(
+          batch.state === 'cancelled'
+            ? '整个批次已取消。'
+            : '已申请取消整个批次，当前原子动作结束后停止。'
+        );
+      } else {
+        const nextWorkflow = (await response.json()) as WorkflowRead;
+        setWorkflow(nextWorkflow);
+        setActivity(
+          nextWorkflow.state === 'cancelled'
+            ? '任务已取消。'
+            : '已申请取消，当前取数动作结束后停止。'
+        );
+      }
+    } catch (cancelError) {
+      setError(cancelError instanceof Error ? cancelError.message : '取消任务失败。');
+    } finally {
+      setCancelling(false);
     }
   }
 
@@ -133,11 +195,11 @@ export function WorkflowAgentPanel({
         `/api/platform/workflows/${encodeURIComponent(workflow.id)}/rebuild`,
         { method: 'POST' }
       );
-      if (!response.ok) throw new Error(await responseMessage(response, '重新生成失败。'));
+      if (!response.ok) throw new Error(await responseMessage(response, '新建任务失败。'));
       setWorkflow((await response.json()) as WorkflowRead);
-      setActivity('已重新排队，后台会从当前日期重新生成日清。');
+      setActivity('已重新排队，后台会以原始上传文件创建新的日清工作区。');
     } catch (rebuildError) {
-      setError(rebuildError instanceof Error ? rebuildError.message : '重新生成失败。');
+      setError(rebuildError instanceof Error ? rebuildError.message : '新建任务失败。');
     } finally {
       setConfirmationBusy(false);
     }
@@ -177,7 +239,7 @@ export function WorkflowAgentPanel({
         {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ files: { [role]: nextIds } })
+          body: JSON.stringify({ files: { [role]: nextIds }, replace_roles: [role] })
         }
       );
       if (!response.ok) throw new Error(await responseMessage(response, '文件绑定失败。'));
@@ -190,56 +252,175 @@ export function WorkflowAgentPanel({
     }
   }
 
+  async function removeMaterial(
+    role: (typeof MATERIAL_ROLES)[number]['role'],
+    fileId: string,
+    fileName: string
+  ) {
+    if (!filesEditable || deletingFileId || uploadingRole) return;
+    if (!window.confirm(`确认从本次任务中移除“${fileName}”吗？`)) return;
+    setDeletingFileId(fileId);
+    setError('');
+    try {
+      const nextIds = bindingIds(workflow, role).filter((id) => id !== fileId);
+      const response = await fetch(
+        `/api/platform/workflows/${encodeURIComponent(workflow.id)}/files`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ files: { [role]: nextIds }, replace_roles: [role] })
+        }
+      );
+      if (!response.ok) throw new Error(await responseMessage(response, '文件移除失败。'));
+      setWorkflow((await response.json()) as WorkflowRead);
+      setActivity(
+        `已从本次任务移除${role === 'receipt_flow_table' ? '到账流转表' : '年度盈亏核算表'}：${fileName}`
+      );
+    } catch (removeError) {
+      setError(removeError instanceof Error ? removeError.message : '文件移除失败。');
+    } finally {
+      setDeletingFileId('');
+    }
+  }
+
   return (
     <div className='space-y-4'>
       <div className='flex flex-wrap items-start justify-between gap-3'>
         <div>
+          {workflow.batch_id && (
+            <Link
+              href={`/dashboard/workflows/batches/${encodeURIComponent(workflow.batch_id)}`}
+              className='mb-2 inline-flex items-center rounded-md border border-primary/40 px-3 py-1.5 text-sm font-medium text-primary transition-colors hover:bg-primary/10'
+            >
+              返回所属批次
+            </Link>
+          )}
           <h1 className='text-xl font-semibold'>{workflow.skill_name}</h1>
           <p className='mt-1 text-sm text-muted-foreground'>
-            后台任务 · {workflow.reconciliation_date}
+            {workflow.display_id} · {workflow.reconciliation_date}
           </p>
         </div>
-        <Badge variant={workflow.state === 'failed' ? 'destructive' : 'secondary'}>
-          {workflow.state === 'succeeded' ? '已完成' : workflow.stage}
-        </Badge>
+        <div className='flex flex-wrap items-center gap-2'>
+          <Badge
+            variant={workflow.state === 'failed' ? 'destructive' : 'secondary'}
+            aria-label={`任务状态：${workflowStatusLabel(workflow)}`}
+          >
+            {workflowStatusLabel(workflow)}
+          </Badge>
+          {!isTerminal(workflow) && (
+            <Button
+              type='button'
+              variant='destructive'
+              size='sm'
+              disabled={cancelling || workflow.state === 'cancelling' || writeInProgress}
+              onClick={() => void cancelTask()}
+            >
+              {writeInProgress
+                ? '正在写入，不能取消'
+                : cancelling || workflow.state === 'cancelling'
+                  ? '正在取消…'
+                  : workflow.batch_id
+                    ? '取消整个批次'
+                    : '取消任务'}
+            </Button>
+          )}
+        </div>
       </div>
 
-      <WorkflowProgressCard workflow={workflow} />
+      <WorkflowProgressCard
+        workflow={workflow}
+        onOpenFetchedData={() => setFetchedDataOpen(true)}
+      />
+      <WorkflowFetchedDataDialog
+        workflow={workflow}
+        open={fetchedDataOpen}
+        onOpenChange={setFetchedDataOpen}
+        onWorkflowChange={setWorkflow}
+      />
 
-      {workflow.stage === 'awaiting_apply_confirmation' && (
+      {workflow.stage === 'awaiting_fetched_data_confirmation' && (
         <Alert>
-          <AlertTitle>核销日清已经生成</AlertTitle>
+          <AlertTitle>请检查智云取数数据</AlertTitle>
           <AlertDescription className='flex flex-wrap items-center justify-between gap-3'>
-            <span>请检查产出文件；确认后会写入工作副本。</span>
-            <Button type='button' onClick={() => void confirmWrite()} disabled={confirmationBusy}>
-              {confirmationBusy ? '处理中…' : '确认写入'}
+            <span>任务已暂停。确认数据完整，或填写缺失的 SO/AR 编号补取后，才能继续核销判定。</span>
+            <Button type='button' onClick={() => setFetchedDataOpen(true)}>
+              检查并确认
             </Button>
           </AlertDescription>
         </Alert>
       )}
 
+      {workflow.stage === 'awaiting_apply_confirmation' &&
+        workflow.skill_id !== 'ar-hexiao-daily' && (
+          <Alert>
+            <AlertTitle>核销日清已经生成</AlertTitle>
+            <AlertDescription className='flex flex-wrap items-center justify-between gap-3'>
+              <span>请检查产出文件；确认后会写入工作副本。</span>
+              <Button type='button' onClick={() => void confirmWrite()} disabled={confirmationBusy}>
+                {confirmationBusy ? '处理中…' : '确认写入'}
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
+
       {workflow.state === 'failed' && (
         <Alert variant='destructive'>
           <AlertTitle>任务没有完成</AlertTitle>
           <AlertDescription className='flex flex-wrap items-center justify-between gap-3'>
-            <span>请先查看上方流程卡片标出的失败步骤，再决定是否重新生成。</span>
+            <span>
+              请先查看上方流程卡片标出的失败步骤；旧任务不会继续写入，可用原始上传文件新建日清。
+            </span>
             <Button
               type='button'
               variant='destructive'
               onClick={() => void rebuild()}
               disabled={confirmationBusy}
             >
-              {confirmationBusy ? '处理中…' : '重新生成'}
+              {confirmationBusy ? '处理中…' : '以原始文件新建日清'}
             </Button>
           </AlertDescription>
         </Alert>
       )}
 
+      {(workflow.state === 'succeeded' || workflow.stage === 'completed') && (
+        <Card>
+          <CardHeader>
+            <CardTitle className='text-base'>核销结果</CardTitle>
+            <CardDescription>
+              核销日期：{workflow.reconciliation_date}；写入状态：已完成
+            </CardDescription>
+          </CardHeader>
+          <CardContent className='grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4'>
+            {[
+              ['本日写入', '今天要填'],
+              ['已填过·跳过', '已填过·跳过'],
+              ['挂账待办', '挂账待办'],
+              ['冲突·需人工处理', '冲突·需你定'],
+              ['流转确认后自动写', '流转确认后自动写'],
+              ['流转须手填', '流转须手填'],
+              ['异常', '异常']
+            ].map(([label, key]) => (
+              <div key={key} className='rounded-md border bg-muted/20 p-3'>
+                <p className='text-muted-foreground'>{label}</p>
+                <p className='mt-1 font-medium'>
+                  {summaryValue(workflow.result_summary ?? {}, key)}
+                </p>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>
-          <CardTitle className='text-base'>任务材料</CardTitle>
+          <CardTitle className='flex flex-wrap items-center gap-2 text-base'>
+            任务材料
+            {workflow.material_version !== null && workflow.material_version !== undefined && (
+              <Badge variant='secondary'>业务版本 V{workflow.material_version}</Badge>
+            )}
+          </CardTitle>
           <CardDescription>
-            首次上传后后续任务会复用；只有需要增加年度表或替换流转表时才需要上传。
+            本任务固定使用创建时的业务版本；成功写入后会发布下一版本供后续任务使用。
           </CardDescription>
         </CardHeader>
         <CardContent className='space-y-3'>
@@ -260,7 +441,7 @@ export function WorkflowAgentPanel({
                         className='sr-only'
                         accept='.xlsx,.xlsm,.xls'
                         multiple={item.role === 'profit_loss_ledgers'}
-                        disabled={Boolean(uploadingRole)}
+                        disabled={Boolean(uploadingRole) || Boolean(deletingFileId)}
                         onChange={(event) => void uploadMaterial(item.role, event)}
                       />
                     </label>
@@ -269,9 +450,41 @@ export function WorkflowAgentPanel({
                 {entries.length ? (
                   <div className='mt-2 space-y-1 text-xs text-muted-foreground'>
                     {entries.map((entry, index) => (
-                      <p key={`${String(entry.file_id)}-${index}`} className='truncate'>
-                        {typeof entry.name === 'string' ? entry.name : '已绑定文件'}
-                      </p>
+                      <div
+                        key={`${String(entry.file_id)}-${index}`}
+                        className='flex items-center gap-2 rounded-md bg-muted/40 px-2 py-1'
+                      >
+                        <span className='min-w-0 flex-1 truncate'>
+                          {typeof entry.name === 'string' ? entry.name : '已绑定文件'}
+                        </span>
+                        {typeof entry.year === 'number' && (
+                          <Badge variant='outline'>{entry.year} 年</Badge>
+                        )}
+                        {filesEditable && typeof entry.file_id === 'string' && (
+                          <Button
+                            type='button'
+                            variant='ghost'
+                            size='icon'
+                            className='min-h-11 min-w-11 shrink-0 text-muted-foreground hover:text-destructive'
+                            aria-label={`从任务移除 ${typeof entry.name === 'string' ? entry.name : '文件'}`}
+                            title='从本次任务移除'
+                            disabled={Boolean(uploadingRole) || Boolean(deletingFileId)}
+                            onClick={() =>
+                              void removeMaterial(
+                                item.role,
+                                entry.file_id as string,
+                                typeof entry.name === 'string' ? entry.name : '文件'
+                              )
+                            }
+                          >
+                            {deletingFileId === entry.file_id ? (
+                              <Icons.spinner className='size-4 animate-spin' />
+                            ) : (
+                              <Icons.trash className='size-4' />
+                            )}
+                          </Button>
+                        )}
+                      </div>
                     ))}
                   </div>
                 ) : (
@@ -282,6 +495,7 @@ export function WorkflowAgentPanel({
               </div>
             );
           })}
+          <WorkflowMaterialHistory skillId={workflow.skill_id} allowRestore />
         </CardContent>
       </Card>
 
@@ -289,24 +503,34 @@ export function WorkflowAgentPanel({
         <Card>
           <CardHeader>
             <CardTitle className='text-base'>任务产出</CardTitle>
-            <CardDescription>只显示本次任务生成的文件。</CardDescription>
+            <CardDescription>
+              优先下载《核销日清》查看本日结果，其他文件放在次要下载区。
+            </CardDescription>
           </CardHeader>
           <CardContent className='space-y-2'>
-            {workflow.artifacts.map((artifact, index) => {
-              const fileId = typeof artifact.file_id === 'string' ? artifact.file_id : '';
-              const name =
-                typeof artifact.name === 'string' ? artifact.name : `产出文件 ${index + 1}`;
-              return fileId ? (
-                <a
-                  key={`${fileId}-${index}`}
-                  href={`/api/platform/files/${encodeURIComponent(fileId)}/download`}
-                  className='flex min-h-10 items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring'
-                >
-                  <Icons.page className='size-4 text-muted-foreground' aria-hidden='true' />
-                  {name}
-                </a>
-              ) : null;
-            })}
+            {[...workflow.artifacts]
+              .toSorted((left, right) => {
+                const leftName = typeof left.name === 'string' ? left.name : '';
+                const rightName = typeof right.name === 'string' ? right.name : '';
+                return (
+                  Number(!leftName.includes('核销日清')) - Number(!rightName.includes('核销日清'))
+                );
+              })
+              .map((artifact, index) => {
+                const fileId = typeof artifact.file_id === 'string' ? artifact.file_id : '';
+                const name =
+                  typeof artifact.name === 'string' ? artifact.name : `产出文件 ${index + 1}`;
+                return fileId ? (
+                  <a
+                    key={`${fileId}-${index}`}
+                    href={`/api/platform/files/${encodeURIComponent(fileId)}/download`}
+                    className='flex min-h-10 items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring'
+                  >
+                    <Icons.page className='size-4 text-muted-foreground' aria-hidden='true' />
+                    {name}
+                  </a>
+                ) : null;
+              })}
           </CardContent>
         </Card>
       )}
@@ -331,11 +555,21 @@ export function WorkflowAgentPanel({
           {refreshing ? '刷新中…' : '刷新状态'}
         </Button>
         <Button
-          type='button'
+          nativeButton={false}
           variant='ghost'
-          onClick={() => window.location.assign('/dashboard/workflows')}
+          className='border border-primary/40 text-primary hover:bg-primary/10 hover:text-primary'
+          render={
+            <Link
+              href={
+                workflow.batch_id
+                  ? `/dashboard/workflows/batches/${encodeURIComponent(workflow.batch_id)}`
+                  : '/dashboard/runs'
+              }
+              aria-label={workflow.batch_id ? '返回所属批次' : '返回任务列表'}
+            />
+          }
         >
-          返回任务列表
+          {workflow.batch_id ? '返回所属批次' : '返回任务列表'}
         </Button>
       </div>
     </div>

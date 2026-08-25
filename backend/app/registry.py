@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 from .network_policy import validate_runtime_network_policy
 from .settings import settings
+from .skill_execution_experiences import validate_published_execution_experience
 
 
 class FileInputSpec(BaseModel):
@@ -290,6 +291,9 @@ class SkillRegistry:
                     if manifest.status == "published" and manifest.ui is None:
                         raise ValueError("published Skill 必须配置 ui")
                     if manifest.status == "published":
+                        validate_published_execution_experience(
+                            manifest.id, manifest.status
+                        )
                         validate_runtime_network_policy(manifest.runtime)
                     registered = RegisteredSkill(
                         manifest=manifest,

@@ -16,6 +16,7 @@ from sqlalchemy import (
     event,
     inspect,
     select,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -99,6 +100,91 @@ class FileRecord(Base):
     skill_version: Mapped[str] = mapped_column(String(64), default="")
     workflow_id: Mapped[str] = mapped_column(String(36), default="", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class WorkflowMaterialSet(Base):
+    __tablename__ = "workflow_material_sets"
+    __table_args__ = (
+        UniqueConstraint(
+            "owner_id",
+            "department_id",
+            "skill_id",
+            "version",
+            name="uq_workflow_material_sets_scope_version",
+        ),
+        CheckConstraint(
+            "state IN ('current', 'superseded')",
+            name="ck_workflow_material_sets_state",
+        ),
+        Index(
+            "ux_workflow_material_sets_current_scope",
+            "owner_id",
+            "department_id",
+            "skill_id",
+            unique=True,
+            sqlite_where=text("state = 'current'"),
+            postgresql_where=text("state = 'current'"),
+        ),
+        Index(
+            "ix_workflow_material_sets_scope_created",
+            "owner_id",
+            "department_id",
+            "skill_id",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner_id: Mapped[str] = mapped_column(String(128), index=True)
+    department_id: Mapped[str] = mapped_column(String(128), index=True)
+    skill_id: Mapped[str] = mapped_column(String(128), index=True)
+    version: Mapped[int] = mapped_column(Integer)
+    parent_set_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("workflow_material_sets.id"), nullable=True, index=True
+    )
+    source_workflow_id: Mapped[str] = mapped_column(String(36), default="", index=True)
+    state: Mapped[str] = mapped_column(String(24), default="current", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    files: Mapped[list[WorkflowMaterialSetFile]] = relationship(
+        back_populates="material_set",
+        cascade="all, delete-orphan",
+        order_by="WorkflowMaterialSetFile.role, WorkflowMaterialSetFile.year",
+    )
+
+
+class WorkflowMaterialSetFile(Base):
+    __tablename__ = "workflow_material_set_files"
+    __table_args__ = (
+        UniqueConstraint(
+            "material_set_id",
+            "role",
+            "year",
+            name="uq_workflow_material_set_files_role_year",
+        ),
+        CheckConstraint(
+            "role IN ('profit_loss_ledgers', 'receipt_flow_table')",
+            name="ck_workflow_material_set_files_role",
+        ),
+        CheckConstraint(
+            "(role = 'profit_loss_ledgers' AND year BETWEEN 1900 AND 2999) "
+            "OR (role = 'receipt_flow_table' AND year = 0)",
+            name="ck_workflow_material_set_files_year",
+        ),
+        Index("ix_workflow_material_set_files_file", "file_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    material_set_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workflow_material_sets.id", ondelete="CASCADE"), index=True
+    )
+    role: Mapped[str] = mapped_column(String(64))
+    year: Mapped[int] = mapped_column(Integer, default=0)
+    file_id: Mapped[str] = mapped_column(String(36), ForeignKey("files.id"))
+    sha256: Mapped[str] = mapped_column(String(64))
+
+    material_set: Mapped[WorkflowMaterialSet] = relationship(back_populates="files")
 
 
 class AssistantMessage(Base):
@@ -233,6 +319,93 @@ class ServiceCredential(Base):
     )
 
 
+class TaskReminderSubscription(Base):
+    __tablename__ = "task_reminder_subscriptions"
+    __table_args__ = (
+        UniqueConstraint(
+            "department_id",
+            "skill_id",
+            name="uq_task_reminder_subscriptions_department_skill",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    department_id: Mapped[str] = mapped_column(String(128), index=True)
+    skill_id: Mapped[str] = mapped_column(String(128), index=True)
+    owner_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), index=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    timezone: Mapped[str] = mapped_column(String(64), default="Asia/Shanghai")
+    schedule_time: Mapped[str] = mapped_column(String(5), default="09:10")
+    last_successful_business_date: Mapped[str | None] = mapped_column(
+        String(10), nullable=True
+    )
+    last_check_status: Mapped[str] = mapped_column(String(32), default="never")
+    last_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class TaskDiscoveryCheck(Base):
+    __tablename__ = "task_discovery_checks"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    subscription_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("task_reminder_subscriptions.id"), index=True
+    )
+    owner_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), index=True)
+    department_id: Mapped[str] = mapped_column(String(128), index=True)
+    skill_id: Mapped[str] = mapped_column(String(128), index=True)
+    trigger: Mapped[str] = mapped_column(String(32), default="scheduled")
+    business_dates_json: Mapped[str] = mapped_column(Text, default="[]")
+    state: Mapped[str] = mapped_column(String(32), default="running", index=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=1)
+    error_message: Mapped[str] = mapped_column(Text, default="")
+    next_retry_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    worker_id: Mapped[str] = mapped_column(String(128), default="", index=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class TaskReminder(Base):
+    __tablename__ = "task_reminders"
+    __table_args__ = (
+        UniqueConstraint(
+            "department_id",
+            "skill_id",
+            "business_date",
+            name="uq_task_reminders_department_skill_date",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), index=True)
+    department_id: Mapped[str] = mapped_column(String(128), index=True)
+    skill_id: Mapped[str] = mapped_column(String(128), index=True)
+    business_date: Mapped[str] = mapped_column(String(10), index=True)
+    record_count: Mapped[int] = mapped_column(Integer, default=0)
+    fingerprint: Mapped[str] = mapped_column(String(128), default="")
+    state: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    workflow_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    batch_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    first_discovered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
 class AuditEvent(Base):
     __tablename__ = "audit_events"
 
@@ -280,6 +453,102 @@ class SkillRelease(Base):
     )
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class SkillSourceBinding(Base):
+    __tablename__ = "skill_source_bindings"
+    __table_args__ = (
+        UniqueConstraint("skill_id", name="uq_skill_source_bindings_skill_id"),
+        UniqueConstraint(
+            "repository_url",
+            "source_path",
+            name="uq_skill_source_bindings_repository_path",
+        ),
+        CheckConstraint(
+            "binding_status IN ('candidate', 'bound', 'broken', 'excluded')",
+            name="ck_skill_source_bindings_status",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    skill_id: Mapped[str] = mapped_column(String(128), index=True)
+    source_type: Mapped[str] = mapped_column(String(32), default="git")
+    provider: Mapped[str] = mapped_column(String(32), default="gitee")
+    repository_url: Mapped[str] = mapped_column(Text)
+    source_path: Mapped[str] = mapped_column(String(512))
+    tracking_ref: Mapped[str] = mapped_column(String(255), default="main")
+    binding_status: Mapped[str] = mapped_column(String(32), default="bound", index=True)
+    packager_profile: Mapped[str] = mapped_column(
+        String(128), default="finance-skills-v1"
+    )
+    last_seen_commit: Mapped[str] = mapped_column(String(64), default="", index=True)
+    last_seen_tree_hash: Mapped[str] = mapped_column(String(64), default="")
+    published_commit: Mapped[str] = mapped_column(String(64), default="", index=True)
+    published_tree_hash: Mapped[str] = mapped_column(String(64), default="")
+    created_by: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), index=True)
+    updated_by: Mapped[str] = mapped_column(String(36), default="", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class SkillAvailability(Base):
+    __tablename__ = "skill_availability"
+    __table_args__ = (
+        CheckConstraint(
+            "state IN ('enabled', 'draining', 'disabled', 'failed_disabled')",
+            name="ck_skill_availability_state",
+        ),
+    )
+
+    skill_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    state: Mapped[str] = mapped_column(String(32), default="enabled", index=True)
+    generation: Mapped[int] = mapped_column(Integer, default=0)
+    reason: Mapped[str] = mapped_column(Text, default="")
+    changed_by: Mapped[str] = mapped_column(String(36), default="", index=True)
+    changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class PlatformFeatureControl(Base):
+    __tablename__ = "platform_feature_controls"
+
+    key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    changed_by: Mapped[str] = mapped_column(String(36), default="", index=True)
+    changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class SkillRollout(Base):
+    __tablename__ = "skill_rollouts"
+    __table_args__ = (
+        UniqueConstraint("release_id", name="uq_skill_rollouts_release_id"),
+        CheckConstraint(
+            "state IN ('queued', 'draining', 'activating', 'verifying', "
+            "'succeeded', 'failed', 'failed_disabled')",
+            name="ck_skill_rollouts_state",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    release_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("skill_releases.id"), index=True
+    )
+    skill_id: Mapped[str] = mapped_column(String(128), index=True)
+    state: Mapped[str] = mapped_column(String(32), default="queued", index=True)
+    requested_by: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), index=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    previous_skill_hash: Mapped[str] = mapped_column(String(64), default="")
+    target_commit: Mapped[str] = mapped_column(String(64), default="")
+    target_tree_hash: Mapped[str] = mapped_column(String(64), default="")
+    error_message: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class ApprovalRecord(Base):
@@ -788,7 +1057,12 @@ class ModelTraceRecord(Base):
 class WorkflowBatch(Base):
     __tablename__ = "workflow_batches"
 
+    __table_args__ = (
+        Index("ux_workflow_batches_display_id", "display_id", unique=True),
+    )
+
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    display_id: Mapped[str | None] = mapped_column(String(192), nullable=True)
     owner_id: Mapped[str] = mapped_column(String(128), index=True)
     owner_name: Mapped[str] = mapped_column(String(128), default="")
     department_id: Mapped[str] = mapped_column(String(128), default="finance", index=True)
@@ -800,6 +1074,9 @@ class WorkflowBatch(Base):
     model_name: Mapped[str] = mapped_column(String(255))
     reconciliation_dates_json: Mapped[str] = mapped_column(Text, default="[]")
     files_json: Mapped[str] = mapped_column(Text, default="{}")
+    material_set_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("workflow_material_sets.id"), nullable=True, index=True
+    )
     state: Mapped[str] = mapped_column(String(40), default="queued", index=True)
     progress: Mapped[int] = mapped_column(Integer, default=0)
     progress_message: Mapped[str] = mapped_column(Text, default="")
@@ -824,9 +1101,11 @@ class WorkflowSession(Base):
             "department_id",
             unique=True,
         ),
+        Index("ux_workflow_sessions_display_id", "display_id", unique=True),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    display_id: Mapped[str | None] = mapped_column(String(192), nullable=True)
     owner_id: Mapped[str] = mapped_column(String(128), index=True)
     owner_name: Mapped[str] = mapped_column(String(128), default="")
     department_id: Mapped[str] = mapped_column(String(128), default="finance", index=True)
@@ -847,6 +1126,9 @@ class WorkflowSession(Base):
     )
     batch_sequence: Mapped[int] = mapped_column(Integer, default=0)
     previous_workflow_id: Mapped[str] = mapped_column(String(36), default="")
+    material_set_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("workflow_material_sets.id"), nullable=True, index=True
+    )
     context_json: Mapped[str] = mapped_column(Text, default="{}")
     files_json: Mapped[str] = mapped_column(Text, default="{}")
     artifacts_json: Mapped[str] = mapped_column(Text, default="[]")

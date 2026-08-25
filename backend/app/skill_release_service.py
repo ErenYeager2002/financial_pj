@@ -32,9 +32,18 @@ from .contracts import (
     SkillReleaseRead,
     SkillReleaseReviewRequest,
 )
-from .models import RunRecord, SkillRelease, WorkflowAction, WorkflowSession
+from .models import (
+    RunRecord,
+    SkillAvailability,
+    SkillRelease,
+    SkillSourceBinding,
+    WorkflowAction,
+    WorkflowSession,
+)
 from .registry import SkillManifest, registry
+from .skill_execution_experiences import validate_published_execution_experience
 from .settings import settings
+from .skill_availability_service import disable_after_drain, transition_availability
 
 PACKAGE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*\.zip$")
 COMMIT = re.compile(r"^[0-9a-fA-F]{7,64}$")
@@ -97,14 +106,48 @@ def _tree_sha256(root: Path) -> str:
     return digest.hexdigest()
 
 
+def _publish_lock_path() -> Path:
+    """Choose a publish lock the API user can open.
+
+    A development data volume may contain a lock file created by a previous
+    root-running container. Keep that file for compatibility and use a
+    user-scoped lock when the shared file is not writable.
+    """
+
+    data_dir = settings.data_dir.resolve()
+    shared = (data_dir / ".skill-release.publish.lock").resolve()
+    if not shared.is_relative_to(data_dir):
+        raise HTTPException(status_code=500, detail="Skill 发布锁目录无效。")
+    if not shared.exists() or os.access(shared, os.W_OK):
+        return shared
+
+    owner = getattr(os, "getuid", lambda: 0)()
+    scoped = (data_dir / f".skill-release.publish.{owner}.lock").resolve()
+    if not scoped.is_relative_to(data_dir):
+        raise HTTPException(status_code=500, detail="Skill 发布锁目录无效。")
+    if scoped.exists() and not os.access(scoped, os.W_OK):
+        raise HTTPException(
+            status_code=503,
+            detail="Skill 发布锁不可写，请检查数据目录权限。",
+        )
+    return scoped
+
+
 @contextmanager
 def _publish_guard() -> Iterator[None]:
     """Serialize filesystem activation across threads and server processes."""
 
     with _PUBLISH_LOCK:
-        lock_path = settings.data_dir / ".skill-release.publish.lock"
-        lock_path.parent.mkdir(parents=True, exist_ok=True)
-        with lock_path.open("a+b") as handle:
+        lock_path = _publish_lock_path()
+        try:
+            lock_path.parent.mkdir(parents=True, exist_ok=True)
+            handle = lock_path.open("a+b")
+        except OSError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Skill 发布锁不可写，请检查数据目录权限。",
+            ) from exc
+        with handle:
             handle.seek(0, os.SEEK_END)
             if handle.tell() == 0:
                 handle.write(b"\0")
@@ -308,6 +351,10 @@ def _validate_content(content: Path) -> tuple[SkillManifest, dict[str, Any], dic
         raise HTTPException(status_code=422, detail="发布包缺少通过的测试证据。")
     if manifest.status == "published" and manifest.ui is None:
         raise HTTPException(status_code=422, detail="发布 Skill 必须配置员工展示信息。")
+    try:
+        validate_published_execution_experience(manifest.id, manifest.status)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     if manifest.handler.entrypoint:
         entrypoint = (content / manifest.handler.entrypoint).resolve()
         if not entrypoint.is_relative_to(content.resolve()) or not entrypoint.is_file():
@@ -531,7 +578,6 @@ def _capture_current_release(
     existing = db.scalar(
         select(SkillRelease).where(
             SkillRelease.skill_id == skill_id,
-            SkillRelease.state == "published",
             SkillRelease.published_skill_hash == current.skill_hash,
         )
     )
@@ -600,6 +646,10 @@ def _activate_release(
         raise HTTPException(status_code=400, detail="Skill 目标目录无效。")
     manifest = SkillManifest.model_validate(_json(record.manifest_json))
     manifest.status = "published"
+    try:
+        validate_published_execution_experience(manifest.id, manifest.status)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     temp = (settings.skill_dir / f".release-{record.id}").resolve()
     backup = (settings.skill_dir / f".release-backup-{record.id}").resolve()
     shutil.rmtree(temp, ignore_errors=True)
@@ -635,8 +685,15 @@ def _activate_release(
         ]
         if target_errors:
             raise RuntimeError(target_errors[0]["error"])
-        if previous and previous.id != record.id:
-            previous.state = "superseded"
+        published_records = db.scalars(
+            select(SkillRelease).where(
+                SkillRelease.skill_id == record.skill_id,
+                SkillRelease.state == "published",
+                SkillRelease.id != record.id,
+            )
+        ).all()
+        for published_record in published_records:
+            published_record.state = "superseded"
         record.state = "published"
         record.published_by = actor.user_id
         record.published_at = datetime.now(UTC)
@@ -687,11 +744,63 @@ def publish_release(
     record = _record_or_404(db, release_id)
     if record.state != "reviewed":
         raise HTTPException(status_code=409, detail="只有审核通过的版本可以发布。")
+    _assert_release_integrity(record)
     expected = f"发布 {record.skill_id} {record.version}"
     if confirmation != expected:
         raise HTTPException(status_code=422, detail=f"发布确认文字必须为：{expected}")
     current = registry.get(record.skill_id, include_unpublished=True)
     if current and current.manifest.version == record.version:
         raise HTTPException(status_code=409, detail="新版本号必须与当前线上版本不同。")
+    previous_hash = current.skill_hash if current else ""
+    transition_availability(db, actor, record.skill_id, "draining", "兼容发布入口等待排空")
+    count = disable_after_drain(db, actor, record.skill_id, "兼容发布入口开始激活")
+    if count:
+        transition_availability(db, actor, record.skill_id, "enabled", "活动任务尚未结束")
+        raise HTTPException(status_code=409, detail="该 Skill 仍有活动任务，暂时不能发布。")
+    try:
+        with _publish_guard():
+            result = _activate_release(db, actor, record)
+        binding = db.scalar(
+            select(SkillSourceBinding).where(SkillSourceBinding.skill_id == record.skill_id)
+        )
+        if binding is not None:
+            binding.published_commit = record.source_commit
+            binding.published_tree_hash = record.source_tree_hash
+            binding.updated_by = actor.user_id
+            db.commit()
+        transition_availability(db, actor, record.skill_id, "enabled", "发布验证通过")
+        return result
+    except Exception:
+        registry.refresh()
+        active = registry.get(record.skill_id, include_unpublished=True)
+        restored = bool(active and previous_hash and active.skill_hash == previous_hash)
+        availability = db.get(SkillAvailability, record.skill_id)
+        if restored and availability is not None and availability.state == "disabled":
+            transition_availability(db, actor, record.skill_id, "enabled", "发布失败，原版本已恢复")
+        elif availability is not None:
+            availability.state = "failed_disabled"
+            availability.generation += 1
+            availability.reason = "发布失败且原版本恢复验证未通过"
+            availability.changed_by = actor.user_id
+            availability.changed_at = datetime.now(UTC)
+            db.commit()
+        raise
+
+
+def activate_reviewed_release(
+    db: Session, actor: UserContext, record: SkillRelease
+) -> SkillReleaseRead:
+    if record.state != "reviewed":
+        raise HTTPException(status_code=409, detail="只有审核通过的版本可以激活。")
+    with _publish_guard():
+        return _activate_release(db, actor, record)
+
+
+def activate_release_without_review(
+    db: Session, actor: UserContext, record: SkillRelease
+) -> SkillReleaseRead:
+    """Activate a validated package for the single-admin direct update flow."""
+    if record.state not in {"validated", "reviewed"}:
+        raise HTTPException(status_code=409, detail="当前发布包不能直接更新 Skill。")
     with _publish_guard():
         return _activate_release(db, actor, record)

@@ -225,7 +225,13 @@ def run_once(
             run.lease_expires_at = None
             db.commit()
             return True
-        return run_workflow_action_once(db, pools, identity)
+        if run_workflow_action_once(db, pools, identity):
+            return True
+    if "workflow" in pools:
+        from .skill_rollout_service import run_rollout_once
+
+        return run_rollout_once()
+    return False
 
 
 def run_loop(pools: tuple[str, ...], worker_id: str) -> None:

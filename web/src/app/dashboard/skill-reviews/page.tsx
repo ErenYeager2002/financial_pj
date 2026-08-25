@@ -5,7 +5,7 @@ import type { PlatformSession } from '@/features/platform-api/types';
 import { SkillReleaseManagement } from '@/features/skills/components/skill-release-management';
 
 export const metadata = {
-  title: 'Skill 审核记录'
+  title: 'Skill 发布记录'
 };
 
 export default async function SkillReviewsPage() {
@@ -15,7 +15,7 @@ export default async function SkillReviewsPage() {
       <PageContainer
         access={false}
         accessFallback={
-          <p className='text-muted-foreground'>只有平台管理员可以查看 Skill 审核记录。</p>
+          <p className='text-muted-foreground'>只有平台管理员可以查看 Skill 发布记录。</p>
         }
       >
         {null}
@@ -26,8 +26,8 @@ export default async function SkillReviewsPage() {
   const releases = await listSkillReleases();
   return (
     <PageContainer
-      pageTitle='Skill 审核记录'
-      pageDescription='集中处理待审核版本，并查看已发布版本与历史审核结果'
+      pageTitle='Skill 发布记录'
+      pageDescription='查看已发布版本和历史发布结果'
     >
       <SkillReleaseManagement initialReleases={releases} view='records' />
     </PageContainer>

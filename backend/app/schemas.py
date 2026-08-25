@@ -101,6 +101,7 @@ class WorkflowStart(BaseModel):
     model: str | None = None
     reconciliation_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
     files: dict[str, list[str]] = Field(default_factory=dict)
+    replace_roles: list[str] = Field(default_factory=list)
 
 
 class WorkflowBatchStart(BaseModel):
@@ -109,6 +110,7 @@ class WorkflowBatchStart(BaseModel):
     model: str | None = None
     reconciliation_dates: list[str] = Field(min_length=1, max_length=31)
     files: dict[str, list[str]] = Field(default_factory=dict)
+    replace_roles: list[str] = Field(default_factory=list)
 
 
 class WorkflowMessageCreate(BaseModel):
@@ -117,6 +119,39 @@ class WorkflowMessageCreate(BaseModel):
 
 class WorkflowFilesUpdate(BaseModel):
     files: dict[str, list[str]] = Field(default_factory=dict)
+    replace_roles: list[str] = Field(default_factory=list)
+
+
+class WorkflowReusableFilesRead(BaseModel):
+    skill_id: str
+    files: dict[str, Any] = Field(default_factory=dict)
+    ready: bool
+    missing_roles: list[str] = Field(default_factory=list)
+    material_set_id: str | None = None
+    material_version: int | None = None
+    source_workflow_id: str = ""
+    published_at: datetime | None = None
+
+
+class WorkflowMaterialFileRead(BaseModel):
+    role: Literal["profit_loss_ledgers", "receipt_flow_table"]
+    year: int | None = None
+    file_id: str
+    name: str
+    size_bytes: int
+    sha256: str
+
+
+class WorkflowMaterialSetRead(BaseModel):
+    id: str
+    skill_id: str
+    version: int
+    parent_set_id: str | None = None
+    source_workflow_id: str = ""
+    source_workflow_display_id: str = ""
+    state: Literal["current", "superseded"]
+    published_at: datetime
+    files: list[WorkflowMaterialFileRead] = Field(default_factory=list)
 
 
 class WorkflowMessageRead(BaseModel):
@@ -138,6 +173,7 @@ class WorkflowActionRead(BaseModel):
 
 class WorkflowRead(BaseModel):
     id: str
+    display_id: str
     owner_id: str
     skill_id: str
     skill_name: str
@@ -149,6 +185,9 @@ class WorkflowRead(BaseModel):
     reconciliation_date: str
     batch_id: str | None = None
     batch_sequence: int = 0
+    material_set_id: str | None = None
+    material_version: int | None = None
+    material_source_workflow_id: str = ""
     requires_confirmation: bool = True
     progress: int
     progress_message: str
@@ -157,12 +196,111 @@ class WorkflowRead(BaseModel):
     current_step_label: str = ""
     step_error: str = ""
     step_error_detail: dict[str, str] = Field(default_factory=dict)
+    fetched_data_available: bool = False
+    fetched_data_summary: dict[str, Any] = Field(default_factory=dict)
+    fetched_data_review_status: str = ""
+    fetched_data_supplement_history: list[dict[str, Any]] = Field(default_factory=list)
+    result_summary: dict[str, Any] = Field(default_factory=dict)
     files: dict[str, Any]
     artifacts: list[dict[str, Any]]
     messages: list[WorkflowMessageRead]
     actions: list[WorkflowActionRead]
     created_at: datetime
     updated_at: datetime
+
+
+class WorkflowFetchedDataSet(BaseModel):
+    key: str
+    label: str
+    total: int
+
+
+class WorkflowFetchedPayment(BaseModel):
+    ar_id: str
+    reconciliation_date: str = ""
+    arrival_date: str = ""
+    amount_original: float | None = None
+    amount_local: float | None = None
+    fee_original: float | None = None
+    currency: str = ""
+    payment_type: str = ""
+    writeoff_status: str = ""
+    customer: str = ""
+    salesperson: str = ""
+    historical_parent_only: bool = False
+
+
+class WorkflowFetchedDelivery(BaseModel):
+    ar_id: str
+    so_id: str
+    written_off_original: float | None = None
+    written_off_local: float | None = None
+    delivery_amount_original: float | None = None
+    exchange_rate: float | None = None
+    currency: str = ""
+    order_name: str = ""
+    delivery_date: str = ""
+    delivery_date_status: str = ""
+    source: str = ""
+
+
+class WorkflowFetchedWriteoff(BaseModel):
+    writeoff_id: str
+    ar_id: str
+    so_id: str
+    reconciliation_date: str = ""
+    amount_original: float | None = None
+    amount_local: float | None = None
+    currency: str = ""
+    exchange_rate: float | None = None
+    order_name: str = ""
+    revoked: bool = False
+
+
+class WorkflowFetchedOrderDetail(BaseModel):
+    so_id: str
+    sod_id: str
+    delivery_amount_original: float | None = None
+    currency: str = ""
+    project_status: str = ""
+
+
+class WorkflowFetchedDataOrderGroup(BaseModel):
+    so_id: str
+    deliveries: list[WorkflowFetchedDelivery] = Field(default_factory=list)
+    writeoffs: list[WorkflowFetchedWriteoff] = Field(default_factory=list)
+    order_details: list[WorkflowFetchedOrderDetail] = Field(default_factory=list)
+    issues: list[str] = Field(default_factory=list)
+
+
+class WorkflowFetchedDataArGroup(BaseModel):
+    ar_id: str
+    payments: list[WorkflowFetchedPayment] = Field(default_factory=list)
+    orders: list[WorkflowFetchedDataOrderGroup] = Field(default_factory=list)
+    issues: list[str] = Field(default_factory=list)
+
+
+class WorkflowFetchedDataRead(BaseModel):
+    reconciliation_date: str
+    dataset: str
+    dataset_label: str
+    headers: list[str]
+    rows: list[list[Any]]
+    total: int
+    offset: int
+    limit: int
+    datasets: list[WorkflowFetchedDataSet]
+    summary: dict[str, Any] = Field(default_factory=dict)
+    ar_groups: list[WorkflowFetchedDataArGroup] = Field(default_factory=list)
+
+
+class WorkflowFetchedDataSupplement(BaseModel):
+    ar_ids: list[str] = Field(default_factory=list, max_length=50)
+    so_ids: list[str] = Field(default_factory=list, max_length=50)
+
+
+class WorkflowBatchFetchedDataSupplement(WorkflowFetchedDataSupplement):
+    reconciliation_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
 
 
 class WorkflowAgentEmptyArguments(BaseModel):
@@ -233,6 +371,7 @@ class WorkflowAgentContext(BaseModel):
 
 class WorkflowBatchRead(BaseModel):
     id: str
+    display_id: str
     owner_id: str
     skill_id: str
     skill_name: str
@@ -244,6 +383,14 @@ class WorkflowBatchRead(BaseModel):
     progress: int
     progress_message: str
     error_message: str
+    retryable: bool = False
+    can_retry: bool = False
+    retry_message: str = ""
+    retry_block_reason: str = ""
+    fetched_data_available: bool = False
+    fetched_data_review_status: str = ""
+    fetched_data_summary_by_date: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    fetched_data_supplement_history: list[dict[str, Any]] = Field(default_factory=list)
     workflows: list[WorkflowRead]
     created_at: datetime
     updated_at: datetime

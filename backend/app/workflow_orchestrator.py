@@ -25,6 +25,11 @@ CONFIRM_WORDS = {
     "开始",
     "继续",
 }
+CANCEL_WORDS = {"取消", "停止", "先不做", "不跑了", "取消任务", "停止任务", "先停一下"}
+
+
+def is_explicit_workflow_cancel_request(message: str) -> bool:
+    return message.strip().lower() in CANCEL_WORDS
 
 CONTROLLED_WORKFLOW_ACTIONS: tuple[str, ...] = (
     "set_reconciliation_date",
@@ -50,6 +55,8 @@ CONTROLLED_STAGE_ACTIONS: dict[str, tuple[str, ...]] = {
         "prepare_daily_reconciliation",
     ),
     "preparing": ("get_workflow_stage",),
+    "supplementing_fetched_data": ("get_workflow_stage",),
+    "awaiting_fetched_data_confirmation": ("get_workflow_stage",),
     "awaiting_apply_confirmation": (
         "get_workflow_stage",
         "request_regeneration",
@@ -226,6 +233,8 @@ STAGE_ACTIONS: dict[str, tuple[str, ...]] = {
     "awaiting_date_confirmation": ("confirm_date", "set_date", "show_status", "cancel"),
     "awaiting_files": ("prepare_worklist", "set_date", "show_status", "cancel"),
     "preparing": ("show_status", "cancel"),
+    "supplementing_fetched_data": ("show_status", "cancel"),
+    "awaiting_fetched_data_confirmation": ("show_status", "cancel"),
     "awaiting_apply_confirmation": (
         "confirm_apply",
         "rebuild_worklist",
@@ -384,7 +393,7 @@ def _fallback_decision(stage: str, message: str) -> WorkflowDecision:
     )
     if extracted_date and date_command and stage in date_stages:
         return WorkflowDecision("set_date", {"date": extracted_date}, "local")
-    if lowered in {"取消", "停止", "先不做", "不跑了", "取消任务", "停止任务", "先停一下"}:
+    if is_explicit_workflow_cancel_request(lowered):
         return WorkflowDecision("cancel", {}, "local")
     if stage == "awaiting_date_confirmation" and lowered in CONFIRM_WORDS:
         return WorkflowDecision("confirm_date", {}, "local")

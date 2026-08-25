@@ -2,7 +2,7 @@
 
 ## 1. 目标与边界
 
-本目录是统一仓库中的唯一用户界面，继续使用 Next.js、shadcn/ui、现有主题系统和 Clerk。同一仓库根目录下的 `backend/`、`skills/`、`deploy/` 和 `scripts/` 提供 FastAPI、Skill Registry、任务与工作流、文件、审计、Worker 和 Scheduler。旧 Vite 前端只保存在 `legacy/vite-frontend/` 作为业务行为参考。
+本目录是统一仓库中的唯一用户界面，继续使用 Next.js、shadcn/ui、现有主题系统和 Clerk。同一仓库根目录下的 `backend/`、`skills/`、`deploy/` 和 `scripts/` 提供 FastAPI、Skill Registry、任务与工作流、文件、审计、Worker 和 Scheduler。
 
 ```text
 用户

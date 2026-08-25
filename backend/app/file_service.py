@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 from fastapi import HTTPException
-from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy import and_, exists, func, or_, select
+from sqlalchemy.orm import Session, aliased
 
 from .auth import UserContext
 from .contracts import PlatformFile, PlatformFileDetail
-from .models import FileRecord, RunRecord
+from .models import (
+    FileRecord,
+    RunRecord,
+    WorkflowMaterialSet,
+    WorkflowMaterialSetFile,
+)
 from .resource_policy import assert_owner, owner_list_filter
 from .storage import file_delete_status, file_expiry, file_references
 
@@ -68,12 +73,65 @@ def list_files_page(
     page_size: int,
     kind: str = "",
     query: str = "",
+    latest_only: bool = False,
 ) -> tuple[list[PlatformFile], int]:
     filters = [owner_list_filter(FileRecord, user)]
     if kind:
         filters.append(FileRecord.kind == kind)
     if query:
         filters.append(FileRecord.original_name.ilike(f"%{query}%"))
+    if latest_only:
+        newer = aliased(FileRecord)
+        material_set = aliased(WorkflowMaterialSet)
+        material_file = aliased(WorkflowMaterialSetFile)
+        has_current_material_set = exists(
+            select(material_set.id).where(
+                material_set.owner_id == FileRecord.owner_id,
+                material_set.department_id == FileRecord.department_id,
+                material_set.skill_id == FileRecord.skill_id,
+                material_set.state == "current",
+            )
+        )
+        belongs_to_current_material_set = exists(
+            select(material_file.id)
+            .join(material_set, material_set.id == material_file.material_set_id)
+            .where(
+                material_file.file_id == FileRecord.id,
+                material_set.owner_id == FileRecord.owner_id,
+                material_set.department_id == FileRecord.department_id,
+                material_set.skill_id == FileRecord.skill_id,
+                material_set.state == "current",
+            )
+        )
+        filters.append(
+            and_(
+                or_(
+                    FileRecord.kind != "output",
+                    ~exists(
+                        select(newer.id).where(
+                            newer.owner_id == FileRecord.owner_id,
+                            newer.department_id == FileRecord.department_id,
+                            newer.kind == "output",
+                            newer.skill_id == FileRecord.skill_id,
+                            newer.original_name == FileRecord.original_name,
+                            or_(
+                                newer.created_at > FileRecord.created_at,
+                                and_(
+                                    newer.created_at == FileRecord.created_at,
+                                    newer.id > FileRecord.id,
+                                ),
+                            ),
+                        )
+                    ),
+                ),
+                or_(
+                    FileRecord.kind != "input",
+                    FileRecord.skill_id == "",
+                    ~has_current_material_set,
+                    belongs_to_current_material_set,
+                ),
+            )
+        )
     total = int(db.scalar(select(func.count()).select_from(FileRecord).where(*filters)) or 0)
     records = db.scalars(
         select(FileRecord)

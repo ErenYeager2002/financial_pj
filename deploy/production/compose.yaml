@@ -28,6 +28,8 @@ x-backend: &backend
     FINANCIAL_TRUSTED_ORIGINS: ${FINANCIAL_TRUSTED_ORIGINS}
     FINANCIAL_ZHIYUN_BASE_URL: ${FINANCIAL_ZHIYUN_BASE_URL:-}
     FINANCIAL_AR_HEXIAO_EXECUTION_ENABLED: ${FINANCIAL_AR_HEXIAO_EXECUTION_ENABLED:-false}
+    FINANCIAL_TASK_DISCOVERY_ENABLED: ${FINANCIAL_TASK_DISCOVERY_ENABLED:-false}
+    FINANCIAL_TASK_DISCOVERY_HOLIDAYS: ${FINANCIAL_TASK_DISCOVERY_HOLIDAYS:-}
     FINANCIAL_NETWORK_POLICY_MODE: ${FINANCIAL_NETWORK_POLICY_MODE:-strict}
     FINANCIAL_SESSION_COOKIE_SECURE: "true"
     FINANCIAL_WORKER_COUNTS: python:2,http:2,workflow:2
@@ -38,6 +40,8 @@ x-backend: &backend
   depends_on:
     postgres:
       condition: service_healthy
+    skill-sync:
+      condition: service_completed_successfully
   logging:
     driver: json-file
     options:
@@ -57,8 +61,36 @@ x-worker: &worker
       condition: service_healthy
     egress-proxy:
       condition: service_healthy
+    skill-sync:
+      condition: service_completed_successfully
 
 services:
+  skill-sync:
+    image: financial-platform-backend:stage10
+    build:
+      context: ${FINANCIAL_PLATFORM_DIR:-../..}
+      dockerfile: deploy/docker/Dockerfile
+    restart: "no"
+    network_mode: "none"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    command:
+      - python
+      - /app/scripts/sync_skill_volume.py
+      - --source
+      - /app/skills
+      - --target
+      - /runtime-skills
+      - --skill
+      - ar-hexiao-daily
+    volumes:
+      - skill-data:/runtime-skills
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
   postgres:
     image: docker.m.daocloud.io/library/postgres:16-alpine
     restart: unless-stopped
@@ -176,6 +208,9 @@ services:
   worker-workflow-2:
     <<: *worker
     command: ["python", "-m", "app.worker", "--pools", "workflow", "--worker-id", "workflow-2"]
+  worker-task-discovery:
+    <<: *worker
+    command: ["python", "-m", "app.task_discovery_worker"]
 
   next:
     image: financial-platform-next:stage10
@@ -204,6 +239,8 @@ services:
       NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL: /dashboard/overview
       NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL: /dashboard/overview
       NEXT_PUBLIC_APP_URL: ${PLATFORM_PUBLIC_ORIGIN:-https://localhost:8443}
+      FINANCIAL_AUTH_MODE: ${FINANCIAL_AUTH_MODE:-clerk}
+      FINANCIAL_SESSION_COOKIE: ${FINANCIAL_SESSION_COOKIE:-financial_session}
       FINANCIAL_PLATFORM_API_URL: http://api:8000
       FINANCIAL_PLATFORM_REQUEST_TIMEOUT_MS: "30000"
       AGENT_RUNTIME: ${AGENT_RUNTIME:-pi}

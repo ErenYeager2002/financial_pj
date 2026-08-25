@@ -10,9 +10,10 @@ from .contracts import (
     Workbench,
     WorkbenchCounts,
     WorkbenchSkillUsage,
+    WorkbenchTaskReminderSummary,
 )
 from .file_service import serialize_file
-from .models import FileRecord, RunRecord
+from .models import FileRecord, RunRecord, TaskDiscoveryCheck, TaskReminder
 from .registry import registry
 from .resource_policy import owner_list_filter
 from .run_service import retry_status, serialize_run
@@ -44,6 +45,34 @@ def get_workbench(db: Session, user: UserContext) -> Workbench:
         failed=sum(state_counts.get(state, 0) for state in FAILED_STATES),
         files=int(
             db.scalar(select(func.count()).select_from(FileRecord).where(file_filter)) or 0
+        ),
+    )
+    reminder_filters = [
+        TaskReminder.department_id == user.department_id,
+        TaskReminder.state.in_(("pending", "in_progress", "reopened")),
+    ]
+    failure_filters = [
+        TaskDiscoveryCheck.department_id == user.department_id,
+        TaskDiscoveryCheck.state == "failed",
+        TaskDiscoveryCheck.next_retry_at.is_(None),
+    ]
+    if not user.is_admin:
+        reminder_filters.append(TaskReminder.owner_id == user.user_id)
+        failure_filters.append(TaskDiscoveryCheck.owner_id == user.user_id)
+    task_reminders = WorkbenchTaskReminderSummary(
+        pending_dates=int(
+            db.scalar(select(func.count(TaskReminder.id)).where(*reminder_filters)) or 0
+        ),
+        active_skills=int(
+            db.scalar(
+                select(func.count(func.distinct(TaskReminder.skill_id))).where(
+                    *reminder_filters
+                )
+            )
+            or 0
+        ),
+        failed_checks=int(
+            db.scalar(select(func.count(TaskDiscoveryCheck.id)).where(*failure_filters)) or 0
         ),
     )
 
@@ -98,6 +127,7 @@ def get_workbench(db: Session, user: UserContext) -> Workbench:
     ).all()
     return Workbench(
         counts=counts,
+        task_reminders=task_reminders,
         common_skills=common_skills,
         pending_runs=[_run_summary(db, item, user) for item in pending],
         recent_results=[_run_summary(db, item, user) for item in recent_results],

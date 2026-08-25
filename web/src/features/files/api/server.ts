@@ -26,6 +26,7 @@ export function listFiles(
   });
   if (kind) params.set('kind', kind);
   if (query) params.set('query', query.slice(0, 100));
+  params.set('latest_only', 'true');
   return platformServerRequest<PlatformFilePage>(`/api/files?${params}`);
 }
 

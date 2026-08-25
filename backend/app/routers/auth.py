@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
@@ -33,7 +35,11 @@ def _set_session_cookie(response: Response, token: str) -> None:
     )
 
 
-def _session_read(user: UserContext, must_change_password: bool = False) -> SessionRead:
+def _session_read(
+    user: UserContext,
+    must_change_password: bool = False,
+    avatar_updated_at: datetime | None = None,
+) -> SessionRead:
     return SessionRead(
         user_id=user.user_id,
         username=user.username,
@@ -42,6 +48,7 @@ def _session_read(user: UserContext, must_change_password: bool = False) -> Sess
         department_id=user.department_id,
         must_change_password=must_change_password,
         auth_provider=user.auth_provider,
+        avatar_updated_at=avatar_updated_at,
     )
 
 
@@ -51,6 +58,11 @@ def auth_login(
     response: Response,
     db: Session = Depends(get_db),
 ) -> SessionRead:
+    if settings.auth_mode == "clerk":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="本地登录未启用。",
+        )
     user = login(db, body.username, body.password)
     if not user:
         record_audit(db, action="auth.login", outcome="failed")
@@ -73,6 +85,7 @@ def auth_login(
     return _session_read(
         actor,
         must_change_password=user.must_change_password,
+        avatar_updated_at=user.avatar_updated_at,
     )
 
 
@@ -107,7 +120,7 @@ def auth_change_password(
         resource_id=user.user_id,
     )
     db.commit()
-    return _session_read(user)
+    return _session_read(user, avatar_updated_at=stored.avatar_updated_at)
 
 
 @router.post("/logout", status_code=204)
@@ -139,4 +152,5 @@ def auth_session(
     return _session_read(
         user,
         must_change_password=bool(stored and stored.must_change_password),
+        avatar_updated_at=stored.avatar_updated_at if stored else None,
     )

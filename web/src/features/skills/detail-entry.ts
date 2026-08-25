@@ -1,5 +1,14 @@
-export type SkillDetailEntry = 'standard' | 'workflow';
+import { executionExperienceForSkill } from './execution-experience.ts';
 
-export function detailEntryForSkill(skill: { execution_mode?: string }): SkillDetailEntry {
-  return skill.execution_mode === 'guided_workflow' ? 'workflow' : 'standard';
+export type SkillDetailEntry = 'foundation' | 'supporting' | 'business' | 'workflow' | 'blocked';
+
+export function detailEntryForSkill(skill: {
+  id?: string;
+  execution_mode?: string;
+}): SkillDetailEntry {
+  if (!skill.id) return 'blocked';
+  const experience = executionExperienceForSkill(skill.id);
+  if (!experience) return 'blocked';
+  if (experience.family === 'workflow') return 'workflow';
+  return experience.classification;
 }

@@ -1,8 +1,15 @@
 import type { NextConfig } from 'next';
 import { withSentryConfig } from '@sentry/nextjs';
 
+const developmentAppOrigin = process.env.NEXT_PUBLIC_APP_URL;
+const allowedDevOrigins =
+  process.env.NODE_ENV === 'development' && developmentAppOrigin
+    ? [new URL(developmentAppOrigin).hostname]
+    : undefined;
+
 // Define the base Next.js configuration
 const baseConfig: NextConfig = {
+  allowedDevOrigins,
   output: process.env.BUILD_STANDALONE === 'true' ? 'standalone' : undefined,
   images: {
     remotePatterns: [
@@ -11,16 +18,6 @@ const baseConfig: NextConfig = {
         hostname: 'api.slingacademy.com',
         port: ''
       },
-      {
-        protocol: 'https',
-        hostname: 'img.clerk.com',
-        port: ''
-      },
-      {
-        protocol: 'https',
-        hostname: 'clerk.com',
-        port: ''
-      }
     ]
   },
   transpilePackages: ['geist'],

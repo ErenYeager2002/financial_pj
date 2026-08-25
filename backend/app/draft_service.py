@@ -28,6 +28,7 @@ from .run_service import confirm_run, create_run, validate_files
 from .schemas import RunCreate
 from .schemas_assistant import AssistantRecommendation, TaskDraftUpdate
 from .settings import settings
+from .skill_availability_service import assert_skill_accepting_new_work
 from .storage import sha256_file
 
 RecommendationTrace = dict[str, int | str]
@@ -452,6 +453,15 @@ def prepare_task_draft(
     skills = _safe_skills(db, user)
     if not skills:
         raise HTTPException(status_code=403, detail="当前账号没有可用于任务草稿的 Skill。")
+    by_id = {item.manifest.id: item for item in skills}
+    availability_checked = False
+    if recommendation is not None:
+        selected_skill = by_id.get(recommendation.skill_id)
+        if not selected_skill:
+            raise HTTPException(status_code=502, detail="AI 助手推荐了未授权或不可用的 Skill。")
+        assert_skill_permission(db, user, selected_skill.manifest.id, "can_create_draft")
+        assert_skill_accepting_new_work(db, selected_skill.manifest.id)
+        availability_checked = True
     selected = _selected_files(db, user, file_ids)
     config = resolve_assistant_config(db, user)
     trace: RecommendationTrace = {}
@@ -480,11 +490,12 @@ def prepare_task_draft(
     model_trace = _model_trace(user, config, trace, trace_purpose)
     db.add(model_trace)
     db.commit()
-    by_id = {item.manifest.id: item for item in skills}
     skill = by_id.get(recommendation.skill_id)
     if not skill:
         raise HTTPException(status_code=502, detail="AI 助手推荐了未授权或不可用的 Skill。")
     assert_skill_permission(db, user, skill.manifest.id, "can_create_draft")
+    if not availability_checked:
+        assert_skill_accepting_new_work(db, skill.manifest.id)
     candidate_ids = [recommendation.skill_id, *recommendation.candidates]
     if any(item not in by_id for item in candidate_ids):
         raise HTTPException(status_code=502, detail="AI 助手返回了未授权候选 Skill。")

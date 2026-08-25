@@ -23,6 +23,9 @@ RUN mkdir -p /tmp/financial-platform/app \
     && rm -rf /tmp/financial-platform
 RUN python -m playwright install-deps chromium
 RUN python -m playwright install chromium
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY backend/app /app/backend/app
 COPY backend/alembic /app/backend/alembic

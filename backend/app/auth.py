@@ -5,7 +5,11 @@ from dataclasses import dataclass
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from .auth_service import get_session_user, get_user_by_clerk_id
+from .auth_service import (
+    get_or_create_development_clerk_admin,
+    get_session_user,
+    get_user_by_clerk_id,
+)
 from .clerk_auth import ClerkTokenError, verify_clerk_token
 from .database import get_db
 from .settings import settings
@@ -60,6 +64,16 @@ def _clerk_user(request: Request, db: Session) -> UserContext:
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
     user = get_user_by_clerk_id(db, identity.user_id)
+    if (
+        not user
+        and settings.environment.strip().lower() == "development"
+        and settings.dev_clerk_auto_provision_admin
+    ):
+        user = get_or_create_development_clerk_admin(
+            db,
+            clerk_user_id=identity.user_id,
+            clerk_organization_id=identity.organization_id,
+        )
     if not user:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -107,6 +121,26 @@ def get_current_user(
     if settings.auth_mode not in {"session", "hybrid", "clerk"}:
         raise HTTPException(status_code=500, detail="平台认证模式配置无效。")
     authorization = request.headers.get("authorization", "").strip()
+    if authorization.lower().startswith("bearer local."):
+        if settings.auth_mode == "clerk":
+            raise HTTPException(status_code=401, detail="本地会话不能用于 Clerk 模式。")
+        token = authorization[len("Bearer local.") :].strip()
+        user = get_session_user(db, token)
+        if not user:
+            raise HTTPException(status_code=401, detail="未登录或会话已失效。")
+        if user.must_change_password and request.url.path not in PASSWORD_CHANGE_ALLOWED_PATHS:
+            raise HTTPException(
+                status_code=403,
+                detail="PASSWORD_CHANGE_REQUIRED：首次登录需要先修改初始密码。",
+            )
+        return UserContext(
+            user_id=user.id,
+            display_name=user.display_name,
+            role=user.role,
+            department_id=user.department_id,
+            username=user.username,
+            auth_provider="session",
+        )
     if settings.auth_mode in {"hybrid", "clerk"} and authorization:
         return _clerk_user(request, db)
     if settings.auth_mode == "clerk":

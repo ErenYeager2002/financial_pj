@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""把连续多日的日期级报表整理为三份任务范围版静态 Excel。
+"""把连续多日的日期级报表整理为一份任务范围版静态 Excel。
 
-多日任务的日期级 Excel 只是逐日校验和写入时的临时产物。三份范围版全部成功
+多日任务的日期级 Excel 只是逐日校验和写入时的临时产物。整合范围版成功
 生成后，自动删除本次日期范围内的日期级同类报告，只保留范围版交付文件。
 """
 
@@ -25,11 +25,12 @@ import common  # noqa: E402
 import workbook_finalize  # noqa: E402
 
 
-REPORTS = (
-    ("核销日清", "核销日清"),
-    ("变更清单", "变更清单"),
-    ("订单写入差异", "订单写入差异"),
-)
+CLEANUP_REPORT_PREFIXES = ("核销日清", "变更清单", "订单写入差异")
+AGGREGATED_SHEETS = {
+    "今日清单": "核销明细",
+    "跨月计提补填": "跨月计提补填",
+    "流转表怎么填": "流转表怎么填",
+}
 
 
 def _dates(start: str, end: str):
@@ -117,6 +118,48 @@ def _daily_report_files(out_dir: Path, prefix: str, day: dt.date) -> list[Path]:
     )
 
 
+def _append_aggregated_sheet(
+    target,
+    source,
+    day: dt.date,
+    header_written: bool,
+) -> bool:
+    rows = list(source.iter_rows())
+    if not rows:
+        return header_written
+    source_header = rows[0]
+    if not header_written:
+        target.append(["核销日期", *(cell.value for cell in source_header)])
+        for column, cell in enumerate(source_header, start=2):
+            output = target.cell(row=1, column=column)
+            if cell.has_style:
+                output._style = copy(cell._style)
+            output.number_format = cell.number_format
+            output.alignment = copy(cell.alignment)
+            output.protection = copy(cell.protection)
+        target.cell(row=1, column=1).font = Font(bold=True)
+        target.cell(row=1, column=1).fill = PatternFill("solid", fgColor="D9EAF7")
+        target.cell(row=1, column=1).alignment = copy(source_header[0].alignment)
+        header_written = True
+    for source_row in rows[1:]:
+        values = [cell.value for cell in source_row]
+        if not any(value not in (None, "") for value in values):
+            continue
+        target.append([day.isoformat(), *values])
+        output_row = target.max_row
+        target.cell(row=output_row, column=1).alignment = copy(source_header[0].alignment)
+        for column, cell in enumerate(source_row, start=2):
+            output = target.cell(row=output_row, column=column)
+            if isinstance(cell.value, str) and cell.value.startswith("="):
+                output.data_type = "s"
+            if cell.has_style:
+                output._style = copy(cell._style)
+            output.number_format = cell.number_format
+            output.alignment = copy(cell.alignment)
+            output.protection = copy(cell.protection)
+    return header_written
+
+
 def build(workspace: Path, start: str, end: str) -> list[Path]:
     workspace = Path(workspace)
     if not (workspace / "04_产出").is_dir():
@@ -126,51 +169,76 @@ def build(workspace: Path, start: str, end: str) -> list[Path]:
     empty_days = {day for day in days if _is_empty_fetched_day(workspace, day)}
     outputs = []
     daily_sources: set[Path] = set()
-    for prefix, label in REPORTS:
-        wb = openpyxl.Workbook()
-        summary = wb.active
-        summary.title = "任务范围"
-        headers = ["核销日期", "日报状态", "到账笔数", "订单行数", "自动", "挂账", "异常"]
-        summary.append(headers)
-        for cell in summary[1]:
-            cell.font = Font(bold=True)
-            cell.fill = PatternFill("solid", fgColor="D9EAF7")
-        for day in days:
-            token = day.strftime("%Y%m%d")
-            daily = out_dir / f"{prefix}_{token}.xlsx"
-            daily_sources.update(_daily_report_files(out_dir, prefix, day))
-            counts = _daily_counts(out_dir, day)
-            status = (
-                "已纳入"
-                if daily.is_file()
-                else "无核销记录，已跳过"
-                if day in empty_days
-                else "当日无该报表"
-            )
-            summary.append([
-                day.isoformat(), status,
-                counts.get("到账笔数", ""), counts.get("订单行数", ""),
-                counts.get("自动", ""), counts.get("挂账", ""), counts.get("异常", ""),
-            ])
-            if not daily.is_file():
-                if prefix == "核销日清" and day not in empty_days:
-                    raise FileNotFoundError(f"缺少日期级核销日清：{daily}")
-                continue
-            source_wb = openpyxl.load_workbook(daily, data_only=False, read_only=False)
-            for index, source_ws in enumerate(source_wb.worksheets, 1):
-                title = f"{day.strftime('%Y%m%d')}_{index}_{source_ws.title}"[:31]
-                _copy_sheet(source_ws, wb.create_sheet(title))
-            source_wb.close()
-        summary.freeze_panes = "A2"
-        summary.auto_filter.ref = summary.dimensions
-        for col, width in zip("ABCDEFG", (14, 16, 12, 12, 10, 10, 10)):
-            summary.column_dimensions[col].width = width
-        target = out_dir / f"{label}_{start.replace('-', '')}_{end.replace('-', '')}.xlsx"
-        wb.save(target)
-        workbook_finalize.finalize_static_report(target)
-        outputs.append(target)
+    wb = openpyxl.Workbook()
+    summary = wb.active
+    summary.title = "任务范围"
+    headers = ["核销日期", "日报状态", "到账笔数", "订单行数", "自动", "挂账", "异常"]
+    summary.append(headers)
+    for cell in summary[1]:
+        cell.font = Font(bold=True)
+        cell.fill = PatternFill("solid", fgColor="D9EAF7")
 
-    # 只有多日任务执行清理。必须等三份范围版全部保存并完成静态化后再删除日报，
+    aggregated: dict[str, object] = {}
+    header_written: set[str] = set()
+    for day in days:
+        token = day.strftime("%Y%m%d")
+        daily = out_dir / f"核销日清_{token}.xlsx"
+        for prefix in CLEANUP_REPORT_PREFIXES:
+            daily_sources.update(_daily_report_files(out_dir, prefix, day))
+        counts = _daily_counts(out_dir, day)
+        status = (
+            "已纳入"
+            if daily.is_file()
+            else "无核销记录，已跳过"
+            if day in empty_days
+            else "当日无该报表"
+        )
+        summary.append([
+            day.isoformat(), status,
+            counts.get("到账笔数", ""), counts.get("订单行数", ""),
+            counts.get("自动", ""), counts.get("挂账", ""), counts.get("异常", ""),
+        ])
+        if not daily.is_file():
+            if day not in empty_days:
+                raise FileNotFoundError(f"缺少日期级核销日清：{daily}")
+            continue
+        source_wb = openpyxl.load_workbook(daily, data_only=False, read_only=False)
+        for source_title, target_title in AGGREGATED_SHEETS.items():
+            if source_title not in source_wb.sheetnames:
+                continue
+            target = aggregated.get(target_title)
+            if target is None:
+                target = wb.create_sheet(target_title)
+                aggregated[target_title] = target
+            if _append_aggregated_sheet(
+                target,
+                source_wb[source_title],
+                day,
+                target_title in header_written,
+            ):
+                header_written.add(target_title)
+        source_wb.close()
+
+    summary.freeze_panes = "A2"
+    summary.auto_filter.ref = summary.dimensions
+    for col, width in zip("ABCDEFG", (14, 16, 12, 12, 10, 10, 10)):
+        summary.column_dimensions[col].width = width
+    if "核销明细" in aggregated:
+        detail = aggregated["核销明细"]
+        detail.freeze_panes = "B2"
+        detail.auto_filter.ref = detail.dimensions
+        detail.column_dimensions["A"].width = 14
+    for title, sheet in aggregated.items():
+        if title != "核销明细":
+            sheet.freeze_panes = "B2"
+            sheet.auto_filter.ref = sheet.dimensions
+            sheet.column_dimensions["A"].width = 14
+    target = out_dir / f"核销日清_{start.replace('-', '')}_{end.replace('-', '')}.xlsx"
+    wb.save(target)
+    workbook_finalize.finalize_static_report(target)
+    outputs.append(target)
+
+    # 只有多日任务执行清理。必须等整合范围版保存并完成静态化后再删除日报，
     # 这样任一步失败时仍保留逐日证据，可安全重试。
     if len(days) > 1:
         final_paths = {path.resolve() for path in outputs}
@@ -182,7 +250,7 @@ def build(workspace: Path, start: str, end: str) -> list[Path]:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
-        description="生成连续多日任务范围版三份报表，并移除日期级同类报告"
+        description="生成连续多日任务的一份整合核销日清，并移除日期级报告"
     )
     parser.add_argument("--workspace", default=str(common.WORK))
     parser.add_argument("--date-from", required=True)

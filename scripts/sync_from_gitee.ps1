@@ -26,6 +26,9 @@ if (-not (Test-Path -LiteralPath $Python)) {
 if (-not (Test-Path -LiteralPath $PlatformSkills)) {
     throw "Platform Skill directory not found: $PlatformSkills"
 }
+if (-not $ValidateOnly) {
+    throw "Direct production sync is disabled. Use the Skill 发布与维护 page to bind, prepare, review, drain, publish, and re-enable one Skill at a time. This legacy script only supports -ValidateOnly."
+}
 
 $lock = $null
 try {

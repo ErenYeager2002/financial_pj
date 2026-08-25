@@ -4,10 +4,12 @@ deploy/production/.env
 deploy/production/.secrets/
 deploy/production/tls/*
 !deploy/production/tls/.gitkeep
+deploy/development/.env
 .venv/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.pytest-tmp*/
 .ruff_cache/
 
 backend/.coverage
@@ -22,6 +24,7 @@ legacy/vite-frontend/vite.config.d.ts
 
 agent-runtime/node_modules/
 agent-runtime/dist/
+**/.pnpm-store/
 
 data/*
 !data/.gitkeep

@@ -23,6 +23,7 @@ from .redaction import sanitize_text
 from .registry import RegisteredSkill, registry
 from .resource_policy import assert_owner, owner_list_filter, run_root
 from .schemas import RunCreate, RunRead
+from .skill_availability_service import assert_skill_accepting_new_work
 from .step_runtime_service import initialize_run_steps, queue_run_execution_step
 from .storage import sha256_file
 
@@ -272,6 +273,8 @@ def create_run(db: Session, request: RunCreate, user: UserContext) -> RunRecord:
         )
         if existing:
             return existing
+
+    assert_skill_accepting_new_work(db, request.skill_id)
 
     llm_config = resolve_runtime_config(
         db,

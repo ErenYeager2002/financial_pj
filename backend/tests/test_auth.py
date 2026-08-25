@@ -3,7 +3,10 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 from fastapi.testclient import TestClient
 from helpers import TEST_PASSWORD, auth_client
@@ -11,6 +14,7 @@ from helpers import TEST_PASSWORD, auth_client
 from app.auth_service import (
     create_session,
     create_user,
+    get_session_user,
     get_user_by_username,
     revoke_all_user_sessions,
 )
@@ -100,6 +104,42 @@ def test_revoked_sessions_are_rejected() -> None:
             count = revoke_all_user_sessions(db, user.id)
             assert count >= 1
         assert client.get("/api/session").status_code == 401
+
+
+def test_session_lookup_accepts_timezone_aware_postgres_datetimes() -> None:
+    now = datetime.now(UTC)
+    stored_session = SimpleNamespace(
+        user_id="timezone-aware-user",
+        revoked_at=None,
+        expires_at=now + timedelta(hours=1),
+        last_used_at=now - timedelta(minutes=10),
+    )
+    stored_user = SimpleNamespace(status="active")
+    db = Mock()
+    db.scalar.return_value = stored_session
+    db.get.return_value = stored_user
+
+    assert get_session_user(db, "timezone-aware-token") is stored_user
+    assert stored_session.last_used_at is not None
+    db.commit.assert_called_once()
+
+
+def test_server_runtime_can_forward_local_session_as_prefixed_bearer() -> None:
+    with TestClient(app) as client:
+        with SessionLocal() as db:
+            user = create_user(
+                db,
+                username="runtime-local-session",
+                password=TEST_PASSWORD,
+            )
+            token = create_session(db, user)
+            db.commit()
+        response = client.get(
+            "/api/session",
+            headers={"Authorization": f"Bearer local.{token}"},
+        )
+        assert response.status_code == 200
+        assert response.json()["username"] == "runtime-local-session"
 
 
 def test_sse_ignores_url_identity_claims() -> None:

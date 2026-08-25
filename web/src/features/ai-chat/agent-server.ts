@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { auth } from '@clerk/nextjs/server';
+import { platformCredential, runtimeAccessToken } from '@/features/auth/server-auth';
 import {
   type AgentEvent,
   type AgentTool,
@@ -70,7 +70,8 @@ interface CacheEntry<T> {
 
 type RunningTask = {
   id: string;
-  kind: '任务' | '后台任务';
+  display_id?: string;
+  kind: '任务';
   skill_id: string;
   skill_name: string;
   state: string;
@@ -175,7 +176,8 @@ function runningTaskSummary(runs: RunPage, workflows: WorkflowRead[]): RunningTa
     if (['succeeded', 'failed', 'cancelled'].includes(workflow.state)) continue;
     tasks.push({
       id: workflow.id,
-      kind: '后台任务',
+      display_id: workflow.display_id,
+      kind: '任务',
       skill_id: workflow.skill_id,
       skill_name: workflow.skill_name,
       state: workflow.state,
@@ -206,7 +208,8 @@ function runTaskSummary(run: RunDetail): RunningTask {
 function workflowTaskSummary(workflow: WorkflowRead): RunningTask {
   return {
     id: workflow.id,
-    kind: '后台任务',
+    display_id: workflow.display_id,
+    kind: '任务',
     skill_id: workflow.skill_id,
     skill_name: workflow.skill_name,
     state: workflow.state,
@@ -258,8 +261,7 @@ function textResult(text: string, details: Record<string, unknown> = {}) {
 function createTools(
   skills: SafeSkill[],
   files: PlatformFile[],
-  input: AssistantTurnInput,
-  tokenRef: { value: string }
+  input: AssistantTurnInput
 ): AgentTool[] {
   const listTool: AgentTool = {
     name: 'list_authorized_skills',
@@ -326,7 +328,6 @@ function createTools(
         '/api/assistant/prepare-from-recommendation',
         {
           method: 'POST',
-          headers: { Authorization: `Bearer ${tokenRef.value}` },
           body: JSON.stringify({
             message: input.message,
             file_ids: input.fileIds,
@@ -348,7 +349,7 @@ function createTools(
       const task = await findTask(taskId);
       if (!task) throw new Error('当前账号没有找到这个任务。');
       return textResult(
-        `${task.kind} ${task.id} 当前状态：${task.state}，进度 ${task.progress}%，${task.progress_message}。`,
+        `${task.kind} ${task.display_id ?? task.id} 当前状态：${task.state}，进度 ${task.progress}%，${task.progress_message}。`,
         { task }
       );
     }
@@ -357,11 +358,17 @@ function createTools(
   const runningTasksTool: AgentTool = {
     name: 'list_running_tasks',
     label: '查询运行中的任务',
-    description: '查看当前账号可见的全部进行中任务和后台任务，只读。',
+    description: '查看当前账号可见的全部进行中任务，只读。',
     parameters: Type.Object({}),
     execute: async () => {
       const tasks = await listRunningTasks();
-      return textResult(tasks.length ? jsonText(tasks) : '当前没有正在运行的任务。', { tasks });
+      const displayTasks = tasks.map(({ id, display_id: displayId, ...task }) => ({
+        ...task,
+        task_id: displayId ?? id
+      }));
+      return textResult(tasks.length ? jsonText(displayTasks) : '当前没有正在运行的任务。', {
+        tasks
+      });
     }
   };
 
@@ -392,7 +399,7 @@ function systemPrompt(
     .map((item) => ({ role: item.role, content: item.content.slice(0, 4000) }));
   return [
     '你是财务平台的 AI 助手，可以像正常大模型一样回答问题、解释业务、总结任务状态并协助用户规划财务工作。',
-    '你不能访问本地路径、运行命令、读取凭据或直接写入文件。真实 Skill 任务只能由平台后台任务执行。',
+    '你不能访问本地路径、运行命令、读取凭据或直接写入文件。真实 Skill 任务只能由平台任务执行器运行。',
     '用户询问正在运行、排队、失败或完成的任务时，优先调用 list_running_tasks 或 get_task_status，不要猜测状态。',
     '需要创建标准只读任务时，才能从授权目录中选择 Skill，并通过 prepare_task_draft 生成草稿；不能绕过平台校验直接执行。',
     '文件只能使用下方 file_catalog 中的 alias，不能猜测文件 ID 或路径。',
@@ -451,10 +458,9 @@ function getOrCreateRuntime(
 
 export async function createAssistantTurn(input: AssistantTurnInput): Promise<AssistantTurnStream> {
   const checked = checkedInput(input);
-  const { isAuthenticated, getToken, userId: clerkUserId } = await auth();
-  if (!isAuthenticated) throw new PlatformApiError(401, '请先登录。');
-  const token = await getToken();
-  if (!token) throw new PlatformApiError(401, '无法获取当前登录凭据，请重新登录。');
+  const credential = await platformCredential();
+  const token = runtimeAccessToken(credential);
+  const clerkUserId = credential.clerkUserId;
 
   const session = await platformServerRequest<PlatformSession>('/api/session');
   if (resolveAgentRuntime(runtimeSelectorId(clerkUserId, session.user_id)) === 'legacy') {
@@ -508,7 +514,7 @@ export async function createAssistantTurn(input: AssistantTurnInput): Promise<As
         runningTasks,
         history
       ),
-      tools: createTools(safeSkills, availableFiles, checked, tokenRef)
+      tools: createTools(safeSkills, availableFiles, checked)
     });
     yield* withLegacyFallback(turn, () => legacyTurn(checked));
   }

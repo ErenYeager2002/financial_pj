@@ -8,7 +8,12 @@ from helpers import auth_client
 from app.audit_service import query_audit_events
 from app.auth_service import get_user_by_username
 from app.database import SessionLocal
-from app.models import RunRecord
+from app.models import (
+    FileRecord,
+    RunRecord,
+    WorkflowMaterialSet,
+    WorkflowMaterialSetFile,
+)
 
 
 def _upload(client, name: str) -> str:
@@ -57,6 +62,11 @@ def test_workbench_and_run_pagination_are_owner_scoped() -> None:
         body = workbench.json()
         assert body["counts"]["failed"] == 1
         assert body["counts"]["files"] == 2
+        assert body["task_reminders"] == {
+            "pending_dates": 0,
+            "active_skills": 0,
+            "failed_checks": 0,
+        }
         assert body["pending_runs"][0]["id"] == run_id
         assert body["pending_runs"][0]["can_retry"] is True
         assert all("handler" not in item["skill"] for item in body["common_skills"])
@@ -88,6 +98,123 @@ def test_file_detail_retention_and_reference_deletion_rule() -> None:
         denied = client.delete(f"/api/files/{bank_file}")
         assert denied.status_code == 409
         assert "审计和重试证据" in denied.json()["detail"]
+
+
+def test_file_center_latest_view_hides_older_duplicate_outputs() -> None:
+    username = "stage5-file-latest-owner"
+    with auth_client(username=username) as client:
+        with SessionLocal() as db:
+            user = get_user_by_username(db, username)
+            assert user is not None
+            older = FileRecord(
+                id="11000000-0000-4000-8000-000000000001",
+                owner_id=user.id,
+                department_id=user.department_id,
+                kind="output",
+                original_name="核销日清_20260820.xlsx",
+                stored_path="D:/synthetic/older.xlsx",
+                content_type="application/octet-stream",
+                size_bytes=10,
+                sha256="1" * 64,
+                skill_id="ar-hexiao-daily",
+                skill_name="应收核销日清",
+                skill_version="1.0.0",
+                workflow_id="21000000-0000-4000-8000-000000000001",
+                created_at=datetime(2026, 8, 20, 1, 0, tzinfo=UTC),
+            )
+            latest = FileRecord(
+                id="11000000-0000-4000-8000-000000000002",
+                owner_id=user.id,
+                department_id=user.department_id,
+                kind="output",
+                original_name="核销日清_20260820.xlsx",
+                stored_path="D:/synthetic/latest.xlsx",
+                content_type="application/octet-stream",
+                size_bytes=20,
+                sha256="2" * 64,
+                skill_id="ar-hexiao-daily",
+                skill_name="应收核销日清",
+                skill_version="1.0.1",
+                workflow_id="21000000-0000-4000-8000-000000000002",
+                created_at=datetime(2026, 8, 20, 2, 0, tzinfo=UTC),
+            )
+            distinct = FileRecord(
+                id="11000000-0000-4000-8000-000000000003",
+                owner_id=user.id,
+                department_id=user.department_id,
+                kind="output",
+                original_name="核销日清_20260819.xlsx",
+                stored_path="D:/synthetic/distinct.xlsx",
+                content_type="application/octet-stream",
+                size_bytes=30,
+                sha256="3" * 64,
+                skill_id="ar-hexiao-daily",
+                skill_name="应收核销日清",
+                skill_version="1.0.1",
+                workflow_id="21000000-0000-4000-8000-000000000003",
+                created_at=datetime(2026, 8, 20, 3, 0, tzinfo=UTC),
+            )
+            old_input = FileRecord(
+                id="11000000-0000-4000-8000-000000000004",
+                owner_id=user.id,
+                department_id=user.department_id,
+                kind="input",
+                original_name="2026年盈亏核算表_旧.xlsx",
+                stored_path="D:/synthetic/old-input.xlsx",
+                content_type="application/octet-stream",
+                size_bytes=40,
+                sha256="4" * 64,
+                skill_id="ar-hexiao-daily",
+                skill_name="应收核销日清",
+                skill_version="1.0.0",
+                created_at=datetime(2026, 8, 20, 1, 0, tzinfo=UTC),
+            )
+            current_input = FileRecord(
+                id="11000000-0000-4000-8000-000000000005",
+                owner_id=user.id,
+                department_id=user.department_id,
+                kind="input",
+                original_name="2026年盈亏核算表_当前.xlsx",
+                stored_path="D:/synthetic/current-input.xlsx",
+                content_type="application/octet-stream",
+                size_bytes=50,
+                sha256="5" * 64,
+                skill_id="ar-hexiao-daily",
+                skill_name="应收核销日清",
+                skill_version="1.0.1",
+                created_at=datetime(2026, 8, 20, 2, 0, tzinfo=UTC),
+            )
+            material_set = WorkflowMaterialSet(
+                id="31000000-0000-4000-8000-000000000001",
+                owner_id=user.id,
+                department_id=user.department_id,
+                skill_id="ar-hexiao-daily",
+                version=1,
+                state="current",
+                created_at=datetime(2026, 8, 20, 2, 0, tzinfo=UTC),
+                published_at=datetime(2026, 8, 20, 2, 0, tzinfo=UTC),
+            )
+            material_file = WorkflowMaterialSetFile(
+                id="41000000-0000-4000-8000-000000000001",
+                material_set_id=material_set.id,
+                role="profit_loss_ledgers",
+                year=2026,
+                file_id=current_input.id,
+                sha256=current_input.sha256,
+            )
+            db.add_all(
+                [older, latest, distinct, old_input, current_input, material_set, material_file]
+            )
+            db.commit()
+
+        response = client.get("/api/files", params={"latest_only": "true", "page_size": 100})
+        assert response.status_code == 200, response.text
+        body = response.json()
+        matching = [item for item in body["items"] if item["name"].startswith("核销日清_")]
+        assert [item["id"] for item in matching] == [distinct.id, latest.id]
+        assert older.id not in {item["id"] for item in body["items"]}
+        assert current_input.id in {item["id"] for item in body["items"]}
+        assert old_input.id not in {item["id"] for item in body["items"]}
 
 
 def test_failed_read_only_run_retry_is_bounded_and_audited() -> None:

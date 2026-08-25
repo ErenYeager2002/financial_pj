@@ -27,7 +27,7 @@ cd /srv/financial-platform
 cp deploy/docker/.env.example deploy/docker/.env
 mkdir -p deploy/docker/runtime/data
 chown -R 10001:10001 deploy/docker/runtime/data
-docker compose -f deploy/docker/docker-compose.yml up -d --build
+docker compose --env-file deploy/production/.env -f deploy/production/compose.yaml up -d --build
 ```
 
 API 容器不映射公网端口，只能由共享网络中的 Nginx 访问。Linux 容器使用

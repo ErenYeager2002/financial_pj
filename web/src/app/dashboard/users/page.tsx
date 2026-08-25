@@ -4,6 +4,7 @@ import { PlatformUserManagement } from '@/features/admin/components/platform-use
 import { platformServerRequest } from '@/features/platform-api/server-client';
 import type { PlatformSession } from '@/features/platform-api/types';
 import { listSkillCatalog } from '@/features/skills/api/server';
+import { authMode } from '@/features/auth/auth-mode';
 
 export const metadata = {
   title: '用户与权限'
@@ -31,12 +32,15 @@ export default async function UsersPage() {
       pageTitle='用户、权限与审计'
       pageDescription='管理本部门平台账号、固定角色、Skill 权限和脱敏审计记录'
     >
-      <PlatformUserManagement
-        session={session}
-        initialUsers={users}
-        skills={skills}
-        initialAuditEvents={auditEvents}
-      />
+      <div className='space-y-4'>
+        <PlatformUserManagement
+          session={session}
+          initialUsers={users}
+          skills={skills}
+          initialAuditEvents={auditEvents}
+          authMode={authMode()}
+        />
+      </div>
     </PageContainer>
   );
 }

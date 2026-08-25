@@ -8,7 +8,7 @@ from app.auth_service import create_user, get_user_by_username
 from app.authorization import replace_user_permissions
 from app.database import SessionLocal
 from app.main import app
-from app.models import RunRecord
+from app.models import AuditEvent, RunRecord
 
 
 def _published_standard_skill(client: TestClient) -> dict[str, object]:
@@ -281,6 +281,51 @@ def test_disabling_user_revokes_existing_session() -> None:
             )
             assert disabled.status_code == 200
         assert employee.get("/api/session").status_code == 401
+
+
+def test_admin_password_reset_revokes_sessions_and_records_no_password() -> None:
+    username = "admin-reset-password-user"
+    old_password = "old-password-123"
+    one_time_password = "one-time-password-456"
+    employee = TestClient(app)
+    with employee:
+        with SessionLocal() as db:
+            user = create_user(db, username=username, password=old_password)
+            db.commit()
+            user_id = user.id
+        assert employee.post(
+            "/api/auth/login",
+            json={"username": username, "password": old_password},
+        ).status_code == 200
+        with auth_client(role="skill_admin") as admin:
+            reset = admin.post(
+                f"/api/admin/users/{user_id}/reset-password",
+                json={"initial_password": one_time_password},
+            )
+            assert reset.status_code == 200, reset.text
+            assert reset.json()["must_change_password"] is True
+        assert employee.get("/api/session").status_code == 401
+
+    with TestClient(app) as renewed:
+        assert renewed.post(
+            "/api/auth/login",
+            json={"username": username, "password": old_password},
+        ).status_code == 401
+        logged = renewed.post(
+            "/api/auth/login",
+            json={"username": username, "password": one_time_password},
+        )
+        assert logged.status_code == 200
+        assert logged.json()["must_change_password"] is True
+
+    with SessionLocal() as db:
+        audit = db.query(AuditEvent).filter_by(
+            action="user.password_reset", resource_id=user_id
+        ).order_by(AuditEvent.created_at.desc()).first()
+        assert audit is not None
+        assert audit.actor_id
+        assert audit.details_json == "{}"
+        assert one_time_password not in audit.details_json
 
 
 def test_permission_rows_are_unique_per_user_and_skill() -> None:

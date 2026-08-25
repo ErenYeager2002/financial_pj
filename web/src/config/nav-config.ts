@@ -23,7 +23,3 @@ export function getNavGroups(role: PlatformRole): NavGroup[] {
     items: group.items.map(toNavItem)
   }));
 }
-
-// Compatibility for cleanup templates that are typechecked with the application.
-// Runtime navigation uses getNavGroups with the authenticated platform role.
-export const navGroups = getNavGroups('finance_user');

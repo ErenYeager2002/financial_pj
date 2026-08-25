@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import shutil
 from pathlib import Path
 from typing import Any
@@ -51,7 +52,7 @@ DISPLAY_METADATA: dict[str, dict[str, Any]] = {
         "popular": True,
     },
     "ar-hexiao-daily": {
-        "output_summary": "写入后的到账流转表、年度盈亏核算表和核销日清",
+        "output_summary": "写入后的到账流转表、年度盈亏核算表和整合核销日清",
         "action_label": "开始核销",
         "estimated_minutes": 10,
         "popular": False,
@@ -165,7 +166,7 @@ def manifest(
         "progress_stages": DEFAULT_PROGRESS_STAGES,
         "result_presentation": {"metrics": []},
         "upstream": {
-            "repository": "https://github.com/EvanLee2004/finance-skills",
+            "repository": "https://gitee.com/Lee157/finance-skills.git",
             "path": f"skills/{skill_id}",
         },
     }
@@ -532,7 +533,7 @@ CATALOG_ONLY: dict[str, dict[str, Any]] = {
         timeout=1800,
         network_access=True,
         network_targets=["http://192.168.10.167:18880"],
-        version="1.5.1",
+        version="1.6.10",
     ),
     "jdy-cashflow-export": manifest(
         "jdy-cashflow-export",
@@ -689,10 +690,27 @@ def write_yaml(path: Path, payload: dict[str, Any]) -> None:
     )
 
 
+def source_skill_name(source: Path) -> str:
+    manifest = source / "SKILL.md"
+    if not manifest.is_file():
+        raise FileNotFoundError(f"源 Skill 缺少 SKILL.md：{source}")
+    content = manifest.read_text(encoding="utf-8").replace("\r\n", "\n")
+    parts = content.split("---", 2)
+    if len(parts) != 3 or parts[0].strip():
+        raise ValueError(f"源 Skill 的 SKILL.md front matter 无效：{source}")
+    payload = yaml.safe_load(parts[1]) or {}
+    name = str(payload.get("name", "")).strip()
+    if not name:
+        raise ValueError(f"源 Skill 的 SKILL.md 缺少 name：{source}")
+    return name
+
+
 def sync_one(source_root: Path, skill_id: str, item: dict[str, Any], executable: bool) -> None:
     source = source_root / skill_id
     if not source.is_dir():
         raise FileNotFoundError(f"源 Skill 不存在：{source}")
+    if source_skill_name(source) != skill_id:
+        raise ValueError(f"源 Skill 的 name 与请求的 Skill ID 不一致：{skill_id}")
     target = (PLATFORM_SKILLS / skill_id).resolve()
     if not target.is_relative_to(PLATFORM_SKILLS.resolve()):
         raise RuntimeError(f"目标目录越界：{target}")
@@ -740,6 +758,10 @@ def main() -> None:
         default=[],
         help="只同步指定 Skill；可重复使用。未提供时同步全部。",
     )
+    parser.add_argument("--repository-url", default="", help="已确认绑定的 Git 仓库地址")
+    parser.add_argument("--source-path", default="", help="已确认绑定的仓库内 Skill 目录")
+    parser.add_argument("--source-commit", default="", help="固定的 40 位 Git commit")
+    parser.add_argument("--version", default="", help="本次平台发布版本")
     args = parser.parse_args()
     source_root = args.source.resolve()
     if not source_root.is_dir():
@@ -752,6 +774,26 @@ def main() -> None:
     unknown = sorted(requested - known)
     if unknown:
         raise ValueError("未知 Skill：" + ", ".join(unknown))
+    source_metadata = {
+        "repository_url": args.repository_url.strip(),
+        "source_path": args.source_path.strip().replace("\\", "/"),
+        "source_commit": args.source_commit.strip().lower(),
+        "version": args.version.strip(),
+    }
+    if any(source_metadata.values()):
+        if len(requested) != 1 or not all(source_metadata.values()):
+            raise ValueError("绑定来源参数必须完整提供，且一次只能同步一个 Skill。")
+        selected = next(iter(requested))
+        if source_metadata["repository_url"] != "https://gitee.com/Lee157/finance-skills.git":
+            raise ValueError("仓库地址不是已配置的财务 Skill Gitee 仓库。")
+        if source_metadata["source_path"] != f"skills/{selected}":
+            raise ValueError("源码目录与请求的 Skill ID 不一致。")
+        if not re.fullmatch(r"[0-9a-f]{40}", source_metadata["source_commit"]):
+            raise ValueError("源码 commit 必须是 40 位小写十六进制。")
+        if not re.fullmatch(
+            r"\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?", source_metadata["version"]
+        ):
+            raise ValueError("发布版本必须使用语义化版本格式。")
     executable_items = {
         key: value for key, value in EXECUTABLES.items() if not requested or key in requested
     }
@@ -767,6 +809,17 @@ def main() -> None:
             skipped.append(skill_id)
             continue
         sync_one(source_root, skill_id, item, False)
+    if source_metadata["repository_url"]:
+        selected = next(iter(requested))
+        manifest_path = PLATFORM_SKILLS / selected / "tool.yaml"
+        payload = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        payload["version"] = source_metadata["version"]
+        payload["upstream"] = {
+            "repository": source_metadata["repository_url"],
+            "path": source_metadata["source_path"],
+            "commit": source_metadata["source_commit"],
+        }
+        write_yaml(manifest_path, payload)
     print(
         f"已同步 {len(executable_items)} 个可执行 Skill、"
         f"{len(catalog_items) - len(skipped)} 个目录级 Skill。"

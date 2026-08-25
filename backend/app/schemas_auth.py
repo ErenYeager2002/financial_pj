@@ -54,6 +54,10 @@ class AdminUserUpdate(BaseModel):
     clerk_organization_id: str | None = Field(default=None, max_length=128)
 
 
+class AdminPasswordReset(BaseModel):
+    initial_password: str = Field(min_length=8, max_length=256)
+
+
 class AdminUserRead(BaseModel):
     id: str
     username: str

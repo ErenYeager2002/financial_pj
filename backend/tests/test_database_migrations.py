@@ -237,8 +237,10 @@ def test_workflow_step_migration_preserves_existing_task_records(tmp_path: Path)
     assert old_schema.returncode == 0, old_schema.stderr
 
     seed = _run_python(
-        "from app.database import SessionLocal\n"
-        "from app.models import RunRecord, WorkflowSession\n"
+        "from datetime import UTC, datetime\n"
+        "from sqlalchemy import MetaData, Table\n"
+        "from app.database import SessionLocal, engine\n"
+        "from app.models import RunRecord\n"
         "with SessionLocal() as db:\n"
         "    db.add(RunRecord(\n"
         "        id='legacy-run', owner_id='user-1', department_id='finance',\n"
@@ -247,11 +249,18 @@ def test_workflow_step_migration_preserves_existing_task_records(tmp_path: Path)
         "        manifest_path='tool.yaml', manifest_snapshot='{}',\n"
         "        adapter='python', worker_pool='python',\n"
         "    ))\n"
-        "    db.add(WorkflowSession(\n"
-        "        id='legacy-workflow', owner_id='user-1', department_id='finance',\n"
-        "        skill_id='ar-hexiao-daily', skill_name='ar-hexiao-daily',\n"
-        "        skill_version='1.5.1', skill_hash='b'*64,\n"
-        "        model_connection_id='model-1', model_provider='qwen', model_name='qwen-plus',\n"
+        "    workflows = Table('workflow_sessions', MetaData(), autoload_with=engine)\n"
+        "    db.execute(workflows.insert().values(\n"
+        "        id='legacy-workflow', owner_id='user-1', owner_name='',\n"
+        "        department_id='finance', skill_id='ar-hexiao-daily',\n"
+        "        skill_name='ar-hexiao-daily', skill_version='1.5.1',\n"
+        "        skill_hash='b'*64, skill_commit='', concurrency_limit=1,\n"
+        "        model_connection_id='model-1', model_provider='qwen',\n"
+        "        model_name='qwen-plus', state='active', stage='awaiting_date',\n"
+        "        reconciliation_date='', batch_sequence=0, previous_workflow_id='',\n"
+        "        context_json='{}', files_json='{}', artifacts_json='[]',\n"
+        "        progress=0, progress_message='', error_message='',\n"
+        "        created_at=datetime.now(UTC), updated_at=datetime.now(UTC),\n"
         "    ))\n"
         "    db.commit()\n",
         db_url=db_url,

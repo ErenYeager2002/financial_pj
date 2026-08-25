@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { auth } from '@clerk/nextjs/server';
+import { platformCredential, runtimeAccessToken } from '@/features/auth/server-auth';
 import {
   type AgentEvent,
   type AgentTool,
@@ -112,6 +112,7 @@ function workflowSummary(workflow: WorkflowRead): string {
   return JSON.stringify(
     {
       id: workflow.id,
+      display_id: workflow.display_id,
       skill_id: workflow.skill_id,
       stage: workflow.stage,
       state: workflow.state,
@@ -307,10 +308,9 @@ export async function createWorkflowAgentTurn(
   input: WorkflowTurnInput
 ): Promise<WorkflowTurnStream> {
   const checked = checkedInput(input);
-  const { isAuthenticated, getToken, userId: clerkUserId } = await auth();
-  if (!isAuthenticated) throw new PlatformApiError(401, '请先登录。');
-  const token = await getToken();
-  if (!token) throw new PlatformApiError(401, '无法获取当前登录凭据，请重新登录。');
+  const credential = await platformCredential();
+  const token = runtimeAccessToken(credential);
+  const clerkUserId = credential.clerkUserId;
 
   const session = await platformServerRequest<PlatformSession>('/api/session');
   if (resolveAgentRuntime(runtimeSelectorId(clerkUserId, session.user_id)) === 'legacy') {

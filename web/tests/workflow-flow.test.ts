@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { workflowError, workflowFlow } from '../src/features/workflow-agent/workflow-flow.ts';
+import {
+  workflowError,
+  workflowFlow,
+  workflowSummaryFlow
+} from '../src/features/workflow-agent/workflow-flow.ts';
 
 test('后台任务流程卡片把当前步骤标为进行中', () => {
   const nodes = workflowFlow({
@@ -41,4 +45,19 @@ test('完成任务的流程卡片全部完成', () => {
       (node) => node.state === 'complete'
     )
   );
+});
+
+test('流程默认按五组展示，细分步骤仍保留', () => {
+  const groups = workflowSummaryFlow({
+    state: 'running',
+    stage: 'preparing',
+    progress: 35,
+    current_step: 'classify_receipts'
+  });
+  assert.deepEqual(
+    groups.map((group) => group.label),
+    ['准备材料', '智云取数', '数据检查', '核销处理', '完成']
+  );
+  assert.equal(groups.find((group) => group.key === 'checks')?.state, 'active');
+  assert.equal(groups.find((group) => group.key === 'fetch')?.state, 'complete');
 });

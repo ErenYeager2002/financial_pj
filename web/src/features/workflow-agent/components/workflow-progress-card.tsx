@@ -3,18 +3,21 @@
 import * as React from 'react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Icons } from '@/components/icons';
 import {
   workflowError,
   workflowFlow,
+  workflowSummaryFlow,
   type WorkflowFlowState
 } from '@/features/workflow-agent/workflow-flow';
 import type { WorkflowRead } from '@/features/platform-api/types';
 
 interface WorkflowProgressCardProps {
   workflow: WorkflowRead;
+  onOpenFetchedData?: () => void;
 }
 
 function nodeIcon(state: WorkflowFlowState): React.JSX.Element {
@@ -25,8 +28,12 @@ function nodeIcon(state: WorkflowFlowState): React.JSX.Element {
   return <span className='size-2 rounded-full bg-current' aria-hidden='true' />;
 }
 
-export function WorkflowProgressCard({ workflow }: WorkflowProgressCardProps): React.JSX.Element {
+export function WorkflowProgressCard({
+  workflow,
+  onOpenFetchedData
+}: WorkflowProgressCardProps): React.JSX.Element {
   const nodes = workflowFlow(workflow);
+  const groups = workflowSummaryFlow(workflow);
   const error = workflowError(workflow);
   const currentLabel =
     workflow.current_step_label || workflow.progress_message || '等待后台 Worker';
@@ -54,65 +61,77 @@ export function WorkflowProgressCard({ workflow }: WorkflowProgressCardProps): R
         />
       </CardHeader>
       <CardContent>
-        <ol className='grid gap-2 sm:grid-cols-3 lg:grid-cols-9' aria-label='后台任务流程'>
-          {nodes.map((node, index) => (
-            <li key={node.key} className='relative min-w-0'>
-              {index < nodes.length - 1 && (
-                <span
-                  className={`absolute top-4 left-1/2 hidden h-px w-full sm:block ${
-                    node.state === 'complete' ? 'bg-primary/60' : 'bg-border'
-                  }`}
-                  aria-hidden='true'
-                />
-              )}
+        <ol className='grid gap-2 sm:grid-cols-2 lg:grid-cols-5' aria-label='任务五组流程'>
+          {groups.map((group) => (
+            <li key={group.key}>
               <div
-                className={`relative flex items-center gap-2 rounded-md border px-2 py-2 text-xs sm:block sm:text-center ${
-                  node.state === 'error'
+                className={`flex min-h-20 items-center gap-3 rounded-md border px-3 py-3 text-sm ${
+                  group.state === 'error'
                     ? 'border-destructive/60 bg-destructive/10 text-destructive'
-                    : node.state === 'active'
+                    : group.state === 'active'
                       ? 'border-primary/60 bg-primary/5 text-foreground'
-                      : node.state === 'complete'
+                      : group.state === 'complete'
                         ? 'border-primary/30 bg-primary/5 text-foreground'
                         : 'text-muted-foreground'
                 }`}
               >
-                <span className='mx-auto flex size-8 shrink-0 items-center justify-center rounded-full border bg-background'>
-                  {nodeIcon(node.state)}
+                <span className='flex size-8 shrink-0 items-center justify-center rounded-full border bg-background'>
+                  {nodeIcon(group.state)}
                 </span>
-                <span className='min-w-0 truncate sm:mt-2 sm:block sm:whitespace-normal'>
-                  {node.label}
-                </span>
+                <span className='min-w-0 font-medium'>{group.label}</span>
               </div>
             </li>
           ))}
         </ol>
+        <details className='mt-3 rounded-md border px-3 py-2'>
+          <summary className='cursor-pointer text-sm font-medium'>查看细分步骤</summary>
+          <ol
+            className='mt-3 grid gap-2 sm:grid-cols-3 lg:grid-cols-5'
+            aria-label='任务细分流程'
+          >
+            {nodes.map((node) => (
+              <li key={node.key} className='relative min-w-0'>
+                <div
+                  className={`relative flex items-center gap-2 rounded-md border px-2 py-2 text-xs sm:block sm:text-center ${
+                    node.state === 'error'
+                      ? 'border-destructive/60 bg-destructive/10 text-destructive'
+                      : node.state === 'active'
+                        ? 'border-primary/60 bg-primary/5 text-foreground'
+                        : node.state === 'complete'
+                          ? 'border-primary/30 bg-primary/5 text-foreground'
+                          : 'text-muted-foreground'
+                  }`}
+                >
+                  <span className='mx-auto flex size-8 shrink-0 items-center justify-center rounded-full border bg-background'>
+                    {nodeIcon(node.state)}
+                  </span>
+                  <span className='min-w-0 truncate sm:mt-2 sm:block sm:whitespace-normal'>
+                    {node.label}
+                  </span>
+                  {(node.key === 'fetch_zhiyun' || node.key === 'review_fetched_data') &&
+                    workflow.fetched_data_available &&
+                    onOpenFetchedData && (
+                      <Button
+                        type='button'
+                        size='xs'
+                        variant='outline'
+                        className='relative mt-2 w-full sm:text-xs'
+                        onClick={onOpenFetchedData}
+                      >
+                        查看取数数据
+                      </Button>
+                    )}
+                </div>
+              </li>
+            ))}
+          </ol>
+        </details>
         {error && (
           <Alert variant='destructive' className='mt-4'>
             <AlertTitle>任务在此步骤中断：{error.step}</AlertTitle>
             <AlertDescription>
               <p className='whitespace-pre-wrap'>{error.message}</p>
-              {(error.employee || error.skill || error.reason) && (
-                <dl className='mt-3 grid gap-2 text-sm sm:grid-cols-3'>
-                  {error.employee && (
-                    <div>
-                      <dt className='font-medium'>员工</dt>
-                      <dd>{error.employee}</dd>
-                    </div>
-                  )}
-                  {error.skill && (
-                    <div>
-                      <dt className='font-medium'>Skill</dt>
-                      <dd>{error.skill}</dd>
-                    </div>
-                  )}
-                  {error.reason && (
-                    <div className='sm:col-span-3'>
-                      <dt className='font-medium'>原因</dt>
-                      <dd className='whitespace-pre-wrap'>{error.reason}</dd>
-                    </div>
-                  )}
-                </dl>
-              )}
+              {error.reason && <p className='mt-2'>{error.reason}</p>}
             </AlertDescription>
           </Alert>
         )}

@@ -1,25 +1,49 @@
 import PageContainer from '@/components/layout/page-container';
-import { listWorkflowSessions, listWorkflowSkills } from '@/features/workflow-agent/api/server';
+import {
+  listWorkflowBatches,
+  listWorkflowReusableFiles,
+  listWorkflowSessions,
+  listWorkflowSkills
+} from '@/features/workflow-agent/api/server';
 import { WorkflowLauncher } from '@/features/workflow-agent/components/workflow-launcher';
 
 export const metadata = {
-  title: '后台任务'
+  title: '创建应收核销任务'
 };
 
 type PageProps = {
-  searchParams: Promise<{ skill?: string | string[] }>;
+  searchParams: Promise<{ skill?: string | string[]; date?: string | string[] }>;
 };
 
 export default async function Page({ searchParams }: PageProps): Promise<React.JSX.Element> {
   const params = await searchParams;
   const initialSkillId = typeof params.skill === 'string' ? params.skill : '';
-  const [skills, workflows] = await Promise.all([listWorkflowSkills(), listWorkflowSessions()]);
+  const initialDates = Array.isArray(params.date) ? params.date : params.date ? [params.date] : [];
+  const [skills, workflows, batches] = await Promise.all([
+    listWorkflowSkills(),
+    listWorkflowSessions(),
+    listWorkflowBatches()
+  ]);
+  const selectedSkillId =
+    initialSkillId && skills.some((skill) => skill.id === initialSkillId)
+      ? initialSkillId
+      : (skills[0]?.id ?? '');
+  const initialReusableFiles = selectedSkillId
+    ? await listWorkflowReusableFiles(selectedSkillId)
+    : null;
   return (
     <PageContainer
-      pageTitle='后台任务'
-      pageDescription='选择日期和材料后提交后台任务，状态由 Worker 持续更新'
+      pageTitle='创建应收核销任务'
+      pageDescription='选择日期和材料后提交任务，状态会持续更新'
     >
-      <WorkflowLauncher skills={skills} workflows={workflows} initialSkillId={initialSkillId} />
+      <WorkflowLauncher
+        skills={skills}
+        workflows={workflows}
+        batches={batches}
+        initialSkillId={selectedSkillId}
+        initialDates={initialDates}
+        initialReusableFiles={initialReusableFiles}
+      />
     </PageContainer>
   );
 }

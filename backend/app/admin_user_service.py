@@ -8,10 +8,11 @@ from sqlalchemy.orm import Session
 from .audit_service import record_audit
 from .auth import UserContext
 from .auth_models import User, UserSkillPermission
-from .auth_service import create_user, revoke_all_user_sessions
+from .auth_service import create_user, hash_password, revoke_all_user_sessions
 from .authorization import list_user_permissions, replace_user_permissions
 from .registry import registry
 from .schemas_auth import (
+    AdminPasswordReset,
     AdminUserCreate,
     AdminUserRead,
     AdminUserUpdate,
@@ -158,6 +159,31 @@ def update_department_user(
         raise HTTPException(status_code=409, detail="Clerk 用户标识已经绑定其他账号。") from exc
     if body.status == "disabled":
         revoke_all_user_sessions(db, user.id)
+    db.refresh(user)
+    return user_read(db, user)
+
+
+def reset_department_user_password(
+    db: Session,
+    actor: UserContext,
+    user_id: str,
+    body: AdminPasswordReset,
+) -> AdminUserRead:
+    user = _department_user(db, actor, user_id)
+    user.password_hash = hash_password(body.initial_password)
+    user.must_change_password = True
+    user.password_changed_at = None
+    user.failed_attempts = 0
+    user.locked_until = None
+    revoke_all_user_sessions(db, user.id, commit=False)
+    record_audit(
+        db,
+        actor=actor,
+        action="user.password_reset",
+        resource_type="user",
+        resource_id=user.id,
+    )
+    db.commit()
     db.refresh(user)
     return user_read(db, user)
 

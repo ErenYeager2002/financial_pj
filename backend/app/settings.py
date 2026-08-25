@@ -58,15 +58,9 @@ class Settings:
         f"sqlite:///{(PROJECT_ROOT / 'data' / 'financial.db').as_posix()}",
     )
     max_upload_mb: int = int(os.getenv("FINANCIAL_MAX_UPLOAD_MB", "100"))
-    file_retention_days: int = max(
-        1, int(os.getenv("FINANCIAL_FILE_RETENTION_DAYS", "90"))
-    )
-    task_draft_ttl_minutes: int = max(
-        5, int(os.getenv("FINANCIAL_TASK_DRAFT_TTL_MINUTES", "30"))
-    )
-    approval_ttl_minutes: int = max(
-        5, int(os.getenv("FINANCIAL_APPROVAL_TTL_MINUTES", "30"))
-    )
+    file_retention_days: int = max(1, int(os.getenv("FINANCIAL_FILE_RETENTION_DAYS", "90")))
+    task_draft_ttl_minutes: int = max(5, int(os.getenv("FINANCIAL_TASK_DRAFT_TTL_MINUTES", "30")))
+    approval_ttl_minutes: int = max(5, int(os.getenv("FINANCIAL_APPROVAL_TTL_MINUTES", "30")))
     queue_poll_seconds: float = float(os.getenv("FINANCIAL_QUEUE_POLL_SECONDS", "1"))
     worker_pools: tuple[str, ...] = tuple(
         item.strip()
@@ -84,6 +78,12 @@ class Settings:
     llm_model: str = os.getenv("FINANCIAL_LLM_MODEL", "")
     llm_provider: str = os.getenv("FINANCIAL_LLM_PROVIDER", "")
     zhiyun_base_url: str = os.getenv("FINANCIAL_ZHIYUN_BASE_URL", "").rstrip("/")
+    # Read-only reminder discovery is independently gated from reconciliation.
+    task_discovery_enabled: bool = _env_bool(
+        "FINANCIAL_TASK_DISCOVERY_ENABLED",
+        False,
+    )
+    task_discovery_holidays: tuple[str, ...] = _csv_env("FINANCIAL_TASK_DISCOVERY_HOLIDAYS")
     # AR reconciliation stays available to synthetic tests only until the
     # production read-only gate is explicitly lifted.
     ar_hexiao_execution_enabled: bool = _env_bool(
@@ -113,6 +113,10 @@ class Settings:
     clerk_jwt_leeway_seconds: int = max(
         0, int(os.getenv("FINANCIAL_CLERK_JWT_LEEWAY_SECONDS", "5"))
     )
+    dev_clerk_auto_provision_admin: bool = _env_bool(
+        "FINANCIAL_DEV_CLERK_AUTO_PROVISION_ADMIN",
+        False,
+    )
 
     @property
     def trusted_origins(self) -> tuple[str, ...]:
@@ -137,6 +141,10 @@ class Settings:
     @property
     def workflow_dir(self) -> Path:
         return self.data_dir / "workflows"
+
+    @property
+    def avatar_dir(self) -> Path:
+        return self.data_dir / "avatars"
 
     @property
     def log_dir(self) -> Path:
@@ -164,6 +172,7 @@ class Settings:
             self.upload_dir,
             self.run_dir,
             self.workflow_dir,
+            self.avatar_dir,
             self.log_dir,
             self.skill_release_dir,
             self.skill_release_inbox_dir,

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { getPlatformNavigation } from '../src/config/platform-navigation.ts';
+import { getPlatformNavigation, getPlatformRouteTitle } from '../src/config/platform-navigation.ts';
 
 function itemTitles(role: 'finance_user' | 'skill_admin'): string[] {
   return getPlatformNavigation(role).flatMap((group) =>
@@ -33,9 +33,7 @@ test('财务员工只看到完成任务所需的生产导航', () => {
     '我的任务',
     '文件中心',
     'AI 助手',
-    '后台任务',
-    '个人资料',
-    '消息通知'
+    '个人资料'
   ]);
 });
 
@@ -52,14 +50,12 @@ test('Skill 管理员额外看到治理入口', () => {
     '我的任务',
     '文件中心',
     'AI 助手',
-    '后台任务',
     'Skill 治理',
     '发布与维护',
-    '审核记录',
     '用户与权限',
-    '企业空间',
-    '个人资料',
-    '消息通知'
+    '模型连接',
+    '功能开关',
+    '个人资料'
   ]);
 });
 
@@ -83,6 +79,16 @@ test('生产导航不暴露模板演示模块', () => {
   }
 });
 
+test('内部任务创建路由保留用户可读标题但不进入生产导航', () => {
+  assert.equal(getPlatformRouteTitle('/dashboard/workflows'), '创建应收核销任务');
+  assert.equal(
+    getPlatformNavigation('finance_user')
+      .flatMap((group) => group.items)
+      .some((item) => item.url === '/dashboard/workflows'),
+    false
+  );
+});
+
 test('Skill 中心与 Skill 治理使用不同入口', () => {
   const groups = getPlatformNavigation('skill_admin');
   const items = groups.flatMap((group) => group.items);
@@ -104,16 +110,12 @@ test('两种平台角色的菜单层级和链接符合生产规格', () => {
         { title: 'Skill 中心', url: '/dashboard/skills', items: [] },
         { title: '我的任务', url: '/dashboard/runs', items: [] },
         { title: '文件中心', url: '/dashboard/files', items: [] },
-        { title: 'AI 助手', url: '/dashboard/ai-chat', items: [] },
-        { title: '后台任务', url: '/dashboard/workflows', items: [] }
+        { title: 'AI 助手', url: '/dashboard/ai-chat', items: [] }
       ]
     },
     {
       label: '账号',
-      items: [
-        { title: '个人资料', url: '/dashboard/profile', items: [] },
-        { title: '消息通知', url: '/dashboard/notifications', items: [] }
-      ]
+      items: [{ title: '个人资料', url: '/dashboard/profile', items: [] }]
     }
   ]);
 
@@ -125,8 +127,7 @@ test('两种平台角色的菜单层级和链接符合生产规格', () => {
         { title: 'Skill 中心', url: '/dashboard/skills', items: [] },
         { title: '我的任务', url: '/dashboard/runs', items: [] },
         { title: '文件中心', url: '/dashboard/files', items: [] },
-        { title: 'AI 助手', url: '/dashboard/ai-chat', items: [] },
-        { title: '后台任务', url: '/dashboard/workflows', items: [] }
+        { title: 'AI 助手', url: '/dashboard/ai-chat', items: [] }
       ]
     },
     {
@@ -135,21 +136,16 @@ test('两种平台角色的菜单层级和链接符合生产规格', () => {
         {
           title: 'Skill 治理',
           url: '#',
-          items: [
-            { title: '发布与维护', url: '/dashboard/skill-governance' },
-            { title: '审核记录', url: '/dashboard/skill-reviews' }
-          ]
+          items: [{ title: '发布与维护', url: '/dashboard/skill-governance' }]
         },
         { title: '用户与权限', url: '/dashboard/users', items: [] },
-        { title: '企业空间', url: '/dashboard/workspaces', items: [] }
+        { title: '模型连接', url: '/dashboard/model-connections', items: [] },
+        { title: '功能开关', url: '/dashboard/feature-controls', items: [] }
       ]
     },
     {
       label: '账号',
-      items: [
-        { title: '个人资料', url: '/dashboard/profile', items: [] },
-        { title: '消息通知', url: '/dashboard/notifications', items: [] }
-      ]
+      items: [{ title: '个人资料', url: '/dashboard/profile', items: [] }]
     }
   ]);
 });

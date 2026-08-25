@@ -6,9 +6,11 @@ import ThemeProvider from '@/components/themes/theme-provider';
 import { cn } from '@/lib/utils';
 import type { Metadata, Viewport } from 'next';
 import { cookies } from 'next/headers';
+import Script from 'next/script';
 import NextTopLoader from 'nextjs-toploader';
 import { NuqsAdapter } from 'nuqs/adapters/next/app';
 import '../styles/globals.css';
+import { authMode } from '@/features/auth/auth-mode';
 
 const META_THEME_COLORS = {
   light: '#ffffff',
@@ -66,18 +68,16 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     >
       <head>
         <meta name='google' content='notranslate' />
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
+        <Script id='theme-color-init' strategy='beforeInteractive'>
+          {`
               try {
                 // Set meta theme color
                 if (localStorage.theme === 'dark' || ((!('theme' in localStorage) || localStorage.theme === 'system') && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
                   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '${META_THEME_COLORS.dark}')
                 }
               } catch (_) {}
-            `
-          }}
-        />
+            `}
+        </Script>
       </head>
       <body
         className={cn(
@@ -94,7 +94,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             disableTransitionOnChange
             enableColorScheme
           >
-            <Providers activeThemeValue={themeToApply}>
+            <Providers activeThemeValue={themeToApply} authMode={authMode()}>
               <Toaster />
               {children}
             </Providers>

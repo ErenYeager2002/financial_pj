@@ -10,12 +10,29 @@ import {
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
 import { UserAvatarProfile } from '@/components/user-avatar-profile';
-import { SignOutButton, useUser } from '@clerk/nextjs';
+import type { PlatformSession } from '@/features/platform-api/types';
+import { platformAvatarUser } from '@/features/profile/avatar';
+import { useClerk } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
-export function UserNav() {
-  const { user } = useUser();
+
+function ClerkSignOutItem() {
+  const { signOut } = useClerk();
+  return (
+    <DropdownMenuItem onClick={() => signOut({ redirectUrl: '/auth/sign-in' })}>
+      退出登录
+    </DropdownMenuItem>
+  );
+}
+
+export function UserNav({ session }: { session: PlatformSession }) {
   const router = useRouter();
-  if (user) {
+  const user = platformAvatarUser(session);
+  async function localSignOut() {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    router.replace('/auth/sign-in');
+    router.refresh();
+  }
+  if (session) {
     return (
       <DropdownMenu>
         <DropdownMenuTrigger
@@ -27,10 +44,8 @@ export function UserNav() {
           <DropdownMenuGroup>
             <DropdownMenuLabel className='font-normal'>
               <div className='flex flex-col space-y-1'>
-                <p className='text-sm leading-none font-medium'>{user.fullName}</p>
-                <p className='text-muted-foreground text-xs leading-none'>
-                  {user.emailAddresses[0].emailAddress}
-                </p>
+                <p className='text-sm leading-none font-medium'>{session.display_name}</p>
+                <p className='text-muted-foreground text-xs leading-none'>{session.username}</p>
               </div>
             </DropdownMenuLabel>
           </DropdownMenuGroup>
@@ -45,9 +60,11 @@ export function UserNav() {
           </DropdownMenuGroup>
           <DropdownMenuSeparator />
           <DropdownMenuGroup>
-            <DropdownMenuItem>
-              <SignOutButton redirectUrl='/auth/sign-in' />
-            </DropdownMenuItem>
+            {session.auth_provider === 'clerk' ? (
+              <ClerkSignOutItem />
+            ) : (
+              <DropdownMenuItem onClick={() => void localSignOut()}>退出登录</DropdownMenuItem>
+            )}
           </DropdownMenuGroup>
         </DropdownMenuContent>
       </DropdownMenu>

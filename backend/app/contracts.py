@@ -29,6 +29,7 @@ class PlatformUser(BaseModel):
     department_id: str
     must_change_password: bool = False
     auth_provider: Literal["session", "clerk"] = "session"
+    avatar_updated_at: datetime | None = None
 
 
 class SkillRiskSummary(BaseModel):
@@ -58,9 +59,7 @@ class SkillDetail(SkillSummary):
     file_inputs: list[FileInputSpec] = Field(default_factory=list)
     input_schema: dict[str, Any] = Field(default_factory=dict)
     progress_stages: list[ProgressStageSpec] = Field(default_factory=list)
-    result_presentation: ResultPresentationSpec = Field(
-        default_factory=ResultPresentationSpec
-    )
+    result_presentation: ResultPresentationSpec = Field(default_factory=ResultPresentationSpec)
 
 
 class AdminSkillDetail(SkillManifest):
@@ -144,6 +143,136 @@ class SkillReleaseRead(BaseModel):
     published_at: datetime | None
 
 
+class SkillSourceDiscoveryRequest(BaseModel):
+    repository_url: str = Field(min_length=12, max_length=512)
+    tracking_ref: str = Field(default="main", min_length=1, max_length=255)
+
+
+class SkillSourceCandidateRead(BaseModel):
+    platform_skill_id: str = ""
+    source_name: str
+    source_path: str
+    match_state: Literal["candidate", "bound", "conflict", "unmatched", "excluded"]
+    reason: str = ""
+
+
+class SkillSourceDiscoveryRead(BaseModel):
+    repository_url: str
+    tracking_ref: str
+    commit: str
+    candidates: list[SkillSourceCandidateRead]
+
+
+class SkillSourceBindingConfirmRequest(BaseModel):
+    skill_id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+    repository_url: str = Field(min_length=12, max_length=512)
+    tracking_ref: str = Field(min_length=1, max_length=255)
+    source_path: str = Field(min_length=8, max_length=512)
+    expected_commit: str = Field(pattern=r"^[0-9a-f]{40}$")
+
+
+class SkillSourceBindingRead(BaseModel):
+    id: str
+    skill_id: str
+    source_type: Literal["git"]
+    provider: Literal["gitee"]
+    repository_url: str
+    source_path: str
+    tracking_ref: str
+    binding_status: Literal["candidate", "bound", "broken", "excluded"]
+    packager_profile: str
+    last_seen_commit: str
+    last_seen_tree_hash: str
+    published_commit: str
+    published_tree_hash: str
+    created_by: str
+    updated_by: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class SkillSourceUpdateCheckRead(BaseModel):
+    skill_id: str
+    repository_url: str
+    source_path: str
+    tracking_ref: str
+    commit: str
+    tree_hash: str
+    published_commit: str
+    published_tree_hash: str
+    update_available: bool
+
+
+class SkillSourcePrepareReleaseRequest(BaseModel):
+    version: str = Field(
+        pattern=r"^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$",
+        min_length=5,
+        max_length=64,
+    )
+
+
+class SkillAvailabilityTransitionRequest(BaseModel):
+    target_state: Literal["enabled", "draining", "disabled"]
+    reason: str = Field(min_length=2, max_length=500)
+
+
+class SkillAvailabilityRead(BaseModel):
+    skill_id: str
+    state: Literal["enabled", "draining", "disabled", "failed_disabled"]
+    generation: int
+    reason: str
+    changed_by: str
+    changed_at: datetime | None
+    active_work_count: int
+
+
+class FeatureControlUpdateRequest(BaseModel):
+    enabled: bool
+
+
+class FeatureControlRead(BaseModel):
+    key: str
+    name: str
+    description: str
+    category: Literal["automation", "execution", "authentication"]
+    enabled: bool
+    editable: bool
+    source: Literal["administrator", "deployment"]
+    blocked_reason: str = ""
+    changed_by: str = ""
+    changed_at: datetime | None = None
+
+
+class SkillRolloutStartRequest(BaseModel):
+    confirmation: str = Field(min_length=8, max_length=255)
+
+
+class SkillRolloutRead(BaseModel):
+    id: str
+    release_id: str
+    skill_id: str
+    state: Literal[
+        "queued",
+        "draining",
+        "activating",
+        "verifying",
+        "succeeded",
+        "failed",
+        "failed_disabled",
+    ]
+    attempt_count: int
+    previous_skill_hash: str
+    target_commit: str
+    target_tree_hash: str
+    error_message: str
+    requested_by: str
+    created_at: datetime
+    updated_at: datetime
+    next_attempt_at: datetime
+    started_at: datetime | None
+    finished_at: datetime | None
+
+
 class RunSummary(BaseModel):
     id: str
     owner_id: str
@@ -183,6 +312,47 @@ class RunPage(BaseModel):
     page: int
     page_size: int
     pages: int
+
+
+TaskCenterReferenceType = Literal["run", "workflow", "workflow_batch"]
+TaskCenterViewState = Literal["pending", "running", "failed", "succeeded", "cancelled"]
+
+
+class TaskCenterStateCounts(BaseModel):
+    pending: int = 0
+    running: int = 0
+    failed: int = 0
+    succeeded: int = 0
+    cancelled: int = 0
+
+
+class TaskCenterItem(BaseModel):
+    reference_type: TaskCenterReferenceType
+    reference_id: str
+    detail_href: str
+    business_task_id: str = ""
+    skill_id: str
+    skill_name: str
+    business_date_start: str = ""
+    business_date_end: str = ""
+    business_date_count: int = 0
+    view_state: TaskCenterViewState
+    original_state: str
+    original_stage: str = ""
+    progress: int
+    progress_message: str
+    error_summary: str = ""
+    created_at: datetime
+    updated_at: datetime
+
+
+class TaskCenterPage(BaseModel):
+    items: list[TaskCenterItem] = Field(default_factory=list)
+    total: int
+    page: int
+    page_size: int
+    pages: int
+    state_counts: TaskCenterStateCounts
 
 
 class RunEventRead(BaseModel):
@@ -334,8 +504,17 @@ class WorkbenchSkillUsage(BaseModel):
     last_run_at: datetime | None = None
 
 
+class WorkbenchTaskReminderSummary(BaseModel):
+    pending_dates: int = 0
+    active_skills: int = 0
+    failed_checks: int = 0
+
+
 class Workbench(BaseModel):
     counts: WorkbenchCounts
+    task_reminders: WorkbenchTaskReminderSummary = Field(
+        default_factory=WorkbenchTaskReminderSummary
+    )
     common_skills: list[WorkbenchSkillUsage] = Field(default_factory=list)
     pending_runs: list[RunSummary] = Field(default_factory=list)
     recent_results: list[RunSummary] = Field(default_factory=list)
@@ -465,6 +644,9 @@ DOMAIN_CONTRACT_MODELS: tuple[type[BaseModel], ...] = (
     RunSummary,
     RunDetail,
     RunPage,
+    TaskCenterItem,
+    TaskCenterPage,
+    TaskCenterStateCounts,
     RunEventRead,
     PlatformFile,
     PlatformFileDetail,
@@ -478,6 +660,7 @@ DOMAIN_CONTRACT_MODELS: tuple[type[BaseModel], ...] = (
     AssistantMessageRead,
     AssistantConversationRead,
     AdminAssistantProfile,
+    FeatureControlRead,
     ApprovalRecord,
 )
 

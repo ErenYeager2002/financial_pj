@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { auth } from '@clerk/nextjs/server';
+import { credentialHeaders, platformCredential } from '@/features/auth/server-auth';
 import { PlatformApiError, platformErrorMessage } from './errors';
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -54,17 +54,11 @@ export async function platformServerResponse(
   init: RequestInit = {},
   options: PlatformRequestOptions = {}
 ): Promise<Response> {
-  const { isAuthenticated, getToken } = await auth();
-  if (!isAuthenticated) {
-    throw new PlatformApiError(401, '请先登录。');
-  }
-  const token = await getToken();
-  if (!token) {
-    throw new PlatformApiError(401, '无法获取当前登录凭据，请重新登录。');
-  }
-
   const headers = new Headers(init.headers);
-  headers.set('Authorization', `Bearer ${token}`);
+  const credential = await platformCredential();
+  for (const [name, value] of Object.entries(credentialHeaders(credential))) {
+    headers.set(name, String(value));
+  }
   if (init.body && !(init.body instanceof FormData) && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }

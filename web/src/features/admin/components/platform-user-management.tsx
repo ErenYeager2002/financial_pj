@@ -24,12 +24,14 @@ import type {
   SkillSummary
 } from '@/features/platform-api/types';
 import { formatDate } from '@/lib/format';
+import type { AuthMode } from '@/features/auth/auth-mode';
 
 interface PlatformUserManagementProps {
   session: PlatformSession;
   initialUsers: AdminUser[];
   skills: SkillSummary[];
   initialAuditEvents: AuditEvent[];
+  authMode: AuthMode;
 }
 
 type PermissionState = Required<Omit<SkillPermissionWrite, 'skill_id' | 'requires_approval'>> & {
@@ -55,6 +57,7 @@ const ACTION_LABELS: Record<string, string> = {
   'approval.reject': '拒绝写入任务',
   'approval.request': '申请写入审批',
   'approval.revoke': '撤销写入审批',
+  'user.password_reset': '重置一次性密码',
   'auth.login': '账号登录',
   'draft.confirm': '确认任务草稿',
   'draft.delete': '删除任务草稿',
@@ -104,7 +107,8 @@ export function PlatformUserManagement({
   session,
   initialUsers,
   skills,
-  initialAuditEvents
+  initialAuditEvents,
+  authMode
 }: PlatformUserManagementProps) {
   const [users, setUsers] = useState(initialUsers);
   const [auditEvents, setAuditEvents] = useState(initialAuditEvents);
@@ -114,6 +118,7 @@ export function PlatformUserManagement({
   const [role, setRole] = useState('finance_user');
   const [status, setStatus] = useState('active');
   const [clerkUserId, setClerkUserId] = useState('');
+  const [resetPassword, setResetPassword] = useState('');
   const [clerkOrganizationId, setClerkOrganizationId] = useState('');
   const [permissions, setPermissions] = useState<Record<string, PermissionState>>({});
   const [busy, setBusy] = useState(false);
@@ -128,6 +133,7 @@ export function PlatformUserManagement({
     setRole(user.role);
     setStatus(user.status);
     setClerkUserId(user.clerk_user_id ?? '');
+    setResetPassword('');
     setClerkOrganizationId(user.clerk_organization_id ?? '');
     setPermissions(permissionsFor(user, skills));
     setError('');
@@ -185,6 +191,33 @@ export function PlatformUserManagement({
       return;
     }
     replaceUser((await response.json()) as AdminUser);
+    setBusy(false);
+  }
+
+  async function resetOneTimePassword() {
+    if (!selected) return;
+    if (resetPassword.length < 8 || resetPassword.length > 256) {
+      setError('一次性密码必须为 8 到 256 个字符。');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    const response = await fetch(
+      `/api/platform/admin/users/${encodeURIComponent(selected.id)}/reset-password`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ initial_password: resetPassword })
+      }
+    );
+    if (!response.ok) {
+      setError(await responseMessage(response, '一次性密码重置失败。'));
+      setBusy(false);
+      return;
+    }
+    const updated = (await response.json()) as AdminUser;
+    replaceUser(updated);
+    setResetPassword('');
     setBusy(false);
   }
 
@@ -511,6 +544,31 @@ export function PlatformUserManagement({
                     {busy ? '保存中…' : '保存账号信息'}
                   </Button>
                 </div>
+                {authMode !== 'clerk' && <div className='space-y-2 border-t pt-4 md:col-span-2'>
+                  <h3 className='font-medium'>重置为一次性密码</h3>
+                  <p className='text-sm text-muted-foreground'>
+                    重置后立即撤销该用户的现有会话，并要求下次登录修改密码。审计记录不保存密码内容。
+                  </p>
+                  <div className='flex flex-col gap-2 sm:flex-row'>
+                    <Input
+                      type='password'
+                      value={resetPassword}
+                      onChange={(event) => setResetPassword(event.target.value)}
+                      minLength={8}
+                      maxLength={256}
+                      autoComplete='new-password'
+                      placeholder='输入一次性密码'
+                    />
+                    <Button
+                      type='button'
+                      variant='destructive'
+                      disabled={busy || resetPassword.length < 8}
+                      onClick={() => void resetOneTimePassword()}
+                    >
+                      重置密码并撤销会话
+                    </Button>
+                  </div>
+                </div>}
               </section>
 
               {role === 'finance_user' ? (

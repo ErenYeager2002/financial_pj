@@ -18,7 +18,6 @@ def test_project_owned_sources_live_under_one_root() -> None:
         "skills/ar-hexiao-daily/tool.yaml",
         "sources/finance-skills/skills/ar-hexiao-daily/SKILL.md",
         "tools/xlsx_lightweight_audit.py",
-        "legacy/vite-frontend/package.json",
     ):
         assert (PROJECT_ROOT / relative).is_file(), relative
 

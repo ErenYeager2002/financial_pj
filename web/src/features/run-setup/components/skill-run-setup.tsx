@@ -22,13 +22,13 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { FilePreview } from '@/components/ui/file-preview';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import type {
   PlatformFile,
   RunDetail,
   SkillDetail,
   TaskDraft
 } from '@/features/platform-api/types';
+import type { SkillExecutionExperience } from '@/features/skills/execution-experience';
 import {
   confirmRunMutation,
   confirmTaskDraftMutation,
@@ -128,6 +128,7 @@ function stateLabel(state: string): string {
 
 interface SkillRunSetupProps {
   skill: SkillDetail;
+  experience: SkillExecutionExperience;
   draft?: TaskDraft;
   draftFiles?: PlatformFile[];
 }
@@ -148,7 +149,7 @@ function filesFromDraft(
   );
 }
 
-export function SkillRunSetup({ skill, draft, draftFiles = [] }: SkillRunSetupProps) {
+export function SkillRunSetup({ skill, experience, draft, draftFiles = [] }: SkillRunSetupProps) {
   const properties = useMemo(() => schemaProperties(skill), [skill]);
   const requiredParameters = useMemo(
     () =>
@@ -168,7 +169,6 @@ export function SkillRunSetup({ skill, draft, draftFiles = [] }: SkillRunSetupPr
   );
   const [fileIssues, setFileIssues] = useState<Issues>({});
   const [parameterIssues, setParameterIssues] = useState<Issues>({});
-  const [message, setMessage] = useState(draft?.message ?? '');
   const [uploadingRole, setUploadingRole] = useState<string | null>(null);
   const [removingFileId, setRemovingFileId] = useState<string | null>(null);
   const [confirmationOpen, setConfirmationOpen] = useState(false);
@@ -294,7 +294,22 @@ export function SkillRunSetup({ skill, draft, draftFiles = [] }: SkillRunSetupPr
       toast.error('请先补齐或修正文件和参数。');
       return;
     }
-    setConfirmationOpen(true);
+    if (skill.risk.requires_confirmation) {
+      setConfirmationOpen(true);
+      return;
+    }
+    void createAndConfirm();
+  }
+
+  function moveRoleFile(role: string, fileId: string, direction: -1 | 1) {
+    setFilesByRole((current) => {
+      const files = [...(current[role] ?? [])];
+      const index = files.findIndex((file) => file.id === fileId);
+      const target = index + direction;
+      if (index < 0 || target < 0 || target >= files.length) return current;
+      [files[index], files[target]] = [files[target], files[index]];
+      return { ...current, [role]: files };
+    });
   }
 
   function runFiles(): Record<string, string | string[]> {
@@ -319,7 +334,7 @@ export function SkillRunSetup({ skill, draft, draftFiles = [] }: SkillRunSetupPr
           })
         : await createMutation.mutateAsync({
             skill_id: skill.id,
-            message,
+            message: '',
             parameters,
             files: runFiles(),
             idempotency_key: idempotencyKey.current
@@ -411,7 +426,7 @@ export function SkillRunSetup({ skill, draft, draftFiles = [] }: SkillRunSetupPr
               </Button>
             )}
             <Link
-              href={`/dashboard/runs/${createdRun.id}`}
+              href={`/dashboard/skills/${encodeURIComponent(skill.id)}/tasks/${encodeURIComponent(createdRun.id)}`}
               className={cn(buttonVariants({ variant: 'outline' }))}
             >
               查看实时进度
@@ -425,9 +440,41 @@ export function SkillRunSetup({ skill, draft, draftFiles = [] }: SkillRunSetupPr
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{draft ? '核对 AI 任务草稿' : '创建任务'}</CardTitle>
+        <CardTitle>
+          {draft ? `核对草稿并${experience.creationTitle}` : experience.creationTitle}
+        </CardTitle>
       </CardHeader>
       <CardContent className='space-y-6'>
+        <section
+          className={cn(
+            'grid gap-4 rounded-xl border bg-muted/25 p-4',
+            experience.family === 'comparison' && 'md:grid-cols-[1.1fr_0.9fr]',
+            experience.family === 'workbook' && 'border-l-4 border-l-primary',
+            experience.family === 'batch' && 'bg-muted/40',
+            experience.family === 'advisory' && 'border-dashed'
+          )}
+          aria-labelledby='experience-purpose'
+        >
+          <div className='space-y-2'>
+            <h3 id='experience-purpose' className='font-medium'>
+              {experience.inputHeading}
+            </h3>
+            <p className='text-sm leading-6 text-muted-foreground'>{experience.purpose}</p>
+            <p className='text-sm leading-6'>{experience.inputHint}</p>
+          </div>
+          <div className='space-y-2'>
+            <p className='text-sm font-medium'>{experience.reviewTitle}</p>
+            <ul className='space-y-2 text-sm text-muted-foreground'>
+              {experience.reviewItems.map((item) => (
+                <li key={item} className='flex gap-2'>
+                  <Icons.circleCheck className='mt-0.5 size-4 shrink-0 text-primary' />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+
         <div className='space-y-4'>
           {(skill.file_inputs ?? []).map((input) => {
             const uploaded = filesByRole[input.role] ?? [];
@@ -466,6 +513,38 @@ export function SkillRunSetup({ skill, draft, draftFiles = [] }: SkillRunSetupPr
                     正在上传，请勿关闭页面…
                   </p>
                 )}
+                {experience.orderedFileRole === input.role && uploaded.length > 0 && (
+                  <ol className='space-y-2 rounded-lg bg-muted/40 p-3' aria-label='版本顺序'>
+                    {uploaded.map((file, index) => (
+                      <li key={file.id} className='flex items-center gap-2 text-sm'>
+                        <span className='w-16 shrink-0 font-medium'>
+                          {index === uploaded.length - 1 ? '最新版' : `版本 ${index + 1}`}
+                        </span>
+                        <span className='min-w-0 flex-1 truncate'>{file.name}</span>
+                        <Button
+                          type='button'
+                          size='icon'
+                          variant='ghost'
+                          disabled={index === 0}
+                          aria-label={`上移 ${file.name}`}
+                          onClick={() => moveRoleFile(input.role, file.id, -1)}
+                        >
+                          <Icons.chevronUp />
+                        </Button>
+                        <Button
+                          type='button'
+                          size='icon'
+                          variant='ghost'
+                          disabled={index === uploaded.length - 1}
+                          aria-label={`下移 ${file.name}`}
+                          onClick={() => moveRoleFile(input.role, file.id, 1)}
+                        >
+                          <Icons.chevronDown />
+                        </Button>
+                      </li>
+                    ))}
+                  </ol>
+                )}
                 <FilePreview
                   files={uploaded.map((file) => ({
                     id: file.id,
@@ -503,13 +582,34 @@ export function SkillRunSetup({ skill, draft, draftFiles = [] }: SkillRunSetupPr
                       />
                       {parameters[name] === true ? '是' : '否'}
                     </label>
+                  ) : property.enum?.length ? (
+                    <select
+                      id={`parameter-${name}`}
+                      className='border-input bg-background ring-offset-background focus-visible:ring-ring h-9 w-full rounded-md border px-3 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none'
+                      value={String(parameters[name] ?? '')}
+                      onChange={(event) =>
+                        setParameters((current) => ({
+                          ...current,
+                          [name]: event.currentTarget.value
+                        }))
+                      }
+                    >
+                      {!requiredParameters.has(name) && <option value=''>不指定</option>}
+                      {property.enum.map((option) => (
+                        <option key={String(option)} value={String(option)}>
+                          {String(option)}
+                        </option>
+                      ))}
+                    </select>
                   ) : (
                     <Input
                       id={`parameter-${name}`}
                       type={
-                        property.type === 'number' || property.type === 'integer'
-                          ? 'number'
-                          : 'text'
+                        name === 'today'
+                          ? 'date'
+                          : property.type === 'number' || property.type === 'integer'
+                            ? 'number'
+                            : 'text'
                       }
                       step={
                         property.type === 'integer'
@@ -547,21 +647,31 @@ export function SkillRunSetup({ skill, draft, draftFiles = [] }: SkillRunSetupPr
           </div>
         )}
 
-        <div className='space-y-2 border-t pt-5'>
-          <Label htmlFor='run-message'>任务说明（可选）</Label>
-          <Textarea
-            id='run-message'
-            value={message}
-            maxLength={4000}
-            placeholder='填写本次任务需要特别说明的内容'
-            onChange={(event) => setMessage(event.currentTarget.value)}
-          />
-        </div>
+        <section className='grid gap-4 border-t pt-5 md:grid-cols-2' aria-label='任务检查说明'>
+          <div>
+            <h3 className='font-medium'>提交前可确认</h3>
+            <p className='mt-1 text-sm text-muted-foreground'>
+              文件数量、格式、参数和上方列出的业务口径。
+            </p>
+          </div>
+          <div>
+            <h3 className='font-medium'>任务执行时检查</h3>
+            <ul className='mt-1 space-y-1 text-sm text-muted-foreground'>
+              {experience.workerChecks.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </div>
+        </section>
 
         <div className='flex flex-wrap items-center justify-between gap-3 border-t pt-5'>
-          <p className='text-sm text-muted-foreground'>确认后将创建任务，并由后台 Worker 处理。</p>
+          <p className='text-sm text-muted-foreground'>
+            {skill.risk.requires_confirmation
+              ? '核对业务口径后创建任务。'
+              : '输入检查通过后直接创建任务。'}
+          </p>
           <Button disabled={busy || uploadingRole !== null} onClick={openConfirmation}>
-            核对并创建任务
+            {skill.action_label}
           </Button>
         </div>
       </CardContent>
@@ -607,12 +717,14 @@ export function SkillRunSetup({ skill, draft, draftFiles = [] }: SkillRunSetupPr
                 </dl>
               </div>
             )}
-            {message && (
-              <div className='border-t pt-3'>
-                <p className='mb-1 font-medium'>任务说明</p>
-                <p className='whitespace-pre-wrap text-muted-foreground'>{message}</p>
-              </div>
-            )}
+            <div className='border-t pt-3'>
+              <p className='mb-2 font-medium'>{experience.reviewTitle}</p>
+              <ul className='space-y-1 text-muted-foreground'>
+                {experience.reviewItems.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
           </div>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={busy || confirmMutation.isPending}>
@@ -623,7 +735,7 @@ export function SkillRunSetup({ skill, draft, draftFiles = [] }: SkillRunSetupPr
               onClick={() => void createAndConfirm()}
             >
               {(busy || confirmMutation.isPending) && <Icons.spinner className='animate-spin' />}
-              确认并创建
+              确认{skill.action_label}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
