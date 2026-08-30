@@ -331,6 +331,7 @@ EXECUTABLES: dict[str, dict[str, Any]] = {
                 )
             ],
             {"type": "object", "additionalProperties": False, "properties": {}},
+            version="1.0.1",
         ),
         "bridge": {
             "name": "代扣代缴申报表批量重命名",
@@ -533,7 +534,7 @@ CATALOG_ONLY: dict[str, dict[str, Any]] = {
         timeout=1800,
         network_access=True,
         network_targets=["http://192.168.10.167:18880"],
-        version="1.6.10",
+        version="1.6.11",
     ),
     "jdy-cashflow-export": manifest(
         "jdy-cashflow-export",
@@ -559,7 +560,7 @@ CATALOG_ONLY: dict[str, dict[str, Any]] = {
         [],
         {"type": "object", "additionalProperties": True, "properties": {}},
         status="disabled",
-        blocked_reason="现有实现缺少会计期间维度，同号凭证跨月时会错误合并，修复前禁止发布。",
+        blocked_reason="期间分组问题已修复；发布前仍需为平台 Worker 打包受控 Node.js 和 @oai/artifact-tool 运行时，并接入专属双文件执行体验。",
     ),
     "task-clarifier": manifest(
         "task-clarifier",

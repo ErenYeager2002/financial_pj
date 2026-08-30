@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import datetime
+from datetime import date, datetime
 from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
-from fastapi import HTTPException
-
-from app import workflow_execution_policy
+from app import workflow_execution_policy, workflow_orchestrator
 from app.auth import UserContext
 from app.database import SessionLocal
 from app.models import WorkflowSession
@@ -18,6 +16,7 @@ from app.workflow_orchestrator import (
     workflow_agent_tools,
 )
 from app.workflow_service import apply_workflow_agent_action
+from fastapi import HTTPException
 
 
 def _actor() -> UserContext:
@@ -81,6 +80,20 @@ def test_workflow_agent_request_is_stage_and_argument_checked() -> None:
         )
     with pytest.raises(HTTPException, match="不支持"):
         validate_workflow_agent_request("awaiting_date", "run_shell", {})
+
+
+def test_workflow_agent_date_commands_use_platform_calendar(monkeypatch) -> None:
+    platform_today = date(2026, 8, 29)
+    monkeypatch.setattr(workflow_orchestrator, "_platform_today", lambda: platform_today)
+
+    decision = validate_workflow_agent_request(
+        "awaiting_date",
+        "set_reconciliation_date",
+        {"date": "2026-08-29"},
+    )
+    assert decision.arguments == {"date": "2026-08-29"}
+    assert workflow_orchestrator._extract_date("昨天") == "2026-08-28"
+    assert workflow_orchestrator._extract_date("8月29日") == "2026-08-29"
 
 
 def test_apply_workflow_agent_action_only_updates_state_and_requests_confirmation() -> None:

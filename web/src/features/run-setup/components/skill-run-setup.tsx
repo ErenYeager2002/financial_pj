@@ -37,6 +37,7 @@ import {
   uploadSkillFileMutation
 } from '@/features/run-setup/api/mutations';
 import { isRunnableSkill } from '@/features/run-setup/run-eligibility';
+import { createClientId } from '@/lib/client-id';
 import { cn } from '@/lib/utils';
 
 interface SchemaProperty {
@@ -173,7 +174,7 @@ export function SkillRunSetup({ skill, experience, draft, draftFiles = [] }: Ski
   const [removingFileId, setRemovingFileId] = useState<string | null>(null);
   const [confirmationOpen, setConfirmationOpen] = useState(false);
   const [createdRun, setCreatedRun] = useState<RunDetail | null>(null);
-  const idempotencyKey = useRef<string>(crypto.randomUUID());
+  const idempotencyKey = useRef<string>(createClientId());
 
   const uploadMutation = useMutation(uploadSkillFileMutation);
   const deleteMutation = useMutation(deleteSkillFileMutation);

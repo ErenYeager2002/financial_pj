@@ -38,7 +38,13 @@ def check(d, c):
 
 
 def run(args):
-    r = subprocess.run([PY, RECOMMEND] + args, capture_output=True, text=True)
+    r = subprocess.run(
+        [PY, RECOMMEND] + args,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
     return r.returncode, r.stdout + r.stderr
 
 

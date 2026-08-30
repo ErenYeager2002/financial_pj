@@ -335,6 +335,76 @@ def test_already_filled_different_is_conflict(tmp_path):
     assert res["verdict"] == "conflict" and "收款方式" in res["reason"]
 
 
+def test_classification_policy_overwrites_existing_receipt_fields(tmp_path):
+    old = {
+        "计提": 100.0,
+        "回款明细": 100.0,
+        "是否结账": "是",
+        "收款时间": dt.date(2026, 7, 13),
+        "收款方式": "汇",
+    }
+    led = _ledger(tmp_path, [
+        ("SO26010001", "SOD26010001", old),
+        ("SO26010001", "SOD26010001", None),
+    ])
+    item = _item(2, 收款时间="2026-08-02", 收款方式="冲预收")
+    item["existing_value_policy"] = "overwrite_with_classification"
+
+    checked = V.validate({"auto": [item]}, V.read_ledger_rows(led))
+
+    assert checked["counts"] == {"write": 1, "skip": 0, "conflict": 0}
+    assert "按应收核销判定覆盖" in checked["write"][0]["_check"]["reason"]
+    out = tmp_path / "按核销判定覆盖.xlsx"
+    A.write_plan(led, out, checked["write"])
+    assert A.verify_written(out, checked["write"]) == []
+    row = V.read_ledger_rows(out)[2]
+    assert row["收款时间"].date() == dt.date(2026, 8, 2)
+    assert row["收款方式"] == "冲预收"
+
+
+def test_classification_policy_does_not_clear_existing_nonempty_value(tmp_path):
+    old = {
+        "计提": 100.0,
+        "回款明细": 100.0,
+        "是否结账": "是",
+        "收款时间": dt.date(2026, 7, 13),
+        "收款方式": "汇",
+    }
+    led = _ledger(tmp_path, [
+        ("SO26010001", "SOD26010001", old),
+        ("SO26010001", "SOD26010001", None),
+    ])
+    item = _item(2, 计提=None, 收款时间="2026-08-02", 收款方式="冲预收")
+    item["existing_value_policy"] = "overwrite_with_classification"
+
+    checked = V.validate({"auto": [item]}, V.read_ledger_rows(led))
+
+    assert checked["counts"] == {"write": 1, "skip": 0, "conflict": 0}
+    out = tmp_path / "保留已有非空值.xlsx"
+    A.write_plan(led, out, checked["write"])
+    row = V.read_ledger_rows(out)[2]
+    assert row["计提"] == 100.0
+    assert row["收款时间"].date() == dt.date(2026, 8, 2)
+    assert row["收款方式"] == "冲预收"
+
+
+def test_classification_policy_requires_complete_so_sod_identity(tmp_path):
+    old = {
+        "计提": 100.0,
+        "回款明细": 100.0,
+        "是否结账": "是",
+        "收款时间": dt.date(2026, 7, 13),
+        "收款方式": "汇",
+    }
+    led = _ledger(tmp_path, [("SO26010001", "SOD26010001", old)])
+    item = _item(2, sod="", 收款时间="2026-08-02", 收款方式="冲预收")
+    item["existing_value_policy"] = "overwrite_with_classification"
+
+    result = V.check_one(item, V.read_ledger_rows(led))
+
+    assert result["verdict"] == "conflict"
+
+
 def test_reference_or_named_marker_cannot_bypass_existing_value_conflict(tmp_path):
     """即使输入里伪造旧版参考表标记，校验器也不能覆盖已有非空值。"""
     old = {

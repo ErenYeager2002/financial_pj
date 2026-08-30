@@ -16,6 +16,10 @@ async function* legacyDoneEvents() {
   yield { type: 'done' as const, messageCount: 0 };
 }
 
+async function* emptyPiEvents() {
+  yield { type: 'done' as const, messageCount: 0 };
+}
+
 async function* toolThenErrorEvents() {
   yield { type: 'tool_start' as const, toolCallId: 'call-1', toolName: 'business_tool' };
   yield { type: 'error' as const, code: 'agent_runtime_error', message: 'upstream' };
@@ -87,6 +91,24 @@ test('Pi errors before any work can fall back to legacy events', async () => {
     events.push(event);
   }
   assert.deepEqual(events, [{ type: 'done', messageCount: 0 }]);
+});
+
+test('Pi completes without text or tools by falling back to the legacy draft flow', async () => {
+  let fallbackCalled = false;
+  async function* legacyEvents() {
+    fallbackCalled = true;
+    yield { type: 'tool_start' as const, toolCallId: 'legacy', toolName: 'prepare_task_draft' };
+    yield { type: 'done' as const, messageCount: 0 };
+  }
+
+  const events = [];
+  for await (const event of withLegacyFallback(emptyPiEvents(), legacyEvents, {})) {
+    events.push(event);
+  }
+
+  assert.equal(fallbackCalled, true);
+  assert.equal(events[0]?.type, 'tool_start');
+  assert.equal(events.at(-1)?.type, 'done');
 });
 
 test('Pi errors after a tool starts never replay the legacy flow', async () => {

@@ -6,6 +6,7 @@ import { FileBlob, SpreadsheetFile } from "@oai/artifact-tool";
 import {
   addGroup,
   compareGroups,
+  normalizePeriod,
   normalizeProject,
   normalizeVoucher,
   numberValue,
@@ -26,6 +27,7 @@ const REQUIRED_MERGED_HEADERS = [
 ];
 
 const REQUIRED_DETAIL_HEADERS = ["凭证号", "现金流量项目", "方向", "金额"];
+const DETAIL_PERIOD_HEADERS = ["会计期间", "期间", "凭证日期", "日期"];
 
 const STATUS_PRIORITY = new Map([
   ["金额及笔数不符", 1],
@@ -96,8 +98,20 @@ function locateHeader(values, requiredHeaders, maxRows = 30) {
   throw new Error(`未找到表头：${requiredHeaders.join("、")}`);
 }
 
-function groupKey(project, voucher) {
-  return `${project}\u001f${voucher}`;
+function locatePeriodColumn(header) {
+  for (const candidate of DETAIL_PERIOD_HEADERS) {
+    const index = header.headers.indexOf(candidate);
+    if (index >= 0) {
+      return index;
+    }
+  }
+  throw new Error(
+    `基准明细表缺少期间列，需包含以下任一表头：${DETAIL_PERIOD_HEADERS.join("、")}`,
+  );
+}
+
+function groupKey(period, project, voucher) {
+  return `${period}\u001f${project}\u001f${voucher}`;
 }
 
 function worksheetOrNull(workbook, name) {
@@ -148,7 +162,7 @@ function applyStatusFormatting(range, statusColumnLetter, firstDataRow) {
   }
 }
 
-function buildDetailGroups(values, header) {
+function buildDetailGroups(values, header, periodColumn) {
   const groups = new Map();
   let dataRows = 0;
   for (let rowIndex = header.rowIndex + 1; rowIndex < values.length; rowIndex += 1) {
@@ -163,8 +177,12 @@ function buildDetailGroups(values, header) {
     if (!project) {
       continue;
     }
+    const period = normalizePeriod(row[periodColumn]);
+    if (!period) {
+      throw new Error(`基准明细表第 ${rowIndex + 1} 行缺少有效会计期间。`);
+    }
     const amount = numberValue(row[header.indexes.get("金额")]);
-    addGroup(groups, project, voucher, amount, originalVoucher);
+    addGroup(groups, project, voucher, amount, originalVoucher, period);
     dataRows += 1;
   }
   return { groups, dataRows };
@@ -187,11 +205,15 @@ function buildMergedGroups(values, header) {
       rows.push(null);
       continue;
     }
+    const period = normalizePeriod(row[header.indexes.get("日期")]);
+    if (!period) {
+      throw new Error(`整合表“合并明细”第 ${rowIndex + 1} 行缺少有效日期。`);
+    }
     const amount =
       numberValue(row[header.indexes.get("流入金额")]) +
       numberValue(row[header.indexes.get("流出金额")]);
-    addGroup(groups, project, voucher, amount, originalVoucher);
-    rows.push({ key: groupKey(project, voucher), project, voucher });
+    addGroup(groups, project, voucher, amount, originalVoucher, period);
+    rows.push({ key: groupKey(period, project, voucher), period, project, voucher });
   }
   return { groups, rows };
 }
@@ -223,9 +245,11 @@ async function main() {
   const detailSheet = detailWorkbook.worksheets.getItemAt(0);
   const detailValues = detailSheet.getUsedRange(true).values;
   const detailHeader = locateHeader(detailValues, REQUIRED_DETAIL_HEADERS);
+  const detailPeriodColumn = locatePeriodColumn(detailHeader);
   const { groups: detailGroups, dataRows: detailRowCount } = buildDetailGroups(
     detailValues,
     detailHeader,
+    detailPeriodColumn,
   );
 
   const mergedSheet = worksheetOrNull(workbook, "合并明细");
@@ -318,7 +342,9 @@ async function main() {
     "核对口径",
   ]];
   mergedSheet.mergeCells("Q2:R2");
-  mergedSheet.getRange("Q2").values = [["项目 + 规范凭证号；金额误差 < 0.005"]];
+  mergedSheet.getRange("Q2").values = [[
+    "会计期间 + 项目 + 规范凭证号；金额误差 < 0.005",
+  ]];
   mergedSheet.getRange("L2:R2").format = {
     fill: "#D9EAF7",
     font: { bold: true, color: "#17365D" },
@@ -414,10 +440,10 @@ async function main() {
 
   const summarySheet = workbook.worksheets.add("核对汇总");
   summarySheet.showGridLines = false;
-  summarySheet.mergeCells("A1:J1");
-  summarySheet.getRange("A1").values = [["现金流量项目 × 凭证号核对汇总"]];
-  setTitleStyle(summarySheet.getRange("A1:J1"));
-  summarySheet.getRange("A1:J1").format.rowHeight = 30;
+  summarySheet.mergeCells("A1:K1");
+  summarySheet.getRange("A1").values = [["会计期间 × 现金流量项目 × 凭证号核对汇总"]];
+  setTitleStyle(summarySheet.getRange("A1:K1"));
+  summarySheet.getRange("A1:K1").format.rowHeight = 30;
   summarySheet.getRange("A2:H2").values = [[
     "基准凭证组",
     detailGroups.size,
@@ -434,19 +460,20 @@ async function main() {
     horizontalAlignment: "center",
     verticalAlignment: "center",
   };
-  summarySheet.mergeCells("A3:J3");
+  summarySheet.mergeCells("A3:K3");
   summarySheet.getRange("A3").values = [[
-    "判定：现金流量项目别名归一后，与去除数字前导零的凭证号共同分组；整合金额=流入金额+流出金额。",
+    "判定：按会计期间、归一后的现金流量项目和去除数字前导零的凭证号共同分组；整合金额=流入金额+流出金额。",
   ]];
-  summarySheet.getRange("A3:J3").format = {
+  summarySheet.getRange("A3:K3").format = {
     fill: "#EAF2F8",
     font: { color: "#273746" },
     verticalAlignment: "center",
     wrapText: true,
   };
-  summarySheet.getRange("A3:J3").format.rowHeight = 28;
+  summarySheet.getRange("A3:K3").format.rowHeight = 28;
 
   const summaryHeaders = [
+    "会计期间",
     "现金流量项目（规范）",
     "规范凭证号",
     "基准凭证号",
@@ -464,11 +491,13 @@ async function main() {
     return (
       (STATUS_PRIORITY.get(left.status) ?? 99) -
         (STATUS_PRIORITY.get(right.status) ?? 99) ||
+      left.period.localeCompare(right.period, "zh-CN") ||
       left.project.localeCompare(right.project, "zh-CN") ||
       left.voucher.localeCompare(right.voucher, "zh-CN", { numeric: true })
     );
   });
   const summaryValues = sortedMismatches.map((result) => [
+    result.period,
     result.project,
     result.voucher,
     result.detailOriginalVouchers,
@@ -480,11 +509,11 @@ async function main() {
     result.mergedTotal,
     null,
   ]);
-  summarySheet.getRange(`A${summaryHeaderRow}:J${summaryHeaderRow}`).values = [
+  summarySheet.getRange(`A${summaryHeaderRow}:K${summaryHeaderRow}`).values = [
     summaryHeaders,
   ];
-  setHeaderStyle(summarySheet.getRange(`A${summaryHeaderRow}:J${summaryHeaderRow}`));
-  summarySheet.getRange(`A${summaryHeaderRow}:J${summaryHeaderRow}`).format.rowHeight =
+  setHeaderStyle(summarySheet.getRange(`A${summaryHeaderRow}:K${summaryHeaderRow}`));
+  summarySheet.getRange(`A${summaryHeaderRow}:K${summaryHeaderRow}`).format.rowHeight =
     32;
   const summaryLastDataRow =
     summaryValues.length > 0
@@ -492,46 +521,46 @@ async function main() {
       : summaryHeaderRow;
   if (summaryValues.length > 0) {
     summarySheet.getRange(
-      `A${summaryFirstDataRow}:J${summaryLastDataRow}`,
+      `A${summaryFirstDataRow}:K${summaryLastDataRow}`,
     ).values = summaryValues;
-    summarySheet.getRange(`J${summaryFirstDataRow}`).formulas = [[
-      `=I${summaryFirstDataRow}-H${summaryFirstDataRow}`,
+    summarySheet.getRange(`K${summaryFirstDataRow}`).formulas = [[
+      `=J${summaryFirstDataRow}-I${summaryFirstDataRow}`,
     ]];
     if (summaryLastDataRow > summaryFirstDataRow) {
       summarySheet
-        .getRange(`J${summaryFirstDataRow}:J${summaryLastDataRow}`)
+        .getRange(`K${summaryFirstDataRow}:K${summaryLastDataRow}`)
         .fillDown();
     }
     summarySheet.getRange(
-      `F${summaryFirstDataRow}:G${summaryLastDataRow}`,
+      `G${summaryFirstDataRow}:H${summaryLastDataRow}`,
     ).format.numberFormat = "#,##0";
     summarySheet.getRange(
-      `H${summaryFirstDataRow}:J${summaryLastDataRow}`,
+      `I${summaryFirstDataRow}:K${summaryLastDataRow}`,
     ).format.numberFormat = "#,##0.00;[Red]-#,##0.00";
     applyStatusFormatting(
-      summarySheet.getRange(`A${summaryFirstDataRow}:J${summaryLastDataRow}`),
-      "E",
+      summarySheet.getRange(`A${summaryFirstDataRow}:K${summaryLastDataRow}`),
+      "F",
       summaryFirstDataRow,
     );
   }
   summarySheet.tables.add(
-    `A${summaryHeaderRow}:J${summaryLastDataRow}`,
+    `A${summaryHeaderRow}:K${summaryLastDataRow}`,
     true,
     "CashflowReconcileSummary",
   ).style = "TableStyleMedium2";
   summarySheet.freezePanes.freezeRows(summaryHeaderRow);
-  summarySheet.freezePanes.freezeColumns(2);
-  const summaryWidths = [36, 14, 18, 18, 20, 12, 12, 16, 16, 19];
+  summarySheet.freezePanes.freezeColumns(3);
+  const summaryWidths = [12, 36, 14, 18, 18, 20, 12, 12, 16, 16, 19];
   summaryWidths.forEach((width, index) => {
     const column = excelColumn(index + 1);
     summarySheet.getRange(`${column}:${column}`).format.columnWidth = width;
   });
   if (summaryValues.length > 0) {
     summarySheet.getRange(
-      `A${summaryFirstDataRow}:E${summaryLastDataRow}`,
+      `A${summaryFirstDataRow}:F${summaryLastDataRow}`,
     ).format.wrapText = true;
     summarySheet.getRange(
-      `A${summaryFirstDataRow}:J${summaryLastDataRow}`,
+      `A${summaryFirstDataRow}:K${summaryLastDataRow}`,
     ).format.verticalAlignment = "center";
   }
 
@@ -545,10 +574,10 @@ async function main() {
   });
   await workbook.inspect({
     kind: "table",
-    range: `核对汇总!A1:J${Math.min(summaryLastDataRow, 14)}`,
+    range: `核对汇总!A1:K${Math.min(summaryLastDataRow, 14)}`,
     include: "values,formulas",
     tableMaxRows: 14,
-    tableMaxCols: 10,
+    tableMaxCols: 11,
     maxChars: 5000,
   });
   const errorScan = await workbook.inspect({
@@ -577,7 +606,7 @@ async function main() {
       workbook,
       {
         sheetName: "核对汇总",
-        range: `A1:J${Math.min(summaryLastDataRow, 28)}`,
+        range: `A1:K${Math.min(summaryLastDataRow, 28)}`,
         scale: 1.4,
         format: "png",
       },

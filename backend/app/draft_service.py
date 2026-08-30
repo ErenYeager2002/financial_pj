@@ -51,6 +51,16 @@ def _now() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
 
+def _utc_naive(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(UTC).replace(tzinfo=None)
+
+
+def _draft_expired(expires_at: datetime) -> bool:
+    return _utc_naive(expires_at) < _utc_naive(_now())
+
+
 def _confidence_percent(confidence: float) -> int:
     return max(0, min(100, int(confidence * 100)))
 
@@ -435,7 +445,7 @@ def _get_owned_draft(db: Session, draft_id: str, user: UserContext) -> TaskDraft
     record = db.get(TaskDraftRecord, draft_id)
     if not record or record.owner_id != user.user_id:
         raise HTTPException(status_code=404, detail="任务草稿不存在。")
-    if record.state not in {"consumed", "expired"} and record.expires_at < _now():
+    if record.state not in {"consumed", "expired"} and _draft_expired(record.expires_at):
         record.state = "expired"
         db.commit()
     return record

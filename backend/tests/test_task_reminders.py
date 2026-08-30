@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import UTC, date, datetime, timedelta
 
@@ -25,6 +26,7 @@ from app.task_reminder_workflow_service import (
 )
 from app.workflow_service import (
     _assert_single_flight_available,
+    _fail_batch,
     claim_next_workflow_action,
 )
 
@@ -243,7 +245,6 @@ def test_discovery_worker_runs_due_check_once() -> None:
 
         now = datetime(2026, 8, 26, 1, 10, tzinfo=UTC)
         assert run_discovery_tick(db, probe=synthetic_probe, now=now) is True
-        assert run_discovery_tick(db, probe=synthetic_probe, now=now) is True
         assert run_discovery_tick(db, probe=synthetic_probe, now=now) is False
 
 
@@ -372,6 +373,233 @@ def test_workflow_success_resolves_only_its_reminder_date() -> None:
         assert states["2026-08-23"] == "pending"
 
 
+def test_owner_can_clear_successful_reminders_without_rediscovery() -> None:
+    suffix = uuid.uuid4().hex[:8]
+    business_date = f"r{suffix}x"
+    username = f"clear-reminder-owner-{suffix}"
+    owner_id = _create_employee(username)
+    with auth_client(role="skill_admin", username=f"clear-reminder-admin-{suffix}") as admin:
+        assert admin.put(
+            "/api/admin/task-reminder-subscriptions/ar-hexiao-daily",
+            json={"owner_id": owner_id, "enabled": True},
+        ).status_code == 200
+    with auth_client(username=username) as employee:
+        assert employee.put(
+            "/api/service-credentials/zhiyun",
+            json={"account": "synthetic-account", "password": "synthetic-password"},
+        ).status_code == 200
+
+    with SessionLocal() as db:
+        from app.models import TaskReminder, WorkflowSession
+
+        execute_task_discovery(
+            db,
+            skill_id="ar-hexiao-daily",
+            department_id="finance",
+            business_dates=(business_date,),
+            trigger="manual",
+            probe=lambda _account, _password, dates: [
+                TaskDiscoveryDayResult(dates[0], 1, "before-clear")
+            ],
+            now=datetime(2026, 8, 25, 2, 0, tzinfo=UTC),
+        )
+        workflow = WorkflowSession(
+            id=str(uuid.uuid4()),
+            owner_id=owner_id,
+            owner_name="应收核销负责人",
+            department_id="finance",
+            skill_id="ar-hexiao-daily",
+            skill_name="应收核销日清",
+            skill_version="test",
+            skill_hash="test",
+            model_connection_id="background",
+            model_provider="platform",
+            model_name="background",
+            reconciliation_date=business_date,
+            state="running",
+        )
+        db.add(workflow)
+        db.flush()
+        associate_reminder_with_workflow(db, workflow)
+        workflow.state = "succeeded"
+        db.commit()
+
+    with auth_client(username=username) as employee:
+        completed = employee.get("/api/task-reminders")
+        assert completed.status_code == 200, completed.text
+        assert business_date not in {
+            item["business_date"] for item in completed.json()["reminders"]
+        }
+        assert completed.json()["resolved_count"] >= 1
+
+        cleared = employee.delete("/api/task-reminders/resolved")
+        assert cleared.status_code == 200, cleared.text
+        assert cleared.json() == {"dismissed_count": completed.json()["resolved_count"]}
+        cleared_again = employee.delete("/api/task-reminders/resolved")
+        assert cleared_again.status_code == 200, cleared_again.text
+        assert cleared_again.json() == {"dismissed_count": 0}
+
+    with SessionLocal() as db:
+        reminder = db.query(TaskReminder).filter_by(
+            owner_id=owner_id,
+            business_date=business_date,
+        ).one()
+        assert reminder.state == "dismissed"
+
+        execute_task_discovery(
+            db,
+            skill_id="ar-hexiao-daily",
+            department_id="finance",
+            business_dates=(business_date,),
+            trigger="manual",
+            probe=lambda _account, _password, dates: [
+                TaskDiscoveryDayResult(dates[0], 2, "changed-after-clear")
+            ],
+            now=datetime(2026, 8, 25, 3, 0, tzinfo=UTC),
+        )
+
+    with auth_client(username=username) as employee:
+        after_rediscovery = employee.get("/api/task-reminders")
+        assert after_rediscovery.status_code == 200, after_rediscovery.text
+        assert business_date not in {
+            item["business_date"] for item in after_rediscovery.json()["reminders"]
+        }
+        assert after_rediscovery.json()["resolved_count"] == 0
+
+
+def test_zero_result_does_not_turn_an_unfinished_reminder_into_success() -> None:
+    suffix = uuid.uuid4().hex[:8]
+    business_date = f"z{suffix}x"
+    username = f"zero-result-owner-{suffix}"
+    owner_id = _create_employee(username)
+    with auth_client(role="skill_admin", username=f"zero-result-admin-{suffix}") as admin:
+        assert admin.put(
+            "/api/admin/task-reminder-subscriptions/ar-hexiao-daily",
+            json={"owner_id": owner_id, "enabled": True},
+        ).status_code == 200
+    with auth_client(username=username) as employee:
+        assert employee.put(
+            "/api/service-credentials/zhiyun",
+            json={"account": "zero-result", "password": "zero-result-password"},
+        ).status_code == 200
+
+    with SessionLocal() as db:
+        from app.models import TaskReminder
+
+        for checked_at, count, fingerprint in (
+            (datetime(2026, 8, 25, 1, 0, tzinfo=UTC), 1, "present-before"),
+            (datetime(2026, 8, 25, 2, 0, tzinfo=UTC), 0, "empty-now"),
+        ):
+            execute_task_discovery(
+                db,
+                skill_id="ar-hexiao-daily",
+                department_id="finance",
+                business_dates=(business_date,),
+                trigger="manual",
+                probe=lambda _account, _password, dates, count=count, fingerprint=fingerprint: [
+                    TaskDiscoveryDayResult(dates[0], count, fingerprint)
+                ],
+                now=checked_at,
+            )
+        reminder = db.query(TaskReminder).filter_by(
+            owner_id=owner_id,
+            business_date=business_date,
+        ).one()
+        assert reminder.state == "no_records"
+        assert reminder.completed_at is None
+
+    with auth_client(username=username) as employee:
+        board = employee.get("/api/task-reminders")
+        assert board.status_code == 200, board.text
+        assert business_date not in {
+            item["business_date"] for item in board.json()["reminders"]
+        }
+        assert board.json()["resolved_count"] == 0
+        cleared = employee.delete("/api/task-reminders/resolved")
+        assert cleared.status_code == 200, cleared.text
+        assert cleared.json() == {"dismissed_count": 0}
+
+    with SessionLocal() as db:
+        execute_task_discovery(
+            db,
+            skill_id="ar-hexiao-daily",
+            department_id="finance",
+            business_dates=(business_date,),
+            trigger="manual",
+            probe=lambda _account, _password, dates: [
+                TaskDiscoveryDayResult(dates[0], 2, "present-again")
+            ],
+            now=datetime(2026, 8, 25, 3, 0, tzinfo=UTC),
+        )
+
+    with auth_client(username=username) as employee:
+        board = employee.get("/api/task-reminders")
+        assert board.status_code == 200, board.text
+        restored = next(
+            item for item in board.json()["reminders"] if item["business_date"] == business_date
+        )
+        assert restored["state"] == "pending"
+        assert restored["record_count"] == 2
+
+
+def test_admin_cannot_dismiss_another_owners_successful_reminder() -> None:
+    suffix = uuid.uuid4().hex[:8]
+    business_date = f"a{suffix}x"
+    username = f"cleanup-owner-{suffix}"
+    owner_id = _create_employee(username)
+    reminder_id = str(uuid.uuid4())
+    with SessionLocal() as db:
+        from app.models import TaskReminder
+
+        db.add(
+            TaskReminder(
+                id=reminder_id,
+                owner_id=owner_id,
+                department_id="finance",
+                skill_id="ar-hexiao-daily",
+                business_date=business_date,
+                record_count=1,
+                fingerprint="cleanup-permission",
+                state="resolved",
+                completed_at=datetime.now(UTC),
+            )
+        )
+        db.commit()
+
+    with auth_client(role="skill_admin", username=f"cleanup-admin-{suffix}") as admin:
+        cleared = admin.delete("/api/task-reminders/resolved")
+        assert cleared.status_code == 200, cleared.text
+        assert cleared.json() == {"dismissed_count": 0}
+
+    with SessionLocal() as db:
+        from app.models import TaskReminder
+
+        reminder = db.get(TaskReminder, reminder_id)
+        assert reminder is not None
+        assert reminder.state == "resolved"
+
+    with auth_client(username=username) as employee:
+        cleared = employee.delete("/api/task-reminders/resolved")
+        assert cleared.status_code == 200, cleared.text
+        assert cleared.json() == {"dismissed_count": 1}
+
+    with SessionLocal() as db:
+        from app.models import AuditEvent
+
+        event = (
+            db.query(AuditEvent)
+            .filter_by(
+                actor_id=owner_id,
+                action="task_reminder.resolved.dismissed",
+            )
+            .order_by(AuditEvent.id.desc())
+            .first()
+        )
+        assert event is not None
+        assert event.resource_type == "task_reminder_collection"
+        assert json.loads(event.details_json)["dismissed_reminder_ids"] == [reminder_id]
+
+
 def test_failed_and_cancelled_formal_tasks_keep_reminders_pending() -> None:
     suffix = uuid.uuid4().hex[:8]
     owner_id = _create_employee(f"terminal-reminder-owner-{suffix}")
@@ -411,6 +639,180 @@ def test_failed_and_cancelled_formal_tasks_keep_reminders_pending() -> None:
             sync_reminder_from_workflow(db, workflow)
             assert reminder.state == "pending"
             assert reminder.completed_at is None
+        db.rollback()
+
+
+def test_failed_batch_restores_all_unsuccessful_reminders_to_pending() -> None:
+    suffix = uuid.uuid4().hex[:8]
+    owner_id = _create_employee(f"failed-batch-reminder-{suffix}")
+    batch_id = f"BAT-REMINDER-{suffix}"
+    with SessionLocal() as db:
+        from app.models import TaskReminder, WorkflowBatch, WorkflowSession
+
+        batch = WorkflowBatch(
+            id=batch_id,
+            owner_id=owner_id,
+            owner_name="应收核销负责人",
+            department_id="finance",
+            skill_id="ar-hexiao-daily",
+            skill_name="应收核销日清",
+            skill_version="test",
+            model_connection_id="background",
+            model_provider="platform",
+            model_name="background",
+            reconciliation_dates_json='["2026-08-10", "2026-08-11", "2026-08-12"]',
+            state="running",
+        )
+        workflows = []
+        reminders = []
+        for sequence, (business_date, state, reminder_state) in enumerate(
+            (
+                ("2026-08-10", "succeeded", "resolved"),
+                ("2026-08-11", "failed", "in_progress"),
+                ("2026-08-12", "queued", "in_progress"),
+            ),
+            start=1,
+        ):
+            workflow = WorkflowSession(
+                id=str(uuid.uuid4()),
+                owner_id=owner_id,
+                owner_name="应收核销负责人",
+                department_id="finance",
+                skill_id="ar-hexiao-daily",
+                skill_name="应收核销日清",
+                skill_version="test",
+                skill_hash="test",
+                model_connection_id="background",
+                model_provider="platform",
+                model_name="background",
+                reconciliation_date=business_date,
+                batch_id=batch_id,
+                batch_sequence=sequence,
+                state=state,
+            )
+            workflows.append(workflow)
+            reminders.append(
+                TaskReminder(
+                    id=str(uuid.uuid4()),
+                    owner_id=owner_id,
+                    department_id="finance",
+                    skill_id="ar-hexiao-daily",
+                    business_date=business_date,
+                    record_count=1,
+                    fingerprint=f"batch-{business_date}",
+                    state=reminder_state,
+                    workflow_id=workflow.id,
+                    batch_id=batch_id,
+                )
+            )
+        db.add_all([batch, *workflows, *reminders])
+        independently_succeeded = WorkflowSession(
+            id=str(uuid.uuid4()),
+            owner_id=owner_id,
+            owner_name="应收核销负责人",
+            department_id="finance",
+            skill_id="ar-hexiao-daily",
+            skill_name="应收核销日清",
+            skill_version="test",
+            skill_hash="test",
+            model_connection_id="background",
+            model_provider="platform",
+            model_name="background",
+            reconciliation_date="2026-08-11",
+            state="succeeded",
+        )
+        db.add(independently_succeeded)
+        db.flush()
+
+        _fail_batch(db, workflows[1], "synthetic failure")
+        assert [item.state for item in reminders] == ["resolved", "resolved", "pending"]
+        assert reminders[1].workflow_id == independently_succeeded.id
+        assert reminders[1].batch_id is None
+        db.rollback()
+
+
+def test_failed_batch_does_not_use_success_older_than_a_reopened_reminder() -> None:
+    suffix = uuid.uuid4().hex[:8]
+    owner_id = _create_employee(f"reopened-batch-owner-{suffix}")
+    business_date = f"o{suffix}x"
+    batch_id = f"BAT-REOPENED-{suffix}"
+    old_success_at = datetime(2026, 8, 25, 1, 0, tzinfo=UTC)
+    reopened_at = datetime(2026, 8, 25, 2, 0, tzinfo=UTC)
+    with SessionLocal() as db:
+        from app.models import TaskReminder, WorkflowBatch, WorkflowSession
+
+        old_success = WorkflowSession(
+            id=str(uuid.uuid4()),
+            owner_id=owner_id,
+            owner_name="应收核销负责人",
+            department_id="finance",
+            skill_id="ar-hexiao-daily",
+            skill_name="应收核销日清",
+            skill_version="test",
+            skill_hash="test",
+            model_connection_id="background",
+            model_provider="platform",
+            model_name="background",
+            reconciliation_date=business_date,
+            state="succeeded",
+            created_at=old_success_at,
+            updated_at=old_success_at,
+        )
+        failed = WorkflowSession(
+            id=str(uuid.uuid4()),
+            owner_id=owner_id,
+            owner_name="应收核销负责人",
+            department_id="finance",
+            skill_id="ar-hexiao-daily",
+            skill_name="应收核销日清",
+            skill_version="test",
+            skill_hash="test",
+            model_connection_id="background",
+            model_provider="platform",
+            model_name="background",
+            reconciliation_date=business_date,
+            batch_id=batch_id,
+            batch_sequence=1,
+            state="failed",
+            created_at=reopened_at,
+            updated_at=reopened_at,
+        )
+        batch = WorkflowBatch(
+            id=batch_id,
+            owner_id=owner_id,
+            owner_name="应收核销负责人",
+            department_id="finance",
+            skill_id="ar-hexiao-daily",
+            skill_name="应收核销日清",
+            skill_version="test",
+            model_connection_id="background",
+            model_provider="platform",
+            model_name="background",
+            reconciliation_dates_json=json.dumps([business_date]),
+            state="running",
+        )
+        reminder = TaskReminder(
+            id=str(uuid.uuid4()),
+            owner_id=owner_id,
+            department_id="finance",
+            skill_id="ar-hexiao-daily",
+            business_date=business_date,
+            record_count=2,
+            fingerprint="reopened-after-success",
+            state="in_progress",
+            workflow_id=failed.id,
+            batch_id=batch_id,
+            last_checked_at=reopened_at,
+        )
+        db.add_all((batch, old_success, failed, reminder))
+        db.flush()
+
+        _fail_batch(db, failed, "synthetic failure")
+
+        assert reminder.state == "pending"
+        assert reminder.workflow_id == failed.id
+        assert reminder.batch_id == batch_id
+        assert reminder.completed_at is None
         db.rollback()
 
 

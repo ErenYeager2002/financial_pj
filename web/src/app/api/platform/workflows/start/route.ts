@@ -16,6 +16,7 @@ function parseBody(value: unknown): {
   reconciliation_date: string;
   files: Record<string, string[]>;
   replace_roles: string[];
+  snapshot_workflow_id?: string;
 } {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new PlatformApiError(400, '任务请求格式无效。');
@@ -27,11 +28,24 @@ function parseBody(value: unknown): {
   if (!ID.test(skillId) || !DATE.test(reconciliationDate)) {
     throw new PlatformApiError(400, 'Skill 标识或核销日期格式无效。');
   }
+  const snapshotWorkflowId =
+    body.snapshot_workflow_id === undefined
+      ? undefined
+      : typeof body.snapshot_workflow_id === 'string'
+        ? body.snapshot_workflow_id.trim()
+        : '';
+  if (
+    snapshotWorkflowId !== undefined &&
+    (snapshotWorkflowId.length > 64 || !ID.test(snapshotWorkflowId))
+  ) {
+    throw new PlatformApiError(400, '取数快照标识格式无效。');
+  }
   return {
     skill_id: skillId,
     reconciliation_date: reconciliationDate,
     files: parseWorkflowFileBindings(body.files),
-    replace_roles: parseWorkflowReplaceRoles(body.replace_roles)
+    replace_roles: parseWorkflowReplaceRoles(body.replace_roles),
+    ...(snapshotWorkflowId ? { snapshot_workflow_id: snapshotWorkflowId } : {})
   };
 }
 

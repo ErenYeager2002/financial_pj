@@ -236,10 +236,7 @@ export function SkillSourceManagement({ initialBindings, initialAvailability }: 
             <IconGitBranch className='size-5' />
             Skill 管理
           </CardTitle>
-          <CardDescription>
-            每个 Skill 在同一行显示可用状态、Gitee
-            源码绑定和更新操作。禁用会先停止接收新任务，并等待现有任务结束。
-          </CardDescription>
+          <CardDescription>禁用会先停止接收新任务，并等待现有任务结束。</CardDescription>
         </CardHeader>
         <CardContent className='space-y-4'>
           <div className='flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/50 p-3 text-sm'>

@@ -51,9 +51,7 @@ export function FeatureControlList({ initialControls }: { initialControls: Featu
     <Card>
       <CardHeader>
         <CardTitle>功能开关</CardTitle>
-        <CardDescription>
-          集中查看平台功能状态。可在线修改的开关立即生效，部署级配置会标明限制。
-        </CardDescription>
+        <CardDescription>可在线修改的开关立即生效；部署级配置不可在线修改。</CardDescription>
       </CardHeader>
       <CardContent>
         <div className='divide-y rounded-lg border'>

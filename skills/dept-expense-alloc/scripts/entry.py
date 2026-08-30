@@ -91,6 +91,20 @@ def collect_outputs(output_dir: Path, config: dict[str, Any]) -> list[dict[str, 
     else:
         candidates = [path for path in target.rglob("*") if path.is_file()]
 
+    required_globs = output.get("required_globs", [])
+    if required_globs:
+        if not target.is_dir():
+            raise RuntimeError(f"原 Skill 未生成必需的结果目录：{target.name}。")
+        missing = [
+            pattern
+            for pattern in required_globs
+            if not any(path.is_file() for path in target.glob(pattern))
+        ]
+        if missing:
+            raise RuntimeError(
+                "原 Skill 未生成必需的交付文件：" + "、".join(str(pattern) for pattern in missing)
+            )
+
     if output.get("archive"):
         archive_path = output_dir / output.get("archive_name", "执行结果.zip")
         archive_directory(target, archive_path)

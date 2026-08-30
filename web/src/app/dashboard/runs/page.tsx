@@ -39,11 +39,7 @@ export default async function Page({ searchParams }: PageProps) {
   }
 
   return (
-    <PageContainer
-      pageTitle='我的任务'
-      pageDescription='查看提醒、任务状态、处理进度和结果'
-      headingLevel={1}
-    >
+    <PageContainer pageTitle='我的任务' headingLevel={1}>
       <div className='space-y-6'>
         <TaskReminderRegion initial={reminders} />
         <FormalTaskRegion initial={formalTasks} query={query} />

@@ -25,10 +25,7 @@ export default async function SkillReviewsPage() {
 
   const releases = await listSkillReleases();
   return (
-    <PageContainer
-      pageTitle='Skill 发布记录'
-      pageDescription='查看已发布版本和历史发布结果'
-    >
+    <PageContainer pageTitle='Skill 发布记录'>
       <SkillReleaseManagement initialReleases={releases} view='records' />
     </PageContainer>
   );

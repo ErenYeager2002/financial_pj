@@ -112,7 +112,7 @@ export function FileList({ result, kind, query }: FileListProps) {
           </div>
         </div>
         <CardDescription>
-          共 {result.total} 个当前文件；同名任务结果只显示最新版本，按 Skill 分组查看。
+          共 {result.total} 个当前文件；同名任务结果只显示最新版本。
         </CardDescription>
       </CardHeader>
       <CardContent>

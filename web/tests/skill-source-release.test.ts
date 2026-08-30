@@ -19,7 +19,7 @@ test('Skill 源码管理固定使用 Gitee 并要求管理员确认名称匹配'
   assert.match(api, /sourcePath !== `skills\/\$\{skillId\}`/);
   assert.match(component, /按名称发现/);
   assert.match(component, /确认绑定/);
-  assert.match(component, /每个 Skill 在同一行显示可用状态/);
+  assert.doesNotMatch(component, /每个 Skill 在同一行显示可用状态/);
   assert.match(component, /buildSkillManagementRows/);
   assert.doesNotMatch(component, /选择要更新的 Skill/);
   assert.match(component, /binding\?\.binding_status === 'bound'/);

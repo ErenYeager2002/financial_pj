@@ -20,9 +20,7 @@ export function WorkflowTopology({ definitions }: WorkflowTopologyProps): React.
     <Card>
       <CardHeader>
         <CardTitle>受控执行流程</CardTitle>
-        <CardDescription>
-          查看当前部门已生成的步骤拓扑。节点配置和执行参数不会在此页面公开。
-        </CardDescription>
+        <CardDescription>节点配置和执行参数不会公开。</CardDescription>
       </CardHeader>
       <CardContent>
         {definitions.length ? (

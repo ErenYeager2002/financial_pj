@@ -40,7 +40,7 @@ export default async function Page({ params, searchParams }: PageProps) {
   }
 
   return (
-    <PageContainer pageTitle='执行 Skill' pageDescription='按当前业务流程准备材料并创建任务'>
+    <PageContainer pageTitle='执行 Skill'>
       <SkillDetailView skill={skill} draft={draft} draftFiles={draftFiles} showExecution />
     </PageContainer>
   );

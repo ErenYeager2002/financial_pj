@@ -18,6 +18,42 @@ export interface PartitionedFetchedArGroups<T> {
   historicalReferences: T[];
 }
 
+export interface FetchedDataPreviewRequestInput {
+  isBatch: boolean;
+  resourceId: string;
+  reconciliationDate: string;
+  offset: number;
+  pageSize: number;
+  query: string;
+  issuesOnly: boolean;
+  supplementRevision: number;
+}
+
+export interface FetchedDataPreviewRequest {
+  key: string;
+  url: string;
+}
+
+export function buildFetchedDataPreviewRequest(
+  input: FetchedDataPreviewRequestInput
+): FetchedDataPreviewRequest {
+  const search = new URLSearchParams({
+    dataset: 'ar_groups',
+    offset: String(input.offset),
+    limit: String(input.pageSize)
+  });
+  const query = input.query.trim();
+  if (query) search.set('query', query);
+  if (input.issuesOnly) search.set('issues_only', 'true');
+  if (input.isBatch) search.set('reconciliation_date', input.reconciliationDate);
+  const kind = input.isBatch ? 'workflow-batches' : 'workflows';
+  const url = `/api/platform/${kind}/${encodeURIComponent(input.resourceId)}/fetched-data?${search.toString()}`;
+  return {
+    url,
+    key: `${url}#supplement=${input.supplementRevision}`
+  };
+}
+
 export function parseSupplementIdentifiers(
   input: string,
   prefix: SupplementPrefix

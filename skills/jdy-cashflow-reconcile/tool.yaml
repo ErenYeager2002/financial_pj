@@ -7,8 +7,9 @@ category: 对账核对
 description: 按现金流量项目和凭证号核对明细表与整合表并标记差异。
 ui:
   employee_name: 现金流量明细核对
-  short_description: 核对现金流量明细表和整合表并标记差异。
-  categories: [对账核对]
+  short_description: 按现金流量项目和凭证号核对明细表与整合表并标记差异。
+  categories:
+  - 对账核对
   estimated_minutes: 3
   output_summary: 现金流量差异明细
   action_label: 开始核对
@@ -47,12 +48,16 @@ runtime:
   memory_mb: 2048
   concurrency_limit: 1
   network_access: false
+  network_targets: []
 risk:
   level: read_only
-  requires_confirmation: true
+  requires_confirmation: false
   requires_change_review: false
   requires_approval: false
   modifies_uploaded_files: false
+permissions:
+  run: finance_user
+  manage: skill_admin
 safety_constraints: {}
 progress_stages:
 - key: reading_files
@@ -60,15 +65,12 @@ progress_stages:
 - key: validating_fields
   label: 正在检查字段
 - key: processing
-  label: 正在核对记录
+  label: 正在处理数据
 - key: generating_output
   label: 正在生成结果文件
 result_presentation:
   metrics: []
-permissions:
-  run: finance_user
-  manage: skill_admin
 upstream:
-  repository: https://github.com/EvanLee2004/finance-skills
+  repository: https://gitee.com/Lee157/finance-skills.git
   path: skills/jdy-cashflow-reconcile
-blocked_reason: 现有实现缺少会计期间维度，同号凭证跨月时会错误合并，修复前禁止发布。
+blocked_reason: 期间分组问题已修复；发布前仍需为平台 Worker 打包受控 Node.js 和 @oai/artifact-tool 运行时，并接入专属双文件执行体验。

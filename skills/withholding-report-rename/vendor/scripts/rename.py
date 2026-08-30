@@ -210,6 +210,33 @@ def sanitize(name):
     return name.strip()
 
 
+def find_beneficiary_name(pdf):
+    """从单页 Transaction Invoice 文本层读取 Beneficiary Name。"""
+    pattern = re.compile(
+        r"^\s*Beneficiary\s+Name\s*[:：]\s*(.+?)\s*$",
+        flags=re.IGNORECASE | re.MULTILINE,
+    )
+    for page in pdf.pages:
+        text = page.extract_text() or ""
+        match = pattern.search(text)
+        if not match:
+            continue
+        name = re.sub(r"\s+", " ", match.group(1)).strip()
+        if name and len(name) <= 160:
+            return name
+    return None
+
+
+def beneficiary_filename_base(path, name):
+    """以 Beneficiary Name 替换原文件名末尾连续数字。"""
+    stem = os.path.splitext(os.path.basename(path))[0]
+    match = re.fullmatch(r"(.*?)(\d+)", stem)
+    if not match or not match.group(1):
+        return None
+    value = sanitize(match.group(1) + name)
+    return value or None
+
+
 # ── 单文件 -> 计划 ─────────────────────────────────────────────────
 def plan_one(path, suffix_pattern, overrides):
     """返回 dict：src/newbase/name/basis/tax/total/status/note。status: ok | manual。"""
@@ -229,6 +256,18 @@ def plan_one(path, suffix_pattern, overrides):
         with pl.open(path) as pdf:
             name = find_name(pdf, suffix_pattern)
             basis, tax = get_totals(pdf)
+            if not name:
+                beneficiary = find_beneficiary_name(pdf)
+                if beneficiary:
+                    newbase = beneficiary_filename_base(path, beneficiary)
+                    if not newbase:
+                        rec["status"] = "manual"
+                        rec["note"] = "识别到 Beneficiary Name，但原文件名末尾没有可替换的流水号"
+                        return rec
+                    rec["name"] = beneficiary
+                    rec["newbase"] = newbase
+                    rec["note"] = "Beneficiary Name 格式"
+                    return rec
     except Exception as e:  # 坏 PDF 不连坐其它文件
         rec["status"] = "manual"
         rec["note"] = f"打开/解析失败: {e}"

@@ -90,6 +90,14 @@ class Settings:
         "FINANCIAL_AR_HEXIAO_EXECUTION_ENABLED",
         os.getenv("FINANCIAL_ENV", "development").strip().lower() == "test",
     )
+    # Existing Zhiyun snapshots may be replayed only by development/test
+    # deployments.  This is deliberately separate from the live execution
+    # gate: turning live execution on must never be a prerequisite for an
+    # offline replay.
+    ar_hexiao_snapshot_replay_enabled: bool = _env_bool(
+        "FINANCIAL_AR_HEXIAO_SNAPSHOT_REPLAY_ENABLED",
+        os.getenv("FINANCIAL_ENV", "development").strip().lower() in {"development", "test"},
+    )
 
     # 会话与认证
     session_cookie_name: str = os.getenv("FINANCIAL_SESSION_COOKIE", "financial_session")

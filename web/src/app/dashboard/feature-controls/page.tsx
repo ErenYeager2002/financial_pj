@@ -37,10 +37,7 @@ export default async function FeatureControlsPage() {
     : null;
 
   return (
-    <PageContainer
-      pageTitle='功能开关'
-      pageDescription='统一查看和管理平台自动化、任务执行与登录认证状态'
-    >
+    <PageContainer pageTitle='功能开关'>
       <div className='space-y-4'>
         <FeatureControlList initialControls={controls} />
         <TaskReminderAssignment

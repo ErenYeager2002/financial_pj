@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
+  buildFetchedDataPreviewRequest,
   lastPageOffset,
   parseSupplementIdentifiers,
   partitionFetchedArGroups
@@ -30,6 +31,16 @@ test('取数后必须提供人工确认和按 AR/SO 编号补取入口', () => {
   assert.match(dialog, /缺失 SO 编号/);
   assert.match(dialog, /按编号补取/);
   assert.match(dialog, /fetched-data\/\$\{action\}/);
+});
+
+test('已完成任务仍提供直接查看已保存取数数据的入口', () => {
+  const panel = readFileSync(
+    new URL('../src/features/workflow-agent/components/workflow-agent-panel.tsx', import.meta.url),
+    'utf8'
+  );
+
+  assert.match(panel, /workflow\.fetched_data_available && isTerminal\(workflow\)/);
+  assert.match(panel, /查看已保存的取数数据/);
 });
 
 test('人工确认操作区固定在数据滚动区之外', () => {
@@ -71,6 +82,8 @@ test('分页末页从完整页边界开始且不与上一页重叠', () => {
 });
 
 test('取数复核提供按日期的业务摘要、合法空结果和可读补取记录', () => {
+  assert.match(dialog, /本日 AR 汇总金额/);
+  assert.match(dialog, /本日总核销金额/);
   assert.match(dialog, /AR 覆盖/);
   assert.match(dialog, /AR\/SO 覆盖/);
   assert.match(dialog, /未提供/);
@@ -108,6 +121,43 @@ test('AR 分组表在自己的滚动区域内保持表头可见', () => {
   assert.match(dialog, /overflow-auto/);
   assert.match(dialog, /table-container.*overflow-visible/);
   assert.match(dialog, /sticky top-0 z-20/);
+});
+
+test('批次状态轮询不会重新触发取数预览请求', () => {
+  const polledBatchSnapshots = [
+    '2026-08-25T09:10:00Z',
+    '2026-08-25T09:10:05Z',
+    '2026-08-25T09:10:10Z'
+  ];
+  const requests = polledBatchSnapshots.map((_updatedAt) =>
+    buildFetchedDataPreviewRequest({
+      isBatch: true,
+      resourceId: 'batch-1',
+      reconciliationDate: '2026-08-24',
+      offset: 0,
+      pageSize: 50,
+      query: '',
+      issuesOnly: false,
+      supplementRevision: 0
+    })
+  );
+
+  assert.equal(new Set(requests.map((request) => request.key)).size, 1);
+  assert.equal(
+    buildFetchedDataPreviewRequest({
+      isBatch: true,
+      resourceId: 'batch-1',
+      reconciliationDate: '2026-08-24',
+      offset: 0,
+      pageSize: 50,
+      query: '',
+      issuesOnly: false,
+      supplementRevision: 1
+    }).key === requests[0].key,
+    false
+  );
+  assert.doesNotMatch(dialog, /resourceUpdatedAt/);
+  assert.match(dialog, /\[open, previewRequest\]/);
 });
 
 test('本日 AR 与仅用于累计核对的历史父回款分组显示', () => {

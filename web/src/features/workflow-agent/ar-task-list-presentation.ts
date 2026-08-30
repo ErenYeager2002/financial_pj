@@ -68,8 +68,8 @@ export function arTaskDateLabel(task: ArTaskDates): string {
   if (task.reconciliation_dates) {
     const dates = [...new Set(task.reconciliation_dates)].toSorted();
     if (!dates.length) return '业务日期未设置';
-    if (dates.length === 1) return `${dates[0]} · 共 1 天`;
-    return `${dates[0]} 至 ${dates.at(-1)} · 共 ${dates.length} 天`;
+    if (dates.length === 1) return `${dates[0]} · 共 1 个核销日`;
+    return `${dates.join('、')} · 共 ${dates.length} 个核销日`;
   }
   return task.reconciliation_date || '业务日期未设置';
 }

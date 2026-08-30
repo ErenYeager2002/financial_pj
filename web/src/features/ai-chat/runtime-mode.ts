@@ -53,6 +53,18 @@ export async function* withLegacyFallback(
 ): AsyncIterable<AgentEvent> {
   let startedWork = false;
   for await (const event of piEvents) {
+    if (event.type === 'done' && !startedWork && legacyFallbackEnabled(environment)) {
+      try {
+        yield* legacyEvents();
+      } catch {
+        yield {
+          type: 'error',
+          code: 'legacy_fallback_failed',
+          message: 'AI 助手和旧实现当前都不可用。'
+        };
+      }
+      return;
+    }
     if (hasStartedWork(event)) startedWork = true;
     if (event.type !== 'error' || startedWork || !legacyFallbackEnabled(environment)) {
       yield event;

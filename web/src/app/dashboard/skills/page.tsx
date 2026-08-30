@@ -10,7 +10,7 @@ export default async function Page(): Promise<React.JSX.Element> {
   const skills = await listSkillCatalog();
 
   return (
-    <PageContainer pageTitle='Skill 中心' pageDescription='查看并运行当前账号已获授权的财务 Skill'>
+    <PageContainer pageTitle='Skill 中心'>
       <SkillCatalog skills={skills} />
     </PageContainer>
   );

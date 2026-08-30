@@ -28,6 +28,7 @@ import {
 import type {
   SkillDetail,
   WorkflowBatchRead,
+  WorkflowFetchedSnapshot,
   WorkflowRead,
   WorkflowReusableFilesRead
 } from '@/features/platform-api/types';
@@ -150,6 +151,13 @@ export function WorkflowLauncher({
   const [deletingFileId, setDeletingFileId] = React.useState('');
   const [working, setWorking] = React.useState(false);
   const [zhiyunCredentialConfigured, setZhiyunCredentialConfigured] = React.useState(false);
+  const [snapshotOptions, setSnapshotOptions] = React.useState<WorkflowFetchedSnapshot[]>([]);
+  const [snapshotOptionsLoading, setSnapshotOptionsLoading] = React.useState(false);
+  const [snapshotOptionsError, setSnapshotOptionsError] = React.useState('');
+  const [useSnapshot, setUseSnapshot] = React.useState(false);
+  const [selectedSnapshotWorkflowId, setSelectedSnapshotWorkflowId] = React.useState('');
+  const [rerunSuccessfulDates, setRerunSuccessfulDates] = React.useState(false);
+  const [rerunReason, setRerunReason] = React.useState('');
   const [error, setError] = React.useState('');
   const appliedInitialDatesKeyRef = React.useRef('');
   const dateDragRef = React.useRef<{
@@ -160,7 +168,11 @@ export function WorkflowLauncher({
   } | null>(null);
   const suppressDateClickRef = React.useRef(false);
   const selectedSkill = skills.find((skill) => skill.id === skillId);
-  const requiresZhiyunCredential = selectedSkill?.id === 'ar-hexiao-daily';
+  const requiresZhiyunCredential = selectedSkill?.id === 'ar-hexiao-daily' && !useSnapshot;
+  const supportsSnapshotReplay = selectedSkill?.id === 'ar-hexiao-daily';
+  const selectedSnapshot = snapshotOptions.find(
+    (item) => item.source_workflow_id === selectedSnapshotWorkflowId
+  );
   const fileInputs = selectedSkill?.file_inputs ?? [];
   const recentTasks = React.useMemo(
     () =>
@@ -202,6 +214,9 @@ export function WorkflowLauncher({
     setDateError('');
     setError('');
     setMaterialsError('');
+    setSnapshotOptionsError('');
+    setUseSnapshot(false);
+    setSelectedSnapshotWorkflowId('');
     setDeletingFileId('');
     setDirtyRoles(new Set());
     if (!skillId) {
@@ -244,6 +259,44 @@ export function WorkflowLauncher({
     skillId,
     today
   ]);
+
+  React.useEffect(() => {
+    if (!supportsSnapshotReplay || !skillId) {
+      setSnapshotOptions([]);
+      setSnapshotOptionsLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    setSnapshotOptionsLoading(true);
+    setSnapshotOptionsError('');
+    fetch(`/api/platform/workflows/fetched-snapshots?skill_id=${encodeURIComponent(skillId)}`, {
+      signal: controller.signal,
+      cache: 'no-store'
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(await responseMessage(response, '取数快照加载失败。'));
+        return (await response.json()) as WorkflowFetchedSnapshot[];
+      })
+      .then((options) => {
+        setSnapshotOptions(options);
+        setSelectedSnapshotWorkflowId((current) =>
+          options.some((item) => item.source_workflow_id === current)
+            ? current
+            : (options[0]?.source_workflow_id ?? '')
+        );
+      })
+      .catch((loadError: unknown) => {
+        if (loadError instanceof DOMException && loadError.name === 'AbortError') return;
+        setSnapshotOptionsError(
+          loadError instanceof Error ? loadError.message : '取数快照加载失败。'
+        );
+        setSnapshotOptions([]);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setSnapshotOptionsLoading(false);
+      });
+    return () => controller.abort();
+  }, [skillId, supportsSnapshotReplay]);
 
   const addDraggedDate = React.useCallback(
     (target: Date) =>
@@ -471,9 +524,25 @@ export function WorkflowLauncher({
       setError('请先安全保存智云账号和密码。');
       return;
     }
+    if (useSnapshot) {
+      if (!selectedSnapshotWorkflowId || !selectedSnapshot) {
+        setError('请选择一个可用的取数快照。');
+        return;
+      }
+      const unavailableDates = dates.filter((item) => !selectedSnapshot.dates.includes(item));
+      if (unavailableDates.length) {
+        setError(`所选快照不包含这些日期：${unavailableDates.join('、')}。`);
+        return;
+      }
+    }
     const dateRangeError = validateWorkflowDateRange(selectedDates);
     if (dateRangeError) {
       setDateError(dateRangeError);
+      return;
+    }
+    const normalizedRerunReason = rerunReason.trim();
+    if (rerunSuccessfulDates && !normalizedRerunReason) {
+      setError('勾选重新核销已成功日期后，必须填写重新核销原因。');
       return;
     }
     setWorking(true);
@@ -481,14 +550,27 @@ export function WorkflowLauncher({
     setDateError('');
     try {
       const { files, replace_roles } = selectedMaterialUpdates(materials, dirtyRoles);
-      const endpoint =
-        dates.length === 1
-          ? '/api/platform/workflows/start'
-          : '/api/platform/workflow-batches/start';
-      const body =
-        dates.length === 1
-          ? { skill_id: skillId, reconciliation_date: dates[0], files, replace_roles }
-          : { skill_id: skillId, reconciliation_dates: dates, files, replace_roles };
+      const useBatchEndpoint = dates.length > 1 || rerunSuccessfulDates;
+      const endpoint = !useBatchEndpoint
+        ? '/api/platform/workflows/start'
+        : '/api/platform/workflow-batches/start';
+      const body = !useBatchEndpoint
+        ? {
+            skill_id: skillId,
+            reconciliation_date: dates[0],
+            files,
+            replace_roles,
+            ...(useSnapshot ? { snapshot_workflow_id: selectedSnapshotWorkflowId } : {})
+          }
+        : {
+            skill_id: skillId,
+            reconciliation_dates: dates,
+            files,
+            replace_roles,
+            rerun_successful_dates: rerunSuccessfulDates,
+            rerun_reason: normalizedRerunReason,
+            ...(useSnapshot ? { snapshot_workflow_id: selectedSnapshotWorkflowId } : {})
+          };
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -498,7 +580,7 @@ export function WorkflowLauncher({
       const result = (await response.json()) as { id?: unknown };
       if (typeof result.id !== 'string') throw new Error('任务返回结果无效。');
       window.location.assign(
-        dates.length === 1
+        !useBatchEndpoint
           ? `/dashboard/workflows/${encodeURIComponent(result.id)}`
           : `/dashboard/workflows/batches/${encodeURIComponent(result.id)}`
       );
@@ -525,9 +607,6 @@ export function WorkflowLauncher({
           <CardTitle className='flex items-center gap-2'>
             <Icons.sparkles className='size-5' /> 新建应收核销任务
           </CardTitle>
-          <CardDescription>
-            选择日期和材料后直接提交 Worker。任务会在后台运行，页面只展示状态和错误位置。
-          </CardDescription>
         </CardHeader>
         <CardContent className='space-y-5'>
           <label className='grid gap-1.5 text-sm font-medium'>
@@ -535,7 +614,11 @@ export function WorkflowLauncher({
             <select
               className='h-10 rounded-md border bg-background px-3 font-normal'
               value={skillId}
-              onChange={(event) => setSkillId(event.target.value)}
+              onChange={(event) => {
+                setSkillId(event.target.value);
+                setRerunSuccessfulDates(false);
+                setRerunReason('');
+              }}
               disabled={working || skills.length === 0}
             >
               {skills.map((skill) => (
@@ -553,6 +636,92 @@ export function WorkflowLauncher({
             />
           )}
 
+          {supportsSnapshotReplay && (
+            <div className='rounded-lg border p-3'>
+              <p className='text-sm font-medium'>取数来源</p>
+              <p className='mt-1 text-xs text-muted-foreground'>
+                快照模式只在本地开发环境使用，不连接智云；源快照不会被修改。
+              </p>
+              <div className='mt-3 grid gap-2 text-sm'>
+                <label
+                  htmlFor='fetched-data-source-live'
+                  aria-label='实时连接智云'
+                  className='flex cursor-pointer items-start gap-2'
+                >
+                  <input
+                    id='fetched-data-source-live'
+                    aria-label='实时连接智云'
+                    type='radio'
+                    name='fetched-data-source'
+                    checked={!useSnapshot}
+                    disabled={working}
+                    onChange={() => setUseSnapshot(false)}
+                    className='mt-0.5'
+                  />
+                  <span>
+                    <span className='font-medium'>实时连接智云</span>
+                    <span className='mt-0.5 block text-xs text-muted-foreground'>
+                      需要公司网络和已保存的智云凭据。
+                    </span>
+                  </span>
+                </label>
+                <label
+                  htmlFor='fetched-data-source-snapshot'
+                  aria-label='使用已有取数快照'
+                  className='flex cursor-pointer items-start gap-2'
+                >
+                  <input
+                    id='fetched-data-source-snapshot'
+                    aria-label='使用已有取数快照'
+                    type='radio'
+                    name='fetched-data-source'
+                    checked={useSnapshot}
+                    disabled={working || snapshotOptionsLoading || snapshotOptions.length === 0}
+                    onChange={() => setUseSnapshot(true)}
+                    className='mt-0.5'
+                  />
+                  <span className='min-w-0 flex-1'>
+                    <span className='font-medium'>使用已有取数快照</span>
+                    <span className='mt-0.5 block text-xs text-muted-foreground'>
+                      只复制 v5 四件套，后续仍需人工检查和现有审批。
+                    </span>
+                  </span>
+                </label>
+              </div>
+              {snapshotOptionsLoading && (
+                <p className='mt-2 text-xs text-muted-foreground'>正在读取可用快照…</p>
+              )}
+              {snapshotOptionsError && (
+                <p role='alert' className='mt-2 text-sm text-destructive'>
+                  {snapshotOptionsError}
+                </p>
+              )}
+              {useSnapshot && snapshotOptions.length > 0 && (
+                <label className='mt-3 grid gap-1.5 text-sm font-medium'>
+                  选择快照
+                  <select
+                    className='h-10 rounded-md border bg-background px-3 font-normal'
+                    value={selectedSnapshotWorkflowId}
+                    disabled={working}
+                    onChange={(event) => setSelectedSnapshotWorkflowId(event.target.value)}
+                  >
+                    {snapshotOptions.map((option) => (
+                      <option key={option.source_workflow_id} value={option.source_workflow_id}>
+                        {option.source_display_id} · {option.dates.join('、')}
+                      </option>
+                    ))}
+                  </select>
+                  <span className='text-xs font-normal text-muted-foreground'>
+                    只能选择包含所选全部核销日期的快照。
+                  </span>
+                </label>
+              )}
+              {!snapshotOptionsLoading && !snapshotOptionsError && snapshotOptions.length === 0 && (
+                <p className='mt-2 text-xs text-muted-foreground'>当前没有可用的本地快照。</p>
+              )}
+            </div>
+          )}
+
           <div className='rounded-lg border bg-muted/20 p-3'>
             <div className='flex items-start justify-between gap-3'>
               <div>
@@ -562,7 +731,7 @@ export function WorkflowLauncher({
                 </p>
               </div>
               <div className='flex shrink-0 items-center gap-2'>
-                <Badge variant='secondary'>{selectedDates.length} 天</Badge>
+                <Badge variant='secondary'>{selectedDates.length} 个核销日</Badge>
                 <Button
                   type='button'
                   variant='outline'
@@ -627,6 +796,51 @@ export function WorkflowLauncher({
             </div>
             <p className='border-t pt-2 text-xs text-muted-foreground'>已选：{selectedDateLabel}</p>
           </div>
+
+          {supportsSnapshotReplay && (
+            <div className='rounded-lg border p-3'>
+              <div className='flex items-start gap-3 text-sm'>
+                <input
+                  id='rerun-successful-dates'
+                  type='checkbox'
+                  className='mt-0.5 size-4'
+                  checked={rerunSuccessfulDates}
+                  disabled={working}
+                  onChange={(event) => {
+                    setRerunSuccessfulDates(event.target.checked);
+                    setError('');
+                    if (!event.target.checked) setRerunReason('');
+                  }}
+                />
+                <div>
+                  <label htmlFor='rerun-successful-dates' className='font-medium'>
+                    重新核销已成功日期
+                  </label>
+                  <p className='mt-1 text-xs text-muted-foreground'>
+                    仅在确实需要复核时勾选。原成功任务会保留，新任务仍需完成取数检查和写前确认。
+                  </p>
+                </div>
+              </div>
+              {rerunSuccessfulDates && (
+                <label htmlFor='rerun-reason' className='mt-3 grid gap-1.5 text-sm font-medium'>
+                  重新核销原因
+                  <textarea
+                    id='rerun-reason'
+                    value={rerunReason}
+                    maxLength={500}
+                    rows={3}
+                    disabled={working}
+                    onChange={(event) => {
+                      setRerunReason(event.target.value);
+                      setError('');
+                    }}
+                    className='resize-y rounded-md border bg-background px-3 py-2 font-normal'
+                    placeholder='说明本次重新核对的原因'
+                  />
+                </label>
+              )}
+            </div>
+          )}
 
           {fileInputs.length > 0 && (
             <div className='space-y-3'>
@@ -767,7 +981,7 @@ export function WorkflowLauncher({
             {working
               ? '提交任务…'
               : selectedDates.length > 1
-                ? `开始 ${selectedDates.length} 天任务`
+                ? `开始 ${selectedDates.length} 个核销日任务`
                 : '开始任务'}
           </Button>
         </CardContent>
@@ -801,7 +1015,7 @@ export function WorkflowLauncher({
                   <p className='mt-1 text-sm font-medium'>{task.item.display_id}</p>
                   <p className='mt-1 text-xs text-muted-foreground'>
                     {isBatch
-                      ? `${task.item.reconciliation_dates.length} 天批次`
+                      ? `${task.item.reconciliation_dates.length} 个核销日批次`
                       : task.item.reconciliation_date || '日期未设置'}{' '}
                     · {task.item.progress}% · {task.item.progress_message}
                   </p>

@@ -21,10 +21,7 @@ export default async function Page({ params }: PageProps): Promise<React.JSX.Ele
       redirect(`/dashboard/workflows/batches/${encodeURIComponent(workflow.batch_id)}`);
     }
     return (
-      <PageContainer
-        pageTitle='应收核销任务详情'
-        pageDescription='查看任务的实时步骤、产出和错误位置'
-      >
+      <PageContainer pageTitle='应收核销任务详情'>
         <WorkflowAgentPanel initialWorkflow={workflow} />
       </PageContainer>
     );

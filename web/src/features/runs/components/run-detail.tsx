@@ -15,6 +15,7 @@ import { runKeys, runQueryOptions, runStepsQueryOptions } from '@/features/runs/
 import { retryRun } from '@/features/runs/api/service';
 import type { PlatformRunDetail, PlatformRunEvent } from '@/features/runs/api/types';
 import { parseRunOutputFiles } from '@/features/runs/run-output-files';
+import { confirmRun } from '@/features/run-setup/api/service';
 import { executionExperienceForSkill } from '@/features/skills/execution-experience';
 import {
   resultFieldLabel,
@@ -94,6 +95,13 @@ export function RunDetailView({ runId }: RunDetailViewProps): React.JSX.Element 
     TERMINAL_RUN_STATES.has(run.state) ? 'complete' : 'connecting'
   );
   const seenEvents = useRef(new Set<number>());
+  const confirmMutation = useMutation({
+    mutationFn: () => confirmRun(run.id),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: runKeys.all });
+      await Promise.all([refetch(), refetchSteps()]);
+    }
+  });
   const retryMutation = useMutation({
     mutationFn: () => retryRun(run.id),
     onSuccess: async (retried) => {
@@ -181,6 +189,10 @@ export function RunDetailView({ runId }: RunDetailViewProps): React.JSX.Element 
     retryMutation.mutate();
   }
 
+  function handleConfirm(): void {
+    confirmMutation.mutate();
+  }
+
   return (
     <div className='space-y-4'>
       <Card>
@@ -239,6 +251,28 @@ export function RunDetailView({ runId }: RunDetailViewProps): React.JSX.Element 
               <AlertDescription>{run.error_message}</AlertDescription>
             </Alert>
           )}
+          {run.state === 'waiting_confirmation' && (
+            <div className='flex flex-wrap items-center gap-3'>
+              <LoadingButton
+                type='button'
+                onClick={handleConfirm}
+                loading={confirmMutation.isPending}
+                loadingLabel='正在确认任务…'
+              >
+                确认并进入队列
+              </LoadingButton>
+              <span className='text-sm text-muted-foreground'>
+                确认后将按当前文件快照执行，上传原件不会被修改。
+              </span>
+            </div>
+          )}
+          {confirmMutation.error && (
+            <p className='text-sm text-destructive'>
+              {confirmMutation.error instanceof Error
+                ? confirmMutation.error.message
+                : '任务确认失败。'}
+            </p>
+          )}
           {run.can_retry && (
             <div className='flex flex-wrap items-center gap-3'>
               <LoadingButton
@@ -270,7 +304,6 @@ export function RunDetailView({ runId }: RunDetailViewProps): React.JSX.Element 
       <Card>
         <CardHeader>
           <CardTitle>执行步骤</CardTitle>
-          <CardDescription>按实际执行顺序显示当前任务的处理阶段。</CardDescription>
         </CardHeader>
         <CardContent>
           {steps.length ? (

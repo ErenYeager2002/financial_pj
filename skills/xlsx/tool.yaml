@@ -2,7 +2,7 @@ schema_version: 1
 id: xlsx
 name: Excel 基础能力
 version: 1.0.5
-status: published
+status: disabled
 category: 文档能力
 description: Excel 创建、编辑、公式重算和视觉检查的 Agent 基础指南。
 tags:

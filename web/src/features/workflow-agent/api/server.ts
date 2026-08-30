@@ -28,6 +28,8 @@ export interface WorkflowBatchStartInput {
   reconciliation_dates: string[];
   files?: Record<string, string[]>;
   replace_roles?: string[];
+  rerun_successful_dates?: boolean;
+  rerun_reason?: string;
 }
 
 export function listWorkflowSessions(): Promise<WorkflowRead[]> {

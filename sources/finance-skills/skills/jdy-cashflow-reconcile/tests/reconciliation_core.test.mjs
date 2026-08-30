@@ -5,6 +5,7 @@ import {
   addGroup,
   classify,
   compareGroups,
+  normalizePeriod,
   normalizeProject,
   normalizeVoucher,
 } from "../scripts/reconciliation_core.mjs";
@@ -81,10 +82,25 @@ test("分组必须同时包含项目和规范凭证号", () => {
   assert.deepEqual(statusCounts, { 核对一致: 2 });
 });
 
+test("会计期间支持日期文本、年月文本和 Excel 日期序号", () => {
+  assert.equal(normalizePeriod("2026-08-27"), "2026-08");
+  assert.equal(normalizePeriod("2026年8月"), "2026-08");
+  assert.equal(normalizePeriod(202608), "2026-08");
+  assert.equal(normalizePeriod(46204), "2026-07");
+  assert.equal(normalizePeriod("无效期间"), "");
+});
+
+test("跨会计期间的同项目同凭证号必须分别核对", () => {
+  const groups = new Map();
+  addGroup(groups, "项目甲", "记-3", 10, "记-0003", "2026-07");
+  addGroup(groups, "项目甲", "记-3", 20, "记-3", "2026-08");
+  assert.equal(groups.size, 2);
+});
+
 test("凭证号为空的基准记录仍保留为待核对组", () => {
   const groups = new Map();
   addGroup(groups, "项目甲", "", 100, "");
-  const item = groups.get("项目甲\u001f");
+  const item = groups.get("\u001f项目甲\u001f");
   assert.equal(groups.size, 1);
   assert.equal(item.count, 1);
   assert.equal(item.total, 100);

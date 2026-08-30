@@ -5,6 +5,7 @@ import type {
   TaskDiscoveryCheckQueued,
   TaskDiscoveryCheckRequest,
   TaskReminderBoard,
+  TaskReminderCleanupResult,
   TaskReminderSubscription,
   TaskReminderSubscriptionWrite,
   ServiceCredentialRead
@@ -12,6 +13,12 @@ import type {
 
 export function getTaskReminderBoard(): Promise<TaskReminderBoard> {
   return platformServerRequest<TaskReminderBoard>('/api/task-reminders');
+}
+
+export function dismissResolvedTaskReminders(): Promise<TaskReminderCleanupResult> {
+  return platformServerRequest<TaskReminderCleanupResult>('/api/task-reminders/resolved', {
+    method: 'DELETE'
+  });
 }
 
 export function queueTaskDiscoveryCheck(

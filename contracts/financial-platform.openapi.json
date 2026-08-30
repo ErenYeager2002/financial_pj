@@ -4920,9 +4920,25 @@
             },
             "title": "Reminders",
             "type": "array"
+          },
+          "resolved_count": {
+            "default": 0,
+            "title": "Resolved Count",
+            "type": "integer"
           }
         },
         "title": "TaskReminderBoard",
+        "type": "object"
+      },
+      "TaskReminderCleanupResult": {
+        "properties": {
+          "dismissed_count": {
+            "default": 0,
+            "title": "Dismissed Count",
+            "type": "integer"
+          }
+        },
+        "title": "TaskReminderCleanupResult",
         "type": "object"
       },
       "TaskReminderRead": {
@@ -5567,6 +5583,21 @@
             "title": "Fetched Data Review Status",
             "type": "string"
           },
+          "fetched_data_source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "live",
+                  "snapshot"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fetched Data Source"
+          },
           "fetched_data_summary_by_date": {
             "additionalProperties": {
               "additionalProperties": true,
@@ -5729,9 +5760,32 @@
             "title": "Replace Roles",
             "type": "array"
           },
+          "rerun_reason": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Rerun Reason",
+            "type": "string"
+          },
+          "rerun_successful_dates": {
+            "default": false,
+            "title": "Rerun Successful Dates",
+            "type": "boolean"
+          },
           "skill_id": {
             "title": "Skill Id",
             "type": "string"
+          },
+          "snapshot_workflow_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot Workflow Id"
           }
         },
         "required": [
@@ -6244,6 +6298,52 @@
         "title": "WorkflowFetchedPayment",
         "type": "object"
       },
+      "WorkflowFetchedSnapshotRead": {
+        "description": "A safe, selectable summary of a locally stored fetch snapshot.",
+        "properties": {
+          "captured_at": {
+            "format": "date-time",
+            "title": "Captured At",
+            "type": "string"
+          },
+          "dates": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Dates",
+            "type": "array"
+          },
+          "skill_version": {
+            "title": "Skill Version",
+            "type": "string"
+          },
+          "source_display_id": {
+            "title": "Source Display Id",
+            "type": "string"
+          },
+          "source_workflow_id": {
+            "title": "Source Workflow Id",
+            "type": "string"
+          },
+          "summary_by_date": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Summary By Date",
+            "type": "object"
+          }
+        },
+        "required": [
+          "source_workflow_id",
+          "source_display_id",
+          "skill_version",
+          "dates",
+          "captured_at"
+        ],
+        "title": "WorkflowFetchedSnapshotRead",
+        "type": "object"
+      },
       "WorkflowFetchedWriteoff": {
         "properties": {
           "amount_local": {
@@ -6573,6 +6673,21 @@
             "title": "Fetched Data Review Status",
             "type": "string"
           },
+          "fetched_data_source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "live",
+                  "snapshot"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fetched Data Source"
+          },
           "fetched_data_summary": {
             "additionalProperties": true,
             "title": "Fetched Data Summary",
@@ -6844,6 +6959,18 @@
           "skill_id": {
             "title": "Skill Id",
             "type": "string"
+          },
+          "snapshot_workflow_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot Workflow Id"
           }
         },
         "required": [
@@ -10496,6 +10623,27 @@
         ]
       }
     },
+    "/api/task-reminders/resolved": {
+      "delete": {
+        "operationId": "clear_resolved_task_reminders_api_task_reminders_resolved_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskReminderCleanupResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Clear Resolved Task Reminders",
+        "tags": [
+          "task-reminders"
+        ]
+      }
+    },
     "/api/workbench": {
       "get": {
         "operationId": "workbench_api_workbench_get",
@@ -10977,6 +11125,49 @@
           }
         },
         "summary": "New Workflow"
+      }
+    },
+    "/api/workflows/fetched-snapshots": {
+      "get": {
+        "operationId": "get_fetched_snapshot_options_api_workflows_fetched_snapshots_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WorkflowFetchedSnapshotRead"
+                  },
+                  "title": "Response Get Fetched Snapshot Options Api Workflows Fetched Snapshots Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Fetched Snapshot Options"
       }
     },
     "/api/workflows/material-sets": {

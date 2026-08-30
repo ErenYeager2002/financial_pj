@@ -20,10 +20,7 @@ export default async function Page({ params }: PageProps): Promise<React.JSX.Ele
       `/api/workflow-batches/${batchId}`
     );
     return (
-      <PageContainer
-        pageTitle='应收核销批次详情'
-        pageDescription='按日期顺序执行并持续显示每一天的处理步骤'
-      >
+      <PageContainer pageTitle='应收核销批次详情' pageDescription='批次按日期顺序执行'>
         <WorkflowBatchProgress initialBatch={batch} />
       </PageContainer>
     );

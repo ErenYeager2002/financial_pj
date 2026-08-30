@@ -28,10 +28,7 @@ export default async function UsersPage() {
     listAdminAuditEvents('', '', 100)
   ]);
   return (
-    <PageContainer
-      pageTitle='用户、权限与审计'
-      pageDescription='管理本部门平台账号、固定角色、Skill 权限和脱敏审计记录'
-    >
+    <PageContainer pageTitle='用户、权限与审计'>
       <div className='space-y-4'>
         <PlatformUserManagement
           session={session}

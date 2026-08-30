@@ -36,7 +36,7 @@ function stateVariant(state: string): 'secondary' | 'destructive' | 'outline' | 
 function businessDateLabel(item: TaskCenterItem): string {
   if (!item.business_date_start) return '未指定业务日期';
   if (item.business_date_count > 1) {
-    return `${item.business_date_start} 至 ${item.business_date_end} · ${item.business_date_count} 天`;
+    return `${item.business_date_count} 个已选核销日`;
   }
   return item.business_date_start;
 }

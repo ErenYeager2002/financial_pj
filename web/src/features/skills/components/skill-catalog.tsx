@@ -47,8 +47,14 @@ export function SkillCatalog({ skills }: { skills: SkillDetail[] }) {
             <CardTitle>{skill.name}</CardTitle>
             <CardDescription className='line-clamp-3'>{skill.description}</CardDescription>
             <CardAction>
-              <Badge variant={skill.popular ? 'default' : 'outline'}>
-                {skill.popular ? '常用' : `v${skill.version}`}
+              <Badge
+                variant={skill.status === 'published' && skill.popular ? 'default' : 'outline'}
+              >
+                {skill.status === 'published'
+                  ? skill.popular
+                    ? '常用'
+                    : `v${skill.version}`
+                  : '辅助入口'}
               </Badge>
             </CardAction>
           </CardHeader>

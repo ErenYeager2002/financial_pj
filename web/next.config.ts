@@ -11,6 +11,9 @@ const allowedDevOrigins =
 const baseConfig: NextConfig = {
   allowedDevOrigins,
   output: process.env.BUILD_STANDALONE === 'true' ? 'standalone' : undefined,
+  experimental: {
+    optimizePackageImports: ['@tabler/icons-react']
+  },
   images: {
     remotePatterns: [
       {

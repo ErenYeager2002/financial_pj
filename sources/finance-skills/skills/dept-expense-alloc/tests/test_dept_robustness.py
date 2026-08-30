@@ -105,7 +105,7 @@ def test_full_pipeline_synthetic():
         out = td / "out.xlsx"
         r = subprocess.run(
             [sys.executable, str(SCRIPTS / "allocate.py"), "--input-dir", str(td), "--out", str(out)],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
         )
         assert r.returncode == 0, r.stderr + r.stdout
         assert out.is_file()
@@ -148,7 +148,7 @@ def test_inspect_runs():
         _write_balance(td / "01_主体余额表" / "上海.xlsx", "上海")
         r = subprocess.run(
             [sys.executable, str(SCRIPTS / "inspect_inputs.py"), "--input-dir", str(td)],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
         )
         assert r.returncode in (0, 2), r.stderr + r.stdout
 

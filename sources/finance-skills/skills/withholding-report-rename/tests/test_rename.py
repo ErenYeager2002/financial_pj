@@ -78,6 +78,47 @@ def test_load_suffix_words_nonempty():
     assert any(w == "LIMITED" or w == "TECHNOLOGY" for w in words)
 
 
+def test_plan_one_supports_single_page_beneficiary_name_pdf(tmp_path, monkeypatch):
+    """平台真实输入：单页 PDF 按 Beneficiary Name 替换文件名末尾流水号。"""
+
+    class FakePage:
+        @staticmethod
+        def extract_text():
+            return "Transaction Invoice\nBeneficiary Name: SAMPLE PERSON\nReference: 123"
+
+        @staticmethod
+        def extract_tables():
+            return []
+
+    class FakePdf:
+        pages = (FakePage(),)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    class FakePdfPlumber:
+        @staticmethod
+        def open(_path):
+            return FakePdf()
+
+    monkeypatch.setattr(rename, "_require_pdfplumber", lambda: FakePdfPlumber())
+    source = tmp_path / "Transaction_Invoice_123456.pdf"
+    source.write_bytes(b"%PDF-test")
+
+    record = rename.plan_one(
+        str(source),
+        rename.build_suffix_pattern(rename.load_suffix_words()),
+        {},
+    )
+
+    assert record["status"] == "ok"
+    assert record["newbase"] == "Transaction_Invoice_SAMPLE PERSON"
+    assert record["note"] == "Beneficiary Name 格式"
+
+
 def test_plans_cover_inputs_ok_when_1to1():
     """正常：每个 PDF 一条计划且 src 一致 → 过闸。"""
     pdfs = ["/tmp/a.pdf", "/tmp/b.pdf"]

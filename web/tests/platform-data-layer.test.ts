@@ -56,6 +56,16 @@ test('任务重试使用 mutation、缓存失效和加载反馈', () => {
   assert.doesNotMatch(detail, /setRetrying|setRetryError/);
 });
 
+test('等待确认的普通任务可以从详情页确认执行', () => {
+  const detail = source('src/features/runs/components/run-detail.tsx');
+
+  assert.match(detail, /confirmRun/);
+  assert.match(detail, /mutationFn: \(\) => confirmRun\(run\.id\)/);
+  assert.match(detail, /run\.state === 'waiting_confirmation'/);
+  assert.match(detail, /确认并进入队列/);
+  assert.match(detail, /loading=\{confirmMutation\.isPending\}/);
+});
+
 test('步骤类型中文映射由共享函数提供', () => {
   assert.equal(stepTypeLabel('parameter_validation'), '参数校验');
   assert.equal(stepTypeLabel('controlled_write'), '受控写入');

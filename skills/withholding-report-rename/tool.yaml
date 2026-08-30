@@ -1,14 +1,15 @@
 schema_version: 1
 id: withholding-report-rename
 name: 代扣代缴申报表批量重命名
-version: 1.0.0
+version: 1.0.1
 status: published
 category: 文件整理
 description: 识别申报表 PDF 内容并生成规范命名的副本，平台不会修改上传原件。
 ui:
-  employee_name: 申报表批量重命名
-  short_description: 识别申报表内容并生成规范命名的 PDF 副本。
-  categories: [文件整理]
+  employee_name: 代扣代缴申报表批量重命名
+  short_description: 识别申报表 PDF 内容并生成规范命名的副本，平台不会修改上传原件。
+  categories:
+  - 文件整理
   estimated_minutes: 1
   output_summary: 规范命名的 PDF 副本
   action_label: 开始整理
@@ -57,27 +58,28 @@ runtime:
   memory_mb: 2048
   concurrency_limit: 1
   network_access: false
+  network_targets: []
 risk:
   level: read_only
   requires_confirmation: true
   requires_change_review: false
   requires_approval: false
   modifies_uploaded_files: false
+permissions:
+  run: finance_user
+  manage: skill_admin
 safety_constraints: {}
 progress_stages:
 - key: reading_files
   label: 正在读取文件
 - key: validating_fields
-  label: 正在识别申报表
+  label: 正在检查字段
 - key: processing
-  label: 正在生成规范文件名
+  label: 正在处理数据
 - key: generating_output
-  label: 正在生成 PDF 副本
+  label: 正在生成结果文件
 result_presentation:
   metrics: []
-permissions:
-  run: finance_user
-  manage: skill_admin
 upstream:
-  repository: https://github.com/EvanLee2004/finance-skills
+  repository: https://gitee.com/Lee157/finance-skills.git
   path: skills/withholding-report-rename

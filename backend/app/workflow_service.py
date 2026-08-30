@@ -10,14 +10,14 @@ import time
 import uuid
 import zipfile
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException
 from openpyxl import load_workbook
-from sqlalchemy import and_, or_, select, update
+from sqlalchemy import and_, delete, or_, select, update
 from sqlalchemy.orm import Session
 
 from .approval_service import (
@@ -27,13 +27,28 @@ from .approval_service import (
 from .audit_service import record_audit
 from .auth import UserContext
 from .authorization import assert_skill_permission
+from .fetched_data_preview import (
+    CURRENT_AR_AMOUNT_SUMMARY_KEY,
+    CURRENT_WRITEOFF_AMOUNT_SUMMARY_KEY,
+    current_ar_amounts_by_currency,
+    current_writeoff_amounts_by_currency,
+    ensure_fetched_data_preview,
+    fetched_data_group_search_text,
+    fetched_data_revision,
+    load_fetched_data_preview_page,
+    load_persisted_fetched_data_preview_page,
+)
 from .leases import LeaseHeartbeat, lease_deadline
 from .model_service import resolve_runtime_config
 from .models import (
     FileRecord,
+    TaskReminder,
     WorkflowAction,
     WorkflowBatch,
+    WorkflowFetchedDataPreview,
+    WorkflowFetchedDataPreviewArGroup,
     WorkflowMaterialSet,
+    WorkflowMaterialSetFile,
     WorkflowMessage,
     WorkflowSession,
 )
@@ -42,6 +57,7 @@ from .network_policy import (
     skill_subprocess_environment,
     subprocess_base_environment,
 )
+from .redaction import sanitize_text
 from .registry import RegisteredSkill, registry
 from .resource_policy import assert_owner, owner_list_filter, workflow_root
 from .scheduler import (
@@ -61,6 +77,7 @@ from .schemas import (
     WorkflowFetchedDelivery,
     WorkflowFetchedOrderDetail,
     WorkflowFetchedPayment,
+    WorkflowFetchedSnapshotRead,
     WorkflowFetchedWriteoff,
     WorkflowRead,
     WorkflowStart,
@@ -75,6 +92,7 @@ from .storage import safe_filename, sha256_file
 from .task_errors import TaskErrorDetail, build_task_error
 from .task_reminder_workflow_service import (
     associate_reminder_with_workflow,
+    restore_unfinished_batch_reminders,
     sync_reminder_from_workflow,
 )
 from .workflow_constants import (
@@ -84,6 +102,7 @@ from .workflow_constants import (
     is_background_model_connection,
 )
 from .workflow_execution_policy import (
+    assert_snapshot_replay_enabled,
     assert_workflow_agent_action_enabled,
     assert_workflow_execution_enabled,
     assert_workflow_skill_execution_enabled,
@@ -96,6 +115,7 @@ from .workflow_material_service import (
     material_set_bindings,
     material_set_matches_bindings,
     publish_workflow_material_set,
+    successful_reconciliation_workflows_for_material_lineage,
 )
 from .workflow_orchestrator import (
     WorkflowDecision,
@@ -115,6 +135,13 @@ RECEIPT_FLOW_ROLE = "receipt_flow_table"
 LEGACY_FILE_ROLE = "finance_workbooks"
 TERMINAL_WORKFLOW_STATES = {"succeeded", "failed", "cancelled"}
 PLATFORM_TIMEZONE = ZoneInfo("Asia/Shanghai")
+
+
+def _platform_today() -> date:
+    """Use the business calendar instead of the container's UTC calendar."""
+    return datetime.now(PLATFORM_TIMEZONE).date()
+
+
 FILE_ROLES = {
     ANNUAL_LEDGER_ROLE: "02_我的表副本",
     RECEIPT_FLOW_ROLE: "02_我的表副本",
@@ -127,6 +154,7 @@ CONFIRM_REPLIES = {"确认", "可以", "可以写", "按这个写", "没问题�
 WRITE_STAGING_DIR = "03_写入暂存区"
 BATCH_PUBLISH_TRANSACTION_DIR = ".批次发布事务"
 FETCH_SNAPSHOT_DIR = "01_智云导出"
+FETCH_SNAPSHOT_VERSION = "2026-08-21-atomic-fetch-v5"
 FETCHED_DATASET_SPECS = (
     ("payments", "回款记录", "回款记录"),
     ("orders", "订单交付", "订单交付"),
@@ -155,6 +183,8 @@ FETCHED_SUMMARY_KEYS = {
     "AR/SO覆盖率",
     "AR覆盖",
     "AR/SO覆盖",
+    CURRENT_AR_AMOUNT_SUMMARY_KEY,
+    CURRENT_WRITEOFF_AMOUNT_SUMMARY_KEY,
 }
 FETCHED_SUMMARY_LIST_KEYS = (
     "无下单行的AR",
@@ -348,7 +378,7 @@ def _set_progress_step(
     context.pop("error_detail", None)
     workflow.context_json = _json(context)
     if progress is not None:
-        workflow.progress = progress
+        workflow.progress = max(workflow.progress, progress)
     workflow.progress_message = label
     db.commit()
 
@@ -418,7 +448,7 @@ def _ledger_year_from_entry(entry: object) -> str:
         r"(?<!\d)((?:19|20)\d{2})(?:年)?(?!\d)",
         _entry_name(entry),
     )
-    return match.group(1) if match else str(date.today().year)
+    return match.group(1) if match else str(_platform_today().year)
 
 
 def _merge_file_bindings(
@@ -494,6 +524,9 @@ def serialize_workflow(workflow: WorkflowSession) -> WorkflowRead:
     context = _load(workflow.context_json, {})
     fetched_data = context.get("fetched_data", {})
     fetched_data = fetched_data if isinstance(fetched_data, dict) else {}
+    fetched_data_source = (
+        "snapshot" if fetched_data.get("source") == "snapshot" else "live"
+    )
     stored_error_detail = context.get("error_detail", {})
     has_public_error = isinstance(stored_error_detail, dict) and bool(
         stored_error_detail.get("error_type")
@@ -539,6 +572,7 @@ def serialize_workflow(workflow: WorkflowSession) -> WorkflowRead:
             else {}
         ),
         fetched_data_available=bool(fetched_data.get("available")),
+        fetched_data_source=fetched_data_source,
         fetched_data_summary=_public_fetched_summary(fetched_data.get("summary")),
         fetched_data_review_status=str(fetched_data.get("review_status", "")),
         fetched_data_supplement_history=_public_supplement_history(
@@ -582,7 +616,46 @@ def _batch_integrated_report_name(reconciliation_dates: list[str]) -> str | None
         return None
     start = reconciliation_dates[0].replace("-", "")
     end = reconciliation_dates[-1].replace("-", "")
-    return f"核销日清_{start}_{end}.xlsx"
+    first = date.fromisoformat(reconciliation_dates[0])
+    last = date.fromisoformat(reconciliation_dates[-1])
+    if len(reconciliation_dates) == (last - first).days + 1:
+        return f"核销日清_{start}_{end}.xlsx"
+    return f"核销日清_已选{len(reconciliation_dates)}日_{start}_{end}.xlsx"
+
+
+def _batch_final_output_artifacts(
+    workflow: WorkflowSession,
+    integrated_report_name: str,
+) -> list[dict[str, Any]]:
+    final_artifacts = _load(workflow.artifacts_json, [])
+    final_artifacts = [item for item in final_artifacts if isinstance(item, dict)]
+    context = _load(workflow.context_json, {})
+    next_files = context.get("next_files", {}) if isinstance(context, dict) else {}
+    material_artifacts: list[dict[str, Any]] = []
+    if isinstance(next_files, dict):
+        for role in (ANNUAL_LEDGER_ROLE, RECEIPT_FLOW_ROLE):
+            entries = next_files.get(role, [])
+            if isinstance(entries, list):
+                material_artifacts.extend(
+                    item
+                    for item in entries
+                    if isinstance(item, dict) and isinstance(item.get("file_id"), str)
+                )
+    integrated_artifacts = [
+        artifact
+        for artifact in final_artifacts
+        if artifact.get("name") == integrated_report_name
+    ]
+    selected = material_artifacts + integrated_artifacts if material_artifacts else final_artifacts
+    unique: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for artifact in selected:
+        key = str(artifact.get("file_id") or artifact.get("name") or "")
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        unique.append(artifact)
+    return unique
 
 
 def _fetched_export_directory(
@@ -624,6 +697,343 @@ def _fetched_summary_from_export(export_dir: Path, reconciliation_date: str) -> 
         return _public_fetched_summary(_load(summary_path.read_text(encoding="utf-8"), {}))
     except OSError:
         return {}
+
+
+def _snapshot_file_for_prefix(
+    export_dir: Path,
+    reconciliation_date: str,
+    prefix: str,
+    summary: dict[str, Any],
+    *,
+    resolve_path: bool = True,
+) -> Path:
+    """Resolve one file named by the fetch manifest, never by a client path."""
+    tag = reconciliation_date.replace("-", "")
+    names = summary.get("files")
+    if isinstance(names, list):
+        for raw_name in names:
+            name = str(raw_name).strip()
+            if name.startswith(f"{prefix}_{tag}") and name.lower().endswith(
+                (".xlsx", ".xlsm", ".xls")
+            ):
+                candidate = export_dir / name
+                if resolve_path:
+                    candidate = candidate.resolve()
+                # Listing only accepts direct children from the manifest. The
+                # full replay path still resolves the candidate below before
+                # copying it into a new task workspace.
+                if (
+                    Path(name).name == name
+                    and candidate.is_relative_to(
+                        export_dir if not resolve_path else export_dir.resolve()
+                    )
+                ):
+                    return candidate
+    return _fetched_dataset_path(export_dir, prefix, reconciliation_date)
+
+
+def _snapshot_context_workspace(
+    db: Session,
+    source_workflow: WorkflowSession,
+    *,
+    storage_root: Path | None = None,
+) -> tuple[dict[str, Any], dict[str, Any], Path, Path] | None:
+    """Load and boundary-check a snapshot workspace once per source workspace."""
+    context = _load(source_workflow.context_json, {})
+    context = context if isinstance(context, dict) else {}
+    fetched_data = context.get("fetched_data", {})
+    if not isinstance(fetched_data, dict) or not fetched_data.get("available"):
+        return None
+    raw_workspace = context.get("workspace", "")
+    if not isinstance(raw_workspace, str) or not raw_workspace:
+        return None
+    storage_root = storage_root or _workflow_storage_root(db, source_workflow)
+    workspace = Path(raw_workspace).resolve()
+    if not workspace.is_dir() or not workspace.is_relative_to(storage_root):
+        return None
+    export_dir = (workspace / FETCH_SNAPSHOT_DIR).resolve()
+    if not export_dir.is_dir() or not export_dir.is_relative_to(storage_root):
+        return None
+    return context, fetched_data, workspace, export_dir
+
+
+def _validated_snapshot_for_date(
+    db: Session,
+    source_workflow: WorkflowSession,
+    reconciliation_date: str,
+    *,
+    storage_root: Path | None = None,
+    verify_hashes: bool = True,
+    workspace_info: tuple[Path, Path] | None = None,
+    resolve_file_paths: bool = True,
+) -> dict[str, Any] | None:
+    """Validate a stored four-file snapshot and return only controlled paths."""
+    if workspace_info is None:
+        prepared = _snapshot_context_workspace(
+            db, source_workflow, storage_root=storage_root
+        )
+        if prepared is None:
+            return None
+        context, fetched_data, workspace, export_dir = prepared
+    else:
+        context = _load(source_workflow.context_json, {})
+        context = context if isinstance(context, dict) else {}
+        fetched_data = context.get("fetched_data", {})
+        if not isinstance(fetched_data, dict) or not fetched_data.get("available"):
+            return None
+        workspace, export_dir = workspace_info
+    tag = reconciliation_date.replace("-", "")
+    summary_path = export_dir / f"取数摘要_{tag}.json"
+    if summary_path.is_symlink():
+        return None
+    try:
+        summary = _load(summary_path.read_text(encoding="utf-8"), {})
+    except OSError:
+        return None
+    if not isinstance(summary, dict):
+        return None
+    if (
+        summary.get("day") != reconciliation_date
+        or summary.get("export_schema_version") != FETCH_SNAPSHOT_VERSION
+        or summary.get("read_only") is not True
+    ):
+        return None
+    hashes = summary.get("file_sha256")
+    if not isinstance(hashes, dict):
+        return None
+    paths: list[Path] = []
+    for _, _, prefix in FETCHED_DATASET_SPECS:
+        try:
+            path = _snapshot_file_for_prefix(
+                export_dir,
+                reconciliation_date,
+                prefix,
+                summary,
+                resolve_path=resolve_file_paths,
+            )
+        except HTTPException:
+            return None
+        if (
+            not path.is_file()
+            or path.is_symlink()
+            or not path.is_relative_to(
+                export_dir if not resolve_file_paths else export_dir.resolve()
+            )
+            or not isinstance(hashes.get(path.name), str)
+        ):
+            return None
+        if verify_hashes:
+            try:
+                if sha256_file(path).casefold() != str(hashes[path.name]).casefold():
+                    return None
+            except OSError:
+                return None
+        paths.append(path)
+    return {
+        "workspace": workspace,
+        "export_dir": export_dir,
+        "summary_path": summary_path,
+        "summary": _public_fetched_summary(summary),
+        "paths": paths,
+    }
+
+
+def _snapshot_source_workflow(
+    db: Session,
+    source_workflow_id: str,
+    user: UserContext,
+) -> WorkflowSession:
+    source_id = str(source_workflow_id or "").strip()
+    if not source_id:
+        raise HTTPException(status_code=422, detail="取数快照标识不能为空。")
+    source = db.get(WorkflowSession, source_id)
+    if not source or source.skill_id != "ar-hexiao-daily":
+        raise HTTPException(status_code=404, detail="取数快照不存在。")
+    # A replay always stays within the requesting user's own snapshot set.
+    # This keeps customer and payment data from crossing employee boundaries;
+    # administrators can still use an account that owns the snapshot.
+    if source.owner_id != user.user_id:
+        raise HTTPException(status_code=404, detail="取数快照不存在。")
+    assert_snapshot_replay_enabled(source.skill_id)
+    return source
+
+
+def _validated_snapshot_selection(
+    db: Session,
+    source_workflow_id: str,
+    reconciliation_dates: list[str],
+    user: UserContext,
+) -> tuple[WorkflowSession, dict[str, dict[str, Any]]]:
+    source = _snapshot_source_workflow(db, source_workflow_id, user)
+    valid: dict[str, dict[str, Any]] = {}
+    for item in reconciliation_dates:
+        selected = _validated_snapshot_for_date(db, source, item)
+        if selected is not None:
+            valid[item] = selected
+    missing = [item for item in reconciliation_dates if item not in valid]
+    if missing:
+        raise HTTPException(
+            status_code=409,
+            detail=f"所选日期没有可用的 v5 取数快照：{'、'.join(missing)}。",
+        )
+    return source, valid
+
+
+def list_fetched_snapshot_options(
+    db: Session,
+    skill_id: str,
+    user: UserContext,
+) -> list[WorkflowFetchedSnapshotRead]:
+    """List valid snapshots without exposing workspaces, customers or amounts."""
+    assert_snapshot_replay_enabled(skill_id)
+    assert_skill_permission(db, user, skill_id)
+    filters = [WorkflowSession.skill_id == skill_id, WorkflowSession.owner_id == user.user_id]
+    workflows = db.scalars(
+        select(WorkflowSession)
+        .where(*filters)
+        .order_by(WorkflowSession.updated_at.desc(), WorkflowSession.id.desc())
+    ).all()
+    preview_rows = db.scalars(
+        select(WorkflowFetchedDataPreview)
+        .join(WorkflowSession, WorkflowSession.id == WorkflowFetchedDataPreview.workflow_id)
+        .where(*filters)
+    ).all()
+    workflows_by_id = {source.id: source for source in workflows}
+    preview_by_source_date = {
+        (preview.workflow_id, preview.reconciliation_date): preview
+        for preview in preview_rows
+    }
+    preview_by_source_key_date: dict[tuple[tuple[str, str], str], WorkflowFetchedDataPreview] = {}
+    for preview in preview_rows:
+        source = workflows_by_id.get(preview.workflow_id)
+        if source is None:
+            continue
+        context = _load(source.context_json, {})
+        workspace_hint = str(context.get("workspace", "")) if isinstance(context, dict) else ""
+        if not workspace_hint:
+            continue
+        source_key = (str(getattr(source, "batch_id", "") or source.id), workspace_hint)
+        preview_by_source_key_date[(source_key, preview.reconciliation_date)] = preview
+    result: list[WorkflowFetchedSnapshotRead] = []
+    storage_root_cache: dict[tuple[str, str], Path | None] = {}
+    workspace_cache: dict[tuple[str, str], tuple[Path, Path] | None] = {}
+    validation_cache: dict[tuple[tuple[str, str], str], dict[str, Any] | None] = {}
+    emitted_snapshot_keys: set[tuple[str, tuple[str, ...]]] = set()
+    for source in workflows:
+        context = _load(source.context_json, {})
+        fetched_data = context.get("fetched_data", {}) if isinstance(context, dict) else {}
+        # Most historical workflows never produced a replayable snapshot. Skip
+        # them before resolving storage roots or probing dates; otherwise the
+        # selector pays the filesystem cost for every task in the history.
+        if not isinstance(fetched_data, dict) or not fetched_data.get("available"):
+            continue
+        raw_dates = fetched_data.get("dates", []) if isinstance(fetched_data, dict) else []
+        dates = [str(item) for item in raw_dates if isinstance(item, str) and item]
+        if not dates and source.reconciliation_date:
+            dates = [source.reconciliation_date]
+        workspace_hint = str(context.get("workspace", "")) if isinstance(context, dict) else ""
+        if not workspace_hint:
+            continue
+        source_key = (str(getattr(source, "batch_id", "") or source.id), workspace_hint)
+        if source_key not in storage_root_cache:
+            try:
+                storage_root_cache[source_key] = _workflow_storage_root(db, source)
+                prepared = _snapshot_context_workspace(
+                    db, source, storage_root=storage_root_cache[source_key]
+                )
+                workspace_cache[source_key] = (
+                    (prepared[2], prepared[3]) if prepared is not None else None
+                )
+            except RuntimeError:
+                storage_root_cache[source_key] = None
+                workspace_cache[source_key] = None
+        if workspace_cache[source_key] is None:
+            continue
+        summaries: dict[str, dict[str, Any]] = {}
+        valid_dates: list[str] = []
+        for item in sorted(set(dates)):
+            cache_key = (source_key, item)
+            if cache_key not in validation_cache:
+                preview = preview_by_source_date.get((source.id, item)) or (
+                    preview_by_source_key_date.get((source_key, item))
+                )
+                if preview is not None:
+                    # The preview is written only after the four source files
+                    # have been found and parsed. Replay still performs the
+                    # full manifest and hash validation when the user starts
+                    # a task; the selector need not probe the same files again.
+                    validation_cache[cache_key] = {
+                        "summary": _public_fetched_summary(
+                            _load(preview.summary_json, {})
+                        )
+                    }
+                else:
+                    # Listing must stay responsive on Windows bind mounts. The
+                    # copy path below repeats the full content-hash validation.
+                    validation_cache[cache_key] = _validated_snapshot_for_date(
+                        db,
+                        source,
+                        item,
+                        storage_root=storage_root_cache[source_key],
+                        verify_hashes=False,
+                        workspace_info=workspace_cache[source_key],
+                        resolve_file_paths=False,
+                    )
+            validated = validation_cache[cache_key]
+            if validated is None:
+                continue
+            valid_dates.append(item)
+            summaries[item] = validated["summary"]
+        if not valid_dates:
+            continue
+        snapshot_key = (workspace_hint, tuple(valid_dates))
+        if snapshot_key in emitted_snapshot_keys:
+            continue
+        emitted_snapshot_keys.add(snapshot_key)
+        result.append(
+            WorkflowFetchedSnapshotRead(
+                source_workflow_id=source.id,
+                source_display_id=source.display_id or source.id,
+                skill_version=source.skill_version,
+                dates=valid_dates,
+                summary_by_date=summaries,
+                captured_at=source.updated_at or source.created_at,
+            )
+        )
+    return result
+
+
+def _copy_fetched_snapshot(
+    db: Session,
+    source_workflow_id: str,
+    reconciliation_dates: list[str],
+    target_workspace: Path,
+    user: UserContext,
+) -> dict[str, Any]:
+    """Copy a validated snapshot into the new task workspace."""
+    source, selected = _validated_snapshot_selection(
+        db, source_workflow_id, reconciliation_dates, user
+    )
+    target_root = target_workspace.resolve()
+    export_dir = (target_root / FETCH_SNAPSHOT_DIR).resolve()
+    if not export_dir.is_relative_to(target_root):
+        raise RuntimeError("目标取数工作区不安全，拒绝复制快照。")
+    if export_dir.exists():
+        shutil.rmtree(export_dir)
+    export_dir.mkdir(parents=True, exist_ok=False)
+    summaries: dict[str, dict[str, Any]] = {}
+    for item in reconciliation_dates:
+        validated = selected[item]
+        for path in [*validated["paths"], validated["summary_path"]]:
+            destination = export_dir / path.name
+            shutil.copy2(path, destination)
+        summaries[item] = validated["summary"]
+    # A later worker invocation validates the source again.  The target only
+    # records an opaque source id and public counts, never the original path.
+    return {
+        "source_workflow_id": source.id,
+        "summary_by_date": summaries,
+    }
 
 
 def _preview_cell(value: object) -> Any:
@@ -852,13 +1262,31 @@ def _fetched_ar_groups(
 
 
 def _ar_group_matches_query(group: WorkflowFetchedDataArGroup, query: str) -> bool:
-    values = [
-        group.ar_id,
-        *(payment.customer for payment in group.payments),
-        *(order.so_id for order in group.orders),
-        *(detail.sod_id for order in group.orders for detail in order.order_details),
-    ]
-    return any(query in value.casefold() for value in values if value)
+    return query in fetched_data_group_search_text(group)
+
+
+def _fetched_data_preview_revision(
+    workflow: WorkflowSession,
+    fetched_data: dict[str, Any],
+    reconciliation_date: str,
+    source_paths: list[Path],
+    *,
+    refresh: bool = False,
+) -> str:
+    revisions = fetched_data.get("preview_revisions", {})
+    revisions = revisions if isinstance(revisions, dict) else {}
+    stored = revisions.get(reconciliation_date)
+    if not refresh and isinstance(stored, str) and len(stored) == 64:
+        return stored
+
+    revision = fetched_data_revision(source_paths)
+    revisions[reconciliation_date] = revision
+    fetched_data["preview_revisions"] = revisions
+    context = _load(workflow.context_json, {})
+    context = context if isinstance(context, dict) else {}
+    context["fetched_data"] = fetched_data
+    workflow.context_json = _json(context)
+    return revision
 
 
 def read_workflow_fetched_data(
@@ -870,6 +1298,7 @@ def read_workflow_fetched_data(
     query: str = "",
     issues_only: bool = False,
     storage_root: Path | None = None,
+    db: Session | None = None,
 ) -> WorkflowFetchedDataRead:
     """Read only the task's completed Zhiyun exports, with bounded pagination."""
     if offset < 0 or limit < 1 or limit > FETCHED_PREVIEW_MAX_LIMIT:
@@ -881,14 +1310,80 @@ def read_workflow_fetched_data(
         )
     specification = FETCHED_DATASET_BY_KEY.get(dataset)
     if dataset == "ar_groups":
-        export_dir, fetched_data = _fetched_export_directory(workflow, storage_root=storage_root)
+        if db is not None:
+            db.execute(
+                select(WorkflowSession.id)
+                .where(WorkflowSession.id == workflow.id)
+                .with_for_update()
+            ).scalar_one()
+            db.refresh(workflow)
         selected_date = reconciliation_date or workflow.reconciliation_date
+        if db is not None and workflow.state in TERMINAL_WORKFLOW_STATES:
+            persisted_page = load_persisted_fetched_data_preview_page(
+                db,
+                workflow_id=workflow.id,
+                reconciliation_date=selected_date,
+                offset=offset,
+                limit=limit,
+                query=query,
+                issues_only=issues_only,
+            )
+            if persisted_page is not None:
+                return WorkflowFetchedDataRead(
+                    reconciliation_date=selected_date,
+                    dataset=dataset,
+                    dataset_label="按 AR 分组",
+                    headers=[],
+                    rows=[],
+                    total=persisted_page.total,
+                    offset=offset,
+                    limit=limit,
+                    datasets=[],
+                    summary=persisted_page.summary,
+                    ar_groups=persisted_page.groups,
+                )
+        export_dir, fetched_data = _fetched_export_directory(workflow, storage_root=storage_root)
         summary = _public_fetched_summary(
             (fetched_data.get("summary_by_date") or {}).get(selected_date)
             if isinstance(fetched_data.get("summary_by_date"), dict)
             else fetched_data.get("summary")
         ) or _fetched_summary_from_export(export_dir, selected_date)
+        if db is not None:
+            source_paths = [
+                _fetched_dataset_path(export_dir, prefix, selected_date)
+                for _, _, prefix in FETCHED_DATASET_SPECS
+            ]
+            revision = _fetched_data_preview_revision(
+                workflow, fetched_data, selected_date, source_paths
+            )
+            preview_page = load_fetched_data_preview_page(
+                db,
+                workflow_id=workflow.id,
+                reconciliation_date=selected_date,
+                revision=revision,
+                summary=summary,
+                offset=offset,
+                limit=limit,
+                query=query,
+                issues_only=issues_only,
+                build_groups=lambda: _fetched_ar_groups(export_dir, selected_date),
+            )
+            return WorkflowFetchedDataRead(
+                reconciliation_date=selected_date,
+                dataset=dataset,
+                dataset_label="按 AR 分组",
+                headers=[],
+                rows=[],
+                total=preview_page.total,
+                offset=offset,
+                limit=limit,
+                datasets=[],
+                summary=preview_page.summary,
+                ar_groups=preview_page.groups,
+            )
         ar_groups = _fetched_ar_groups(export_dir, selected_date)
+        ar_amount_summary = current_ar_amounts_by_currency(ar_groups)
+        writeoff_amount_summary = current_writeoff_amounts_by_currency(ar_groups, selected_date)
         normalized_query = query.strip()[:100].casefold()
         if normalized_query:
             ar_groups = [
@@ -906,7 +1401,11 @@ def read_workflow_fetched_data(
             offset=offset,
             limit=limit,
             datasets=[],
-            summary=summary,
+            summary={
+                **summary,
+                CURRENT_AR_AMOUNT_SUMMARY_KEY: ar_amount_summary,
+                CURRENT_WRITEOFF_AMOUNT_SUMMARY_KEY: writeoff_amount_summary,
+            },
             ar_groups=ar_groups[offset : offset + limit],
         )
     if not specification:
@@ -1042,6 +1541,8 @@ def request_fetched_data_supplement(
     fetched_data = context.get("fetched_data", {})
     if not isinstance(fetched_data, dict) or not fetched_data.get("available"):
         raise HTTPException(status_code=409, detail="智云取数尚未完成，不能补取。")
+    if fetched_data.get("source") == "snapshot":
+        raise HTTPException(status_code=409, detail="本地取数快照不能补取智云数据。")
     fetched_data["review_status"] = "supplementing"
     context["fetched_data"] = fetched_data
     context["current_step"] = "fetch_zhiyun"
@@ -1079,6 +1580,9 @@ def serialize_workflow_batch(
     )
     fetched_data = fetched_context.get("fetched_data", {})
     fetched_data = fetched_data if isinstance(fetched_data, dict) else {}
+    fetched_data_source = (
+        "snapshot" if fetched_data.get("source") == "snapshot" else "live"
+    )
     progress = (
         int(sum(item.progress for item in workflows) / len(workflows))
         if workflows
@@ -1089,8 +1593,13 @@ def serialize_workflow_batch(
     active = next((item for item in workflows if item.state == "running"), None)
     progress_message = batch.progress_message
     if active:
-        progress_message = (
+        active_progress_message = (
             f"第 {active.batch_sequence}/{len(workflows)} 天 · {active.progress_message}"
+        )
+        progress_message = (
+            f"{batch.progress_message}；{active_progress_message}"
+            if batch.progress_message.startswith("已排除已成功日期：")
+            else active_progress_message
         )
     failed_workflow = next((item for item in workflows if item.state == "failed"), None)
     failed_action = (
@@ -1113,8 +1622,13 @@ def serialize_workflow_batch(
         if last_workflow
         else None
     )
+    material_version_conflict = any(
+        bool((_load(item.context_json, {}) or {}).get("material_version_conflict"))
+        for item in workflows
+    )
     retryable = bool(
         batch.state == "failed"
+        and not material_version_conflict
         and (
             (failed_action and failed_action.name == "prepare_worklist")
             or failed_finalizer is not None
@@ -1131,14 +1645,16 @@ def serialize_workflow_batch(
     )
     can_retry = retryable and retry_authorized
     retry_block_reason = (
-        "当前账号没有使用该财务工具的权限，请联系平台管理员。"
+        batch.error_message
+        if material_version_conflict
+        else "当前账号没有使用该财务工具的权限，请联系平台管理员。"
         if retryable and not retry_authorized
         else retry_message
         if batch.state == "failed" and not retryable
         else ""
     )
     batch_error_message = batch.error_message
-    if batch.state == "failed" and failed_workflow:
+    if batch.state == "failed" and failed_workflow and not material_version_conflict:
         child_context = _load(failed_workflow.context_json, {})
         child_detail = child_context.get("error_detail", {})
         if not isinstance(child_detail, dict) or not child_detail.get("error_type"):
@@ -1151,14 +1667,9 @@ def serialize_workflow_batch(
         for item in serialized_workflows:
             item.artifacts = []
         if serialized_workflows:
-            final_artifacts = _load(workflows[-1].artifacts_json, [])
-            integrated_artifacts = [
-                artifact
-                for artifact in final_artifacts
-                if isinstance(artifact, dict)
-                and artifact.get("name") == integrated_report_name
-            ]
-            serialized_workflows[-1].artifacts = integrated_artifacts[-1:]
+            serialized_workflows[-1].artifacts = _batch_final_output_artifacts(
+                workflows[-1], integrated_report_name
+            )
     return WorkflowBatchRead(
         id=batch.id,
         display_id=batch.display_id or batch.id,
@@ -1178,6 +1689,7 @@ def serialize_workflow_batch(
         retry_message=retry_message,
         retry_block_reason=retry_block_reason,
         fetched_data_available=bool(fetched_data.get("available")),
+        fetched_data_source=fetched_data_source,
         fetched_data_review_status=str(fetched_data.get("review_status") or ""),
         fetched_data_summary_by_date=(
             {
@@ -1225,6 +1737,93 @@ def _workflow_storage_root(db: Session, workflow: WorkflowSession) -> Path:
     return workflow_root(workflow.owner_id, workflow.id).resolve()
 
 
+def _ensure_workflow_skill_snapshot(db: Session, workflow: WorkflowSession) -> Path:
+    """Materialize a batch child's immutable Skill copy when its action starts."""
+    root = workflow_root(workflow.owner_id, workflow.id).resolve()
+    destination = root / "skill"
+    if destination.is_dir():
+        return destination
+
+    batch_id = str(getattr(workflow, "batch_id", "") or "")
+    batch = db.get(WorkflowBatch, batch_id) if batch_id else None
+    if batch is None:
+        raise RuntimeError("工作流 Skill 快照已经缺失。")
+    primary = _batch_primary_workflow(batch)
+    source = workflow_root(primary.owner_id, primary.id).resolve() / "skill"
+    if not source.is_dir():
+        raise RuntimeError("批次首日的 Skill 快照已经缺失。")
+
+    root.mkdir(parents=True, exist_ok=True)
+    staging = root / f".skill-snapshot-{uuid.uuid4().hex}"
+    try:
+        shutil.copytree(source, staging)
+        if destination.exists():
+            if not destination.is_dir():
+                raise RuntimeError("工作流 Skill 快照目录无效。")
+            shutil.rmtree(staging, ignore_errors=True)
+        else:
+            os.replace(staging, destination)
+    except Exception:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+    return destination
+
+
+def _prime_fetched_data_previews(
+    db: Session,
+    workflow: WorkflowSession,
+    reconciliation_dates: list[str],
+) -> None:
+    """Build read-only AR previews while the Worker still owns the fetch action."""
+    storage_root = _workflow_storage_root(db, workflow)
+    try:
+        export_dir, fetched_data = _fetched_export_directory(
+            workflow, storage_root=storage_root
+        )
+        sources_by_date = {
+            reconciliation_date: [
+                _fetched_dataset_path(export_dir, prefix, reconciliation_date)
+                for _, _, prefix in FETCHED_DATASET_SPECS
+            ]
+            for reconciliation_date in reconciliation_dates
+        }
+        if not all(
+            path.is_file() for paths in sources_by_date.values() for path in paths
+        ):
+            return
+    except HTTPException:
+        # Legacy and test snapshots may not contain the four review workbooks.
+        # The read endpoint keeps its on-demand fallback for those snapshots.
+        return
+
+    revisions = {
+        reconciliation_date: _fetched_data_preview_revision(
+            workflow,
+            fetched_data,
+            reconciliation_date,
+            sources_by_date[reconciliation_date],
+            refresh=True,
+        )
+        for reconciliation_date in reconciliation_dates
+    }
+    for reconciliation_date in reconciliation_dates:
+        summary = _public_fetched_summary(
+            (fetched_data.get("summary_by_date") or {}).get(reconciliation_date)
+            if isinstance(fetched_data.get("summary_by_date"), dict)
+            else fetched_data.get("summary")
+        ) or _fetched_summary_from_export(export_dir, reconciliation_date)
+        ensure_fetched_data_preview(
+            db,
+            workflow_id=workflow.id,
+            reconciliation_date=reconciliation_date,
+            revision=revisions[reconciliation_date],
+            summary=summary,
+            build_groups=lambda selected_date=reconciliation_date: _fetched_ar_groups(
+                export_dir, selected_date
+            ),
+        )
+
+
 def _discard_workspace_fetched_snapshot(storage_root: Path, workspace: Path) -> None:
     """Delete only the task-local Zhiyun snapshot inside a controlled workspace."""
     controlled_root = storage_root.resolve()
@@ -1263,8 +1862,22 @@ def _mark_fetched_snapshot_deleted(workflow: WorkflowSession) -> None:
     workflow.context_json = _json(context)
 
 
+def _mark_fetched_snapshot_retained(workflow: WorkflowSession) -> None:
+    context = _load(workflow.context_json, {})
+    context = context if isinstance(context, dict) else {}
+    fetched_data = context.get("fetched_data", {})
+    if not isinstance(fetched_data, dict) or not fetched_data:
+        return
+    fetched_data["available"] = True
+    fetched_data["review_status"] = "confirmed"
+    fetched_data.pop("deleted_at", None)
+    context["fetched_data"] = fetched_data
+    context.pop("awaiting_fetched_data_confirmation", None)
+    workflow.context_json = _json(context)
+
+
 def _cleanup_terminal_fetched_snapshot(db: Session, workflow: WorkflowSession) -> None:
-    """Remove fetched data once a single task or its entire batch is terminal."""
+    """Remove raw fetch files while retaining completed previews for review."""
     if workflow.skill_id != "ar-hexiao-daily":
         return
     storage_root = _workflow_storage_root(db, workflow)
@@ -1289,8 +1902,32 @@ def _cleanup_terminal_fetched_snapshot(db: Session, workflow: WorkflowSession) -
 
     if workspace is not None and workspace.is_relative_to(storage_root):
         _discard_workspace_fetched_snapshot(storage_root, workspace)
+    workflow_ids = [member.id for member in members]
+    preview_ids = list(
+        db.scalars(
+            select(WorkflowFetchedDataPreview.id).where(
+                WorkflowFetchedDataPreview.workflow_id.in_(workflow_ids)
+            )
+        )
+    )
+    preserve_completed_preview = bool(preview_ids) and (
+        (batch is not None and batch.state == "succeeded")
+        or (batch is None and workflow.state == "succeeded")
+    )
+    if preview_ids and not preserve_completed_preview:
+        db.execute(
+            delete(WorkflowFetchedDataPreviewArGroup).where(
+                WorkflowFetchedDataPreviewArGroup.preview_id.in_(preview_ids)
+            )
+        )
+        db.execute(
+            delete(WorkflowFetchedDataPreview).where(WorkflowFetchedDataPreview.id.in_(preview_ids))
+        )
     for member in members:
-        _mark_fetched_snapshot_deleted(member)
+        if preserve_completed_preview:
+            _mark_fetched_snapshot_retained(member)
+        else:
+            _mark_fetched_snapshot_deleted(member)
 
 
 def read_batch_fetched_data(
@@ -1301,6 +1938,7 @@ def read_batch_fetched_data(
     limit: int = 100,
     query: str = "",
     issues_only: bool = False,
+    db: Session | None = None,
 ) -> WorkflowFetchedDataRead:
     dates = _load(batch.reconciliation_dates_json, [])
     if reconciliation_date not in dates:
@@ -1315,6 +1953,7 @@ def read_batch_fetched_data(
         query=query,
         issues_only=issues_only,
         storage_root=workflow_root(primary.owner_id, primary.id).resolve(),
+        db=db,
     )
 
 
@@ -1323,6 +1962,7 @@ def confirm_batch_fetched_data_review(
     batch: WorkflowBatch,
     actor: UserContext,
 ) -> WorkflowBatch:
+    _reject_superseded_batch_material(db, batch)
     confirm_fetched_data_review(db, _batch_fetched_data_workflow(batch), actor)
     db.refresh(batch)
     return batch
@@ -1335,6 +1975,7 @@ def request_batch_fetched_data_supplement(
     ar_ids: list[str],
     so_ids: list[str],
 ) -> tuple[WorkflowBatch, dict[str, Any]]:
+    _reject_superseded_batch_material(db, batch)
     dates = _load(batch.reconciliation_dates_json, [])
     if reconciliation_date not in dates:
         raise HTTPException(status_code=422, detail="核销日期不属于当前批次。")
@@ -1588,7 +2229,15 @@ def reusable_workflow_files(
     skill = registry.get(skill_id)
     if not skill or skill.manifest.handler.adapter != "workflow":
         raise HTTPException(status_code=404, detail="后台 Skill 不存在或尚未发布。")
-    assert_workflow_skill_execution_enabled(skill_id)
+    # Reading the current business material is also needed by the offline
+    # snapshot launcher.  Keep the normal live-execution gate for other
+    # workflow Skills, while allowing the explicitly development-gated AR
+    # snapshot path to load its input copies.
+    if skill_id == "ar-hexiao-daily":
+        if not settings.ar_hexiao_execution_enabled:
+            assert_snapshot_replay_enabled(skill_id)
+    else:
+        assert_workflow_skill_execution_enabled(skill_id)
     assert_skill_permission(db, user, skill_id)
     files = _reusable_file_bindings(db, skill, user)
     material_set = current_material_set(db, user.user_id, user.department_id, skill_id)
@@ -1785,7 +2434,11 @@ def start_workflow(
     skill = registry.get(request.skill_id)
     if not skill or skill.manifest.handler.adapter != "workflow":
         raise HTTPException(status_code=404, detail="对话式 Skill 不存在或尚未发布。")
-    assert_workflow_skill_execution_enabled(request.skill_id)
+    snapshot_workflow_id = str(request.snapshot_workflow_id or "").strip()
+    if snapshot_workflow_id:
+        assert_snapshot_replay_enabled(request.skill_id)
+    else:
+        assert_workflow_skill_execution_enabled(request.skill_id)
     assert_skill_permission(db, user, request.skill_id)
     if request.files or request.replace_roles:
         assert_skill_permission(db, user, request.skill_id, "can_upload")
@@ -1794,13 +2447,22 @@ def start_workflow(
     parsed_date = _parse_date(request.reconciliation_date)
     if not parsed_date:
         raise HTTPException(status_code=422, detail="核销日期无效，不能晚于今天。")
+    if snapshot_workflow_id:
+        _validated_snapshot_selection(
+            db,
+            snapshot_workflow_id,
+            [parsed_date.isoformat()],
+            user,
+        )
     model_connection_id, model_provider, model_name = _workflow_model_snapshot(
         db,
         user,
         request.model_connection_id,
         request.model,
     )
-    if not has_service_credential(db, user.user_id, user.department_id, "zhiyun"):
+    if not snapshot_workflow_id and not has_service_credential(
+        db, user.user_id, user.department_id, "zhiyun"
+    ):
         raise HTTPException(status_code=422, detail="尚未配置智云登录凭据，请先安全保存账号密码。")
 
     _assert_single_flight_available(db, request.skill_id)
@@ -1832,6 +2494,8 @@ def start_workflow(
                 "requires_approval": skill.manifest.risk.requires_approval,
                 "current_step": "queued",
                 "current_step_label": "已提交后台任务队列",
+                "fetched_data_source": "snapshot" if snapshot_workflow_id else "live",
+                "snapshot_workflow_id": snapshot_workflow_id,
             }
         ),
         progress_message="正在核验前置条件",
@@ -1893,7 +2557,11 @@ def start_workflow_batch(
     skill = registry.get(request.skill_id)
     if not skill or skill.manifest.handler.adapter != "workflow":
         raise HTTPException(status_code=404, detail="对话式 Skill 不存在或尚未发布。")
-    assert_workflow_skill_execution_enabled(request.skill_id)
+    snapshot_workflow_id = str(request.snapshot_workflow_id or "").strip()
+    if snapshot_workflow_id:
+        assert_snapshot_replay_enabled(request.skill_id)
+    else:
+        assert_workflow_skill_execution_enabled(request.skill_id)
     assert_skill_permission(db, user, request.skill_id)
     if request.files or request.replace_roles:
         assert_skill_permission(db, user, request.skill_id, "can_upload")
@@ -1914,16 +2582,20 @@ def start_workflow_batch(
     if len(parsed_dates) > 1:
         start = date.fromisoformat(parsed_dates[0])
         end = date.fromisoformat(parsed_dates[-1])
-        expected: list[str] = []
-        cursor = start
-        while cursor <= end:
-            expected.append(cursor.isoformat())
-            cursor += timedelta(days=1)
-        if parsed_dates != expected:
+        if (end - start).days + 1 > 31:
             raise HTTPException(
                 status_code=422,
-                detail="多日核销批次必须选择连续日期，不能跳过中间日期。",
+                detail="单个批次的最早日期到最晚日期跨度最多 31 个自然日。",
             )
+    if snapshot_workflow_id:
+        _validated_snapshot_selection(db, snapshot_workflow_id, parsed_dates, user)
+
+    rerun_reason = sanitize_text(request.rerun_reason.strip(), max_length=500)
+    if request.rerun_successful_dates and not rerun_reason:
+        raise HTTPException(
+            status_code=422,
+            detail="勾选重新核销已成功日期后，必须填写重新核销原因。",
+        )
 
     model_connection_id, model_provider, model_name = _workflow_model_snapshot(
         db,
@@ -1931,7 +2603,9 @@ def start_workflow_batch(
         request.model_connection_id,
         request.model,
     )
-    if not has_service_credential(db, user.user_id, user.department_id, "zhiyun"):
+    if not snapshot_workflow_id and not has_service_credential(
+        db, user.user_id, user.department_id, "zhiyun"
+    ):
         raise HTTPException(status_code=422, detail="尚未配置智云登录凭据，请先安全保存账号密码。")
 
     _assert_single_flight_available(db, request.skill_id)
@@ -1965,7 +2639,37 @@ def start_workflow_batch(
     normalized_files = _attach_material_snapshot(db, material_probe, user, normalized_files)
     material_set_id = material_probe.material_set_id
 
-    batch_id = f"BAT-{date.today():%Y%m%d}-{uuid.uuid4().hex[:8].upper()}"
+    successful_workflows = successful_reconciliation_workflows_for_material_lineage(
+        db,
+        owner_id=user.user_id,
+        department_id=user.department_id,
+        skill_id=skill.manifest.id,
+        material_set_id=material_set_id,
+        reconciliation_dates=parsed_dates,
+    )
+    successful_dates = set(successful_workflows)
+    active_reminder_dates = set(
+        db.scalars(
+            select(TaskReminder.business_date).where(
+                TaskReminder.owner_id == user.user_id,
+                TaskReminder.department_id == user.department_id,
+                TaskReminder.skill_id == skill.manifest.id,
+                TaskReminder.state.in_(("pending", "reopened")),
+                TaskReminder.business_date.in_(parsed_dates),
+            )
+        ).all()
+    )
+    successful_dates.difference_update(active_reminder_dates)
+    rerun_dates = sorted(successful_dates.intersection(parsed_dates))
+    excluded_successful_dates = [] if request.rerun_successful_dates else rerun_dates
+    if excluded_successful_dates:
+        parsed_dates = [item for item in parsed_dates if item not in successful_dates]
+    if not parsed_dates:
+        raise HTTPException(status_code=409, detail="所选日期均已处理成功，无需再次创建批次。")
+    if not request.rerun_successful_dates:
+        rerun_dates = []
+
+    batch_id = f"BAT-{_platform_today():%Y%m%d}-{uuid.uuid4().hex[:8].upper()}"
     batch_display_id = _next_business_task_id(db, skill.manifest.id)
     batch = WorkflowBatch(
         id=batch_id,
@@ -1984,7 +2688,17 @@ def start_workflow_batch(
         material_set_id=material_set_id,
         state="running",
         progress=0,
-        progress_message=f"已创建 {len(parsed_dates)} 天核销批次，等待第 1 天执行",
+        progress_message=(
+            f"已确认重新核销已成功日期：{'、'.join(rerun_dates)}；"
+            f"已创建 {len(parsed_dates)} 个核销日批次，等待第 1 个日期执行"
+            if rerun_dates
+            else (
+                f"已排除已成功日期：{'、'.join(excluded_successful_dates)}；"
+                f"已创建 {len(parsed_dates)} 个核销日批次，等待第 1 个日期执行"
+                if excluded_successful_dates
+                else f"已创建 {len(parsed_dates)} 个核销日批次，等待第 1 个日期执行"
+            )
+        ),
     )
     db.add(batch)
     created_roots: list[Path] = []
@@ -1993,9 +2707,10 @@ def start_workflow_batch(
         for sequence, reconciliation_date in enumerate(parsed_dates, start=1):
             workflow_id = str(uuid.uuid4())
             workflow_display_id = _next_business_task_id(db, skill.manifest.id)
-            _snapshot_skill(skill, user.user_id, workflow_id)
-            created_roots.append(workflow_root(user.user_id, workflow_id))
             is_first = sequence == 1
+            if is_first:
+                _snapshot_skill(skill, user.user_id, workflow_id)
+            created_roots.append(workflow_root(user.user_id, workflow_id))
             context = {
                 "started_from_form": True,
                 "batch_id": batch_id,
@@ -2003,8 +2718,17 @@ def start_workflow_batch(
                 "requires_approval": skill.manifest.risk.requires_approval,
                 "current_step": "queued" if not is_first else "preparing",
                 "current_step_label": (
-                    "等待前一天完成后进入后台任务" if not is_first else "已提交后台任务队列"
+                    "等待前一个核销日完成后进入后台任务" if not is_first else "已提交后台任务队列"
                 ),
+                "rerun_successful_date": reconciliation_date in rerun_dates,
+                "previous_successful_workflow_ids": (
+                    successful_workflows.get(reconciliation_date, [])
+                    if reconciliation_date in rerun_dates
+                    else []
+                ),
+                "rerun_reason": rerun_reason if reconciliation_date in rerun_dates else "",
+                "fetched_data_source": "snapshot" if snapshot_workflow_id else "live",
+                "snapshot_workflow_id": snapshot_workflow_id,
             }
             workflow = WorkflowSession(
                 id=workflow_id,
@@ -2032,9 +2756,9 @@ def start_workflow_batch(
                 files_json=_json(normalized_files if is_first else {}),
                 progress=5 if is_first else 0,
                 progress_message=(
-                    f"正在执行第 {sequence}/{len(parsed_dates)} 天核销"
+                    f"正在执行第 {sequence}/{len(parsed_dates)} 个核销日"
                     if is_first
-                    else f"等待前一天完成后执行（{sequence}/{len(parsed_dates)}）"
+                    else f"等待前一个核销日完成后执行（{sequence}/{len(parsed_dates)}）"
                 ),
             )
             db.add(workflow)
@@ -2059,6 +2783,23 @@ def start_workflow_batch(
                 },
             )
             previous_workflow_id = workflow_id
+        if rerun_dates:
+            record_audit(
+                db,
+                actor=user,
+                action="workflow.batch.successful_dates.rerun",
+                resource_type="workflow_batch",
+                resource_id=batch_id,
+                details={
+                    "display_id": batch_display_id,
+                    "rerun_dates": rerun_dates,
+                    "previous_successful_workflow_ids": {
+                        item: successful_workflows.get(item, []) for item in rerun_dates
+                    },
+                    "reason": rerun_reason,
+                    "material_set_id": material_set_id,
+                },
+            )
         db.commit()
 
     except Exception:
@@ -2380,7 +3121,27 @@ def _validate_file_bindings(
         records: list[dict[str, Any]] = []
         for file_id in ids:
             record = db.get(FileRecord, file_id)
-            if not record or record.kind != "input":
+            current_material_reference = (
+                db.scalar(
+                    select(WorkflowMaterialSetFile.id)
+                    .join(
+                        WorkflowMaterialSet,
+                        WorkflowMaterialSet.id == WorkflowMaterialSetFile.material_set_id,
+                    )
+                    .where(
+                        WorkflowMaterialSetFile.file_id == file_id,
+                        WorkflowMaterialSetFile.role == role,
+                        WorkflowMaterialSetFile.sha256 == record.sha256,
+                        WorkflowMaterialSet.owner_id == user.user_id,
+                        WorkflowMaterialSet.department_id == user.department_id,
+                        WorkflowMaterialSet.skill_id == skill.manifest.id,
+                        WorkflowMaterialSet.state == "current",
+                    )
+                )
+                if record and record.kind == "output"
+                else None
+            )
+            if not record or (record.kind != "input" and not current_material_reference):
                 raise HTTPException(status_code=422, detail=f"输入文件不存在：{file_id}")
             assert_owner(record.owner_id, user, "输入文件", record.department_id)
             suffix = Path(record.original_name).suffix.lower().lstrip(".")
@@ -2493,7 +3254,7 @@ def _parse_date(value: str) -> date | None:
         parsed = date.fromisoformat(value)
     except ValueError:
         return None
-    return parsed if parsed <= date.today() else None
+    return parsed if parsed <= _platform_today() else None
 
 
 def _date_label(value: str) -> str:
@@ -2724,7 +3485,7 @@ def _apply_decision(
         _queue_action(db, workflow, "apply_confirmed")
         workflow.stage = "applying"
         workflow.state = "running"
-        workflow.progress = 5
+        workflow.progress = max(workflow.progress, 83)
         workflow.progress_message = "已确认，等待执行写入"
         workflow.error_message = ""
         _message(
@@ -3016,6 +3777,7 @@ def _run_script(
     stdin_data: str | None = None,
     sensitive_values: tuple[str, ...] = (),
     extra_env: dict[str, str] | None = None,
+    accepted_returncodes: tuple[int, ...] = (0,),
 ) -> str:
     command = [sys.executable, str(script_dir / script_name), *arguments]
     env = subprocess_base_environment()
@@ -3032,7 +3794,7 @@ def _run_script(
         env=env,
         check=False,
     )
-    if completed.returncode:
+    if completed.returncode not in accepted_returncodes:
         details = (completed.stderr or completed.stdout).strip()
         for value in sensitive_values:
             if value:
@@ -3183,10 +3945,14 @@ def _discover_annual_ledger_paths(business: Path) -> dict[int, Path]:
     base = business / "02_我的表副本"
     by_year: dict[int, Path] = {}
     for path in sorted(base.glob("*盈亏*.xls*")):
-        if not path.is_file() or path.name.startswith(("~$", ".")):
+        if (
+            not path.is_file()
+            or path.name.startswith(("~$", "."))
+            or "便携版" in path.stem
+        ):
             continue
         match = re.search(r"(?<!\d)(20\d{2})(?:年)?", path.stem)
-        year = int(match.group(1)) if match else date.today().year
+        year = int(match.group(1)) if match else _platform_today().year
         resolved = path.resolve()
         previous = by_year.get(year)
         if previous and previous != resolved:
@@ -3467,6 +4233,8 @@ def _prepare_worklist(
     workflow: WorkflowSession,
 ) -> dict[str, Any]:
     root = workflow_root(workflow.owner_id, workflow.id)
+    if not (root / "skill").is_dir():
+        _ensure_workflow_skill_snapshot(db, workflow)
     storage_root = _workflow_storage_root(db, workflow)
     batch = (
         db.get(WorkflowBatch, workflow.batch_id) if getattr(workflow, "batch_id", None) else None
@@ -3481,6 +4249,11 @@ def _prepare_worklist(
     action_context = action_input.get("context", {})
     action_context = action_context if isinstance(action_context, dict) else {}
     resume_existing_workspace = bool(action_input.get("resume_existing_workspace"))
+    snapshot_workflow_id = str(
+        action_input.get("snapshot_workflow_id")
+        or action_context.get("snapshot_workflow_id")
+        or ""
+    ).strip()
     fetched_data = action_context.get("fetched_data", {})
     fetched_data = fetched_data if isinstance(fetched_data, dict) else {}
     resume_after_review = fetched_data.get("review_status") == "confirmed"
@@ -3593,6 +4366,49 @@ def _prepare_worklist(
             "dates": batch_dates,
             "review_status": "fetching",
         }
+        if snapshot_workflow_id:
+            snapshot_user = UserContext(
+                user_id=workflow.owner_id,
+                display_name=workflow.owner_name,
+                role="finance_user",
+                department_id=workflow.department_id,
+            )
+            snapshot = _copy_fetched_snapshot(
+                db,
+                snapshot_workflow_id,
+                batch_dates,
+                business,
+                snapshot_user,
+            )
+            fetched_data = {
+                "available": True,
+                "source": "snapshot",
+                "snapshot_workflow_id": snapshot["source_workflow_id"],
+                "reconciliation_date": hexiao_date,
+                "date_from": batch_dates[0],
+                "date_to": batch_dates[-1],
+                "dates": batch_dates,
+                "review_status": "waiting",
+                "summary": snapshot["summary_by_date"].get(hexiao_date, {}),
+                "summary_by_date": snapshot["summary_by_date"],
+                "supplement_history": [],
+            }
+            context["fetched_data"] = fetched_data
+            context["snapshot_workflow_id"] = snapshot["source_workflow_id"]
+            context["workspace_state"] = "inputs_ready"
+            if hasattr(workflow, "context_json"):
+                workflow.context_json = _json(context)
+            workflow.progress = 10
+            _set_progress_step(db, workflow, "fetch_zhiyun", "已加载本地取数快照，等待人工检查", 10)
+            db.commit()
+            return {
+                "workspace": workspace,
+                "ledger_years": {str(year): str(path) for year, path in ledgers.items()},
+                "flow_file": str(flow_files[0]),
+                "fetched_data": fetched_data,
+                "awaiting_fetched_data_confirmation": True,
+                "artifacts": [],
+            }
         if hasattr(workflow, "context_json"):
             workflow.context_json = _json(context)
         db.commit()
@@ -3628,7 +4444,8 @@ def _prepare_worklist(
                     getattr(workflow, "skill_version", "")
                 ),
                 timeout_seconds=_secure_fetch_timeout_seconds(
-                    len(batch_dates),
+                    (date.fromisoformat(batch_dates[-1]) - date.fromisoformat(batch_dates[0])).days
+                    + 1,
                     runtime.timeout_seconds,
                 ),
             )
@@ -3669,6 +4486,8 @@ def _prepare_worklist(
         }
     if batch is not None and workflow.batch_sequence == 1:
         _set_progress_step(db, workflow, "audit_shifted_details", "正在审计跨日迁移明细", 22)
+        # The audit uses exit code 1 for a business finding: selected dates need
+        # shifted details restored by the per-date classification steps below.
         _run_script(
             script_dir,
             "audit_shifted_details.py",
@@ -3679,7 +4498,9 @@ def _prepare_worklist(
                 batch_dates[0],
                 "--date-to",
                 batch_dates[-1],
+                *[part for item in batch_dates for part in ("--date", item)],
             ],
+            accepted_returncodes=(0, 1),
         )
     steps = [
         (
@@ -3741,7 +4562,12 @@ def _prepare_worklist(
             f"{label}（{index}/{len(steps) + 1}）",
             20 + index * 11,
         )
-        _run_script(script_dir, script, arguments)
+        _run_script(
+            script_dir,
+            script,
+            arguments,
+            accepted_returncodes=(0, 1) if script == "validate_plan.py" else (0,),
+        )
     _set_progress_step(db, workflow, "build_worklist", "正在生成核销日清文件", 80)
     stdout = _run_script(
         script_dir,
@@ -3761,7 +4587,7 @@ def _prepare_worklist(
     )
     if not checked or not ledgers:
         raise RuntimeError("日清已生成，但没有找到校验后计划或盈亏副本。")
-    _set_progress_step(db, workflow, "review", "核销日清已生成，等待结果确认", 100)
+    _set_progress_step(db, workflow, "review", "核销日清已生成，等待结果确认", 82)
     summary = _worklist_summary(stdout)
     return {
         "workspace": str(business),
@@ -4042,6 +4868,39 @@ def _fail_batch(db: Session, workflow: WorkflowSession, message: str) -> None:
         f"第 {workflow.batch_sequence} 天（{workflow.reconciliation_date}）失败，后续日期已暂停"
     )
     batch.updated_at = datetime.now(UTC)
+    restore_unfinished_batch_reminders(db, batch.id)
+
+
+def _batch_has_current_material(db: Session, batch: WorkflowBatch) -> bool:
+    current = current_material_set(
+        db,
+        batch.owner_id,
+        batch.department_id,
+        batch.skill_id,
+    )
+    return bool(current is not None and current.id == batch.material_set_id)
+
+
+def _reject_superseded_batch_material(db: Session, batch: WorkflowBatch) -> None:
+    if _batch_has_current_material(db, batch):
+        return
+    message = (
+        "业务材料已更新，当前批次固定在旧版本，不能继续。"
+        "请基于最新材料重新创建未完成日期批次。"
+    )
+    batch.state = "failed"
+    batch.error_message = message
+    batch.progress_message = "业务材料已更新，当前批次已停止"
+    for workflow in batch.workflows:
+        if workflow.state == "succeeded":
+            continue
+        context = _load(workflow.context_json, {})
+        context = context if isinstance(context, dict) else {}
+        context["material_version_conflict"] = True
+        workflow.context_json = _json(context)
+    restore_unfinished_batch_reminders(db, batch.id)
+    db.commit()
+    raise HTTPException(status_code=409, detail=message)
 
 
 def _finalize_batch_reports(
@@ -4070,6 +4929,7 @@ def _finalize_batch_reports(
             dates[0],
             "--date-to",
             dates[-1],
+            *[part for item in dates for part in ("--date", item)],
         ],
     )
     report_name = _batch_integrated_report_name(dates)
@@ -4100,6 +4960,9 @@ def _advance_batch(
     batch = db.get(WorkflowBatch, workflow.batch_id)
     if not batch:
         raise RuntimeError("所属核销批次不存在。")
+    result_material_set_id = str(result.get("material_set_id") or "")
+    if result_material_set_id:
+        batch.material_set_id = result_material_set_id
     children = sorted(batch.workflows, key=lambda item: item.batch_sequence)
     total = len(children)
     completed = len([item for item in children if item.state == "succeeded"])
@@ -4202,6 +5065,7 @@ def retry_workflow_batch(
     db.refresh(batch)
     if batch.state != "failed":
         raise HTTPException(status_code=409, detail="只有失败并暂停的批次可以继续。")
+    _reject_superseded_batch_material(db, batch)
     _assert_single_flight_available(
         db,
         batch.skill_id,
@@ -4308,6 +5172,7 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
         action.error_message = "对话任务不存在。"
         action.finished_at = datetime.now(UTC)
         return
+    preview_dates_to_prime: list[str] = []
     try:
         assert_workflow_execution_enabled(workflow)
         if action.name == "prepare_worklist":
@@ -4322,6 +5187,12 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
             context = _load(workflow.context_json, {})
             context.update(result)
             workflow.context_json = _json(context)
+            fetched_data = context.get("fetched_data", {})
+            if isinstance(fetched_data, dict) and fetched_data.get("available"):
+                fetched_dates = fetched_data.get("dates", [])
+                preview_dates_to_prime = [str(item) for item in fetched_dates if item] or [
+                    workflow.reconciliation_date
+                ]
             artifacts = _load(workflow.artifacts_json, [])
             artifacts.extend(result["artifacts"])
             workflow.artifacts_json = _json(artifacts)
@@ -4343,6 +5214,7 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
                 context["current_step"] = "review_fetched_data"
                 context["current_step_label"] = "智云取数完成，等待工作人员检查"
                 workflow.context_json = _json(context)
+                fetched_data = context.get("fetched_data", {})
                 workflow.stage = "awaiting_fetched_data_confirmation"
                 workflow.state = "waiting_confirmation"
                 workflow.progress = 20
@@ -4363,7 +5235,7 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
                 context["current_step_label"] = "正在写入工作副本"
                 workflow.stage = "applying"
                 workflow.state = "running"
-                workflow.progress = 85
+                workflow.progress = max(workflow.progress, 85)
                 workflow.progress_message = "日清与写前校验已通过，正在安全写入工作副本"
                 _new_action(db, workflow, "apply_confirmed")
                 reply = (
@@ -4376,7 +5248,7 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
                 context["current_step_label"] = "核销日清已生成，等待人工确认"
                 workflow.stage = "awaiting_apply_confirmation"
                 workflow.state = "waiting_confirmation"
-                workflow.progress = 100
+                workflow.progress = max(workflow.progress, 82)
                 workflow.progress_message = "核销日清已生成，等待人工确认"
                 reply = (
                     f"✅ 核销日期 {_date_label(workflow.reconciliation_date)} 的核销判定完了，"
@@ -4429,6 +5301,7 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
                 "编号补取完成，按取消请求停止" if stop else "编号补取完成，等待工作人员再次检查"
             )
             workflow.context_json = _json(context)
+            preview_dates_to_prime = [result_date]
             workflow.stage = "cancelled" if stop else "awaiting_fetched_data_confirmation"
             workflow.state = "cancelled" if stop else "waiting_confirmation"
             workflow.progress = 20
@@ -4530,6 +5403,8 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
         workflow.error_message = ""
         if workflow.state == "cancelled":
             _finalize_requested_batch_cancellation(db, workflow.batch_id)
+        if preview_dates_to_prime:
+            _prime_fetched_data_previews(db, workflow, preview_dates_to_prime)
     except subprocess.TimeoutExpired:
         detail = _workflow_error_detail(workflow, "脚本执行超时。")
         public_error = _workflow_public_error(workflow, detail)

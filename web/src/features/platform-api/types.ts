@@ -17,6 +17,7 @@ import type {
   PlatformFile as GeneratedPlatformFile,
   PlatformFileDetail as GeneratedPlatformFileDetail,
   PlatformFilePage as GeneratedPlatformFilePage,
+  PlatformHealth as GeneratedPlatformHealth,
   PlatformUser as GeneratedPlatformUser,
   RunActionResponse as GeneratedRunActionResponse,
   RunApprovalRead as GeneratedRunApproval,
@@ -45,6 +46,7 @@ import type {
   TaskDiscoveryCheckQueued as GeneratedTaskDiscoveryCheckQueued,
   TaskDiscoveryCheckRequest as GeneratedTaskDiscoveryCheckRequest,
   TaskReminderBoard as GeneratedTaskReminderBoard,
+  TaskReminderCleanupResult as GeneratedTaskReminderCleanupResult,
   TaskReminderSubscriptionRead as GeneratedTaskReminderSubscription,
   TaskReminderSubscriptionWrite as GeneratedTaskReminderSubscriptionWrite,
   WorkflowDefinitionRead as GeneratedWorkflowDefinition,
@@ -97,6 +99,7 @@ export type RunStep = GeneratedStepRun;
 export type TaskDiscoveryCheckQueued = GeneratedTaskDiscoveryCheckQueued;
 export type TaskDiscoveryCheckRequest = GeneratedTaskDiscoveryCheckRequest;
 export type TaskReminderBoard = GeneratedTaskReminderBoard;
+export type TaskReminderCleanupResult = GeneratedTaskReminderCleanupResult;
 export type TaskReminderSubscription = GeneratedTaskReminderSubscription;
 export type TaskReminderSubscriptionWrite = GeneratedTaskReminderSubscriptionWrite;
 export type WorkflowDefinition = GeneratedWorkflowDefinition;
@@ -106,9 +109,19 @@ export type WorkflowRead = GeneratedWorkflowRead;
 export type WorkflowReusableFilesRead = GeneratedWorkflowReusableFilesRead;
 export type WorkflowBatchRead = import('./generated').WorkflowBatchRead;
 export type WorkflowAgentContext = GeneratedWorkflowAgentContext;
+
+export interface WorkflowFetchedSnapshot {
+  source_workflow_id: string;
+  source_display_id: string;
+  skill_version: string;
+  dates: string[];
+  summary_by_date: Record<string, Record<string, unknown>>;
+  captured_at: string;
+}
 export type PlatformFile = GeneratedPlatformFile;
 export type PlatformFileDetail = GeneratedPlatformFileDetail;
 export type PlatformFilePage = GeneratedPlatformFilePage;
+export type PlatformHealth = GeneratedPlatformHealth;
 export type Workbench = GeneratedWorkbench;
 export type AuditEvent = GeneratedAuditEvent;
 export type FeatureControl = GeneratedFeatureControl;

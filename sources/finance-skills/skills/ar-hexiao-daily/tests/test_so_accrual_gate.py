@@ -77,6 +77,48 @@ def test_last_sod_releases_current_accrual_and_backfills_prior_sod():
     assert backfill["all_sods"] == ["SOD1", "SOD2"]
 
 
+def test_idempotent_current_sods_are_not_backfilled_as_historical():
+    ledger = _synthetic({
+        2: {
+            "so": "SO1", "sod": "SOD1", "yingshou": 100.0,
+            "jiti": None, "huikuan": 100.0, "jiezhang": "是",
+        },
+        3: {
+            "so": "SO1", "sod": "SOD2", "yingshou": 200.0,
+            "jiti": None, "huikuan": 200.0, "jiezhang": "是",
+        },
+    })
+    source = {
+        "all_sods": ["SOD1", "SOD2"],
+        "sod_delivery_local": {"SOD1": 100.0, "SOD2": 200.0},
+    }
+    results = [
+        {
+            "bucket": "auto",
+            "code": "OK_ITEMIZED_CUMULATIVE_ALREADY_APPLIED",
+            "so": "SO1",
+            "sod": "SOD1",
+            "ledger_row_ref": 2,
+            "five_cols": {"计提": None, "是否结账": "是"},
+            "split_payment_source": {**source, "delivery_local": 100.0},
+        },
+        {
+            "bucket": "auto",
+            "code": "OK_ALREADY_SETTLED",
+            "so": "SO1",
+            "sod": "SOD2",
+            "ledger_row_ref": 3,
+            "five_cols": {"计提": None, "是否结账": "是"},
+            "split_payment_source": {**source, "delivery_local": 200.0},
+        },
+    ]
+
+    C._apply_so_accrual_gate(results, ledger, C.TOL)
+
+    assert results[0]["so_accrual_audit"]["current_batch_sods"] == ["SOD1", "SOD2"]
+    assert not results[1].get("so_accrual_backfills")
+
+
 def test_backfill_uses_only_last_settled_business_row_of_split_sod():
     ledger = _synthetic({
         2: {"so": "SO1", "sod": "SOD1", "yingshou": 40.0, "huikuan": 40.0, "jiezhang": "是"},
@@ -133,6 +175,108 @@ def test_validate_apply_readback_and_rerun_are_idempotent(tmp_path):
     assert not rerun_plan["auto"][0].get("so_accrual_backfills")
     rerun_checked = V.validate(rerun_plan, V.read_ledger_rows(output_path))
     assert rerun_checked["counts"] == {"write": 0, "skip": 1, "conflict": 0}
+
+
+def test_backfill_overwrites_wrong_existing_accrual_after_identity_checks(tmp_path):
+    ledger_path = tmp_path / "盈亏_旧计提错误.xlsx"
+    output_path = tmp_path / "盈亏_计提已更正.xlsx"
+    _workbook(ledger_path)
+    workbook = openpyxl.load_workbook(ledger_path)
+    workbook["明细"].cell(2, 7).value = 90.0
+    workbook.save(ledger_path)
+    deliveries = {"SOD1": 100.0, "SOD2": 200.0}
+    plan = C.classify_records(
+        [_record("SOD2", 200.0, deliveries)], C.LedgerIndex(ledger_path)
+    )
+
+    checked = V.validate(plan, V.read_ledger_rows(ledger_path), ledger_path=ledger_path)
+
+    assert checked["counts"] == {"write": 1, "skip": 0, "conflict": 0}
+    backfill = checked["write"][0]["so_accrual_backfills"][0]
+    assert backfill["_check"]["verdict"] == "write"
+    A.write_plan(ledger_path, output_path, checked["write"])
+    assert V.read_ledger_rows(output_path)[2]["计提"] == 100.0
+
+
+def test_backfill_rechecks_other_historical_sods_are_still_settled(tmp_path):
+    ledger_path = tmp_path / "盈亏_三SOD.xlsx"
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    sheet.title = "明细"
+    sheet.append([
+        "部门", "销售人员", "客户名称", "单号", "新智云单号", "应收金额",
+        "计提金额", "回款明细", "是否结账（是/否）", "收款时间",
+        "收款方式(支/汇/现)", "实收金额", "差异",
+    ])
+    sheet.append(["部", "人", "客", "AB", "SO1", 100.0, 90.0, 100.0, "是", "2026-08-09", "汇", "SOD1", None])
+    sheet.append(["部", "人", "客", "AB", "SO1", 150.0, 150.0, 150.0, "是", "2026-08-10", "汇", "SOD2", None])
+    sheet.append(["部", "人", "客", "AB", "SO1", 200.0, None, None, "否", None, None, "SOD3", None])
+    workbook.save(ledger_path)
+    deliveries = {"SOD1": 100.0, "SOD2": 150.0, "SOD3": 200.0}
+    plan = C.classify_records(
+        [_record("SOD3", 200.0, deliveries)], C.LedgerIndex(ledger_path)
+    )
+    rows = V.read_ledger_rows(ledger_path)
+    rows[3]["是否结账"] = "否"
+
+    checked = V.validate(plan, rows, ledger_path=ledger_path)
+
+    assert checked["counts"] == {"write": 0, "skip": 0, "conflict": 1}
+    assert "全部 SOD" in checked["conflict"][0]["_check"]["reason"]
+
+
+def test_backfill_requires_complete_sod_audit_evidence(tmp_path):
+    ledger_path = tmp_path / "盈亏_缺少完整SOD审计.xlsx"
+    _workbook(ledger_path)
+    deliveries = {"SOD1": 100.0, "SOD2": 200.0}
+    plan = C.classify_records(
+        [_record("SOD2", 200.0, deliveries)], C.LedgerIndex(ledger_path)
+    )
+    plan["auto"][0]["so_accrual_audit"].pop("all_sods")
+
+    checked = V.validate(plan, V.read_ledger_rows(ledger_path), ledger_path=ledger_path)
+
+    assert checked["counts"] == {"write": 0, "skip": 0, "conflict": 1}
+    assert "完整 SOD 审计证据" in checked["conflict"][0]["_check"]["reason"]
+
+
+def test_backfill_rejects_cross_so_target_even_with_same_sod(tmp_path):
+    ledger_path = tmp_path / "盈亏_跨SO同SOD.xlsx"
+    _workbook(ledger_path)
+    workbook = openpyxl.load_workbook(ledger_path)
+    workbook["明细"].append([
+        "部", "人", "客", "AB", "SO_OTHER", 100.0, 90.0, 100.0,
+        "是", "2026-08-09", "汇", "SOD1", None,
+    ])
+    workbook.save(ledger_path)
+    deliveries = {"SOD1": 100.0, "SOD2": 200.0}
+    plan = C.classify_records(
+        [_record("SOD2", 200.0, deliveries)], C.LedgerIndex(ledger_path)
+    )
+    backfill = plan["auto"][0]["so_accrual_backfills"][0]
+    backfill["so"] = "SO_OTHER"
+    backfill["ledger_row_ref"] = 4
+
+    checked = V.validate(plan, V.read_ledger_rows(ledger_path), ledger_path=ledger_path)
+
+    assert checked["counts"] == {"write": 0, "skip": 0, "conflict": 1}
+    assert "SO 审计身份" in checked["conflict"][0]["_check"]["reason"]
+
+
+def test_backfill_rejects_any_entry_without_sod_identity(tmp_path):
+    ledger_path = tmp_path / "盈亏_补填缺SOD.xlsx"
+    _workbook(ledger_path)
+    deliveries = {"SOD1": 100.0, "SOD2": 200.0}
+    plan = C.classify_records(
+        [_record("SOD2", 200.0, deliveries)], C.LedgerIndex(ledger_path)
+    )
+    valid = plan["auto"][0]["so_accrual_backfills"][0]
+    plan["auto"][0]["so_accrual_backfills"].append({**valid, "sod": ""})
+
+    checked = V.validate(plan, V.read_ledger_rows(ledger_path), ledger_path=ledger_path)
+
+    assert checked["counts"] == {"write": 0, "skip": 0, "conflict": 1}
+    assert "补填 SOD 不一致" in checked["conflict"][0]["_check"]["reason"]
 
 
 def _result_with_backfill():

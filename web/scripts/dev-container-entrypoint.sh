@@ -74,7 +74,7 @@ cleanup() {
 trap cleanup INT TERM EXIT
 
 cd /workspace/web
-pnpm dev --hostname 0.0.0.0 &
+pnpm exec next dev --webpack --hostname 0.0.0.0 &
 next_pid=$!
 set +e
 wait "$next_pid"

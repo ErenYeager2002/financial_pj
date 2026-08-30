@@ -1,5 +1,12 @@
 import { platformClientRequest } from '@/features/platform-api/client';
-import type { WorkflowMaterialSet } from '@/features/platform-api/types';
+import type { WorkflowFetchedSnapshot, WorkflowMaterialSet } from '@/features/platform-api/types';
+
+export function fetchWorkflowFetchedSnapshots(skillId: string): Promise<WorkflowFetchedSnapshot[]> {
+  return platformClientRequest<WorkflowFetchedSnapshot[]>(
+    `/api/platform/workflows/fetched-snapshots?skill_id=${encodeURIComponent(skillId)}`,
+    '取数快照加载失败。'
+  );
+}
 
 export function fetchWorkflowMaterialSets(skillId: string): Promise<WorkflowMaterialSet[]> {
   return platformClientRequest<WorkflowMaterialSet[]>(

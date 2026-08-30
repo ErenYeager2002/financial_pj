@@ -14,7 +14,7 @@ from helpers import auth_client
 from openpyxl import Workbook
 from sqlalchemy import select
 
-from app import model_service, workflow_orchestrator, workflow_service
+from app import fetched_data_preview, model_service, workflow_orchestrator, workflow_service
 from app.auth_models import UserSkillPermission
 from app.auth_service import get_user_by_username
 from app.database import SessionLocal, init_db
@@ -22,9 +22,21 @@ from app.models import (
     AuditEvent,
     FileRecord,
     ServiceCredential,
+    TaskReminder,
     WorkflowAction,
     WorkflowBatch,
+    WorkflowFetchedDataPreview,
+    WorkflowFetchedDataPreviewArGroup,
+    WorkflowMaterialSet,
+    WorkflowMaterialSetFile,
     WorkflowSession,
+)
+from app.schemas import (
+    WorkflowFetchedDataArGroup,
+    WorkflowFetchedDataOrderGroup,
+    WorkflowFetchedPayment,
+    WorkflowFetchedWriteoff,
+    WorkflowRead,
 )
 
 
@@ -191,6 +203,40 @@ def upload(client: TestClient, role: str, name: str) -> str:
     return response.json()["id"]
 
 
+def _append_material_version(
+    db,
+    parent: WorkflowMaterialSet,
+    source_workflow_id: str,
+) -> WorkflowMaterialSet:
+    """Build the immutable lineage produced by a successful daily write."""
+    parent.state = "superseded"
+    created = WorkflowMaterialSet(
+        id=str(uuid.uuid4()),
+        owner_id=parent.owner_id,
+        department_id=parent.department_id,
+        skill_id=parent.skill_id,
+        version=parent.version + 1,
+        parent_set_id=parent.id,
+        source_workflow_id=source_workflow_id,
+        state="current",
+    )
+    db.add(created)
+    db.flush()
+    for item in parent.files:
+        db.add(
+            WorkflowMaterialSetFile(
+                id=str(uuid.uuid4()),
+                material_set_id=created.id,
+                role=item.role,
+                year=item.year,
+                file_id=item.file_id,
+                sha256=item.sha256,
+            )
+        )
+    db.flush()
+    return created
+
+
 def _finish_all_ar_workflows() -> None:
     """Keep platform-global single-flight tests isolated from earlier cases."""
     init_db()
@@ -293,8 +339,570 @@ def test_multi_date_batch_assigns_business_ids_to_batch_and_children() -> None:
     _finish_all_ar_workflows()
 
 
-def test_multi_date_batch_accepts_contiguous_calendar_days() -> None:
+def test_multi_date_batch_accepts_nonconsecutive_selected_dates() -> None:
     _finish_all_ar_workflows()
+    username = f"sparse-batch-{uuid.uuid4().hex[:8]}"
+    with auth_client(username=username) as client:
+        assert client.put(
+            "/api/service-credentials/zhiyun",
+            json={"account": "sparse-batch", "password": "sparse-batch-password"},
+        ).status_code == 200
+        ledger_id = upload(client, "profit_loss_ledgers", "2026年盈亏核算表.xlsx")
+        flow_id = upload(client, "receipt_flow_table", "到账流转表.xlsx")
+        too_wide = client.post(
+            "/api/workflow-batches/start",
+            json={
+                "skill_id": "ar-hexiao-daily",
+                "reconciliation_dates": ["2026-07-01", "2026-08-01"],
+                "files": {
+                    "profit_loss_ledgers": [ledger_id],
+                    "receipt_flow_table": [flow_id],
+                },
+            },
+        )
+        assert too_wide.status_code == 422, too_wide.text
+        assert "跨度最多 31 个自然日" in too_wide.json()["detail"]
+        started = client.post(
+            "/api/workflow-batches/start",
+            json={
+                "skill_id": "ar-hexiao-daily",
+                "reconciliation_dates": ["2026-08-19", "2026-08-17"],
+                "files": {
+                    "profit_loss_ledgers": [ledger_id],
+                    "receipt_flow_table": [flow_id],
+                },
+            },
+        )
+
+        assert started.status_code == 200, started.text
+        assert started.json()["reconciliation_dates"] == ["2026-08-17", "2026-08-19"]
+        assert [item["reconciliation_date"] for item in started.json()["workflows"]] == [
+            "2026-08-17",
+            "2026-08-19",
+        ]
+    _finish_all_ar_workflows()
+
+
+def test_multi_date_batch_accepts_exactly_31_past_or_current_dates() -> None:
+    _finish_all_ar_workflows()
+    username = f"thirty-one-day-batch-{uuid.uuid4().hex[:8]}"
+    today = workflow_service.datetime.now(workflow_service.PLATFORM_TIMEZONE).date()
+    selected_dates = [
+        (today - timedelta(days=offset)).isoformat() for offset in range(30, -1, -1)
+    ]
+    with auth_client(username=username) as client:
+        assert client.put(
+            "/api/service-credentials/zhiyun",
+            json={"account": "thirty-one-day", "password": "thirty-one-day-password"},
+        ).status_code == 200
+        ledger_id = upload(client, "profit_loss_ledgers", "2026年盈亏核算表.xlsx")
+        flow_id = upload(client, "receipt_flow_table", "到账流转表.xlsx")
+        started = client.post(
+            "/api/workflow-batches/start",
+            json={
+                "skill_id": "ar-hexiao-daily",
+                "reconciliation_dates": selected_dates,
+                "files": {
+                    "profit_loss_ledgers": [ledger_id],
+                    "receipt_flow_table": [flow_id],
+                },
+            },
+        )
+        assert started.status_code == 200, started.text
+        body = started.json()
+        assert body["reconciliation_dates"] == selected_dates
+        assert len(body["workflows"]) == 31
+        assert [item["reconciliation_date"] for item in body["workflows"]] == selected_dates
+    _finish_all_ar_workflows()
+
+
+def test_batch_child_skill_snapshot_is_materialized_from_primary(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    primary_root = tmp_path / "primary"
+    child_root = tmp_path / "child"
+    skill = primary_root / "skill"
+    (skill / "vendor" / "scripts").mkdir(parents=True)
+    (skill / "tool.yaml").write_text("id: ar-hexiao-daily\n", encoding="utf-8")
+    (skill / "vendor" / "scripts" / "classify_hexiao.py").write_text(
+        "# synthetic\n",
+        encoding="utf-8",
+    )
+    primary = SimpleNamespace(id="primary", owner_id="owner", batch_sequence=1)
+    child = SimpleNamespace(
+        id="child",
+        owner_id="owner",
+        batch_id="batch-1",
+        batch_sequence=2,
+    )
+    batch = SimpleNamespace(workflows=[child, primary])
+    db = SimpleNamespace(get=lambda _model, value: batch if value == "batch-1" else None)
+    monkeypatch.setattr(
+        workflow_service,
+        "workflow_root",
+        lambda _owner_id, workflow_id: primary_root if workflow_id == "primary" else child_root,
+    )
+
+    skill_root = workflow_service._ensure_workflow_skill_snapshot(db, child)
+
+    assert skill_root == child_root / "skill"
+    assert (skill_root / "tool.yaml").read_text(encoding="utf-8") == "id: ar-hexiao-daily\n"
+    assert (skill_root / "vendor" / "scripts" / "classify_hexiao.py").is_file()
+
+
+def test_multi_date_batch_defers_child_skill_snapshots_until_execution(monkeypatch) -> None:
+    _finish_all_ar_workflows()
+    calls: list[str] = []
+
+    def fake_snapshot(skill, owner_id: str, workflow_id: str) -> Path:
+        calls.append(workflow_id)
+        destination = workflow_service.workflow_root(owner_id, workflow_id) / "skill"
+        destination.mkdir(parents=True, exist_ok=False)
+        (destination / "tool.yaml").write_text(
+            f"id: {skill.manifest.id}\n",
+            encoding="utf-8",
+        )
+        return destination
+
+    monkeypatch.setattr(workflow_service, "_snapshot_skill", fake_snapshot)
+    username = f"deferred-batch-snapshot-{uuid.uuid4().hex[:8]}"
+    with auth_client(username=username) as client:
+        assert client.put(
+            "/api/service-credentials/zhiyun",
+            json={"account": "deferred-batch", "password": "deferred-batch-password"},
+        ).status_code == 200
+        ledger_id = upload(client, "profit_loss_ledgers", "2026年盈亏核算表.xlsx")
+        flow_id = upload(client, "receipt_flow_table", "到账流转表.xlsx")
+        started = client.post(
+            "/api/workflow-batches/start",
+            json={
+                "skill_id": "ar-hexiao-daily",
+                "reconciliation_dates": ["2026-08-19", "2026-08-20"],
+                "files": {
+                    "profit_loss_ledgers": [ledger_id],
+                    "receipt_flow_table": [flow_id],
+                },
+            },
+        )
+        assert started.status_code == 200, started.text
+
+    assert len(calls) == 1
+    _finish_all_ar_workflows()
+
+
+def test_workflow_date_validation_uses_platform_calendar(monkeypatch) -> None:
+    platform_today = date(2026, 8, 29)
+    monkeypatch.setattr(workflow_service, "_platform_today", lambda: platform_today)
+
+    assert workflow_service._parse_date("2026-08-29") == platform_today
+    assert workflow_service._parse_date("2026-08-30") is None
+
+
+def test_batch_excludes_successful_prefix_on_current_material_version() -> None:
+    username = f"exclude-success-{uuid.uuid4().hex[:8]}"
+    with auth_client(username=username) as client:
+        assert client.put(
+            "/api/service-credentials/zhiyun",
+            json={"account": "exclude-success", "password": "exclude-success-password"},
+        ).status_code == 200
+        ledger_id = upload(client, "profit_loss_ledgers", "2026年盈亏核算表.xlsx")
+        flow_id = upload(client, "receipt_flow_table", "到账流转表.xlsx")
+        files = {
+            "profit_loss_ledgers": [ledger_id],
+            "receipt_flow_table": [flow_id],
+        }
+        completed = client.post(
+            "/api/workflows/start",
+            json={
+                "skill_id": "ar-hexiao-daily",
+                "reconciliation_date": "2026-08-18",
+                "files": files,
+            },
+        )
+        assert completed.status_code == 200, completed.text
+        with SessionLocal() as db:
+            workflow = db.get(WorkflowSession, completed.json()["id"])
+            assert workflow is not None
+            workflow.state = "succeeded"
+            workflow.stage = "completed"
+            for action in workflow.actions:
+                action.state = "succeeded"
+            db.commit()
+
+        started = client.post(
+            "/api/workflow-batches/start",
+            json={
+                "skill_id": "ar-hexiao-daily",
+                "reconciliation_dates": ["2026-08-18", "2026-08-19"],
+                "files": files,
+            },
+        )
+        assert started.status_code == 200, started.text
+        assert started.json()["reconciliation_dates"] == ["2026-08-19"]
+        assert "已排除已成功日期：2026-08-18" in started.json()["progress_message"]
+
+
+def test_batch_excludes_successful_suffix_on_current_material_version() -> None:
+    username = f"exclude-success-suffix-{uuid.uuid4().hex[:8]}"
+    with auth_client(username=username) as client:
+        assert client.put(
+            "/api/service-credentials/zhiyun",
+            json={"account": "exclude-suffix", "password": "exclude-suffix-password"},
+        ).status_code == 200
+        ledger_id = upload(client, "profit_loss_ledgers", "2026年盈亏核算表.xlsx")
+        flow_id = upload(client, "receipt_flow_table", "到账流转表.xlsx")
+        files = {
+            "profit_loss_ledgers": [ledger_id],
+            "receipt_flow_table": [flow_id],
+        }
+        completed = client.post(
+            "/api/workflows/start",
+            json={
+                "skill_id": "ar-hexiao-daily",
+                "reconciliation_date": "2026-08-19",
+                "files": files,
+            },
+        )
+        assert completed.status_code == 200, completed.text
+        with SessionLocal() as db:
+            workflow = db.get(WorkflowSession, completed.json()["id"])
+            assert workflow is not None
+            workflow.state = "succeeded"
+            workflow.stage = "completed"
+            for action in workflow.actions:
+                action.state = "succeeded"
+            db.commit()
+
+        started = client.post(
+            "/api/workflow-batches/start",
+            json={
+                "skill_id": "ar-hexiao-daily",
+                "reconciliation_dates": ["2026-08-18", "2026-08-19"],
+                "files": files,
+            },
+        )
+        assert started.status_code == 200, started.text
+        assert started.json()["reconciliation_dates"] == ["2026-08-18"]
+        assert "已排除已成功日期：2026-08-19" in started.json()["progress_message"]
+
+
+def test_reopened_successful_date_can_start_a_new_batch() -> None:
+    username = f"reopened-success-{uuid.uuid4().hex[:8]}"
+    with auth_client(username=username) as client:
+        assert client.put(
+            "/api/service-credentials/zhiyun",
+            json={"account": "reopened-success", "password": "reopened-success-password"},
+        ).status_code == 200
+        ledger_id = upload(client, "profit_loss_ledgers", "2026年盈亏核算表.xlsx")
+        flow_id = upload(client, "receipt_flow_table", "到账流转表.xlsx")
+        files = {
+            "profit_loss_ledgers": [ledger_id],
+            "receipt_flow_table": [flow_id],
+        }
+        completed = client.post(
+            "/api/workflows/start",
+            json={
+                "skill_id": "ar-hexiao-daily",
+                "reconciliation_date": "2026-08-19",
+                "files": files,
+            },
+        )
+        assert completed.status_code == 200, completed.text
+        with SessionLocal() as db:
+            workflow = db.get(WorkflowSession, completed.json()["id"])
+            assert workflow is not None
+            workflow.state = "succeeded"
+            workflow.stage = "completed"
+            for action in workflow.actions:
+                action.state = "succeeded"
+            db.add(
+                TaskReminder(
+                    id=str(uuid.uuid4()),
+                    owner_id=workflow.owner_id,
+                    department_id=workflow.department_id,
+                    skill_id=workflow.skill_id,
+                    business_date=workflow.reconciliation_date,
+                    record_count=2,
+                    fingerprint="changed-after-completion",
+                    state="reopened",
+                )
+            )
+            db.commit()
+
+        started = client.post(
+            "/api/workflow-batches/start",
+            json={
+                "skill_id": "ar-hexiao-daily",
+                "reconciliation_dates": ["2026-08-19"],
+                "files": files,
+            },
+        )
+        assert started.status_code == 200, started.text
+        assert started.json()["reconciliation_dates"] == ["2026-08-19"]
+
+
+def test_batch_excludes_successful_middle_date_on_current_material_version() -> None:
+    username = f"exclude-success-middle-{uuid.uuid4().hex[:8]}"
+    with auth_client(username=username) as client:
+        assert client.put(
+            "/api/service-credentials/zhiyun",
+            json={"account": "exclude-middle", "password": "exclude-middle-password"},
+        ).status_code == 200
+        ledger_id = upload(client, "profit_loss_ledgers", "2026年盈亏核算表.xlsx")
+        flow_id = upload(client, "receipt_flow_table", "到账流转表.xlsx")
+        files = {
+            "profit_loss_ledgers": [ledger_id],
+            "receipt_flow_table": [flow_id],
+        }
+        completed = client.post(
+            "/api/workflows/start",
+            json={
+                "skill_id": "ar-hexiao-daily",
+                "reconciliation_date": "2026-08-19",
+                "files": files,
+            },
+        )
+        assert completed.status_code == 200, completed.text
+        with SessionLocal() as db:
+            workflow = db.get(WorkflowSession, completed.json()["id"])
+            assert workflow is not None
+            workflow.state = "succeeded"
+            workflow.stage = "completed"
+            for action in workflow.actions:
+                action.state = "succeeded"
+            db.commit()
+
+        started = client.post(
+            "/api/workflow-batches/start",
+            json={
+                "skill_id": "ar-hexiao-daily",
+                "reconciliation_dates": ["2026-08-18", "2026-08-19", "2026-08-20"],
+                "files": files,
+            },
+        )
+        assert started.status_code == 200, started.text
+        assert started.json()["reconciliation_dates"] == ["2026-08-18", "2026-08-20"]
+        assert "已排除已成功日期：2026-08-19" in started.json()["progress_message"]
+
+
+def test_completed_batch_dates_remain_successful_across_material_lineage() -> None:
+    username = f"success-lineage-{uuid.uuid4().hex[:8]}"
+    with auth_client(username=username) as client:
+        assert client.put(
+            "/api/service-credentials/zhiyun",
+            json={"account": "success-lineage", "password": "success-lineage-password"},
+        ).status_code == 200
+        ledger_id = upload(client, "profit_loss_ledgers", "2026年盈亏核算表.xlsx")
+        flow_id = upload(client, "receipt_flow_table", "到账流转表.xlsx")
+        files = {
+            "profit_loss_ledgers": [ledger_id],
+            "receipt_flow_table": [flow_id],
+        }
+        started = client.post(
+            "/api/workflow-batches/start",
+            json={
+                "skill_id": "ar-hexiao-daily",
+                "reconciliation_dates": ["2026-08-18", "2026-08-19"],
+                "files": files,
+            },
+        )
+        assert started.status_code == 200, started.text
+        with SessionLocal() as db:
+            batch = db.get(WorkflowBatch, started.json()["id"])
+            assert batch is not None and batch.material_set_id is not None
+            children = sorted(batch.workflows, key=lambda item: item.batch_sequence)
+            initial = db.get(WorkflowMaterialSet, batch.material_set_id)
+            assert initial is not None
+            first_output = _append_material_version(db, initial, children[0].id)
+            children[0].material_set_id = first_output.id
+            children[0].state = "succeeded"
+            children[0].stage = "completed"
+            second_output = _append_material_version(db, first_output, children[1].id)
+            children[1].material_set_id = second_output.id
+            children[1].state = "succeeded"
+            children[1].stage = "completed"
+            batch.material_set_id = second_output.id
+            batch.state = "succeeded"
+            for child in children:
+                for action in child.actions:
+                    action.state = "succeeded"
+            db.commit()
+
+        repeated = client.post(
+            "/api/workflow-batches/start",
+            json={
+                "skill_id": "ar-hexiao-daily",
+                "reconciliation_dates": ["2026-08-18", "2026-08-19"],
+                "files": files,
+            },
+        )
+        assert repeated.status_code == 409, repeated.text
+        assert "均已处理成功" in repeated.json()["detail"]
+
+        missing_reason = client.post(
+            "/api/workflow-batches/start",
+            json={
+                "skill_id": "ar-hexiao-daily",
+                "reconciliation_dates": ["2026-08-18", "2026-08-19"],
+                "files": files,
+                "rerun_successful_dates": True,
+            },
+        )
+        assert missing_reason.status_code == 422, missing_reason.text
+        assert "重新核销原因" in missing_reason.json()["detail"]
+
+        rerun = client.post(
+            "/api/workflow-batches/start",
+            json={
+                "skill_id": "ar-hexiao-daily",
+                "reconciliation_dates": ["2026-08-18", "2026-08-19"],
+                "files": files,
+                "rerun_successful_dates": True,
+                "rerun_reason": "财务负责人要求重新核对",
+            },
+        )
+        assert rerun.status_code == 200, rerun.text
+        assert rerun.json()["reconciliation_dates"] == ["2026-08-18", "2026-08-19"]
+        rerun_id = rerun.json()["id"]
+        with SessionLocal() as db:
+            rerun_batch = db.get(WorkflowBatch, rerun_id)
+            assert rerun_batch is not None
+            children = sorted(rerun_batch.workflows, key=lambda item: item.batch_sequence)
+            assert all(
+                json.loads(child.context_json)["rerun_successful_date"] for child in children
+            )
+            assert all(
+                json.loads(child.context_json)["previous_successful_workflow_ids"]
+                for child in children
+            )
+            event = db.scalar(
+                select(AuditEvent)
+                .where(
+                    AuditEvent.resource_id == rerun_id,
+                    AuditEvent.action == "workflow.batch.successful_dates.rerun",
+                )
+                .order_by(AuditEvent.id.desc())
+            )
+            assert event is not None
+            details = json.loads(event.details_json)
+            assert details["rerun_dates"] == ["2026-08-18", "2026-08-19"]
+            assert details["reason"] == "财务负责人要求重新核对"
+
+
+def test_batch_tracks_its_own_published_material_for_later_retry() -> None:
+    username = f"batch-own-material-{uuid.uuid4().hex[:8]}"
+    with auth_client(username=username) as client:
+        assert client.put(
+            "/api/service-credentials/zhiyun",
+            json={"account": "batch-own-material", "password": "batch-own-material-password"},
+        ).status_code == 200
+        ledger_id = upload(client, "profit_loss_ledgers", "2026年盈亏核算表.xlsx")
+        flow_id = upload(client, "receipt_flow_table", "到账流转表.xlsx")
+        started = client.post(
+            "/api/workflow-batches/start",
+            json={
+                "skill_id": "ar-hexiao-daily",
+                "reconciliation_dates": ["2026-08-17", "2026-08-18"],
+                "files": {
+                    "profit_loss_ledgers": [ledger_id],
+                    "receipt_flow_table": [flow_id],
+                },
+            },
+        )
+        assert started.status_code == 200, started.text
+        batch_id = started.json()["id"]
+        with SessionLocal() as db:
+            batch = db.get(WorkflowBatch, batch_id)
+            assert batch is not None and batch.material_set_id is not None
+            children = sorted(batch.workflows, key=lambda item: item.batch_sequence)
+            initial = db.get(WorkflowMaterialSet, batch.material_set_id)
+            assert initial is not None
+            published = _append_material_version(db, initial, children[0].id)
+            children[0].material_set_id = published.id
+            children[0].state = "succeeded"
+            children[0].stage = "completed"
+            for action in children[0].actions:
+                action.state = "succeeded"
+            workflow_service._advance_batch(
+                db,
+                children[0],
+                {
+                    "next_files": workflow_service.material_set_bindings(db, published),
+                    "material_set_id": published.id,
+                    "material_version": published.version,
+                    "workspace": "",
+                },
+            )
+            assert batch.material_set_id == published.id
+            failed = children[1]
+            failed.state = "failed"
+            failed.stage = "failed"
+            failed.actions[-1].state = "failed"
+            batch.state = "failed"
+            db.commit()
+
+        retried = client.post(f"/api/workflow-batches/{batch_id}/retry")
+        assert retried.status_code == 200, retried.text
+        assert retried.json()["state"] == "running"
+
+
+def test_failed_batch_retry_rejects_superseded_material_version() -> None:
+    username = f"stale-material-{uuid.uuid4().hex[:8]}"
+    with auth_client(username=username) as client:
+        assert client.put(
+            "/api/service-credentials/zhiyun",
+            json={"account": "stale-material", "password": "stale-material-password"},
+        ).status_code == 200
+        ledger_id = upload(client, "profit_loss_ledgers", "2026年盈亏核算表.xlsx")
+        flow_id = upload(client, "receipt_flow_table", "到账流转表.xlsx")
+        started = client.post(
+            "/api/workflow-batches/start",
+            json={
+                "skill_id": "ar-hexiao-daily",
+                "reconciliation_dates": ["2026-08-17", "2026-08-18"],
+                "files": {
+                    "profit_loss_ledgers": [ledger_id],
+                    "receipt_flow_table": [flow_id],
+                },
+            },
+        )
+        assert started.status_code == 200, started.text
+        batch_id = started.json()["id"]
+        with SessionLocal() as db:
+            batch = db.get(WorkflowBatch, batch_id)
+            assert batch is not None and batch.material_set_id is not None
+            old_set = db.get(WorkflowMaterialSet, batch.material_set_id)
+            assert old_set is not None
+            old_set.state = "superseded"
+            db.add(
+                WorkflowMaterialSet(
+                    id=str(uuid.uuid4()),
+                    owner_id=old_set.owner_id,
+                    department_id=old_set.department_id,
+                    skill_id=old_set.skill_id,
+                    version=old_set.version + 1,
+                    parent_set_id=old_set.id,
+                    source_workflow_id="newer-successful-workflow",
+                    state="current",
+                )
+            )
+            db.commit()
+
+        confirmed = client.post(f"/api/workflow-batches/{batch_id}/fetched-data/confirm")
+        assert confirmed.status_code == 409, confirmed.text
+        assert "业务材料已更新" in confirmed.json()["detail"]
+
+        details = client.get(f"/api/workflow-batches/{batch_id}")
+        assert details.status_code == 200, details.text
+        assert details.json()["state"] == "failed"
+        assert details.json()["can_retry"] is False
+        assert "重新创建未完成日期批次" in details.json()["retry_block_reason"]
+
+        retried = client.post(f"/api/workflow-batches/{batch_id}/retry")
+        assert retried.status_code == 409, retried.text
+        assert "业务材料已更新" in retried.json()["detail"]
+        assert "重新创建未完成日期批次" in retried.json()["detail"]
     username = f"weekend-batch-{uuid.uuid4().hex[:8]}"
     with auth_client(username=username) as client:
         credential = client.put(
@@ -422,8 +1030,8 @@ def test_failed_range_report_retries_without_rerunning_daily_tasks() -> None:
                 },
             },
         )
-        assert response.status_code == 422
-        assert "连续日期" in response.json()["detail"]
+        assert response.status_code == 200, response.text
+        assert response.json()["reconciliation_dates"] == ["2026-08-17", "2026-08-19"]
     _finish_all_ar_workflows()
     username = f"display-batch-{uuid.uuid4().hex[:8]}"
     with auth_client(username=username) as client:
@@ -471,6 +1079,7 @@ def test_failed_range_report_retries_without_rerunning_daily_tasks() -> None:
                 [
                     {"name": "核销日清_20260819_20260820.xlsx", "file_id": "integrated"},
                     {"name": "盈亏核算表.xlsx", "file_id": "ledger"},
+                    {"name": "到账流转表.xlsx", "file_id": "flow"},
                 ],
                 ensure_ascii=False,
             )
@@ -482,7 +1091,9 @@ def test_failed_range_report_retries_without_rerunning_daily_tasks() -> None:
         displayed_workflows = displayed.json()["workflows"]
         assert displayed_workflows[0]["artifacts"] == []
         assert displayed_workflows[-1]["artifacts"] == [
-            {"name": "核销日清_20260819_20260820.xlsx", "file_id": "integrated"}
+            {"name": "核销日清_20260819_20260820.xlsx", "file_id": "integrated"},
+            {"name": "盈亏核算表.xlsx", "file_id": "ledger"},
+            {"name": "到账流转表.xlsx", "file_id": "flow"},
         ]
     _finish_all_ar_workflows()
 
@@ -1519,7 +2130,7 @@ def test_fetched_data_preview_is_task_scoped_paginated_and_hides_technical_colum
             assert hidden.status_code == 404
 
 
-def test_fetched_data_preview_groups_complete_business_data_by_ar() -> None:
+def test_fetched_data_preview_groups_complete_business_data_by_ar(monkeypatch) -> None:
     """The review API pages by AR and keeps SO, writeoff, and SOD relationships together."""
     with auth_client(username=f"fetched-ar-groups-{uuid.uuid4().hex[:8]}") as client:
         credential = client.put(
@@ -1554,8 +2165,9 @@ def test_fetched_data_preview_groups_complete_business_data_by_ar() -> None:
             )
             export_dir = workspace / "01_智云导出"
             tag = "20260812"
+            payment_path = export_dir / f"回款记录_{tag}.xlsx"
             write_workbook(
-                export_dir / f"回款记录_{tag}.xlsx",
+                payment_path,
                 ["回款记录ID", "核销日期", "到账金额/本币", "开票客户", "rowid"],
                 [
                     ["AR-1", "2026-08-12", 300, "客户甲", 1],
@@ -1598,6 +2210,24 @@ def test_fetched_data_preview_groups_complete_business_data_by_ar() -> None:
             )
             db.commit()
 
+        group_build_count = 0
+        source_hash_count = 0
+        original_fetched_ar_groups = workflow_service._fetched_ar_groups
+        original_sha256_file = fetched_data_preview.sha256_file
+
+        def counted_fetched_ar_groups(*args, **kwargs):
+            nonlocal group_build_count
+            group_build_count += 1
+            return original_fetched_ar_groups(*args, **kwargs)
+
+        def counted_sha256_file(*args, **kwargs):
+            nonlocal source_hash_count
+            source_hash_count += 1
+            return original_sha256_file(*args, **kwargs)
+
+        monkeypatch.setattr(workflow_service, "_fetched_ar_groups", counted_fetched_ar_groups)
+        monkeypatch.setattr(fetched_data_preview, "sha256_file", counted_sha256_file)
+
         first_page = client.get(
             f"/api/workflows/{workflow_id}/fetched-data",
             params={"dataset": "ar_groups", "offset": 0, "limit": 1},
@@ -1610,6 +2240,10 @@ def test_fetched_data_preview_groups_complete_business_data_by_ar() -> None:
         assert body["headers"] == []
         assert body["rows"] == []
         assert len(body["ar_groups"]) == 1
+        assert body["summary"][fetched_data_preview.CURRENT_AR_AMOUNT_SUMMARY_KEY] == {"CNY": 380.0}
+        assert body["summary"][fetched_data_preview.CURRENT_WRITEOFF_AMOUNT_SUMMARY_KEY] == {
+            "CNY": 380.0
+        }
         group = body["ar_groups"][0]
         assert group["ar_id"] == "AR-1"
         assert group["payments"][0]["ar_id"] == "AR-1"
@@ -1654,6 +2288,139 @@ def test_fetched_data_preview_groups_complete_business_data_by_ar() -> None:
         assert issues_only.status_code == 200, issues_only.text
         assert issues_only.json()["total"] == 1
         assert [group["ar_id"] for group in issues_only.json()["ar_groups"]] == ["AR-1"]
+        assert group_build_count == 1
+        assert source_hash_count == 4
+        with SessionLocal() as db:
+            previous_preview = db.scalar(
+                select(WorkflowFetchedDataPreview).where(
+                    WorkflowFetchedDataPreview.workflow_id == workflow_id
+                )
+            )
+            assert previous_preview is not None
+            previous_revision = previous_preview.revision
+
+        write_workbook(
+            payment_path,
+            ["回款记录ID", "核销日期", "到账金额/本币", "开票客户", "rowid"],
+            [
+                ["AR-1", "2026-08-12", 300, "客户甲", 1],
+                ["AR-2", "2026-08-12", 80, "客户乙", 2],
+                ["AR-3", "2026-08-12", 60, "客户丙", 3],
+            ],
+        )
+        with SessionLocal() as db:
+            workflow = db.get(WorkflowSession, workflow_id)
+            assert workflow is not None
+            workflow_service._prime_fetched_data_previews(db, workflow, ["2026-08-12"])
+            with SessionLocal() as observer:
+                visible_previews = list(
+                    observer.scalars(
+                        select(WorkflowFetchedDataPreview).where(
+                            WorkflowFetchedDataPreview.workflow_id == workflow_id
+                        )
+                    )
+                )
+                assert [item.revision for item in visible_previews] == [previous_revision]
+            db.commit()
+        refreshed = client.get(
+            f"/api/workflows/{workflow_id}/fetched-data",
+            params={"dataset": "ar_groups", "query": "AR-3"},
+        )
+        assert refreshed.status_code == 200, refreshed.text
+        assert refreshed.json()["total"] == 1
+        assert [group["ar_id"] for group in refreshed.json()["ar_groups"]] == ["AR-3"]
+        assert group_build_count == 2
+        assert source_hash_count == 8
+        with SessionLocal() as db:
+            previews = list(
+                db.scalars(
+                    select(WorkflowFetchedDataPreview).where(
+                        WorkflowFetchedDataPreview.workflow_id == workflow_id
+                    )
+                )
+            )
+            assert len(previews) == 1
+
+
+def test_current_ar_amount_summary_excludes_historical_parent_payments() -> None:
+    groups = [
+        WorkflowFetchedDataArGroup(
+            ar_id="AR-CURRENT",
+            payments=[
+                WorkflowFetchedPayment(ar_id="AR-CURRENT", amount_local=300),
+                WorkflowFetchedPayment(
+                    ar_id="AR-CURRENT",
+                    amount_local=900,
+                    historical_parent_only=True,
+                ),
+            ],
+        ),
+        WorkflowFetchedDataArGroup(
+            ar_id="AR-FOREIGN",
+            payments=[
+                WorkflowFetchedPayment(
+                    ar_id="AR-FOREIGN",
+                    amount_original=80,
+                    currency="USD",
+                )
+            ],
+        ),
+    ]
+
+    assert fetched_data_preview.current_ar_amounts_by_currency(groups) == {
+        "CNY": 300.0,
+        "USD": 80.0,
+    }
+
+
+def test_current_writeoff_amount_summary_uses_selected_date_and_skips_revoked_rows() -> None:
+    groups = [
+        WorkflowFetchedDataArGroup(
+            ar_id="AR-CURRENT",
+            orders=[
+                WorkflowFetchedDataOrderGroup(
+                    so_id="SO-CURRENT",
+                    writeoffs=[
+                        WorkflowFetchedWriteoff(
+                            writeoff_id="HX-CNY",
+                            ar_id="AR-CURRENT",
+                            so_id="SO-CURRENT",
+                            reconciliation_date="2026-08-12T00:00:00",
+                            amount_local=120,
+                        ),
+                        WorkflowFetchedWriteoff(
+                            writeoff_id="HX-USD",
+                            ar_id="AR-CURRENT",
+                            so_id="SO-CURRENT",
+                            reconciliation_date="2026-08-12",
+                            amount_original=10,
+                            currency="USD",
+                        ),
+                        WorkflowFetchedWriteoff(
+                            writeoff_id="HX-OLD",
+                            ar_id="AR-CURRENT",
+                            so_id="SO-CURRENT",
+                            reconciliation_date="2026-08-11",
+                            amount_local=900,
+                        ),
+                        WorkflowFetchedWriteoff(
+                            writeoff_id="HX-REVOKED",
+                            ar_id="AR-CURRENT",
+                            so_id="SO-CURRENT",
+                            reconciliation_date="2026-08-12",
+                            amount_local=50,
+                            revoked=True,
+                        ),
+                    ],
+                )
+            ],
+        )
+    ]
+
+    assert fetched_data_preview.current_writeoff_amounts_by_currency(groups, "2026-08-12") == {
+        "CNY": 120.0,
+        "USD": 10.0,
+    }
 
 
 def execute_next_action(workflow_id: str) -> None:
@@ -1698,6 +2465,15 @@ def test_failed_workflow_action_discards_fetched_snapshot(monkeypatch) -> None:
             }
         )
         workflow.context_json = json.dumps(context)
+        db.add(
+            WorkflowFetchedDataPreview(
+                id=str(uuid.uuid4()),
+                workflow_id=workflow.id,
+                reconciliation_date="2026-08-20",
+                revision="a" * 64,
+                summary_json="{}",
+            )
+        )
         db.flush()
         raise RuntimeError("simulated failure after fetch")
 
@@ -1737,11 +2513,109 @@ def test_failed_workflow_action_discards_fetched_snapshot(monkeypatch) -> None:
             assert context["fetched_data"]["available"] is False
             assert context["fetched_data"]["review_status"] == "deleted"
             assert not (Path(context["workspace"]) / "01_智云导出").exists()
+            assert (
+                db.scalar(
+                    select(WorkflowFetchedDataPreview).where(
+                        WorkflowFetchedDataPreview.workflow_id == workflow_id
+                    )
+                )
+                is None
+            )
+    _finish_all_ar_workflows()
+
+
+def test_successful_workflow_keeps_fetched_preview_readable_after_cleanup() -> None:
+    _finish_all_ar_workflows()
+    username = f"completed-fetch-preview-{uuid.uuid4().hex[:8]}"
+    with auth_client(username=username) as client:
+        assert (
+            client.put(
+                "/api/service-credentials/zhiyun",
+                json={"account": "completed-fetch", "password": "completed-fetch-password"},
+            ).status_code
+            == 200
+        )
+        ledger_id = upload(client, "profit_loss_ledgers", "2026年盈亏核算表.xlsx")
+        flow_id = upload(client, "receipt_flow_table", "到账流转表.xlsx")
+        started = client.post(
+            "/api/workflows/start",
+            json={
+                "skill_id": "ar-hexiao-daily",
+                "reconciliation_date": "2026-08-20",
+                "files": {
+                    "profit_loss_ledgers": [ledger_id],
+                    "receipt_flow_table": [flow_id],
+                },
+            },
+        )
+        assert started.status_code == 200, started.text
+        workflow_id = started.json()["id"]
+
+        with SessionLocal() as db:
+            workflow = db.get(WorkflowSession, workflow_id)
+            assert workflow is not None
+            workspace = (
+                workflow_service.workflow_root(workflow.owner_id, workflow.id)
+                / "actions"
+                / "completed-preview"
+                / "工作区"
+            )
+            (workspace / "01_智云导出").mkdir(parents=True, exist_ok=True)
+            (workspace / "01_智云导出" / "回款记录_20260820.xlsx").write_bytes(b"fetch")
+            workflow.context_json = json.dumps(
+                {
+                    "workspace": str(workspace.resolve()),
+                    "fetched_data": {
+                        "available": True,
+                        "review_status": "confirmed",
+                        "reconciliation_date": "2026-08-20",
+                        "summary": {"回款记录笔数": 1},
+                    },
+                }
+            )
+            workflow.state = "succeeded"
+            workflow.stage = "completed"
+            preview_id = str(uuid.uuid4())
+            db.add(
+                WorkflowFetchedDataPreview(
+                    id=preview_id,
+                    workflow_id=workflow_id,
+                    reconciliation_date="2026-08-20",
+                    revision="a" * 64,
+                    summary_json=json.dumps({"回款记录笔数": 1}),
+                )
+            )
+            db.flush()
+            db.add(
+                WorkflowFetchedDataPreviewArGroup(
+                    preview_id=preview_id,
+                    position=0,
+                    ar_id="AR-1",
+                    search_text="ar-1",
+                    has_issues=False,
+                    payload_json=json.dumps(
+                        {"ar_id": "AR-1", "payments": [], "orders": [], "issues": []}
+                    ),
+                )
+            )
+            workflow_service._cleanup_terminal_fetched_snapshot(db, workflow)
+            db.commit()
+
+        detail = client.get(f"/api/workflows/{workflow_id}")
+        assert detail.status_code == 200, detail.text
+        assert detail.json()["fetched_data_available"] is True
+        preview = client.get(
+            f"/api/workflows/{workflow_id}/fetched-data",
+            params={"dataset": "ar_groups", "offset": 0, "limit": 50},
+        )
+        assert preview.status_code == 200, preview.text
+        assert preview.json()["ar_groups"][0]["ar_id"] == "AR-1"
     _finish_all_ar_workflows()
 
 
 def test_fetched_data_review_must_be_confirmed_before_analysis(monkeypatch) -> None:
     calls = 0
+    primed_dates: list[str] = []
 
     def fake_prepare(_db, action, workflow) -> dict[str, object]:
         nonlocal calls
@@ -1772,6 +2646,12 @@ def test_fetched_data_review_must_be_confirmed_before_analysis(monkeypatch) -> N
         }
 
     monkeypatch.setattr(workflow_service, "_prepare_worklist", fake_prepare)
+    monkeypatch.setattr(
+        workflow_service,
+        "_prime_fetched_data_previews",
+        lambda _db, _workflow, dates: primed_dates.extend(dates),
+        raising=False,
+    )
 
     with auth_client(username=f"fetched-review-{uuid.uuid4().hex[:8]}") as client:
         credential = client.put(
@@ -1802,6 +2682,7 @@ def test_fetched_data_review_must_be_confirmed_before_analysis(monkeypatch) -> N
         assert waiting.json()["state"] == "waiting_confirmation"
         assert waiting.json()["current_step"] == "review_fetched_data"
         assert calls == 1
+        assert primed_dates == ["2026-08-12"]
 
         confirmed = client.post(f"/api/workflows/{workflow_id}/fetched-data/confirm")
         assert confirmed.status_code == 200, confirmed.text
@@ -1821,6 +2702,7 @@ def test_fetched_data_review_must_be_confirmed_before_analysis(monkeypatch) -> N
             "apply_confirmed",
         ]
         assert calls == 2
+        assert primed_dates == ["2026-08-12", "2026-08-12"]
 
 
 def test_worker_can_request_audited_so_ar_supplement_and_returns_to_review(monkeypatch) -> None:
@@ -2227,6 +3109,18 @@ def test_duplicate_annual_ledger_year_is_rejected(tmp_path: Path) -> None:
         workflow_service._discover_annual_ledger_paths(tmp_path)
 
 
+def test_portable_annual_ledger_copy_is_not_treated_as_authoritative(tmp_path: Path) -> None:
+    ledger_dir = tmp_path / "02_我的表副本"
+    ledger_dir.mkdir()
+    authoritative = ledger_dir / "2026年盈亏核算表.xlsx"
+    authoritative.write_bytes(workbook_bytes())
+    (ledger_dir / "2026年盈亏核算表_便携版.xlsx").write_bytes(workbook_bytes())
+
+    assert workflow_service._discover_annual_ledger_paths(tmp_path) == {
+        2026: authoritative.resolve()
+    }
+
+
 def test_workflow_reuses_and_updates_the_two_material_roles(monkeypatch) -> None:
     class FakeModelsResponse:
         def raise_for_status(self) -> None:
@@ -2291,6 +3185,12 @@ def test_workflow_reuses_and_updates_the_two_material_roles(monkeypatch) -> None
             assert first_workflow is not None
             first_workflow.state = "failed"
             first_workflow.stage = "failed"
+            # A successfully published business material is stored as an
+            # output file. Replacing one annual workbook must still allow the
+            # unchanged annual workbook from the current material version.
+            saved_ledger_record = db.get(FileRecord, ledger_2025)
+            assert saved_ledger_record is not None
+            saved_ledger_record.kind = "output"
             db.commit()
 
         second = client.post(
@@ -2306,9 +3206,27 @@ def test_workflow_reuses_and_updates_the_two_material_roles(monkeypatch) -> None
         assert second.json()["files"]["receipt_flow_table"][0]["file_id"] == flow
 
         ledger_2026 = upload(client, "profit_loss_ledgers", "2026年盈亏核算表.xlsx")
+        unbound_output = upload(client, "profit_loss_ledgers", "2024年盈亏核算表.xlsx")
+        with SessionLocal() as db:
+            unbound_output_record = db.get(FileRecord, unbound_output)
+            assert unbound_output_record is not None
+            unbound_output_record.kind = "output"
+            db.commit()
+        rejected_unbound_output = client.put(
+            f"/api/workflows/{second.json()['id']}/files",
+            json={
+                "files": {"profit_loss_ledgers": [ledger_2025, unbound_output]},
+                "replace_roles": ["profit_loss_ledgers"],
+            },
+        )
+        assert rejected_unbound_output.status_code == 422
+
         added = client.put(
             f"/api/workflows/{second.json()['id']}/files",
-            json={"files": {"profit_loss_ledgers": [ledger_2026]}},
+            json={
+                "files": {"profit_loss_ledgers": [ledger_2025, ledger_2026]},
+                "replace_roles": ["profit_loss_ledgers"],
+            },
         )
         assert added.status_code == 200, added.text
         assert {item["file_id"] for item in added.json()["files"]["profit_loss_ledgers"]} == {
@@ -2347,13 +3265,13 @@ def test_workflow_reuses_and_updates_the_two_material_roles(monkeypatch) -> None
         reduced = client.put(
             f"/api/workflows/{second.json()['id']}/files",
             json={
-                "files": {"profit_loss_ledgers": [ledger_2025]},
+                "files": {"profit_loss_ledgers": [newer_ledger_2025]},
                 "replace_roles": ["profit_loss_ledgers"],
             },
         )
         assert reduced.status_code == 200, reduced.text
         assert [item["file_id"] for item in reduced.json()["files"]["profit_loss_ledgers"]] == [
-            ledger_2025
+            newer_ledger_2025
         ]
 
         cleared = client.put(
@@ -2803,6 +3721,166 @@ risk:
     ]
 
 
+def test_batch_prepare_accepts_declared_business_result_return_codes(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    workflow_id = str(uuid.uuid4())
+    action_id = str(uuid.uuid4())
+    batch_id = f"BAT-20260827-{uuid.uuid4().hex[:8].upper()}"
+    root = tmp_path / "demo-user" / workflow_id
+    business = root / "batch" / batch_id / "工作区"
+    ledgers = business / "02_我的表副本"
+    outputs = business / "04_产出"
+    scripts = root / "skill" / "vendor" / "scripts"
+    ledgers.mkdir(parents=True)
+    outputs.mkdir(parents=True)
+    scripts.mkdir(parents=True)
+    (ledgers / "2026年测试盈亏表.xlsx").write_bytes(b"test")
+    (ledgers / "测试到账流转表.xlsx").write_bytes(b"test")
+    (scripts / "classify_hexiao.py").write_text("", encoding="utf-8")
+
+    calls: list[tuple[str, tuple[int, ...]]] = []
+
+    def fake_run_script(
+        _script_dir,
+        script_name,
+        _arguments,
+        *,
+        accepted_returncodes=(0,),
+        **_kwargs,
+    ):
+        calls.append((script_name, accepted_returncodes))
+        if (
+            script_name in {"audit_shifted_details.py", "validate_plan.py"}
+            and 1 not in accepted_returncodes
+        ):
+            raise RuntimeError(f"{script_name} 执行失败（退出码 1）")
+        if script_name == "build_worklist.py":
+            (outputs / "核销日清_20260727.xlsx").write_bytes(b"test")
+            (outputs / "写入计划_校验后.json").write_text("{}", encoding="utf-8")
+        return ""
+
+    monkeypatch.setattr(workflow_service, "workflow_root", lambda *_: root.resolve())
+    monkeypatch.setattr(workflow_service, "_run_script", fake_run_script)
+    monkeypatch.setattr(
+        workflow_service,
+        "_register_artifact",
+        lambda _db, _workflow, path, _action_id: {"name": path.name},
+    )
+
+    context = {
+        "workspace": str(business.resolve()),
+        "workspace_state": "inputs_ready",
+        "fetched_data": {
+            "available": True,
+            "review_status": "confirmed",
+            "dates": ["2026-07-27", "2026-07-28"],
+        },
+    }
+    workflow = SimpleNamespace(
+        id=workflow_id,
+        owner_id="demo-user",
+        department_id="finance",
+        reconciliation_date="2026-07-27",
+        batch_id=batch_id,
+        batch_sequence=1,
+        progress=20,
+        progress_message="",
+        context_json=json.dumps(context),
+    )
+    batch = SimpleNamespace(
+        id=batch_id,
+        reconciliation_dates_json=json.dumps(["2026-07-27", "2026-07-28"]),
+        workflows=[workflow],
+    )
+    action = SimpleNamespace(id=action_id, input_json=json.dumps({"context": context}))
+    db = SimpleNamespace(
+        commit=lambda: None,
+        get=lambda model, identifier: (
+            batch if model is WorkflowBatch and identifier == batch_id else None
+        ),
+    )
+
+    result = workflow_service._prepare_worklist(db, action, workflow)
+
+    assert result["artifacts"] == [{"name": "核销日清_20260727.xlsx"}]
+    assert ("audit_shifted_details.py", (0, 1)) in calls
+    assert ("validate_plan.py", (0, 1)) in calls
+
+
+def test_batch_serializer_exposes_final_material_outputs(monkeypatch) -> None:
+    now = workflow_service.datetime.now(workflow_service.UTC)
+    artifacts = [
+        {"name": "2026年盈亏核算表.xlsx", "file_id": "ledger-file"},
+        {"name": "到账流转表.xlsx", "file_id": "flow-file"},
+        {"name": "核销日清_20260818.xlsx", "file_id": "report-file"},
+    ]
+    workflow = SimpleNamespace(
+        id="workflow-final",
+        batch_sequence=1,
+        state="succeeded",
+        progress=100,
+        progress_message="完成",
+        actions=[],
+        context_json=json.dumps({"fetched_data": {"available": True}}),
+        artifacts_json=json.dumps(artifacts),
+        reconciliation_date="2026-08-18",
+    )
+    batch = SimpleNamespace(
+        id="batch-final",
+        display_id="batch-final",
+        owner_id="owner-1",
+        skill_id="ar-hexiao-daily",
+        skill_name="应收核销日清",
+        skill_version="1.6.10",
+        model_provider="",
+        model_name="",
+        reconciliation_dates_json=json.dumps(["2026-08-18"]),
+        state="succeeded",
+        progress=100,
+        progress_message="完成",
+        error_message="",
+        workflows=[workflow],
+        created_at=now,
+        updated_at=now,
+    )
+
+    def serialized(_workflow) -> WorkflowRead:
+        return WorkflowRead(
+            id="workflow-final",
+            display_id="workflow-final",
+            owner_id="owner-1",
+            skill_id="ar-hexiao-daily",
+            skill_name="应收核销日清",
+            skill_version="1.6.10",
+            model_provider="",
+            model_name="",
+            state="succeeded",
+            stage="completed",
+            reconciliation_date="2026-08-18",
+            progress=100,
+            progress_message="完成",
+            error_message="",
+            files={},
+            artifacts=artifacts,
+            messages=[],
+            actions=[],
+            created_at=now,
+            updated_at=now,
+        )
+
+    monkeypatch.setattr(workflow_service, "serialize_workflow", serialized)
+
+    result = workflow_service.serialize_workflow_batch(batch, retry_authorized=False)
+
+    assert {item["name"] for item in result.workflows[0].artifacts} == {
+        "2026年盈亏核算表.xlsx",
+        "到账流转表.xlsx",
+        "核销日清_20260818.xlsx",
+    }
+
+
 def test_legacy_secure_fetch_retries_transient_script_failure(monkeypatch) -> None:
     calls = []
     sleeps = []
@@ -2829,6 +3907,23 @@ def test_legacy_secure_fetch_retries_transient_script_failure(monkeypatch) -> No
     assert result == "ok"
     assert len(calls) == 2
     assert sleeps == [1.0]
+
+
+def test_run_script_accepts_declared_business_return_code(tmp_path: Path) -> None:
+    script = tmp_path / "business_result.py"
+    script.write_text(
+        "print('business result found')\nraise SystemExit(1)\n",
+        encoding="utf-8",
+    )
+
+    stdout = workflow_service._run_script(
+        tmp_path,
+        script.name,
+        [],
+        accepted_returncodes=(0, 1),
+    )
+
+    assert stdout.strip() == "business result found"
 
 
 def test_secure_fetch_timeout_scales_with_date_range_and_respects_runtime_limit() -> None:
@@ -3191,6 +4286,15 @@ def test_conversational_workflow_hard_gates(monkeypatch) -> None:
         review = client.get(f"/api/workflows/{workflow_id}").json()
         assert review["stage"] == "awaiting_apply_confirmation"
         assert review["state"] == "waiting_confirmation"
+        assert review["progress"] < 100
+
+        with SessionLocal() as db:
+            legacy_waiting = db.get(WorkflowSession, workflow_id)
+            assert legacy_waiting is not None
+            legacy_waiting.progress = 100
+            db.commit()
+        legacy_review = client.get(f"/api/workflows/{workflow_id}").json()
+        assert legacy_review["progress"] == 100
 
         original_decider = workflow_service.decide_workflow_turn
         monkeypatch.setattr(
@@ -3221,6 +4325,7 @@ def test_conversational_workflow_hard_gates(monkeypatch) -> None:
         assert applying.status_code == 200, applying.text
         assert applying.json()["stage"] == "applying"
         assert applying.json()["state"] == "running"
+        assert applying.json()["progress"] >= legacy_review["progress"]
         assert len(applying.json()["actions"]) == 2
 
         execute_next_action(workflow_id)
@@ -3565,7 +4670,7 @@ def test_multi_date_batch_skips_confirmed_empty_date_and_starts_next(monkeypatch
 
     monkeypatch.setattr(workflow_service, "_prepare_worklist", fake_prepare)
 
-    with auth_client() as client:
+    with auth_client(username=f"empty-date-batch-{uuid.uuid4().hex[:8]}") as client:
         connection = client.post(
             "/api/model-connections",
             json={"api_key": "sk-empty-date-batch-test"},

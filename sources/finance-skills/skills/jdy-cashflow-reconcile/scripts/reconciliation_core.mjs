@@ -32,6 +32,54 @@ export function normalizeVoucher(value) {
   return text.replace(/-0*(\d+)/g, "-$1");
 }
 
+function formatPeriod(year, month) {
+  const numericYear = Number(year);
+  const numericMonth = Number(month);
+  if (
+    !Number.isInteger(numericYear) ||
+    numericYear < 1900 ||
+    numericYear > 2999 ||
+    !Number.isInteger(numericMonth) ||
+    numericMonth < 1 ||
+    numericMonth > 12
+  ) {
+    return "";
+  }
+  return `${numericYear}-${String(numericMonth).padStart(2, "0")}`;
+}
+
+export function normalizePeriod(value) {
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) {
+      return "";
+    }
+    return formatPeriod(value.getFullYear(), value.getMonth() + 1);
+  }
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const compact = String(Math.trunc(value));
+    if (/^\d{6}$/.test(compact)) {
+      return formatPeriod(compact.slice(0, 4), compact.slice(4, 6));
+    }
+    if (value > 0) {
+      const date = new Date(Date.UTC(1899, 11, 30) + Math.floor(value) * 86_400_000);
+      return formatPeriod(date.getUTCFullYear(), date.getUTCMonth() + 1);
+    }
+    return "";
+  }
+
+  const source = String(value ?? "").trim();
+  if (!source) {
+    return "";
+  }
+  const compactMatch = source.match(/^(\d{4})(\d{2})$/);
+  if (compactMatch) {
+    return formatPeriod(compactMatch[1], compactMatch[2]);
+  }
+  const separatedMatch = source.match(/^(\d{4})\s*[-/.年]\s*(\d{1,2})(?:\s*[-/.月]|\s*月|$)/);
+  return separatedMatch ? formatPeriod(separatedMatch[1], separatedMatch[2]) : "";
+}
+
 export function numberValue(value) {
   if (typeof value === "number") {
     return value;
@@ -40,10 +88,18 @@ export function numberValue(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-export function addGroup(map, project, voucher, amount, originalVoucher) {
-  const key = `${project}\u001f${voucher}`;
+export function addGroup(
+  map,
+  project,
+  voucher,
+  amount,
+  originalVoucher,
+  period = "",
+) {
+  const key = `${period}\u001f${project}\u001f${voucher}`;
   const current = map.get(key) ?? {
     key,
+    period,
     project,
     voucher,
     originalVouchers: new Set(),
@@ -76,6 +132,7 @@ export function classify(detail, merged, tolerance = 0.005) {
   }
   return {
     status,
+    period: detail?.period ?? merged?.period,
     project: detail?.project ?? merged?.project,
     voucher: detail?.voucher ?? merged?.voucher,
     detailOriginalVouchers: detail

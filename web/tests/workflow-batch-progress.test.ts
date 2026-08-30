@@ -230,7 +230,7 @@ test('批次详情页只渲染一张日期流程图并保留手动选择状态',
   assert.doesNotMatch(progress, /当前任务操作/);
 });
 
-test('批次详情页只展示整合核销日清', () => {
+test('批次详情页展示整合核销日清和最终工作副本', () => {
   const progress = readFileSync(
     new URL(
       '../src/features/workflow-agent/components/workflow-batch-progress.tsx',
@@ -243,8 +243,11 @@ test('批次详情页只展示整合核销日清', () => {
   assert.match(progress, /function BatchOutputCard/);
   assert.match(progress, /<CardTitle className='text-base'>批次产出<\/CardTitle>/);
   assert.match(progress, /api\/platform\/files/);
-  assert.match(progress, /一份整合核销日清/);
-  assert.match(progress, /覆盖日期/);
+  assert.match(progress, /整合核销日清/);
+  assert.doesNotMatch(progress, /包含核销日/);
+  assert.match(progress, /仅处理已选/);
+  assert.match(progress, /盈亏核算表/);
+  assert.match(progress, /到账流转表/);
   assert.doesNotMatch(progress, /所有日期的结果文件集中显示/);
 });
 

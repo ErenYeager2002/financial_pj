@@ -1149,6 +1149,54 @@ class WorkflowSession(Base):
     batch: Mapped[WorkflowBatch | None] = relationship(back_populates="workflows")
 
 
+class WorkflowFetchedDataPreview(Base):
+    __tablename__ = "workflow_fetched_data_previews"
+    __table_args__ = (
+        UniqueConstraint(
+            "workflow_id",
+            "reconciliation_date",
+            "revision",
+            name="ux_workflow_fetched_data_previews_revision",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    workflow_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workflow_sessions.id", ondelete="CASCADE"), index=True
+    )
+    reconciliation_date: Mapped[str] = mapped_column(String(10), index=True)
+    revision: Mapped[str] = mapped_column(String(64))
+    summary_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class WorkflowFetchedDataPreviewArGroup(Base):
+    __tablename__ = "workflow_fetched_data_preview_ar_groups"
+    __table_args__ = (
+        UniqueConstraint(
+            "preview_id", "position", name="ux_workflow_fetched_data_preview_ar_group_position"
+        ),
+        Index(
+            "ix_workflow_fetched_data_preview_ar_groups_query",
+            "preview_id",
+            "has_issues",
+            "position",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    preview_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("workflow_fetched_data_previews.id", ondelete="CASCADE"),
+        index=True,
+    )
+    position: Mapped[int] = mapped_column(Integer)
+    ar_id: Mapped[str] = mapped_column(String(255), index=True)
+    search_text: Mapped[str] = mapped_column(Text, default="")
+    has_issues: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    payload_json: Mapped[str] = mapped_column(Text)
+
+
 class WorkflowMessage(Base):
     __tablename__ = "workflow_messages"
 

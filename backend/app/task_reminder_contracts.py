@@ -53,6 +53,11 @@ class TaskDiscoveryFailureRead(BaseModel):
 class TaskReminderBoard(BaseModel):
     reminders: list[TaskReminderRead] = Field(default_factory=list)
     check_failures: list[TaskDiscoveryFailureRead] = Field(default_factory=list)
+    resolved_count: int = 0
+
+
+class TaskReminderCleanupResult(BaseModel):
+    dismissed_count: int = 0
 
 
 class TaskDiscoveryCheckRequest(BaseModel):

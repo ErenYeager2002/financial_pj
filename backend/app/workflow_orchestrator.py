@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import HTTPException
@@ -26,6 +27,12 @@ CONFIRM_WORDS = {
     "继续",
 }
 CANCEL_WORDS = {"取消", "停止", "先不做", "不跑了", "取消任务", "停止任务", "先停一下"}
+PLATFORM_TIMEZONE = ZoneInfo("Asia/Shanghai")
+
+
+def _platform_today() -> date:
+    """Keep conversational date handling on the platform business calendar."""
+    return datetime.now(PLATFORM_TIMEZONE).date()
 
 
 def is_explicit_workflow_cancel_request(message: str) -> bool:
@@ -194,7 +201,7 @@ def validate_workflow_agent_request(
             parsed = date.fromisoformat(value)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail="核销日期格式无效。") from exc
-        if parsed > date.today():
+        if parsed > _platform_today():
             raise HTTPException(status_code=422, detail="核销日期不能晚于今天。")
         return WorkflowDecision("set_date", {"date": parsed.isoformat()}, "pi")
 
@@ -317,7 +324,7 @@ def _llm_decision(
                     "解释问题、追问和给建议。只有用户明确要求推进当前工作时才调用工具；"
                     "普通问答直接自然回复，不要调用工具。不得自行计算最终财务金额，"
                     "不得生成命令、文件路径、客户名或财务明细，也不得声称已执行未调用的动作。"
-                    f"今天是 {date.today().isoformat()}，当前阶段是 {stage}，"
+                    f"今天是 {_platform_today().isoformat()}，当前阶段是 {stage}，"
                     f"当前核销日期是 {reconciliation_date or '未设置'}。"
                     f"当前只允许调用这些动作：{', '.join(allowed)}。"
                     "“确认写入”与“确认日期”必须按当前阶段区分。"
@@ -360,7 +367,7 @@ def _llm_decision(
 def _extract_date(text: str) -> str:
     lowered = text.lower().strip()
     if "昨天" in lowered:
-        return (date.today() - timedelta(days=1)).isoformat()
+        return (_platform_today() - timedelta(days=1)).isoformat()
     full = re.search(r"(20\d{2})[-/.年](\d{1,2})[-/.月](\d{1,2})日?", text)
     if full:
         try:
@@ -370,7 +377,9 @@ def _extract_date(text: str) -> str:
     short = re.search(r"(?<!\d)(\d{1,2})月(\d{1,2})日?", text)
     if short:
         try:
-            return date(date.today().year, int(short.group(1)), int(short.group(2))).isoformat()
+            return date(
+                _platform_today().year, int(short.group(1)), int(short.group(2))
+            ).isoformat()
         except ValueError:
             return ""
     return ""

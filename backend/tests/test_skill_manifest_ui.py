@@ -15,19 +15,18 @@ def test_all_published_skills_have_employee_metadata_and_risk_configuration() ->
     registry.refresh()
     assert registry.errors == []
     published = registry.list()
-    assert len(published) == 12
+    assert len(published) == 11
     assert "ar-hexiao-daily" in {item.manifest.id for item in published}
     assert all(item.manifest.ui is not None for item in published)
     assert all(item.manifest.progress_stages for item in published)
     assert all(item.manifest.risk.level for item in published)
-    assert any(not item.manifest.risk.requires_confirmation for item in published)
 
 
 def test_ar_hexiao_is_published_as_a_confirmed_workflow() -> None:
     registry.refresh()
     skill = registry.get("ar-hexiao-daily")
     assert skill is not None
-    assert skill.manifest.version == "1.6.10"
+    assert skill.manifest.version == "1.6.11"
     assert skill.manifest.handler.adapter == "workflow"
     assert skill.manifest.runtime.network_access is True
     assert skill.manifest.runtime.network_targets == ["https://zhiyun.synthetic.example:443"]
@@ -83,6 +82,43 @@ def test_every_published_skill_has_a_controlled_execution_experience() -> None:
     registry.refresh()
     configured = BUSINESS_EXECUTION_EXPERIENCE_IDS | FOUNDATION_SKILL_IDS
     assert {item.manifest.id for item in registry.list()} <= configured
+
+
+def test_published_python_skills_do_not_use_the_unavailable_placeholder() -> None:
+    registry.refresh()
+    unavailable_message = "此 Skill 尚未发布，不能创建执行任务。"
+    for skill in registry.list():
+        if skill.manifest.handler.adapter != "python":
+            continue
+        entrypoint = skill.manifest.handler.entrypoint
+        assert entrypoint is not None
+        entry = skill.directory / entrypoint
+        assert unavailable_message not in entry.read_text(encoding="utf-8"), skill.manifest.id
+
+
+def test_unpublished_catalog_skills_keep_the_unavailable_placeholder() -> None:
+    registry.refresh()
+    unavailable_message = "此 Skill 尚未发布，不能创建执行任务。"
+    unpublished = [
+        skill
+        for skill in registry.list(include_disabled=True)
+        if skill.manifest.status != "published"
+    ]
+    assert {skill.manifest.id for skill in unpublished} == {
+        "docx",
+        "env-doctor",
+        "jdy-cashflow-export",
+        "jdy-cashflow-reconcile",
+        "pdf",
+        "pptx",
+        "task-clarifier",
+        "xlsx",
+    }
+    for skill in unpublished:
+        entrypoint = skill.manifest.handler.entrypoint
+        assert entrypoint is not None
+        entry = skill.directory / entrypoint
+        assert unavailable_message in entry.read_text(encoding="utf-8"), skill.manifest.id
 
 
 def test_unknown_business_skill_cannot_be_published_without_an_experience() -> None:

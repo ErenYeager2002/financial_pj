@@ -26,6 +26,7 @@ import type {
   WorkflowRead
 } from '@/features/platform-api/types';
 import {
+  buildFetchedDataPreviewRequest,
   lastPageOffset,
   parseSupplementIdentifiers,
   partitionFetchedArGroups
@@ -85,6 +86,15 @@ function moneySummary(values: MoneyValue[]): string {
   return [...totals.entries()]
     .map(([currency, amount]) => `${cellValue(amount)} ${currency}`)
     .join(' + ');
+}
+
+function formatArAmountSummary(value: unknown): string {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return '未提供';
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, amount]) => typeof amount === 'number' && Number.isFinite(amount))
+    .toSorted(([left], [right]) => left.localeCompare(right));
+  if (!entries.length) return '—';
+  return entries.map(([currency, amount]) => `${cellValue(amount)} ${currency}`).join(' + ');
 }
 
 function originalOrLocalMoney(
@@ -163,14 +173,30 @@ export function WorkflowFetchedDataDialog({
   const [soInput, setSoInput] = React.useState('');
   const [showSupplementForm, setShowSupplementForm] = React.useState(false);
   const [submitting, setSubmitting] = React.useState('');
+  const isBatch = Boolean(batch);
+  const batchReviewWorkflow = batch ? batchFetchedDataWorkflow(batch.workflows) : undefined;
   const resourceId = batch?.id ?? workflow?.id ?? '';
-  const resourceUpdatedAt = batch?.updated_at ?? workflow?.updated_at ?? '';
-  const stage = batch
-    ? (batchFetchedDataWorkflow(batch.workflows)?.stage ?? '')
-    : (workflow?.stage ?? '');
+  const stage = batch ? (batchReviewWorkflow?.stage ?? '') : (workflow?.stage ?? '');
+  const fetchedDataSource = batch ? batch.fetched_data_source : workflow?.fetched_data_source;
+  const isSnapshotReplay = fetchedDataSource === 'snapshot';
   const supplementHistory = batch
     ? batch.fetched_data_supplement_history
     : workflow?.fetched_data_supplement_history;
+  const supplementRevision = supplementHistory?.length ?? 0;
+  const previewRequest = React.useMemo(
+    () =>
+      buildFetchedDataPreviewRequest({
+        isBatch,
+        resourceId,
+        reconciliationDate,
+        offset,
+        pageSize: PAGE_SIZE,
+        query,
+        issuesOnly,
+        supplementRevision
+      }),
+    [isBatch, issuesOnly, offset, query, reconciliationDate, resourceId, supplementRevision]
+  );
 
   React.useEffect(() => {
     if (!open) return;
@@ -179,20 +205,10 @@ export function WorkflowFetchedDataDialog({
       setLoading(true);
       setLoadError('');
       try {
-        const search = new URLSearchParams({
-          dataset: 'ar_groups',
-          offset: String(offset),
-          limit: String(PAGE_SIZE)
+        const response = await fetch(previewRequest.url, {
+          cache: 'no-store',
+          signal: controller.signal
         });
-        if (query.trim()) search.set('query', query.trim());
-        if (issuesOnly) search.set('issues_only', 'true');
-        if (batch) search.set('reconciliation_date', reconciliationDate);
-        const response = await fetch(
-          batch
-            ? `/api/platform/workflow-batches/${encodeURIComponent(resourceId)}/fetched-data?${search.toString()}`
-            : `/api/platform/workflows/${encodeURIComponent(resourceId)}/fetched-data?${search.toString()}`,
-          { cache: 'no-store', signal: controller.signal }
-        );
         if (!response.ok)
           throw new Error(await responseMessage(response, '智云取数数据加载失败。'));
         setPreview((await response.json()) as WorkflowFetchedData);
@@ -205,7 +221,7 @@ export function WorkflowFetchedDataDialog({
     }
     void loadPreview();
     return () => controller.abort();
-  }, [batch, issuesOnly, offset, open, query, reconciliationDate, resourceId, resourceUpdatedAt]);
+  }, [open, previewRequest]);
 
   React.useEffect(() => {
     if (!open) setShowSupplementForm(false);
@@ -236,6 +252,10 @@ export function WorkflowFetchedDataDialog({
 
   async function submitReview(action: 'confirm' | 'supplement') {
     if (submitting) return;
+    if (action === 'supplement' && isSnapshotReplay) {
+      setActionError('本地取数快照不能补取智云数据，请检查快照内容后继续。');
+      return;
+    }
     const arIds = parsedAr.values;
     const soIds = parsedSo.values;
     const invalidIds = [...parsedAr.invalid, ...parsedSo.invalid];
@@ -305,6 +325,16 @@ export function WorkflowFetchedDataDialog({
     }))
   ];
   const businessSummary = [
+    {
+      label: '本日 AR 汇总金额',
+      keys: ['本日AR汇总金额'],
+      format: (value: Record<string, unknown>) => formatArAmountSummary(value['本日AR汇总金额'])
+    },
+    {
+      label: '本日总核销金额',
+      keys: ['本日总核销金额'],
+      format: (value: Record<string, unknown>) => formatArAmountSummary(value['本日总核销金额'])
+    },
     { label: '回款记录', keys: ['回款记录笔数'] },
     { label: '关联订单行数', keys: ['下单行数'] },
     { label: '核销明细', keys: ['核销明细行数'] },
@@ -830,7 +860,7 @@ export function WorkflowFetchedDataDialog({
                                                                       className='px-3 py-4 text-center text-destructive'
                                                                     >
                                                                       未找到
-                                                                      SOD，可使用下方“发现缺失数据”补取。
+                                                                      SOD，可使用“发现缺失数据”补取。
                                                                     </td>
                                                                   </tr>
                                                                 )}
@@ -855,7 +885,7 @@ export function WorkflowFetchedDataDialog({
                             {expanded && orders.length === 0 && (
                               <TableRow>
                                 <TableCell colSpan={8} className='pl-14 text-destructive'>
-                                  当前 AR 没有关联订单，可使用下方“发现缺失数据”补取。
+                                  当前 AR 没有关联订单，可使用“发现缺失数据”补取。
                                 </TableCell>
                               </TableRow>
                             )}
@@ -909,19 +939,23 @@ export function WorkflowFetchedDataDialog({
               <div className='min-w-0'>
                 <h3 className='font-medium'>工作人员检查</h3>
                 <p className='text-sm text-muted-foreground'>
-                  确认数据完整后继续；发现缺失数据时可按 AR/SO 编号补取。
+                  {isSnapshotReplay
+                    ? '当前使用本地取数快照，确认数据完整后继续。快照模式不能连接智云补取。'
+                    : '确认数据完整后继续；发现缺失数据时可按 AR/SO 编号补取。'}
                 </p>
               </div>
               <div className='flex flex-wrap gap-2'>
-                <Button
-                  type='button'
-                  variant='outline'
-                  disabled={Boolean(submitting)}
-                  aria-expanded={showSupplementForm}
-                  onClick={() => setShowSupplementForm((current) => !current)}
-                >
-                  发现缺失数据
-                </Button>
+                {!isSnapshotReplay && (
+                  <Button
+                    type='button'
+                    variant='outline'
+                    disabled={Boolean(submitting)}
+                    aria-expanded={showSupplementForm}
+                    onClick={() => setShowSupplementForm((current) => !current)}
+                  >
+                    发现缺失数据
+                  </Button>
+                )}
                 <Button
                   type='button'
                   disabled={Boolean(submitting)}
@@ -932,7 +966,7 @@ export function WorkflowFetchedDataDialog({
               </div>
             </div>
 
-            {showSupplementForm && (
+            {!isSnapshotReplay && showSupplementForm && (
               <div className='mt-3 space-y-3 rounded-lg border bg-muted/20 p-3'>
                 <p className='text-sm text-muted-foreground'>
                   可填写多个完整编号，用空格、换行、逗号或分号分隔。补取完成后任务会再次暂停供你确认。
@@ -1013,7 +1047,7 @@ export function WorkflowFetchedDataDialog({
         )}
         {stage === 'supplementing_fetched_data' && (
           <div className='shrink-0 border-t bg-muted/30 px-5 py-3 text-sm'>
-            正在按编号补取数据。完成后这里会恢复确认操作，请重新检查补取结果。
+            正在按编号补取数据。完成后请重新检查补取结果。
           </div>
         )}
         <DialogFooter className='shrink-0' showCloseButton />

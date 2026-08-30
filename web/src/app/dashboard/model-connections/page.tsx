@@ -26,10 +26,7 @@ export default async function ModelConnectionsPage(): Promise<React.JSX.Element>
     listAdminModelProviders()
   ]);
   return (
-    <PageContainer
-      pageTitle='模型连接'
-      pageDescription='集中管理 AI 助手使用的模型供应商、API Key 和可用模型'
-    >
+    <PageContainer pageTitle='模型连接'>
       <ModelConnectionManagement initialConnections={connections} providers={providers} />
     </PageContainer>
   );

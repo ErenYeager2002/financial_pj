@@ -6,7 +6,7 @@ from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .audit_service import record_audit
@@ -26,10 +26,12 @@ from .task_reminder_contracts import (
     TaskDiscoveryCheckRequest,
     TaskDiscoveryFailureRead,
     TaskReminderBoard,
+    TaskReminderCleanupResult,
     TaskReminderRead,
     TaskReminderSubscriptionRead,
     TaskReminderSubscriptionWrite,
 )
+from .task_reminder_workflow_service import reconcile_linked_task_reminders
 
 SUPPORTED_REMINDER_SKILLS = {"ar-hexiao-daily"}
 SHANGHAI = ZoneInfo("Asia/Shanghai")
@@ -354,6 +356,21 @@ def retry_task_discovery(
 
 
 def get_task_reminder_board(db: Session, actor: UserContext) -> TaskReminderBoard:
+    reconciled_count = reconcile_linked_task_reminders(
+        db,
+        department_id=actor.department_id,
+        owner_id=None if actor.is_admin else actor.user_id,
+    )
+    if reconciled_count:
+        record_audit(
+            db,
+            actor=actor,
+            action="task_reminder.workflow_state.reconciled",
+            resource_type="task_reminder",
+            resource_id=actor.user_id,
+            details={"reconciled_count": reconciled_count},
+        )
+        db.commit()
     reminder_query = select(TaskReminder).where(
         TaskReminder.department_id == actor.department_id,
         TaskReminder.state.in_(("pending", "in_progress", "reopened")),
@@ -366,6 +383,11 @@ def get_task_reminder_board(db: Session, actor: UserContext) -> TaskReminderBoar
     if not actor.is_admin:
         reminder_query = reminder_query.where(TaskReminder.owner_id == actor.user_id)
         failure_query = failure_query.where(TaskDiscoveryCheck.owner_id == actor.user_id)
+    resolved_query = select(TaskReminder).where(
+        TaskReminder.department_id == actor.department_id,
+        TaskReminder.owner_id == actor.user_id,
+        TaskReminder.state == "resolved",
+    )
     reminders = list(
         db.scalars(
             reminder_query.order_by(TaskReminder.skill_id, TaskReminder.business_date)
@@ -415,4 +437,38 @@ def get_task_reminder_board(db: Session, actor: UserContext) -> TaskReminderBoar
             for item in failures
             if item.owner_id in owners
         ],
+        resolved_count=int(
+            db.scalar(
+                select(func.count()).select_from(resolved_query.subquery())
+            )
+            or 0
+        ),
     )
+
+
+def dismiss_resolved_task_reminders(
+    db: Session,
+    actor: UserContext,
+) -> TaskReminderCleanupResult:
+    acquire_claim_lock(db)
+    query = select(TaskReminder).where(
+        TaskReminder.department_id == actor.department_id,
+        TaskReminder.owner_id == actor.user_id,
+        TaskReminder.state == "resolved",
+    )
+    reminders = list(db.scalars(query).all())
+    for reminder in reminders:
+        reminder.state = "dismissed"
+    record_audit(
+        db,
+        actor=actor,
+        action="task_reminder.resolved.dismissed",
+        resource_type="task_reminder_collection",
+        resource_id=actor.user_id,
+        details={
+            "dismissed_count": len(reminders),
+            "dismissed_reminder_ids": sorted(reminder.id for reminder in reminders),
+        },
+    )
+    db.commit()
+    return TaskReminderCleanupResult(dismissed_count=len(reminders))

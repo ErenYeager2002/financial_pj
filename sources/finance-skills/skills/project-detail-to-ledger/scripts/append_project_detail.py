@@ -1,10 +1,13 @@
 import argparse
+import html
 import json
 import re
 import shutil
 import zipfile
 from pathlib import Path
 from xml.etree import ElementTree as ET
+
+from workbook_finalize import create_portable_copy
 
 NS_MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 NS_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
@@ -56,8 +59,9 @@ def workbook_sheets(z):
     for s in wb.find(Q(NS_MAIN, "sheets")):
         rid = s.attrib.get(Q(NS_REL, "id"))
         target = rel_map[rid]
+        target = target.lstrip("/")
         if not target.startswith("xl/"):
-            target = "xl/" + target.lstrip("/")
+            target = "xl/" + target
         result.append((s.attrib["name"], target))
     return result
 
@@ -259,15 +263,80 @@ def source_rows_and_mapping(project_path, ledger_path):
 
 def update_formula_ranges(xml_text, old_last_row, new_last_row):
     count = 0
-    pattern = re.compile(r"(<f(?:\s[^>]*)?>)(.*?)(</f>)", re.S)
-    def repl(match):
+    cache_cleared = 0
+    formula_pattern = re.compile(r"(<f(?:\s[^>]*)?>)(.*?)(</f>)", re.S)
+    cell_pattern = re.compile(r"(<c\b[^>]*>)(.*?)(</c>)", re.S)
+    value_pattern = re.compile(r"<v(?:\s[^>]*)?>.*?</v>", re.S)
+
+    def update_formula(match):
         nonlocal count
         body = match.group(2)
-        updated = re.sub(rf"(?<!\d){old_last_row}(?!\d)", str(new_last_row), body)
+        updated = re.sub(
+            rf"(:\$?[A-Z]{{1,3}}\$?){old_last_row}(?!\d)",
+            rf"\g<1>{new_last_row}",
+            body,
+        )
         if updated != body:
             count += 1
         return match.group(1) + updated + match.group(3)
-    return pattern.sub(repl, xml_text), count
+
+    def update_cell(match):
+        nonlocal cache_cleared
+        inner = match.group(2)
+        before_count = count
+        updated = formula_pattern.sub(update_formula, inner)
+        if count != before_count:
+            updated, removed = value_pattern.subn("", updated, count=1)
+            cache_cleared += removed
+        return match.group(1) + updated + match.group(3)
+
+    updated_xml = cell_pattern.sub(update_cell, xml_text)
+    updated_xml = formula_pattern.sub(update_formula, updated_xml)
+    return updated_xml, count, cache_cleared
+
+
+def set_lightweight_calculation_flags(workbook_xml):
+    def replace_calc_pr(match):
+        attrs = re.sub(
+            r'\s+(?:fullCalcOnLoad|forceFullCalc|calcOnSave|calcMode)="[^"]*"',
+            "",
+            match.group(1),
+        )
+        return (
+            '<calcPr' + attrs
+            + ' calcMode="auto" fullCalcOnLoad="0" forceFullCalc="0" calcOnSave="0"/>'
+        )
+
+    if "<calcPr" in workbook_xml:
+        return re.sub(r"<calcPr\b([^>]*)/>", replace_calc_pr, workbook_xml, count=1)
+    return workbook_xml.replace(
+        "</workbook>",
+        '<calcPr calcMode="auto" fullCalcOnLoad="0" forceFullCalc="0" calcOnSave="0"/></workbook>',
+        1,
+    )
+
+
+def inspect_lightweight_output(path):
+    with zipfile.ZipFile(path, "r") as archive:
+        if archive.testzip() is not None:
+            raise RuntimeError("输出工作簿 ZIP 校验失败")
+        names = archive.namelist()
+        workbook_xml = archive.read("xl/workbook.xml").decode("utf-8", "replace")
+    full = re.search(r'\bfullCalcOnLoad="([^"]*)"', workbook_xml)
+    force = re.search(r'\bforceFullCalc="([^"]*)"', workbook_xml)
+    full_value = full.group(1) if full else ""
+    force_value = force.group(1) if force else ""
+    external_parts = sum(name.startswith("xl/externalLinks/") for name in names)
+    if full_value == "1" or force_value == "1":
+        raise RuntimeError("输出工作簿仍要求打开时完整重算")
+    if external_parts:
+        raise RuntimeError("输出工作簿仍包含历史外部链接")
+    return {
+        "full_calc_on_load": full_value,
+        "force_full_calc": force_value,
+        "external_link_parts": external_parts,
+        "calc_chain_present": "xl/calcChain.xml" in names,
+    }
 
 
 def patch_workbook(project_path, ledger_path, output_path, audit_path):
@@ -293,60 +362,66 @@ def patch_workbook(project_path, ledger_path, output_path, audit_path):
     members[sheet_path] = sheet_text.encode("utf-8")
 
     formula_updates = 0
+    formula_caches_cleared = 0
     formula_members = []
     for name, data in list(members.items()):
         if name == sheet_path or not name.endswith(".xml"):
             continue
         text = data.decode("utf-8", errors="strict")
-        if ledger["name"] not in text and "明细" not in text:
+        decoded_text = html.unescape(text)
+        if ledger["name"] not in decoded_text and "明细" not in decoded_text:
             continue
         if str(old_last_row) not in text:
             continue
-        updated, count = update_formula_ranges(text, old_last_row, new_last_row)
+        updated, count, cleared = update_formula_ranges(text, old_last_row, new_last_row)
         if count:
             members[name] = updated.encode("utf-8")
             formula_updates += count
+            formula_caches_cleared += cleared
             formula_members.append(name)
 
-    # A stale calculation chain can retain old formula coordinates. Remove it and request a full recalc.
-    calc_chain_removed = "xl/calcChain.xml" in members
-    if calc_chain_removed:
-        del members["xl/calcChain.xml"]
-        rels_name = "xl/_rels/workbook.xml.rels"
-        if rels_name in members:
-            rels = members[rels_name].decode("utf-8")
-            rels = re.sub(r'<Relationship\b[^>]*Type="[^"]*calcChain[^"]*"[^>]*/>', "", rels)
-            members[rels_name] = rels.encode("utf-8")
-        ct_name = "[Content_Types].xml"
-        if ct_name in members:
-            ct = members[ct_name].decode("utf-8")
-            ct = re.sub(r'<Override\b[^>]*PartName="/xl/calcChain.xml"[^>]*/>', "", ct)
-            members[ct_name] = ct.encode("utf-8")
+    # 公式单元格位置没有变化，只是引用范围延长，因此保留原计算链。
+    # 已更新公式的旧缓存会被清除，Excel/WPS 只需计算受影响的公式，不能把全表重算转嫁给打开文件的电脑。
+    calc_chain_preserved = "xl/calcChain.xml" in members
     wb_name = "xl/workbook.xml"
     if wb_name in members:
         wb = members[wb_name].decode("utf-8")
-        if "<calcPr" in wb:
-            wb = re.sub(r'<calcPr\b([^>]*)/>', lambda m: '<calcPr' + re.sub(r'\s+(?:fullCalcOnLoad|forceFullCalc|calcMode)="[^"]*"', '', m.group(1)) + ' fullCalcOnLoad="1" forceFullCalc="1" calcMode="auto"/>', wb, count=1)
-        else:
-            wb = wb.replace("</workbook>", '<calcPr fullCalcOnLoad="1" forceFullCalc="1" calcMode="auto"/></workbook>', 1)
-        members[wb_name] = wb.encode("utf-8")
+        members[wb_name] = set_lightweight_calculation_flags(wb).encode("utf-8")
 
     output_path = Path(output_path)
-    temp_path = output_path.with_suffix(output_path.suffix + ".tmp")
-    if temp_path.exists():
-        temp_path.unlink()
-    with zipfile.ZipFile(temp_path, "w", compression=zipfile.ZIP_DEFLATED) as zout:
-        for name, data in members.items():
-            zout.writestr(name, data)
-    temp_path.replace(output_path)
+    working_path = output_path.with_name(output_path.stem + ".working.tmp.xlsx")
+    temp_path = output_path.with_name(output_path.stem + ".tmp.xlsx")
+    for candidate in (working_path, temp_path):
+        if candidate.exists():
+            candidate.unlink()
+    portable_audit = None
+    try:
+        with zipfile.ZipFile(working_path, "w", compression=zipfile.ZIP_DEFLATED) as zout:
+            for name, data in members.items():
+                zout.writestr(name, data)
+        has_external_links = any(
+            name.startswith("xl/externalLinks/") for name in members
+        )
+        if has_external_links:
+            portable_audit = create_portable_copy(working_path, temp_path)
+        else:
+            working_path.replace(temp_path)
+        lightweight = inspect_lightweight_output(temp_path)
+        temp_path.replace(output_path)
+    finally:
+        for candidate in (working_path, temp_path):
+            if candidate.exists():
+                candidate.unlink()
     audit = {
         "project": str(project_path), "ledger_original": str(ledger_path), "output": str(output_path),
         "source_sheet": project["name"], "target_sheet": ledger["name"], "source_header_row": project["header_row"],
         "source_data_rows": len(append_rows) + len(skipped_existing), "target_original_last_row": old_last_row,
         "appended_rows": len(append_rows), "skipped_existing_rows": len(skipped_existing),
         "target_new_last_row": new_last_row, "target_dimension_updated": bool(dimension_count),
-        "formula_updates": formula_updates, "formula_members": formula_members,
-        "calc_chain_removed": calc_chain_removed, "invalid_numeric": invalid_numeric,
+        "formula_updates": formula_updates, "formula_caches_cleared": formula_caches_cleared,
+        "formula_members": formula_members, "calc_chain_preserved": calc_chain_preserved,
+        "external_formulas_frozen": portable_audit.frozen_external_formulas if portable_audit else 0,
+        "lightweight": lightweight, "invalid_numeric": invalid_numeric,
         "mapping": {"销售人员": "销售", "客户名称": "客户", "单号": "(空白)", "新智云单号": "SO", "翻译类型": "业务类别", "文件名": "订单名称", "项目下单日期": "下单日期", "项目交付日期": "整单交付日期", "字数统计": "下单数量", "价格": "单价", "应收金额": "交付额/本币", "实收金额": "SOD", "项目经理": "项目经理"}
     }
     Path(audit_path).write_text(json.dumps(audit, ensure_ascii=False, indent=2), encoding="utf-8")

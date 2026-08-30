@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import type { TaskReminderBoard } from '@/features/platform-api/types';
 import { actionableReminderDates, taskReminderWorkflowHref } from '@/features/task-reminders/links';
 import {
@@ -15,6 +16,8 @@ import {
 } from '@/features/task-reminders/task-reminder-board-presentation';
 import { formatDate } from '@/lib/format';
 import { cn } from '@/lib/utils';
+
+const MAX_VISIBLE_REMINDER_DATES = 7;
 
 function responseMessage(response: Response): Promise<string> {
   return response
@@ -33,6 +36,7 @@ export function TaskReminderBoardView({ data }: { data: TaskReminderBoard }) {
   const [error, setError] = React.useState('');
   const [manualDate, setManualDate] = React.useState('');
   const failures = data.check_failures ?? [];
+  const resolvedCount = data.resolved_count ?? 0;
   const visibility = taskReminderBoardVisibility(data.reminders ?? [], failures);
   const dateBounds = React.useMemo(() => manualCheckDateBounds(), []);
   const groups = React.useMemo(() => {
@@ -84,12 +88,42 @@ export function TaskReminderBoardView({ data }: { data: TaskReminderBoard }) {
     }
   }
 
+  async function clearResolved() {
+    setRetrying('cleanup');
+    setError('');
+    try {
+      const response = await fetch('/api/platform/task-reminders', { method: 'DELETE' });
+      if (!response.ok) throw new Error(await responseMessage(response));
+      router.refresh();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '已处理成功提醒清理失败。');
+    } finally {
+      setRetrying('');
+    }
+  }
+
   return (
     <div className='space-y-4'>
       {error ? (
         <p role='alert' className='text-sm text-destructive'>
           {error}
         </p>
+      ) : null}
+      {resolvedCount > 0 ? (
+        <div className='flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50/50 px-4 py-3 dark:border-emerald-900 dark:bg-emerald-950/20'>
+          <div>
+            <p className='text-sm font-medium'>已处理成功 {resolvedCount} 个日期</p>
+            <p className='text-sm text-muted-foreground'>成功日期已从待处理列表移除。</p>
+          </div>
+          <Button
+            size='sm'
+            variant='outline'
+            disabled={retrying === 'cleanup'}
+            onClick={() => void clearResolved()}
+          >
+            {retrying === 'cleanup' ? '正在清理' : '清理已处理成功'}
+          </Button>
+        </div>
       ) : null}
       {visibility.showIdle ? (
         <div className='flex flex-wrap items-center justify-between gap-2 rounded-lg border px-4 py-3'>
@@ -128,50 +162,65 @@ export function TaskReminderBoardView({ data }: { data: TaskReminderBoard }) {
                 </div>
               </CardHeader>
               <CardContent className='space-y-2'>
-                {reminders.map((reminder) => (
+                <ScrollArea
+                  className={
+                    reminders.length > MAX_VISIBLE_REMINDER_DATES ? 'h-[33rem] pr-3' : 'pr-3'
+                  }
+                >
                   <div
-                    key={reminder.id}
-                    className='flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3'
+                    role='list'
+                    aria-label={`${first.skill_name}待处理日期`}
+                    className='space-y-2'
                   >
-                    <div>
-                      <p className='font-medium'>{reminder.business_date}</p>
-                      <p className='text-sm text-muted-foreground'>
-                        {reminder.record_count} 条回款 · 最近检查{' '}
-                        {formatDate(reminder.last_checked_at, {
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })}
-                      </p>
-                    </div>
-                    <div className='flex items-center gap-2'>
-                      {reminder.reopened ? <Badge variant='destructive'>数据有变化</Badge> : null}
-                      {reminder.state === 'in_progress' && reminder.workflow_id ? (
-                        <Link
-                          href={`/dashboard/workflows/${encodeURIComponent(reminder.workflow_id)}`}
-                          className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                        >
-                          查看任务
-                        </Link>
-                      ) : (
-                        <Link
-                          href={taskReminderWorkflowHref(reminder.skill_id, [
-                            reminder.business_date
-                          ])}
-                          className={cn(buttonVariants({ size: 'sm' }))}
-                        >
-                          去做任务
-                        </Link>
-                      )}
-                    </div>
+                    {reminders.map((reminder) => (
+                      <div
+                        key={reminder.id}
+                        role='listitem'
+                        className='flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3'
+                      >
+                        <div>
+                          <p className='font-medium'>{reminder.business_date}</p>
+                          <p className='text-sm text-muted-foreground'>
+                            {reminder.record_count} 条回款 · 最近检查{' '}
+                            {formatDate(reminder.last_checked_at, {
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </p>
+                        </div>
+                        <div className='flex items-center gap-2'>
+                          {reminder.reopened ? (
+                            <Badge variant='destructive'>数据有变化</Badge>
+                          ) : null}
+                          {reminder.state === 'in_progress' && reminder.workflow_id ? (
+                            <Link
+                              href={`/dashboard/workflows/${encodeURIComponent(reminder.workflow_id)}`}
+                              className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                            >
+                              查看任务
+                            </Link>
+                          ) : (
+                            <Link
+                              href={taskReminderWorkflowHref(reminder.skill_id, [
+                                reminder.business_date
+                              ])}
+                              className={cn(buttonVariants({ size: 'sm' }))}
+                            >
+                              去做任务
+                            </Link>
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                </ScrollArea>
               </CardContent>
             </Card>
           );
         })}
       {visibility.showFailures &&
         failures.map((failure) => (
-          <Card key={failure.id} className='border-destructive/40'>
+          <Card key={failure.id} role='alert' aria-live='polite' className='border-destructive/40'>
             <CardHeader>
               <h2 className='text-base leading-snug font-medium'>任务检查失败</h2>
               <CardDescription>
@@ -180,9 +229,12 @@ export function TaskReminderBoardView({ data }: { data: TaskReminderBoard }) {
               </CardDescription>
             </CardHeader>
             <CardContent className='flex flex-wrap items-center justify-between gap-3'>
-              <p className='text-sm text-muted-foreground'>
-                已尝试 {failure.attempt_count} 次。检查未完成，可稍后重试。
-              </p>
+              <div className='space-y-1 text-sm'>
+                <p className='text-destructive'>
+                  {failure.error_message || '检查未完成，可稍后重试。'}
+                </p>
+                <p className='text-muted-foreground'>已尝试 {failure.attempt_count} 次。</p>
+              </div>
               <Button
                 size='sm'
                 variant='outline'

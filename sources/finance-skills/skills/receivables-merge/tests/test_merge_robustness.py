@@ -19,7 +19,13 @@ PY = sys.executable
 
 def run(args):
     """跑 merge.py，返回 (returncode, 合并的stdout+stderr)。"""
-    r = subprocess.run([PY, MERGE] + args, capture_output=True, text=True)
+    r = subprocess.run(
+        [PY, MERGE] + args,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
     return r.returncode, r.stdout + r.stderr
 
 

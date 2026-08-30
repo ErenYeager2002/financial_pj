@@ -63,7 +63,7 @@ const experiences: SkillExecutionExperience[] = [
     reviewItems: ['不会执行财务写入', '敏感配置只返回是否已配置'],
     workerChecks: ['服务和依赖状态由诊断接口实时检查'],
     resultHighlights: ['检查状态', '修复建议'],
-    supportHref: '/dashboard/overview'
+    supportHref: '/dashboard/overview#environment-health'
   },
   {
     key: 'support-task-clarifier',

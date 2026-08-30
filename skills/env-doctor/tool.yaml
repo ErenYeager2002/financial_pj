@@ -8,6 +8,15 @@ description: 检查 Python、Office、LibreOffice、依赖和目录条件的 Age
 tags:
 - 环境诊断
 - Agent
+ui:
+  employee_name: 运行环境诊断
+  short_description: 查看平台服务、Skill 注册和执行容量的非敏感健康摘要。
+  categories:
+  - 基础能力
+  estimated_minutes: 1
+  output_summary: 平台健康状态和诊断摘要
+  action_label: 检查环境
+  popular: false
 file_inputs: []
 input_schema:
   type: object

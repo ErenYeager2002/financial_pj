@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -39,6 +40,26 @@ DERIVED = ["差异"]
 VALID_JIEZHANG = {"是", "否"}
 VALID_WAY = {"汇", "冲预收", "支", "现"}
 BUSINESS_SETTLEMENT_TOL = float(amount_policy.BUSINESS_SETTLEMENT_TOLERANCE)
+
+_SOD_SEPARATOR_RE = re.compile(r"[、,，;；/／|｜\s]+")
+
+
+def _sod_tokens(value) -> list[str]:
+    text = str(value or "").strip()
+    if not text:
+        return []
+    return [token for token in _SOD_SEPARATOR_RE.split(text) if token]
+
+
+def _sod_matches(actual, expected) -> bool:
+    """单个计划 SOD 可命中表内合并 SOD；多 SOD 目标仍要求完整集合。"""
+    expected_tokens = set(_sod_tokens(expected))
+    if not expected_tokens:
+        return True
+    actual_tokens = set(_sod_tokens(actual))
+    if len(expected_tokens) == 1:
+        return next(iter(expected_tokens)) in actual_tokens
+    return actual_tokens == expected_tokens
 
 
 def _whole_parent_gate_error(audit: dict) -> str:
@@ -113,10 +134,24 @@ def duplicate_audit_error(plan: dict, item: Optional[dict] = None) -> str:
         warnings = set(current.get("warning_codes") or [])
         if status == "unresolved":
             return f"父回款 {ar} 的父AR审计未解决，却进入了auto"
+        inherited_by_so = audit.get("inherited_unresolved_by_so") or {}
+        so = str(current.get("so") or "").strip()
+        if so and so in inherited_by_so:
+            sources = ",".join(
+                str(value or "").strip()
+                for value in (inherited_by_so.get(so) or [])
+                if str(value or "").strip()
+            )
+            return (
+                f"父回款 {ar} 的 SO {so} 继承历史父AR审计未解决"
+                + (f"（来源={sources}）" if sources else "")
+                + "，禁止进入auto"
+            )
         gate_error = _whole_parent_gate_error(audit)
         if gate_error:
             return f"父回款 {ar} 未通过父AR金额守恒检查：{gate_error}"
-        if status == "recovered":
+        has_sod_duplicate_recovery = bool(audit.get("sod_duplicate_groups"))
+        if status == "recovered" or has_sod_duplicate_recovery:
             if "W_SYSTEM_DUPLICATE_WRITEOFF_COLLAPSED" not in warnings:
                 return f"父回款 {ar} 已做系统重复纠正，但auto缺少警告码"
         if current.get("duplicate_writeoff_audit") != audit:
@@ -206,7 +241,7 @@ def _matches_identity(row: Optional[dict], so: str, sod: str) -> bool:
         return False
     if so and row.get("SO") != so:
         return False
-    if sod and row.get("SOD") != sod:
+    if sod and not _sod_matches(row.get("SOD"), sod):
         return False
     return bool(so or sod)
 
@@ -217,7 +252,7 @@ def _matches_planned_fields(row: dict, expected: dict) -> bool:
         if _norm(row.get(key)) != _norm(expected.get(key)):
             return False
     expected_sod = str(expected.get("实收SOD") or "").strip()
-    if expected_sod and row.get("SOD") != expected_sod:
+    if expected_sod and not _sod_matches(row.get("SOD"), expected_sod):
         return False
     return True
 
@@ -230,7 +265,7 @@ def settled_without_open_row(item: dict, rows: Dict[int, dict]) -> Optional[int]
         return None
     candidates = [
         row_no for row_no, row in rows.items()
-        if row.get("SO") == so and (not sod or row.get("SOD") == sod)
+        if row.get("SO") == so and (not sod or _sod_matches(row.get("SOD"), sod))
     ]
     if not candidates:
         return None
@@ -297,8 +332,8 @@ def resolve_same_so_multi_sod_row(
     def identity(row: Optional[dict]) -> bool:
         if row is None or (so and row.get("SO") != so):
             return False
-        sod = str(row.get("SOD") or "").strip()
-        return not sod or sod in member_sods or sod == combined
+        row_sods = set(_sod_tokens(row.get("SOD")))
+        return not row_sods or row_sods <= member_sods
 
     if ref and identity(rows.get(ref)):
         return ref, ""
@@ -597,7 +632,7 @@ def _check_same_so_multi_sod_aggregate(
     if row.get("SO") not in ("", so):
         return {"verdict": "conflict", "reason": "同 SO 多 SOD 合并目标行的 SO 已变化"}
     row_sod = str(row.get("SOD") or "").strip()
-    if row_sod and row_sod not in member_sods and row_sod != combined:
+    if row_sod and not set(_sod_tokens(row_sod)) <= member_sods:
         return {"verdict": "conflict", "reason": "目标行 SOD 不属于本次合并组"}
     target = op.get("target_five_cols") or {}
     receivable = common.to_number(row.get("应收金额"))
@@ -767,9 +802,64 @@ def resolve_split_chain_row(item: dict, rows: Dict[int, dict]) -> tuple[Optional
 
 def _check_so_accrual_backfills(item: dict, rows: Dict[int, dict]) -> dict:
     """逐行复核 SO 全 SOD 结清后要补填的历史计提。"""
+    sources = list(item.get("so_accrual_backfills") or [])
+    audit = item.get("so_accrual_audit") or {}
+    all_sods = {
+        str(value or "").strip()
+        for value in (audit.get("all_sods") or [])
+        if str(value or "").strip()
+    }
+    current_batch_sods = {
+        str(value or "").strip()
+        for value in (
+            audit.get("current_batch_sods") or []
+        )
+        if str(value or "").strip()
+    }
+    audit_so = str(item.get("so") or "").strip()
+    audited_so = str(audit.get("so") or "").strip()
+    if (
+        not audit_so
+        or not audited_so
+        or not all_sods
+        or not current_batch_sods
+        or not current_batch_sods.issubset(all_sods)
+    ):
+        reason = "历史计提缺少完整 SOD 审计证据，禁止补填或覆盖"
+        checked_sources = [dict(source) for source in sources]
+        if checked_sources:
+            checked_sources[0]["_check"] = {"verdict": "conflict", "reason": reason}
+        item["so_accrual_backfills"] = checked_sources
+        return {"verdict": "conflict", "reason": reason}
+    historical_sods = all_sods - current_batch_sods
+    if audited_so != audit_so or any(
+        str(source.get("so") or "").strip() != audit_so
+        or str(source.get("sod") or "").strip() not in historical_sods
+        for source in sources
+    ):
+        reason = "历史计提 SO 审计身份或补填 SOD 不一致，禁止补填或覆盖"
+        checked_sources = [dict(source) for source in sources]
+        if checked_sources:
+            checked_sources[0]["_check"] = {"verdict": "conflict", "reason": reason}
+        item["so_accrual_backfills"] = checked_sources
+        return {"verdict": "conflict", "reason": reason}
+    for audit_sod in sorted(all_sods - current_batch_sods):
+        audit_rows = [
+            row for row in rows.values()
+            if row.get("SO") == audit_so and _sod_matches(row.get("SOD"), audit_sod)
+        ]
+        if not audit_rows or any(
+            str(row.get("是否结账") or "").strip() != "是" for row in audit_rows
+        ):
+            reason = f"SO 的全部 SOD 写前复核失败：{audit_so}/{audit_sod} 未全部结账，禁止补填或覆盖历史计提"
+            checked_sources = [dict(source) for source in sources]
+            if checked_sources:
+                checked_sources[0]["_check"] = {"verdict": "conflict", "reason": reason}
+            item["so_accrual_backfills"] = checked_sources
+            return {"verdict": "conflict", "reason": reason}
     checked: List[dict] = []
     write_count = 0
-    for source in item.get("so_accrual_backfills") or []:
+    for source in sources:
         entry = dict(source)
         ref = entry.get("ledger_row_ref")
         so = str(entry.get("so") or "").strip()
@@ -790,7 +880,7 @@ def _check_so_accrual_backfills(item: dict, rows: Dict[int, dict]) -> dict:
         else:
             same_business_rows = [
                 row_no for row_no, current in rows.items()
-                if current.get("SO") == so and current.get("SOD") == sod
+                if current.get("SO") == so and _sod_matches(current.get("SOD"), sod)
             ]
             if not same_business_rows or any(
                 str(rows[row_no].get("是否结账") or "").strip() != "是"
@@ -806,14 +896,25 @@ def _check_so_accrual_backfills(item: dict, rows: Dict[int, dict]) -> dict:
                     f"历史计提必须写在 {so}/{sod} 最后一条已结清业务行 {max(same_business_rows)}，计划却是 {ref}",
                 )
             else:
+                overwrite_existing = bool(
+                    item.get("existing_value_policy") == "overwrite_with_classification"
+                    and so
+                    and sod
+                    and row.get("SO") == so
+                    and _sod_matches(row.get("SOD"), sod)
+                )
                 current_accrual = common.to_number(row.get("计提"))
-                if current_accrual is not None and abs(float(current_accrual) - float(accrual)) > 0.011:
+                accrual_mismatch = (
+                    current_accrual is not None
+                    and abs(float(current_accrual) - float(accrual)) > 0.011
+                )
+                if accrual_mismatch and not overwrite_existing:
                     verdict, reason = (
                         "conflict",
                         f"第 {ref} 行计提已有值 {current_accrual}，与智云交付额 {float(accrual):.2f} 不一致，禁止覆盖",
                     )
                 else:
-                    needs_write = current_accrual is None
+                    needs_write = current_accrual is None or accrual_mismatch
                     difference = common.to_number(entry.get("difference"))
                     if entry.get("difference") is not None:
                         if difference is None:
@@ -822,20 +923,21 @@ def _check_so_accrual_backfills(item: dict, rows: Dict[int, dict]) -> dict:
                             verdict, reason = "conflict", f"第 {ref} 行需要写差异，但盈亏表没有差异列"
                         else:
                             current_difference = common.to_number(row.get("差异"))
-                            if (
+                            difference_mismatch = (
                                 current_difference is not None
                                 and abs(float(current_difference) - float(difference)) > 0.011
-                            ):
+                            )
+                            if difference_mismatch and not overwrite_existing:
                                 verdict, reason = (
                                     "conflict",
                                     f"第 {ref} 行差异已有值 {current_difference}，与计划 {float(difference):.2f} 不一致，禁止覆盖",
                                 )
-                            elif current_difference is None:
+                            elif current_difference is None or difference_mismatch:
                                 needs_write = True
                     if verdict != "conflict":
                         verdict = "write" if needs_write else "skip"
                         reason = (
-                            "SO 下全部 SOD 已结清，补填历史计提"
+                            "SO 下全部 SOD 已结清，按本次核销判定覆盖或补填历史计提"
                             if needs_write else "历史计提已与智云交付额一致"
                         )
         entry["_check"] = {"verdict": verdict, "reason": reason}
@@ -878,7 +980,7 @@ def check_one(item: dict, rows: Dict[int, dict]) -> dict:
         return {"verdict": "conflict", "reason": f"第 {ref} 行在表里不存在了（表被删过行？）"}
 
     # ① 行号还指着同一单吗——她插过行的话这里必然对不上
-    if not is_multi_sod_aggregate and sod and row["SOD"] and row["SOD"] != sod:
+    if not is_multi_sod_aggregate and sod and row["SOD"] and not _sod_matches(row["SOD"], sod):
         return {
             "verdict": "conflict",
             "reason": f"第 {ref} 行现在是 {row['SOD']}，不是计划里的 {sod}（表在判定之后被插过行）",
@@ -1069,7 +1171,7 @@ def check_one(item: dict, rows: Dict[int, dict]) -> dict:
             _norm(row.get(key)) == _norm(five.get(key)) for key in stable_keys
         )
         planned_sod = str(five.get("实收SOD") or sod or "").strip()
-        if stable_match and (not planned_sod or row.get("SOD") == planned_sod):
+        if stable_match and (not planned_sod or _sod_matches(row.get("SOD"), planned_sod)):
             return {
                 "verdict": "write",
                 "reason": "最终结清证据一致，仅补空白计提与业务差异",
@@ -1090,12 +1192,23 @@ def check_one(item: dict, rows: Dict[int, dict]) -> dict:
     #      把这种整个跳过了，结果「表里计提=1000、本次算的是留空」会被判成"已填过且一致·跳过"，
     #      静默放过。而「计提到底该不该填」恰恰是明妹口径里最容易出错的一条
     #      （回款明细合计 = 交付额才可填计提），漏报等于把最该她看的那行藏起来。
+    overwrite_existing = bool(
+        item.get("existing_value_policy") == "overwrite_with_classification"
+        and so
+        and sod
+        and row.get("SO") == so
+        and _sod_matches(row.get("SOD"), sod)
+    )
     diff: List[str] = []
+    preserved_existing: List[str] = []
     for k in FIVE:
         want, got = five.get(k), _norm(row.get(k))
         if want is None:
             if got not in ("", "None"):
-                diff.append(f"{k}: 表里={got!r} 本次算的是**留空**")
+                if overwrite_existing:
+                    preserved_existing.append(k)
+                else:
+                    diff.append(f"{k}: 表里={got!r} 本次算的是**留空**")
             continue
         if got != _norm(want):
             diff.append(f"{k}: 表里={got!r} 计划={_norm(want)!r}")
@@ -1109,6 +1222,17 @@ def check_one(item: dict, rows: Dict[int, dict]) -> dict:
         elif got != _norm(want):
             diff.append(f"{k}: 表里={got!r} 计划={_norm(want)!r}")
     if diff:
+        if overwrite_existing:
+            preserved = (
+                "；计划留空字段保留原值：" + "、".join(preserved_existing)
+                if preserved_existing else ""
+            )
+            return {
+                "verdict": "write",
+                "reason": "同一订单行已有值与本次结果不一致，按应收核销判定覆盖 → "
+                + "；".join(diff)
+                + preserved,
+            }
         return {
             "verdict": "conflict",
             "reason": "这行已经填过，且和本次算的不一样 → " + "；".join(diff),
@@ -1119,6 +1243,12 @@ def check_one(item: dict, rows: Dict[int, dict]) -> dict:
             "reason": "五项回款字段已一致，仅补业务值差异公式：" + "、".join(derived_missing),
         }
     if not diff:
+        if preserved_existing:
+            return {
+                "verdict": "skip",
+                "reason": "计划留空字段保留原值，其余字段已与本次一致（幂等跳过）："
+                + "、".join(preserved_existing),
+            }
         return {"verdict": "skip", "reason": "已经填过且与本次一致（幂等跳过）"}
     raise AssertionError("不可达")
 

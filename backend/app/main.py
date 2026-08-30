@@ -99,6 +99,7 @@ from .schemas import (
     WorkflowCreate,
     WorkflowFetchedDataRead,
     WorkflowFetchedDataSupplement,
+    WorkflowFetchedSnapshotRead,
     WorkflowFilesUpdate,
     WorkflowMaterialSetRead,
     WorkflowMessageCreate,
@@ -113,6 +114,7 @@ from .service_credential_service import (
     save_service_credential,
 )
 from .settings import settings
+from .skill_execution_experiences import SUPPORTING_SKILL_IDS
 from .storage import delete_upload, save_upload
 from .task_center_service import query_task_center
 from .workbench_service import get_workbench
@@ -133,6 +135,7 @@ from .workflow_service import (
     create_workflow,
     get_workflow_batch_or_404,
     get_workflow_or_404,
+    list_fetched_snapshot_options,
     list_workflow_batches,
     list_workflows,
     read_batch_fetched_data,
@@ -312,6 +315,16 @@ def list_catalog_skills(
     if not user.is_admin:
         allowed = allowed_skill_ids(db, user)
         skills = [item for item in skills if item.manifest.id in allowed]
+    visible_ids = {item.manifest.id for item in skills}
+    for skill_id in sorted(SUPPORTING_SKILL_IDS):
+        supporting = registry.get(skill_id, include_unpublished=True)
+        if (
+            supporting
+            and supporting.manifest.ui is not None
+            and supporting.manifest.id not in visible_ids
+        ):
+            skills.append(supporting)
+    skills.sort(key=lambda item: (item.manifest.category, item.manifest.name))
     return [SkillDetail.model_validate(item.employee_dict(include_schema=True)) for item in skills]
 
 
@@ -321,10 +334,17 @@ def get_catalog_skill(
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ) -> SkillDetail:
-    skill = registry.get(skill_id, include_unpublished=False)
+    supporting_entry = skill_id in SUPPORTING_SKILL_IDS
+    skill = registry.get(skill_id, include_unpublished=supporting_entry)
     if not skill:
         raise HTTPException(status_code=404, detail="Skill 不存在。")
-    if not user.is_admin and skill_id not in allowed_skill_ids(db, user):
+    if skill.manifest.ui is None:
+        raise HTTPException(status_code=404, detail="Skill 不存在。")
+    if (
+        not supporting_entry
+        and not user.is_admin
+        and skill_id not in allowed_skill_ids(db, user)
+    ):
         raise HTTPException(status_code=404, detail="Skill 不存在。")
     return SkillDetail.model_validate(skill.employee_dict(include_schema=True))
 
@@ -705,9 +725,11 @@ def get_workflow_batch_fetched_data(
 ) -> WorkflowFetchedDataRead:
     batch = get_workflow_batch_or_404(db, batch_id, user)
     assert_skill_permission(db, user, batch.skill_id)
-    return read_batch_fetched_data(
-        batch, reconciliation_date, dataset, offset, limit, query, issues_only
+    result = read_batch_fetched_data(
+        batch, reconciliation_date, dataset, offset, limit, query, issues_only, db=db
     )
+    db.commit()
+    return result
 
 
 @app.post(
@@ -794,6 +816,18 @@ def get_reusable_workflow_files(
     )
 
 
+@app.get(
+    "/api/workflows/fetched-snapshots",
+    response_model=list[WorkflowFetchedSnapshotRead],
+)
+def get_fetched_snapshot_options(
+    skill_id: str,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> list[WorkflowFetchedSnapshotRead]:
+    return list_fetched_snapshot_options(db, skill_id, user)
+
+
 @app.get("/api/workflows/material-sets", response_model=list[WorkflowMaterialSetRead])
 def get_workflow_material_sets(
     skill_id: str,
@@ -865,9 +899,11 @@ def get_workflow_fetched_data(
 ) -> WorkflowFetchedDataRead:
     workflow = get_workflow_or_404(db, workflow_id, user)
     assert_skill_permission(db, user, workflow.skill_id)
-    return read_workflow_fetched_data(
-        workflow, dataset, offset, limit, query=query, issues_only=issues_only
+    result = read_workflow_fetched_data(
+        workflow, dataset, offset, limit, query=query, issues_only=issues_only, db=db
     )
+    db.commit()
+    return result
 
 
 @app.post("/api/workflows/{workflow_id}/fetched-data/confirm", response_model=WorkflowRead)

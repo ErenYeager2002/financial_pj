@@ -9,6 +9,7 @@ from app.authorization import replace_user_permissions
 from app.database import SessionLocal
 from app.main import app
 from app.models import AuditEvent, RunRecord
+from app.skill_execution_experiences import SUPPORTING_SKILL_IDS
 
 
 def _published_standard_skill(client: TestClient) -> dict[str, object]:
@@ -45,6 +46,7 @@ def test_employee_skill_dto_excludes_runtime_internals() -> None:
         assert response.status_code == 200
         skills = response.json()
         assert skills
+        skills_by_id = {skill["id"]: skill for skill in skills}
         for skill in skills:
             assert forbidden.isdisjoint(skill)
             assert skill["version"]
@@ -52,7 +54,8 @@ def test_employee_skill_dto_excludes_runtime_internals() -> None:
             assert skill["categories"]
             assert skill["estimated_minutes"] >= 1
             assert skill["action_label"]
-            assert skill["risk"]["requires_confirmation"] is True
+            assert isinstance(skill["risk"]["requires_confirmation"], bool)
+        assert skills_by_id["ar-hexiao-daily"]["risk"]["requires_confirmation"] is True
 
 
 def test_admin_skill_dto_keeps_runtime_internals() -> None:
@@ -84,6 +87,29 @@ def test_catalog_skill_dto_is_employee_safe_for_admin() -> None:
         detail = admin.get(f"/api/catalog/skills/{skills[0]['id']}")
         assert detail.status_code == 200
         assert forbidden.isdisjoint(detail.json())
+
+
+def test_catalog_exposes_supporting_entries_without_making_them_runnable() -> None:
+    with auth_client(username="supporting-catalog-user", grant_skills=False) as client:
+        response = client.get("/api/catalog/skills")
+        assert response.status_code == 200
+        support = {item["id"]: item for item in response.json()}
+        assert set(support) == set(SUPPORTING_SKILL_IDS)
+        assert all(item["status"] == "disabled" for item in support.values())
+
+        for skill_id in SUPPORTING_SKILL_IDS:
+            detail = client.get(f"/api/catalog/skills/{skill_id}")
+            assert detail.status_code == 200
+            denied = client.post(
+                "/api/runs",
+                json={
+                    "skill_id": skill_id,
+                    "message": "support surface only",
+                    "parameters": {},
+                    "files": {},
+                },
+            )
+            assert denied.status_code == 404
 
 
 def test_employee_has_no_skills_without_explicit_permission() -> None:

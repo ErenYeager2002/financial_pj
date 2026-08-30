@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""把连续多日的日期级报表整理为一份任务范围版静态 Excel。
+"""把多个已选核销日的日期级报表整理为一份任务范围版静态 Excel。
 
 多日任务的日期级 Excel 只是逐日校验和写入时的临时产物。整合范围版成功
-生成后，自动删除本次日期范围内的日期级同类报告，只保留范围版交付文件。
+生成后，自动删除本次已选日期的日期级同类报告，只保留任务版交付文件。
 """
 
 from __future__ import annotations
@@ -41,6 +41,28 @@ def _dates(start: str, end: str):
     while current <= finish:
         yield current
         current += dt.timedelta(days=1)
+
+
+def _selected_days(start: str, end: str, selected_dates=None) -> list[dt.date]:
+    if selected_dates:
+        days = sorted({dt.date.fromisoformat(value) for value in selected_dates})
+        if start and days[0] < dt.date.fromisoformat(start):
+            raise ValueError("已选日期不能早于开始日期")
+        if end and days[-1] > dt.date.fromisoformat(end):
+            raise ValueError("已选日期不能晚于结束日期")
+        return days
+    if not start or not end:
+        raise ValueError("未提供已选日期时必须同时提供开始日期和结束日期")
+    return list(_dates(start, end))
+
+
+def _task_report_name(days: list[dt.date]) -> str:
+    start = days[0].strftime("%Y%m%d")
+    end = days[-1].strftime("%Y%m%d")
+    consecutive = len(days) == (days[-1] - days[0]).days + 1
+    if consecutive:
+        return f"核销日清_{start}_{end}.xlsx"
+    return f"核销日清_已选{len(days)}日_{start}_{end}.xlsx"
 
 
 def _copy_sheet(source, target) -> None:
@@ -160,12 +182,18 @@ def _append_aggregated_sheet(
     return header_written
 
 
-def build(workspace: Path, start: str, end: str) -> list[Path]:
+def build(
+    workspace: Path,
+    start: str,
+    end: str,
+    *,
+    selected_dates=None,
+) -> list[Path]:
     workspace = Path(workspace)
     if not (workspace / "04_产出").is_dir():
         workspace = common.resolve_workspace(workspace)
     out_dir = workspace / "04_产出"
-    days = list(_dates(start, end))
+    days = _selected_days(start, end, selected_dates)
     empty_days = {day for day in days if _is_empty_fetched_day(workspace, day)}
     outputs = []
     daily_sources: set[Path] = set()
@@ -233,7 +261,7 @@ def build(workspace: Path, start: str, end: str) -> list[Path]:
             sheet.freeze_panes = "B2"
             sheet.auto_filter.ref = sheet.dimensions
             sheet.column_dimensions["A"].width = 14
-    target = out_dir / f"核销日清_{start.replace('-', '')}_{end.replace('-', '')}.xlsx"
+    target = out_dir / _task_report_name(days)
     wb.save(target)
     workbook_finalize.finalize_static_report(target)
     outputs.append(target)
@@ -250,14 +278,20 @@ def build(workspace: Path, start: str, end: str) -> list[Path]:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
-        description="生成连续多日任务的一份整合核销日清，并移除日期级报告"
+        description="生成多个已选核销日的一份整合核销日清，并移除已选日期的日报"
     )
     parser.add_argument("--workspace", default=str(common.WORK))
-    parser.add_argument("--date-from", required=True)
-    parser.add_argument("--date-to", required=True)
+    parser.add_argument("--date-from", default="")
+    parser.add_argument("--date-to", default="")
+    parser.add_argument("--date", action="append", default=[], help="明确指定一个核销日，可重复")
     args = parser.parse_args(argv)
     try:
-        outputs = build(Path(args.workspace), args.date_from, args.date_to)
+        outputs = build(
+            Path(args.workspace),
+            args.date_from,
+            args.date_to,
+            selected_dates=args.date,
+        )
     except Exception as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2

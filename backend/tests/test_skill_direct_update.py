@@ -47,14 +47,24 @@ def test_direct_update_pulls_package_replaces_skill_and_enables_it(monkeypatch) 
             with SessionLocal() as db:
                 actor_record = get_user_by_username(db, "direct-update-admin")
                 assert actor_record is not None
-                db.add(
-                    SkillAvailability(
+                availability = db.get(SkillAvailability, skill_id)
+                previous_availability = None
+                if availability is None:
+                    availability = SkillAvailability(
                         skill_id=skill_id,
-                        state="disabled",
-                        reason="测试前已禁用",
-                        changed_by=actor_record.id,
                     )
-                )
+                    db.add(availability)
+                else:
+                    previous_availability = (
+                        availability.state,
+                        availability.generation,
+                        availability.reason,
+                        availability.changed_by,
+                        availability.changed_at,
+                    )
+                availability.state = "disabled"
+                availability.reason = "测试前已禁用"
+                availability.changed_by = actor_record.id
                 binding_id = str(uuid.uuid4())
                 db.add(
                     SkillSourceBinding(
@@ -129,7 +139,16 @@ def test_direct_update_pulls_package_replaces_skill_and_enables_it(monkeypatch) 
                 release = db.get(SkillRelease, payload["id"])
                 assert release is not None
                 assert release.state == "published"
-                db.delete(availability)
+                if previous_availability is None:
+                    db.delete(availability)
+                else:
+                    (
+                        availability.state,
+                        availability.generation,
+                        availability.reason,
+                        availability.changed_by,
+                        availability.changed_at,
+                    ) = previous_availability
                 db.delete(binding)
                 db.delete(release)
                 db.commit()

@@ -8,6 +8,15 @@ description: 通过对话补齐输入、口径、输出和风险边界的 Agent 
 tags:
 - Agent
 - 需求澄清
+ui:
+  employee_name: 财务任务澄清器
+  short_description: 通过 AI 助手补齐目标、文件和限制，并生成待核对的任务草稿。
+  categories:
+  - 基础能力
+  estimated_minutes: 3
+  output_summary: 可核对的结构化任务草稿
+  action_label: 打开 AI 助手
+  popular: false
 file_inputs: []
 input_schema:
   type: object

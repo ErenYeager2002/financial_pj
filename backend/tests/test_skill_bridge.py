@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 import yaml
+from openpyxl import Workbook, load_workbook
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -128,6 +129,136 @@ def test_withholding_report_rename_fails_without_recognized_pdf(tmp_path: Path) 
     assert not result_path.exists()
     assert not list(output_dir.rglob("*.zip"))
     assert not list(output_dir.rglob("*.csv"))
+
+
+def test_project_detail_bridge_appends_to_a_copy_and_preserves_inputs(tmp_path: Path) -> None:
+    skill_dir = PROJECT_ROOT / "skills" / "project-detail-to-ledger"
+    project_path = tmp_path / "项目明细.xlsx"
+    ledger_path = tmp_path / "盈亏核算表.xlsx"
+
+    project = Workbook()
+    project_sheet = project.active
+    project_sheet.title = "项目明细"
+    project_sheet.append(
+        [
+            "销售",
+            "客户",
+            "SO",
+            "SOD",
+            "业务类别",
+            "订单名称",
+            "下单日期",
+            "整单交付日期",
+            "下单数量",
+            "单价",
+            "交付额/本币",
+            "项目经理",
+        ]
+    )
+    project_sheet.append(
+        [
+            "张三",
+            "客户A",
+            "SO-NEW",
+            "SOD-NEW",
+            "笔译",
+            "项目A",
+            "2026-08-01",
+            "2026-08-02",
+            100,
+            2.5,
+            250,
+            "经理A",
+        ]
+    )
+    project.save(project_path)
+
+    ledger = Workbook()
+    ledger_sheet = ledger.active
+    ledger_sheet.title = "明细"
+    ledger_sheet.append(
+        [
+            "销售人员",
+            "客户名称",
+            "新智云单号",
+            "翻译类型",
+            "文件名",
+            "项目下单日期",
+            "项目交付日期",
+            "字数统计",
+            "价格",
+            "应收金额",
+            "实收金额",
+            "项目经理",
+        ]
+    )
+    ledger_sheet.append(
+        [
+            "李四",
+            "客户旧",
+            "SO-OLD",
+            "笔译",
+            "旧项目",
+            "2026-07-01",
+            "2026-07-02",
+            50,
+            2,
+            100,
+            "SOD-OLD",
+            "经理B",
+        ]
+    )
+    ledger.save(ledger_path)
+
+    project_before = project_path.read_bytes()
+    ledger_before = ledger_path.read_bytes()
+    output_dir = tmp_path / "run" / "outputs"
+    request_path = tmp_path / "request.json"
+    result_path = tmp_path / "result.json"
+    request_path.write_text(
+        json.dumps(
+            {
+                "files": {
+                    "project_detail": {"local_path": str(project_path)},
+                    "ledger": {"local_path": str(ledger_path)},
+                },
+                "parameters": {},
+                "output_dir": str(output_dir),
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(skill_dir / "scripts" / "entry.py"),
+            "--request",
+            str(request_path),
+            "--result",
+            str(result_path),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert project_path.read_bytes() == project_before
+    assert ledger_path.read_bytes() == ledger_before
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    assert result["status"] == "success"
+    assert result["summary"]["output_count"] == 2
+    output_path = output_dir / "项目明细补录结果.xlsx"
+    assert output_path.is_file()
+    assert (output_dir / "项目明细补录结果_补录报告.json").is_file()
+    output = load_workbook(output_path, data_only=False)
+    assert output["明细"].cell(row=3, column=5).value == "SO-NEW"
+    assert output["明细"].cell(row=3, column=20).value == "SOD-NEW"
+    output.close()
 
 
 def test_legacy_bridge_rejects_missing_required_outputs_before_archive(tmp_path: Path) -> None:

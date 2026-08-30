@@ -295,8 +295,16 @@ def test_task_center_counts_follow_owner_and_admin_department_visibility() -> No
     with auth_client(
         role="skill_admin", username="task-center-finance-admin", department_id="finance"
     ) as admin:
-        body = admin.get("/api/task-center").json()
+        response = admin.get("/api/task-center", params={"page_size": 100})
+        assert response.status_code == 200, response.text
+        body = response.json()
         visible_ids = {item["reference_id"] for item in body["items"]}
+        for page in range(2, body["pages"] + 1):
+            response = admin.get(
+                "/api/task-center", params={"page": page, "page_size": 100}
+            )
+            assert response.status_code == 200, response.text
+            visible_ids.update(item["reference_id"] for item in response.json()["items"])
         assert "tc-visible-run" in visible_ids
         assert "tc-peer-run" in visible_ids
         assert sum(body["state_counts"].values()) == body["total"]

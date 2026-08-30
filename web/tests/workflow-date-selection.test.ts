@@ -59,6 +59,10 @@ const launcher = readFileSync(
   new URL('../src/features/workflow-agent/components/workflow-launcher.tsx', import.meta.url),
   'utf8'
 );
+const batchStartRoute = readFileSync(
+  new URL('../src/app/api/platform/workflow-batches/start/route.ts', import.meta.url),
+  'utf8'
+);
 
 test('drag selection adds every entered date once', () => {
   let selected: Date[] = [];
@@ -82,7 +86,7 @@ test('future dates cannot be selected by click or drag', () => {
   assert.deepEqual(toggleWorkflowDate([], future, maximum), []);
 });
 
-test('multi-date tasks require every consecutive calendar day', () => {
+test('multi-date tasks allow gaps but keep the selected span within 31 calendar days', () => {
   assert.equal(
     validateWorkflowDateRange([
       new Date(2026, 7, 17),
@@ -91,10 +95,7 @@ test('multi-date tasks require every consecutive calendar day', () => {
     ]),
     ''
   );
-  assert.match(
-    validateWorkflowDateRange([new Date(2026, 7, 17), new Date(2026, 7, 19)]),
-    /连续日期/
-  );
+  assert.equal(validateWorkflowDateRange([new Date(2026, 7, 17), new Date(2026, 7, 19)]), '');
   assert.equal(
     validateWorkflowDateRange([
       new Date(2026, 7, 21),
@@ -104,6 +105,18 @@ test('multi-date tasks require every consecutive calendar day', () => {
     ]),
     ''
   );
+  assert.match(
+    validateWorkflowDateRange([new Date(2026, 6, 1), new Date(2026, 7, 1)]),
+    /跨度最多 31 个自然日/
+  );
+});
+
+test('successful dates can be rerun only through an explicit audited request', () => {
+  assert.match(launcher, /重新核销已成功日期/);
+  assert.match(launcher, /rerun_successful_dates/);
+  assert.match(launcher, /rerun_reason/);
+  assert.match(batchStartRoute, /rerun_successful_dates/);
+  assert.match(batchStartRoute, /rerun_reason/);
 });
 
 test('selected dates have an explicit high-contrast visual state', () => {
@@ -132,6 +145,25 @@ test('date inputs include every calendar day, including weekends', () => {
     '2026-08-19',
     '2026-08-20'
   ]);
+});
+
+test('a completed 31-day month is selectable while future days of the current month are rejected', () => {
+  const completedMonth = workflowDateRangeSelection(
+    '2026-07-01',
+    '2026-07-31',
+    new Date(2026, 7, 28)
+  );
+  assert.equal(completedMonth.error, '');
+  assert.equal(completedMonth.dates.length, 31);
+  assert.equal(validateWorkflowDateRange(completedMonth.dates), '');
+
+  const currentMonth = workflowDateRangeSelection(
+    '2026-08-01',
+    '2026-08-31',
+    new Date(2026, 7, 28)
+  );
+  assert.match(currentMonth.error, /不能晚于今天/);
+  assert.deepEqual(currentMonth.dates, []);
 });
 
 test('date inputs reject reversed and future ranges', () => {

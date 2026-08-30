@@ -32,7 +32,6 @@ export default async function Page({ params }: PageProps): Promise<React.JSX.Ele
   return (
     <PageContainer
       pageTitle='任务详情'
-      pageDescription='实时查看处理进度、结果摘要和输出文件'
       pageHeaderAction={
         <Link href='/dashboard/runs' className={cn(buttonVariants({ variant: 'outline' }))}>
           返回任务中心

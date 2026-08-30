@@ -89,3 +89,33 @@ def test_sync_source_name_must_match_requested_skill(tmp_path: Path) -> None:
     )
     assert result.returncode != 0
     assert "name" in result.stderr
+
+
+def test_project_detail_sync_keeps_portable_lightweight_workbook_guards(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "target"
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--target",
+            str(target),
+            "--skill-id",
+            "project-detail-to-ledger",
+        ],
+        cwd=PROJECT_ROOT,
+        env={**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"},
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+
+    assert result.returncode == 0, result.stderr
+    script_dir = target / "project-detail-to-ledger" / "vendor" / "scripts"
+    implementation = (script_dir / "append_project_detail.py").read_text(encoding="utf-8")
+    assert (script_dir / "workbook_finalize.py").is_file()
+    assert "create_portable_copy" in implementation
+    assert "inspect_lightweight_output" in implementation
+    assert "formula_caches_cleared" in implementation

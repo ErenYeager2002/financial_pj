@@ -8,8 +8,13 @@ $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $ComposeFile = Join-Path $ProjectRoot "deploy\development\compose.yaml"
 $DevEnvFile = Join-Path $ProjectRoot "deploy\development\.env"
 $DevEnvExample = Join-Path $ProjectRoot "deploy\development\.env.example"
+$HostFrontendScript = Join-Path $ProjectRoot "scripts\dev-frontend-host.ps1"
 $EnvFile = if (Test-Path -LiteralPath $DevEnvFile) { $DevEnvFile } else { $DevEnvExample }
 $ComposeArgs = @("compose", "--env-file", $EnvFile, "-f", $ComposeFile)
+
+if (Test-Path -LiteralPath $HostFrontendScript) {
+    & $HostFrontendScript -Stop
+}
 
 $DownArgs = @("down", "--remove-orphans")
 if ($RemoveData) {
@@ -26,4 +31,3 @@ if ($RemoveData) {
 } else {
     Write-Host "开发环境已停止，开发数据已保留。"
 }
-

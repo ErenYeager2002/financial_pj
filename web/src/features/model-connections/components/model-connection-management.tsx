@@ -312,7 +312,6 @@ export function ModelConnectionManagement({
         <CardHeader className='gap-3 sm:flex-row sm:items-start sm:justify-between'>
           <div>
             <CardTitle>已保存的模型连接</CardTitle>
-            <CardDescription>管理员可刷新可用模型、修改连接默认模型或删除连接。</CardDescription>
           </div>
           <Link
             href='/dashboard/ai-chat'
@@ -413,9 +412,6 @@ export function ModelConnectionManagement({
           ) : (
             <div className='rounded-lg border border-dashed p-6 text-center'>
               <p className='font-medium'>还没有模型连接</p>
-              <p className='mt-1 text-sm text-muted-foreground'>
-                在上方填写供应商和 API Key 后验证保存。
-              </p>
             </div>
           )}
           <div aria-live='polite'>

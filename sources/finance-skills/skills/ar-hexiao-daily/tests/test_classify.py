@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 import classify_hexiao as C
+import validate_plan as V
 from conftest import GOLD_DIR
 
 
@@ -289,12 +290,168 @@ def test_sod_ambiguous_amount_over_first_waterfalls_to_next_open_sod():
     )
 
 
+def test_sod_ambiguous_waterfall_rerun_uses_itemized_cumulative_idempotence():
+    """同一逐单核销记录重跑时，不得把已写的金额再次分配给未结清承接行。"""
+    p = _pay(
+        amount=5091.0,
+        orders=[{"so": "SO1", "deliver": 20000.0}],
+        writeoffs={"SO1": 5091.0},
+        writeoffs_local={"SO1": 5091.0},
+        cumulative_writeoffs={"SO1": 5091.0},
+        cumulative_writeoffs_local={"SO1": 5091.0},
+        _writeoff_sequence_key_by_so={
+            "SO1": ["2026-07-22", "HX1", "RID1", "AR_T", "SO1"]
+        },
+    )
+    p["sod_lines"] = {"SO1": [
+        {"sod": "SOD1", "deliver": 10000.0},
+        {"sod": "SOD2", "deliver": 10000.0},
+    ]}
+    recs = C.expand_payment(p, {})
+    ledger = _led({
+        10: {
+            "so": "SO1", "sod": "SOD1", "yingshou": 5091.0,
+            "huikuan": 5091.0, "jiezhang": "是",
+        },
+        11: {
+            "so": "SO1", "sod": "SOD1", "yingshou": 4909.0,
+            "jiezhang": "否",
+        },
+        12: {
+            "so": "SO1", "sod": "SOD2", "yingshou": 10000.0,
+            "jiezhang": "否",
+        },
+    })
+
+    result = C.classify_records(recs, ledger, {})
+
+    assert result["counts"] == {"auto": 1, "hold": 0, "exception": 0, "total": 1}
+    item = result["auto"][0]
+    assert item["code"] == "OK_ITEMIZED_CUMULATIVE_ALREADY_APPLIED"
+    assert item["split_payment_source"]["cumulative_local"] == 5091.0
+    assert item["split_payment_source"]["detail_cumulative_local"] == 5091.0
+    assert item["split_payment_source"]["writeoff_sequence_key"] == [
+        "2026-07-22", "HX1", "RID1", "AR_T", "SO1",
+    ]
+    assert "row_operation" not in item
+
+
+def test_itemized_cumulative_idempotence_revalidates_cross_month_receipt_fields():
+    """金额已写过时，跨月收款日期和方式仍必须按当前规则重新计算。"""
+    p = _pay(
+        amount=5091.0,
+        arrival_date=dt.date(2026, 7, 13),
+        hexiao_date=dt.date(2026, 8, 2),
+        orders=[{"so": "SO1", "deliver": 20000.0}],
+        writeoffs={"SO1": 5091.0},
+        writeoffs_local={"SO1": 5091.0},
+        cumulative_writeoffs={"SO1": 5091.0},
+        cumulative_writeoffs_local={"SO1": 5091.0},
+        _writeoff_sequence_key_by_so={
+            "SO1": ["2026-08-02", "HX1", "RID1", "AR_T", "SO1"]
+        },
+    )
+    p["sod_lines"] = {"SO1": [
+        {"sod": "SOD1", "deliver": 10000.0},
+        {"sod": "SOD2", "deliver": 10000.0},
+    ]}
+    recs = C.expand_payment(p, {})
+    ledger = _led({
+        10: {
+            "so": "SO1", "sod": "SOD1", "yingshou": 5091.0,
+            "huikuan": 5091.0, "jiezhang": "是",
+            "shoukuan_time": dt.date(2026, 7, 13), "shoukuan_way": "汇",
+        },
+        11: {
+            "so": "SO1", "sod": "SOD1", "yingshou": 4909.0,
+            "jiezhang": "否",
+        },
+        12: {
+            "so": "SO1", "sod": "SOD2", "yingshou": 10000.0,
+            "jiezhang": "否",
+        },
+    })
+
+    result = C.classify_records(recs, ledger, {})
+
+    item = result["auto"][0]
+    assert item["code"] == "OK_ITEMIZED_CUMULATIVE_ALREADY_APPLIED"
+    assert item["five_cols"]["回款明细"] == 5091.0
+    assert item["five_cols"]["收款时间"] == "2026-08-02"
+    assert item["five_cols"]["收款方式"] == "冲预收"
+    assert "仍按当前规则复核" in item["reason"]
+    checked = V.check_one(item, {
+        10: {
+            "SO": "SO1", "SOD": "SOD1", "应收金额": 5091.0,
+            "计提": None, "回款明细": 5091.0, "差异": None,
+            "_差异列存在": True, "是否结账": "是",
+            "收款时间": dt.date(2026, 7, 13), "收款方式": "汇",
+        },
+    })
+    assert item["existing_value_policy"] == "overwrite_with_classification"
+    assert checked["verdict"] == "write"
+    assert "按应收核销判定覆盖" in checked["reason"]
+    assert "收款时间" in checked["reason"]
+    assert "收款方式" in checked["reason"]
+
+
+def test_sod_ambiguous_waterfall_keeps_distinct_same_amount_writeoff():
+    """金额相同但来源累计增加的下一条记录，仍应作为新核销写入。"""
+    p = _pay(
+        amount=5091.0,
+        orders=[{"so": "SO1", "deliver": 40000.0}],
+        writeoffs={"SO1": 5091.0},
+        writeoffs_local={"SO1": 5091.0},
+        cumulative_writeoffs={"SO1": 10182.0},
+        cumulative_writeoffs_local={"SO1": 10182.0},
+        _writeoff_sequence_key_by_so={
+            "SO1": ["2026-07-23", "HX2", "RID2", "AR_T", "SO1"]
+        },
+    )
+    p["sod_lines"] = {"SO1": [
+        {"sod": "SOD1", "deliver": 20000.0},
+        {"sod": "SOD2", "deliver": 20000.0},
+    ]}
+    recs = C.expand_payment(p, {})
+    ledger = _led({
+        10: {
+            "so": "SO1", "sod": "SOD1", "yingshou": 5091.0,
+            "huikuan": 5091.0, "jiezhang": "是",
+        },
+        11: {
+            "so": "SO1", "sod": "SOD1", "yingshou": 14909.0,
+            "jiezhang": "否",
+        },
+        12: {
+            "so": "SO1", "sod": "SOD2", "yingshou": 20000.0,
+            "jiezhang": "否",
+        },
+    })
+
+    result = C.classify_records(recs, ledger, {})
+
+    assert result["counts"] == {"auto": 1, "hold": 0, "exception": 0, "total": 1}
+    item = result["auto"][0]
+    assert item["code"] == "E5"
+    assert item["split_payment_source"]["amount_local"] == 5091.0
+    assert item["split_payment_source"]["cumulative_local"] == 10182.0
+    assert item["row_operation"]["existing_received"] == 5091.0
+    assert item["row_operation"]["current_received"] == 5091.0
+    assert item["row_operation"]["cumulative_received"] == 10182.0
+
+
 def test_sod_ambiguous_waterfall_skips_closed_sod():
     """历史已结清 SOD 不占用本次金额，从首个未结清行开始。"""
     p = _pay(
         amount=150.0,
         orders=[{"so": "SO1", "deliver": 300.0}],
         writeoffs={"SO1": 150.0},
+        writeoffs_local={"SO1": 150.0},
+        cumulative_writeoffs={"SO1": 250.0},
+        cumulative_writeoffs_local={"SO1": 250.0},
+        _writeoff_sequence_key_by_so={
+            "SO1": ["2026-07-23", "HX2", "RID2", "AR_T", "SO1"]
+        },
     )
     p["sod_lines"] = {"SO1": [
         {"sod": "SOD1", "deliver": 100.0},
@@ -314,6 +471,19 @@ def test_sod_ambiguous_waterfall_skips_closed_sod():
         ("SOD2", 100.0),
         ("SOD3", 50.0),
     ]
+    assert [x["split_payment_source"]["cumulative_local"] for x in result["auto"]] == [
+        100.0,
+        50.0,
+    ]
+    assert all(
+        x["split_payment_source"]["detail_cumulative_local"] == 250.0
+        for x in result["auto"]
+    )
+    assert all(
+        x["split_payment_source"]["writeoff_sequence_key"]
+        == ["2026-07-23", "HX2", "RID2", "AR_T", "SO1"]
+        for x in result["auto"]
+    )
 
 
 def test_sod_ambiguous_waterfall_rejects_amount_over_all_open_capacity():
@@ -1038,6 +1208,64 @@ def test_same_physical_writeoff_multi_sod_same_row_aggregates_by_so_delivery():
     assert "W_SAME_SO_MULTI_SOD_AGGREGATE" in target["warning_codes"]
 
 
+def test_settled_combined_sod_row_is_idempotent_before_component_e5():
+    """已结清的合并 SOD 行重跑时，逐 SOD 定位不应先被 E5 拦住。"""
+    led = _led({
+        4071: {
+            "so": "SO26040310",
+            "sod": "SOD26040408、SOD26080083",
+            "yingshou": 14484.0,
+            "jiti": 14484.0,
+            "huikuan": 14484.0,
+            "jiezhang": "是",
+            "shoukuan_time": dt.date(2026, 8, 5),
+            "shoukuan_way": "汇",
+        },
+    })
+    common_fields = {
+        "ar": "AR26080020",
+        "so_delivery_local": 14484.0,
+        "all_sods": ["SOD26040408", "SOD26080083"],
+        "sod_delivery_local": {
+            "SOD26040408": 13521.97,
+            "SOD26080083": 962.03,
+        },
+        "cumulative_received_local": 14484.0,
+        "writeoff_sequence_key": [
+            "2026-08-06", "HX2026080050", "RID", "AR26080020", "SO26040310"
+        ],
+    }
+    records = [
+        _rec(
+            "SO26040310", "SOD26040408", 13521.97,
+            amount_local=13521.97, deliver_local=13521.97, **common_fields
+        ),
+        _rec(
+            "SO26040310", "SOD26080083", 962.03,
+            amount_local=962.03, deliver_local=962.03, **common_fields
+        ),
+    ]
+
+    result = C.classify_records(records, led, {})
+
+    assert result["counts"] == {"auto": 2, "hold": 0, "exception": 0, "total": 2}
+    assert all(item["code"] == "OK_ALREADY_SETTLED" for item in result["auto"])
+    assert all(item.get("multi_sod_aggregate_idempotent") is True for item in result["auto"])
+    assert all(item.get("ledger_row_ref") == 4071 for item in result["auto"])
+    assert not any(item.get("forced_code") == "E5" for item in result["auto"])
+
+    rows = {
+        4071: {
+            "SO": "SO26040310", "SOD": "SOD26040408、SOD26080083",
+            "计提": 14484.0, "回款明细": 14484.0, "是否结账": "是",
+            "收款时间": dt.date(2026, 8, 5), "收款方式": "汇", "差异": None,
+            "_差异列存在": True, "应收金额": 14484.0,
+        }
+    }
+    checked = V.validate({"auto": result["auto"]}, rows)
+    assert checked["counts"] == {"write": 0, "skip": 2, "conflict": 0}
+
+
 def test_same_row_multi_sod_from_different_writeoffs_still_holds():
     led = _led({1: {"so": "SO1", "sod": "SODA", "yingshou": 40.0}})
     first = _rec(
@@ -1082,6 +1310,120 @@ def test_same_so_sod_distinct_ar_builds_sequential_split_chain():
     assert op["steps"][0]["five_cols"]["计提"] is None
     assert op["steps"][1]["five_cols"]["计提"] == 100.0
     assert op["final_unpaid"] is None
+
+
+def test_settled_reverse_order_split_chain_is_idempotent():
+    """已有完整分笔链但表内顺序与智云顺序相反时，仍按幂等跳过。"""
+    led = _led({
+        1: {
+            "so": "SO1", "sod": "SOD1", "yingshou": 60.0,
+            "jiti": 100.0, "huikuan": 60.0, "jiezhang": "是",
+            "shoukuan_time": dt.date(2026, 7, 30), "shoukuan_way": "汇",
+        },
+        2: {
+            "so": "SO1", "sod": "SOD1", "yingshou": 40.0,
+            "jiti": None, "huikuan": 40.0, "jiezhang": "是",
+            "shoukuan_time": dt.date(2026, 7, 22), "shoukuan_way": "汇",
+        },
+    })
+    records = [
+        _rec(
+            "SO1", "SOD1", 40.0, ar="AR1", deliver_local=100.0,
+            amount_local=40.0,
+            cumulative_received_local=40.0,
+            writeoff_sequence_key=["2026-07-22", "HX1", "1", "AR1", "SO1"],
+        ),
+        _rec(
+            "SO1", "SOD1", 60.0, ar="AR2", deliver_local=100.0,
+            amount_local=60.0,
+            cumulative_received_local=100.0,
+            writeoff_sequence_key=["2026-07-30", "HX2", "2", "AR2", "SO1"],
+        ),
+    ]
+
+    result = C.classify_records(records, led, {})
+
+    assert result["counts"] == {"auto": 2, "hold": 0, "exception": 0, "total": 2}
+    assert all(item["code"] == "OK_ALREADY_SETTLED" for item in result["auto"])
+    assert all(item.get("split_chain_idempotent") is True for item in result["auto"])
+    assert all("row_operation" not in item for item in result["auto"])
+    assert all(not item.get("so_accrual_backfills") for item in result["auto"])
+
+
+def test_settled_split_chain_allows_historical_prefix_outside_current_batch():
+    """已有链包含更早历史回款时，本批金额仍可按唯一子集幂等跳过。"""
+    led = _led({
+        5936: {
+            "so": "SO26050208", "sod": "SOD26050270", "yingshou": 3946.07,
+            "jiti": None, "huikuan": 3946.07, "jiezhang": "是",
+            "shoukuan_time": dt.date(2026, 8, 24), "shoukuan_way": "冲预收",
+        },
+        5937: {
+            "so": "SO26050208", "sod": "SOD26050270", "yingshou": 387.61,
+            "jiti": None, "huikuan": 387.61, "jiezhang": "是",
+            "shoukuan_time": dt.date(2026, 8, 21), "shoukuan_way": "汇",
+        },
+        5938: {
+            "so": "SO26050208", "sod": "SOD26050270", "yingshou": 3720.48,
+            "jiti": 8054.16, "huikuan": 3720.48, "jiezhang": "是",
+            "shoukuan_time": dt.date(2026, 7, 28), "shoukuan_way": "冲预收",
+        },
+    })
+    records = [
+        _rec(
+            "SO26050208", "SOD26050270", 387.61,
+            ar="AR26080107", amount_local=387.61, deliver_local=8054.16,
+            cumulative_received_local=387.61,
+            writeoff_sequence_key=["2026-08-21", "HX1", "1", "AR26080107", "SO26050208"],
+        ),
+        _rec(
+            "SO26050208", "SOD26050270", 3946.07,
+            ar="AR26080095", amount_local=3946.07, deliver_local=8054.16,
+            cumulative_received_local=4333.68,
+            writeoff_sequence_key=["2026-08-24", "HX2", "2", "AR26080095", "SO26050208"],
+        ),
+    ]
+
+    result = C.classify_records(records, led, {})
+
+    assert result["counts"] == {"auto": 2, "hold": 0, "exception": 0, "total": 2}
+    assert all(item["code"] == "OK_ALREADY_SETTLED" for item in result["auto"])
+    assert all(item.get("split_chain_idempotent") is True for item in result["auto"])
+    assert all("row_operation" not in item for item in result["auto"])
+
+
+def test_settled_reverse_order_split_chain_does_not_hide_amount_mismatch():
+    """已有结清行但分笔金额对不上时，不能被幂等快捷路径吞掉。"""
+    led = _led({
+        1: {
+            "so": "SO1", "sod": "SOD1", "yingshou": 60.0,
+            "jiti": 100.0, "huikuan": 60.0, "jiezhang": "是",
+        },
+        2: {
+            "so": "SO1", "sod": "SOD1", "yingshou": 40.0,
+            "jiti": None, "huikuan": 39.0, "jiezhang": "是",
+        },
+    })
+    records = [
+        _rec(
+            "SO1", "SOD1", 40.0, ar="AR1", deliver_local=100.0,
+            amount_local=40.0,
+            cumulative_received_local=40.0,
+            writeoff_sequence_key=["2026-07-22", "HX1", "1", "AR1", "SO1"],
+        ),
+        _rec(
+            "SO1", "SOD1", 60.0, ar="AR2", deliver_local=100.0,
+            amount_local=60.0,
+            cumulative_received_local=100.0,
+            writeoff_sequence_key=["2026-07-30", "HX2", "2", "AR2", "SO1"],
+        ),
+    ]
+
+    result = C.classify_records(records, led, {})
+
+    assert result["counts"]["auto"] == 0
+    assert result["counts"]["hold"] == 2
+    assert all(item["code"] == "E8" for item in result["hold"])
 
 
 def test_delivery_above_baseline_split_chain_preserves_only_original_receivable():

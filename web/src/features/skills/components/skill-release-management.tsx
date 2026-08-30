@@ -251,9 +251,6 @@ export function SkillReleaseManagement({ initialReleases = [], initialInbox = []
             <h2 id='skill-review-records-title' className='text-lg font-semibold'>
               Skill 发布记录
             </h2>
-            <p className='text-sm text-muted-foreground'>
-              查看版本来源、校验结果和当前发布状态。
-            </p>
           </div>
           {releases.length === 0 ? (
             <Card>

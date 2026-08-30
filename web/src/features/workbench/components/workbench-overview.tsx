@@ -2,12 +2,12 @@ import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import type { Workbench } from '@/features/platform-api/types';
+import type { PlatformHealth, Workbench } from '@/features/platform-api/types';
 import { runStateLabel, runStateVariant } from '@/features/runs/run-display';
 import { formatDate } from '@/lib/format';
 import { cn, formatBytes } from '@/lib/utils';
 
-export function WorkbenchOverview({ data }: { data: Workbench }) {
+export function WorkbenchOverview({ data, health }: { data: Workbench; health: PlatformHealth }) {
   const commonSkills = data.common_skills ?? [];
   const pendingRuns = data.pending_runs ?? [];
   const recentResults = data.recent_results ?? [];
@@ -58,6 +58,52 @@ export function WorkbenchOverview({ data }: { data: Workbench }) {
             </Link>
           </div>
         </CardHeader>
+      </Card>
+
+      <Card id='environment-health' className='scroll-mt-6'>
+        <CardHeader>
+          <div className='flex flex-wrap items-start justify-between gap-3'>
+            <div>
+              <CardTitle>运行环境状态</CardTitle>
+              <CardDescription>
+                平台服务{health.status === 'ok' ? '正常' : '异常'}，仅展示不含敏感配置的汇总信息
+              </CardDescription>
+            </div>
+            <Badge variant={health.status === 'ok' ? 'secondary' : 'destructive'}>
+              {health.status === 'ok' ? '正常' : '需检查'}
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent className='space-y-3'>
+          <dl className='grid gap-3 sm:grid-cols-2 xl:grid-cols-4'>
+            <div className='rounded-lg border p-3'>
+              <dt className='text-sm text-muted-foreground'>注册 Skill</dt>
+              <dd className='mt-1 text-2xl font-semibold tabular-nums'>{health.skills}</dd>
+            </div>
+            <div className='rounded-lg border p-3'>
+              <dt className='text-sm text-muted-foreground'>已配置 Worker 组</dt>
+              <dd className='mt-1 text-2xl font-semibold tabular-nums'>
+                {Object.values(health.configured_workers).filter((count) => count > 0).length}
+              </dd>
+            </div>
+            <div className='rounded-lg border p-3'>
+              <dt className='text-sm text-muted-foreground'>执行容量</dt>
+              <dd className='mt-1 text-2xl font-semibold tabular-nums'>
+                {health.configured_execution_capacity}
+              </dd>
+            </div>
+            <div className='rounded-lg border p-3'>
+              <dt className='text-sm text-muted-foreground'>注册异常</dt>
+              <dd className='mt-1 text-2xl font-semibold tabular-nums'>
+                {health.registry_errors?.length ?? 0}
+              </dd>
+            </div>
+          </dl>
+          <p className='text-sm text-muted-foreground'>
+            Office、LibreOffice
+            等系统依赖的详细检查需由受控系统诊断适配器执行；该能力上线前，环境诊断 Skill 保持停用。
+          </p>
+        </CardContent>
       </Card>
 
       <div className='grid gap-4 sm:grid-cols-2 xl:grid-cols-4'>

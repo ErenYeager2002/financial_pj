@@ -331,6 +331,13 @@ export function WorkflowAgentPanel({
         workflow={workflow}
         onOpenFetchedData={() => setFetchedDataOpen(true)}
       />
+      {workflow.fetched_data_available && isTerminal(workflow) && (
+        <div className='flex justify-end'>
+          <Button type='button' variant='outline' onClick={() => setFetchedDataOpen(true)}>
+            查看已保存的取数数据
+          </Button>
+        </div>
+      )}
       <WorkflowFetchedDataDialog
         workflow={workflow}
         open={fetchedDataOpen}
@@ -503,9 +510,7 @@ export function WorkflowAgentPanel({
         <Card>
           <CardHeader>
             <CardTitle className='text-base'>任务产出</CardTitle>
-            <CardDescription>
-              优先下载《核销日清》查看本日结果，其他文件放在次要下载区。
-            </CardDescription>
+            <CardDescription>《核销日清》为本日主要结果。</CardDescription>
           </CardHeader>
           <CardContent className='space-y-2'>
             {[...workflow.artifacts]

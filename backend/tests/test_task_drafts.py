@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import json
 import uuid
+from datetime import UTC, datetime
 from io import BytesIO
 from pathlib import Path
 
 import httpx
+from helpers import auth_client
+
 from app import draft_service
 from app.auth_service import get_user_by_username
 from app.credential_service import encrypt_secret
@@ -19,7 +22,6 @@ from app.models import (
     TaskDraftRecord,
 )
 from app.schemas_assistant import AssistantRecommendation
-from helpers import auth_client
 
 
 def _upload(client, name: str) -> str:
@@ -141,6 +143,32 @@ def test_prepare_draft_does_not_create_run_until_confirmed(monkeypatch) -> None:
         stored = client.get(f"/api/task-drafts/{draft['id']}")
         assert stored.json()["state"] == "consumed"
         assert stored.json()["run_id"] == run["id"]
+
+
+def test_get_draft_accepts_mixed_timezone_datetimes(monkeypatch) -> None:
+    username = f"assistant-draft-timezone-{uuid.uuid4().hex[:8]}"
+    with auth_client(username=username) as client:
+        _configure_profile(username)
+        bank_id = _upload(client, "时区测试银行流水.xlsx")
+        ledger_id = _upload(client, "时区测试财务总账.xlsx")
+        monkeypatch.setattr(
+            draft_service,
+            "_call_recommender",
+            lambda _payload, _config: _bank_recommendation(),
+        )
+        prepared = client.post(
+            "/api/assistant/prepare",
+            json={"message": "生成合成草稿", "file_ids": [bank_id, ledger_id]},
+        )
+        assert prepared.status_code == 200, prepared.text
+
+        # PostgreSQL returns timezone-aware DateTime values while SQLite can
+        # return naive values. Expiration checks must accept either combination.
+        monkeypatch.setattr(draft_service, "_now", lambda: datetime.now(UTC))
+        stored = client.get(f"/api/task-drafts/{prepared.json()['id']}")
+
+        assert stored.status_code == 200, stored.text
+        assert stored.json()["state"] == "ready"
 
 
 def test_prepare_draft_records_real_model_usage(monkeypatch) -> None:

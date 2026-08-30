@@ -11,6 +11,10 @@ LAN_COMPOSE_PATH = PROJECT_ROOT / "deploy" / "development" / "compose.lan.yaml"
 PRODUCTION_COMPOSE_PATH = PROJECT_ROOT / "deploy" / "production" / "compose.yaml"
 DEV_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "dev.ps1"
 DEV_STOP_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "dev-stop.ps1"
+HOST_FRONTEND_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "dev-frontend-host.ps1"
+DOCKER_FRONTEND_SCRIPT_PATH = PROJECT_ROOT / "web" / "scripts" / "dev-container-entrypoint.sh"
+LAUNCHER_BUILD_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "build-dev-launcher.ps1"
+LAUNCHER_SOURCE_PATH = PROJECT_ROOT / "tools" / "windows-launcher" / "FinancialPlatformLauncher.cs"
 
 
 class _ComposeLoader(yaml.SafeLoader):
@@ -49,6 +53,10 @@ def validate() -> None:
         PRODUCTION_COMPOSE_PATH,
         DEV_SCRIPT_PATH,
         DEV_STOP_SCRIPT_PATH,
+        HOST_FRONTEND_SCRIPT_PATH,
+        DOCKER_FRONTEND_SCRIPT_PATH,
+        LAUNCHER_BUILD_SCRIPT_PATH,
+        LAUNCHER_SOURCE_PATH,
     ]
     missing = [str(path.relative_to(PROJECT_ROOT)) for path in required_files if not path.is_file()]
     if missing:
@@ -78,8 +86,8 @@ def validate() -> None:
     next_service = services["next"]
     if "--reload" not in _command_text(api):
         raise AssertionError("development API must enable uvicorn reload")
-    if "pnpm dev" not in _command_text(next_service):
-        raise AssertionError("development frontend must use pnpm dev")
+    if "dev-container-entrypoint.sh" not in _command_text(next_service):
+        raise AssertionError("Docker frontend must use the reviewed development entrypoint")
 
     for worker_name in (
         "worker-python",
@@ -90,20 +98,26 @@ def validate() -> None:
         if services[worker_name].get("profiles") != ["tasks"]:
             raise AssertionError(f"{worker_name} must be opt-in through the tasks profile")
         worker_command = _command_text(services[worker_name])
-        if "watchfiles" in worker_command:
-            raise AssertionError(
-                f"{worker_name} must not hot-reload while a task may be running"
-            )
+        if "watchfiles" not in worker_command:
+            raise AssertionError(f"{worker_name} must restart after source changes")
+        if "--filter all" not in worker_command:
+            raise AssertionError(f"{worker_name} must watch Python and Skill metadata changes")
+        for watched_path in ("/app/backend/app", "/app/skills"):
+            if watched_path not in worker_command:
+                raise AssertionError(f"{worker_name} must watch {watched_path}")
         expected_module = (
             "python -m app.task_discovery_worker"
             if worker_name == "worker-task-discovery"
             else "python -m app.worker"
         )
         if expected_module not in worker_command:
-            raise AssertionError(f"{worker_name} must run the stable platform Worker directly")
+            raise AssertionError(f"{worker_name} must run the platform Worker through watchfiles")
     if services["egress-proxy"].get("profiles") != ["tasks"]:
         raise AssertionError("egress-proxy must be opt-in through the tasks profile")
-    if "pnpm exec tsc -p tsconfig.json --watch" not in _command_text(next_service):
+    docker_frontend_script = DOCKER_FRONTEND_SCRIPT_PATH.read_text(encoding="utf-8")
+    if "pnpm exec next dev --webpack --hostname" not in docker_frontend_script:
+        raise AssertionError("Docker frontend fallback must use Webpack")
+    if "pnpm exec tsc -p tsconfig.json --watch" not in docker_frontend_script:
         raise AssertionError("agent runtime must rebuild incrementally while development is running")
 
     backend_environment = compose.get("x-backend-environment", {})
@@ -168,6 +182,9 @@ def validate() -> None:
 
     dev_script = DEV_SCRIPT_PATH.read_text(encoding="utf-8")
     stop_script = DEV_STOP_SCRIPT_PATH.read_text(encoding="utf-8")
+    host_frontend_script = HOST_FRONTEND_SCRIPT_PATH.read_text(encoding="utf-8")
+    launcher_build_script = LAUNCHER_BUILD_SCRIPT_PATH.read_text(encoding="utf-8")
+    launcher_source = LAUNCHER_SOURCE_PATH.read_text(encoding="utf-8")
     for marker in (
         "ValidateOnly",
         "RestartWorkers",
@@ -180,11 +197,69 @@ def validate() -> None:
         "-Lan",
         "LanInterfaceAlias",
         "compose.lan.yaml",
+        'ValidateSet("Local", "Docker")',
+        "dev-frontend-host.ps1",
     ):
         if marker not in dev_script:
             raise AssertionError(f"scripts/dev.ps1 is missing {marker}")
+    restart_block = dev_script.split("if ($RestartWorkers) {", 1)[-1].split("return", 1)[0]
+    if "--force-recreate" not in restart_block:
+        raise AssertionError("RestartWorkers must force recreation of the Worker containers")
     if "RemoveData" not in stop_script:
         raise AssertionError("scripts/dev-stop.ps1 must preserve data unless explicitly requested")
+    if "dev-frontend-host.ps1" not in stop_script:
+        raise AssertionError("scripts/dev-stop.ps1 must stop the host frontend")
+    for marker in (
+        "FINANCIAL_PLATFORM_API_URL",
+        "NEXT_PUBLIC_APP_URL",
+        ".financial-platform-dependencies.sha256",
+        "process_start_time_utc_ticks",
+        "--hostname",
+        "Get-ProcessTree",
+    ):
+        if marker not in host_frontend_script:
+            raise AssertionError(f"host frontend script is missing {marker}")
+    secret_clear_index = host_frontend_script.find('Remove-Item -LiteralPath "Env:$Key"')
+    dependency_prepare_index = host_frontend_script.find("& corepack prepare")
+    runtime_forward_index = host_frontend_script.rfind("foreach ($Key in $ForwardedKeys)")
+    dependency_build_index = host_frontend_script.find(
+        "& corepack pnpm --dir $AgentRuntimeRoot run build"
+    )
+    if min(secret_clear_index, dependency_prepare_index, runtime_forward_index) < 0:
+        raise AssertionError("host frontend must isolate runtime credentials from dependency setup")
+    if not secret_clear_index < dependency_prepare_index < runtime_forward_index:
+        raise AssertionError("runtime credentials must be cleared until dependency setup finishes")
+    if dependency_build_index < 0 or runtime_forward_index < dependency_build_index:
+        raise AssertionError("runtime credentials must not be exposed to dependency build scripts")
+    for marker in ("Get-NetTCPConnection", "OwningProcess", "Stop-HostFrontend"):
+        if marker not in dev_script:
+            raise AssertionError(f"host frontend readiness handling is missing {marker}")
+    for marker in ("Test-HostFrontendReady", "本机前端已经运行且配置一致"):
+        if marker not in dev_script:
+            raise AssertionError(f"host frontend idempotent startup is missing {marker}")
+    for marker in (
+        "FinancialPlatformLauncher.cs",
+        "/target:winexe",
+        "启动财务Skill平台.exe",
+    ):
+        if marker not in launcher_build_script:
+            raise AssertionError(f"launcher build script is missing {marker}")
+    for marker in (
+        "scripts\", \"dev.ps1",
+        "scripts\", \"dev-stop.ps1",
+        "-Mode Tasks",
+        "-Lan",
+        "LanInterfaceAlias",
+        "lanCheckBox",
+        "lanInterfaceTextBox",
+        "http://localhost:3000",
+        'FindExecutableOnPath("pwsh.exe")',
+        "PowerShell 7",
+    ):
+        if marker not in launcher_source:
+            raise AssertionError(f"launcher source is missing {marker}")
+    if '"WindowsPowerShell", "v1.0", "powershell.exe"' in launcher_source:
+        raise AssertionError("launcher must not fall back to Windows PowerShell 5.1")
 
 
 def main() -> int:

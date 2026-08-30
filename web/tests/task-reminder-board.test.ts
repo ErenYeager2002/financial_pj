@@ -53,8 +53,38 @@ test('组件提供次要补查入口、待办主操作和可访问错误反馈',
   assert.match(source, /手动补查日期/);
   assert.match(source, /处理这些日期/);
   assert.match(source, /role='alert'/);
-  assert.doesNotMatch(source, /failure\.error_message/);
+  assert.match(source, /failure\.error_message/);
+  assert.match(source, /<Card[\s\S]*role='alert'[\s\S]*aria-live='polite'/);
   assert.match(source, /min=\{dateBounds\.min\}/);
   assert.match(source, /max=\{dateBounds\.max\}/);
   assert.doesNotMatch(source, /setManualDate\(''\)/);
+  assert.match(source, /data\.resolved_count/);
+  assert.match(source, /清理已处理成功/);
+  assert.match(source, /method: 'DELETE'/);
+
+  const route = readFileSync(
+    new URL('../src/app/api/platform/task-reminders/route.ts', import.meta.url),
+    'utf8'
+  );
+  const server = readFileSync(
+    new URL('../src/features/task-reminders/api/server.ts', import.meta.url),
+    'utf8'
+  );
+  assert.match(route, /export async function DELETE/);
+  assert.match(server, /\/api\/task-reminders\/resolved/);
+});
+
+test('待处理日期超过七天后限制高度并在框内滚动', () => {
+  const source = readFileSync(
+    new URL('../src/features/task-reminders/components/task-reminder-board.tsx', import.meta.url),
+    'utf8'
+  );
+
+  assert.match(source, /const MAX_VISIBLE_REMINDER_DATES = 7/);
+  assert.match(source, /reminders\.length > MAX_VISIBLE_REMINDER_DATES/);
+  assert.match(source, /<ScrollArea/);
+  assert.match(source, /h-\[33rem\]/);
+  assert.doesNotMatch(source, /滚动可查看全部日期/);
+  assert.match(source, /role='list'/);
+  assert.match(source, /role='listitem'/);
 });

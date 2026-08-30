@@ -7,7 +7,7 @@
     "url": "https://github.com/Kiranism"
   },
   "scripts": {
-    "dev": "next dev --webpack",
+    "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "contracts:generate": "openapi-typescript ../contracts/financial-platform.openapi.json -o src/features/platform-api/generated.ts --root-types --root-types-no-schema-prefix",

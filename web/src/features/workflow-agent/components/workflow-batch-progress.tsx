@@ -86,7 +86,7 @@ function BatchOutputCard({ batch }: { batch: WorkflowBatchRead }): React.JSX.Ele
       <CardHeader>
         <CardTitle className='text-base'>批次产出</CardTitle>
         <CardDescription>
-          批次完成后提供一份整合核销日清，包含所选日期的汇总和明细。
+          批次完成后提供整合核销日清，以及最终的年度盈亏核算表和到账流转表。
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -100,10 +100,6 @@ function BatchOutputCard({ batch }: { batch: WorkflowBatchRead }): React.JSX.Ele
                 >
                   <div className='min-w-0'>
                     <p className='truncate text-sm font-medium'>{output.name}</p>
-                    <p className='mt-1 text-xs text-muted-foreground'>
-                      覆盖日期：{batch.reconciliation_dates[0]} 至{' '}
-                      {batch.reconciliation_dates[batch.reconciliation_dates.length - 1]}
-                    </p>
                   </div>
                   <a
                     href={`/api/platform/files/${encodeURIComponent(output.fileId)}/download`}
@@ -247,7 +243,8 @@ export function WorkflowBatchProgress({
             <div>
               <CardTitle>{batch.skill_name}</CardTitle>
               <CardDescription className='mt-1'>
-                {batch.display_id} · 已选择 {batch.reconciliation_dates.length} 天，按日期顺序处理
+                {batch.display_id} · 已选择 {batch.reconciliation_dates.length}{' '}
+                个核销日，按日期顺序处理
               </CardDescription>
             </div>
             <div className='flex flex-wrap items-center justify-end gap-2'>
@@ -286,8 +283,9 @@ export function WorkflowBatchProgress({
           <CardHeader>
             <CardTitle className='text-base'>本批次智云取数</CardTitle>
             <CardDescription>
-              {batch.reconciliation_dates[0]} 至 {batch.reconciliation_dates.at(-1)}{' '}
-              只取数和检查一次，各日期仍按顺序分别处理。
+              取数范围：{batch.reconciliation_dates[0]} 至 {batch.reconciliation_dates.at(-1)}；
+              仅处理已选：{batch.reconciliation_dates.join('、')}
+              。取数和检查一次，各已选日期按顺序处理。
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -340,9 +338,6 @@ export function WorkflowBatchProgress({
       <Card>
         <CardHeader>
           <CardTitle className='text-base'>日期任务</CardTitle>
-          <CardDescription>
-            5天以内按任务数量显示；超过5天后在框内滚动。点击日期后，在下方查看这一天的步骤和失败位置。
-          </CardDescription>
         </CardHeader>
         <CardContent className='space-y-2'>
           <ScrollArea className={batch.workflows.length > 5 ? 'h-[25rem] pr-3' : 'pr-3'}>
@@ -458,9 +453,6 @@ export function WorkflowBatchProgress({
             <Card>
               <CardContent className='py-6'>
                 <p className='font-medium'>这一天正在等待前置日期完成。</p>
-                <p className='mt-1 text-sm text-muted-foreground'>
-                  当前只显示日期状态，开始处理后这里会显示唯一的任务流程图。
-                </p>
               </CardContent>
             </Card>
           ) : (

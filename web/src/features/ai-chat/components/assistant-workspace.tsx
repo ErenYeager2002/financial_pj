@@ -17,6 +17,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
 import { parseAgentWireEvent, type AgentWireEvent } from '@/features/agent-runtime/agent-wire';
+import { draftCompletionMessage } from '@/features/ai-chat/assistant-message';
 import type {
   AdminAssistantProfile,
   AssistantConversation,
@@ -24,6 +25,7 @@ import type {
   PlatformFile,
   TaskDraft
 } from '@/features/platform-api/types';
+import { createClientId } from '@/lib/client-id';
 import { formatBytes } from '@/lib/utils';
 
 interface AssistantWorkspaceProps {
@@ -196,15 +198,15 @@ export function AssistantWorkspace({
     const message = input.trim();
     if (!message || !configured || historyLoading || working) return;
 
-    const activeSessionId = sessionId || crypto.randomUUID();
+    const activeSessionId = sessionId || createClientId();
     if (!sessionId) {
       setSessionId(activeSessionId);
       window.localStorage.setItem(CHAT_SESSION_STORAGE_KEY, activeSessionId);
     }
-    const assistantId = crypto.randomUUID();
+    const assistantId = createClientId();
     setMessages((current) => [
       ...current,
-      { id: crypto.randomUUID(), role: 'user', content: message },
+      { id: createClientId(), role: 'user', content: message },
       { id: assistantId, role: 'assistant', content: '' }
     ]);
     setInput('');
@@ -255,7 +257,14 @@ export function AssistantWorkspace({
         }
         if (event.type === 'tool_result') {
           const nextDraft = draftFromDetails(event.details);
-          if (nextDraft) setDraft(nextDraft);
+          if (nextDraft) {
+            setDraft(nextDraft);
+            setMessages((current) =>
+              assistantMessage(current, assistantId, (content) =>
+                draftCompletionMessage(content, nextDraft.skill_name)
+              )
+            );
+          }
           setToolMessage(event.isError ? '查询未完成。' : '平台数据已返回给 AI。');
         }
         if (event.type === 'await_confirmation') setToolMessage(event.message);
@@ -308,9 +317,7 @@ export function AssistantWorkspace({
           <CardTitle className='flex items-center gap-2'>
             <IconRobot className='size-5' /> AI 助手
           </CardTitle>
-          <CardDescription>
-            可以直接聊天。查询任务时，助手会读取当前账号有权查看的实时状态。
-          </CardDescription>
+          <CardDescription>查询任务时，助手只读取当前账号有权查看的实时状态。</CardDescription>
         </CardHeader>
         <CardContent className='flex min-h-0 flex-1 flex-col gap-4 p-4'>
           {!configured && (
@@ -381,9 +388,7 @@ export function AssistantWorkspace({
         <Card>
           <CardHeader>
             <CardTitle className='text-base'>相关文件</CardTitle>
-            <CardDescription>
-              需要让助手参考文件时，在这里选择；文件内容仍由平台权限控制。
-            </CardDescription>
+            <CardDescription>文件内容仍受平台权限控制。</CardDescription>
           </CardHeader>
           <CardContent>
             {files.length ? (
@@ -443,7 +448,6 @@ export function AssistantWorkspace({
               <CardTitle className='flex items-center gap-2 text-base'>
                 <IconSettings className='size-4' /> 助手默认模型
               </CardTitle>
-              <CardDescription>设置本部门 AI 助手使用的模型。</CardDescription>
             </CardHeader>
             <CardContent className='space-y-4'>
               {connections.length ? (

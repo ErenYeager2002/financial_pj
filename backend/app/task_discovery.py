@@ -109,8 +109,8 @@ def _upsert_reminder(
     )
     if result.record_count == 0:
         if reminder is not None and reminder.state in {"pending", "reopened"}:
-            reminder.state = "resolved"
-            reminder.completed_at = now
+            reminder.state = "no_records"
+            reminder.completed_at = None
             reminder.last_checked_at = now
             reminder.record_count = 0
             reminder.fingerprint = result.fingerprint
@@ -142,6 +142,12 @@ def _upsert_reminder(
         reminder.workflow_id = None
         reminder.batch_id = None
         reminder.state = "reopened"
+        reminder.completed_at = None
+    elif reminder.state == "no_records":
+        reminder.owner_id = subscription.owner_id
+        reminder.workflow_id = None
+        reminder.batch_id = None
+        reminder.state = "pending"
         reminder.completed_at = None
     elif reminder.workflow_id is None and reminder.batch_id is None:
         reminder.owner_id = subscription.owner_id

@@ -1,4 +1,4 @@
-import { format, startOfDay } from 'date-fns';
+import { differenceInCalendarDays, format, startOfDay } from 'date-fns';
 
 export interface WorkflowDateRangeSelection {
   dates: Date[];
@@ -98,16 +98,8 @@ export function validateWorkflowDateRange(selected: Date[]): string {
   const dates = selected
     .map((item) => startOfDay(item))
     .toSorted((left, right) => left.getTime() - right.getTime());
-  const expected: string[] = [];
-  let cursor = new Date(dates[0]);
   const last = dates.at(-1) as Date;
-  while (cursor <= last) {
-    expected.push(workflowDateKey(cursor));
-    cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 1);
-  }
-  const actual = dates.map(workflowDateKey);
-  return actual.length === expected.length &&
-    actual.every((item, index) => item === expected[index])
-    ? ''
-    : '多日任务必须选择连续日期，不能跳过中间日期。';
+  return differenceInCalendarDays(last, dates[0]) + 1 > 31
+    ? '单个批次的最早日期到最晚日期跨度最多 31 个自然日。'
+    : '';
 }

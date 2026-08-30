@@ -140,3 +140,29 @@ def test_build_task_reports_accepts_confirmed_empty_fetch_day(tmp_path):
     assert rows[0][:2] == ("2026-08-08", "无核销记录，已跳过")
     assert rows[1][:2] == ("2026-08-09", "已纳入")
     workbook.close()
+
+
+def test_build_task_reports_uses_only_explicit_sparse_dates(tmp_path):
+    out = tmp_path / "04_产出"
+    out.mkdir()
+    for token, date in (("20260808", "2026-08-08"), ("20260810", "2026-08-10")):
+        _report(out / f"核销日清_{token}.xlsx", "今日清单", date)
+        (out / f"判定结果_{token}.json").write_text(
+            json.dumps({"payment_count": 1, "counts": {"total": 1}}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+    outputs = B.build(
+        tmp_path,
+        "2026-08-08",
+        "2026-08-10",
+        selected_dates=["2026-08-08", "2026-08-10"],
+    )
+
+    assert outputs[0].name == "核销日清_已选2日_20260808_20260810.xlsx"
+    workbook = openpyxl.load_workbook(outputs[0], data_only=True)
+    assert [row[0] for row in workbook["任务范围"].iter_rows(min_row=2, values_only=True)] == [
+        "2026-08-08",
+        "2026-08-10",
+    ]
+    workbook.close()

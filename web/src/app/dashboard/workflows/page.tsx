@@ -32,10 +32,7 @@ export default async function Page({ searchParams }: PageProps): Promise<React.J
     ? await listWorkflowReusableFiles(selectedSkillId)
     : null;
   return (
-    <PageContainer
-      pageTitle='创建应收核销任务'
-      pageDescription='选择日期和材料后提交任务，状态会持续更新'
-    >
+    <PageContainer pageTitle='创建应收核销任务'>
       <WorkflowLauncher
         skills={skills}
         workflows={workflows}

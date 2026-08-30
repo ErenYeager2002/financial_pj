@@ -102,6 +102,10 @@ class WorkflowStart(BaseModel):
     reconciliation_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
     files: dict[str, list[str]] = Field(default_factory=dict)
     replace_roles: list[str] = Field(default_factory=list)
+    # Development-only replay of a previously completed four-file fetch.
+    # The backend treats this as an opaque workflow identifier and never
+    # accepts a filesystem path from the client.
+    snapshot_workflow_id: str | None = Field(default=None, max_length=64)
 
 
 class WorkflowBatchStart(BaseModel):
@@ -111,6 +115,9 @@ class WorkflowBatchStart(BaseModel):
     reconciliation_dates: list[str] = Field(min_length=1, max_length=31)
     files: dict[str, list[str]] = Field(default_factory=dict)
     replace_roles: list[str] = Field(default_factory=list)
+    rerun_successful_dates: bool = False
+    rerun_reason: str = Field(default="", max_length=500)
+    snapshot_workflow_id: str | None = Field(default=None, max_length=64)
 
 
 class WorkflowMessageCreate(BaseModel):
@@ -197,6 +204,8 @@ class WorkflowRead(BaseModel):
     step_error: str = ""
     step_error_detail: dict[str, str] = Field(default_factory=dict)
     fetched_data_available: bool = False
+    # Optional for compatibility with task rows created before source tracking.
+    fetched_data_source: Literal["live", "snapshot"] | None = None
     fetched_data_summary: dict[str, Any] = Field(default_factory=dict)
     fetched_data_review_status: str = ""
     fetched_data_supplement_history: list[dict[str, Any]] = Field(default_factory=list)
@@ -213,6 +222,17 @@ class WorkflowFetchedDataSet(BaseModel):
     key: str
     label: str
     total: int
+
+
+class WorkflowFetchedSnapshotRead(BaseModel):
+    """A safe, selectable summary of a locally stored fetch snapshot."""
+
+    source_workflow_id: str
+    source_display_id: str
+    skill_version: str
+    dates: list[str]
+    summary_by_date: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    captured_at: datetime
 
 
 class WorkflowFetchedPayment(BaseModel):
@@ -388,6 +408,8 @@ class WorkflowBatchRead(BaseModel):
     retry_message: str = ""
     retry_block_reason: str = ""
     fetched_data_available: bool = False
+    # Optional for compatibility with batch rows created before source tracking.
+    fetched_data_source: Literal["live", "snapshot"] | None = None
     fetched_data_review_status: str = ""
     fetched_data_summary_by_date: dict[str, dict[str, Any]] = Field(default_factory=dict)
     fetched_data_supplement_history: list[dict[str, Any]] = Field(default_factory=list)

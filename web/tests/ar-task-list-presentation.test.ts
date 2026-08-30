@@ -13,10 +13,10 @@ import {
   type ArTaskListSource
 } from '../src/features/workflow-agent/ar-task-list-presentation.ts';
 
-test('批次显示日期范围和日期数，单日任务只显示业务日期', () => {
+test('批次显示实际选择的日期，单日任务只显示业务日期', () => {
   assert.equal(
     arTaskDateLabel({ reconciliation_dates: ['2026-08-24', '2026-08-21', '2026-08-22'] }),
-    '2026-08-21 至 2026-08-24 · 共 3 天'
+    '2026-08-21、2026-08-22、2026-08-24 · 共 3 个核销日'
   );
   assert.equal(arTaskDateLabel({ reconciliation_date: '2026-08-21' }), '2026-08-21');
 });
@@ -108,7 +108,7 @@ test('列表视图模型正确接线批次、单日、失败和非失败数据',
     [
       {
         kind: '批次',
-        date: '2026-08-21 至 2026-08-22 · 共 2 天',
+        date: '2026-08-21、2026-08-22 · 共 2 个核销日',
         status: '失败',
         progress: 35,
         message: '核销校验失败',

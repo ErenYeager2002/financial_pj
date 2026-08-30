@@ -10,18 +10,20 @@ from ..task_reminder_contracts import (
     TaskDiscoveryCheckQueued,
     TaskDiscoveryCheckRequest,
     TaskReminderBoard,
+    TaskReminderCleanupResult,
     TaskReminderSubscriptionRead,
     TaskReminderSubscriptionWrite,
 )
 from ..task_reminder_service import (
+    dismiss_resolved_task_reminders,
     enqueue_task_discovery,
     get_subscription,
     get_subscription_owner_credential,
     get_task_reminder_board,
-    retry_task_discovery,
     remove_subscription_owner_credential,
-    save_subscription_owner_credential,
+    retry_task_discovery,
     save_subscription,
+    save_subscription_owner_credential,
 )
 
 router = APIRouter(prefix="/api/task-reminders", tags=["task-reminders"])
@@ -38,6 +40,14 @@ def list_task_reminders(
     current: UserContext = Depends(get_current_user),
 ) -> TaskReminderBoard:
     return get_task_reminder_board(db, current)
+
+
+@router.delete("/resolved", response_model=TaskReminderCleanupResult)
+def clear_resolved_task_reminders(
+    db: Session = Depends(get_db),
+    current: UserContext = Depends(get_current_user),
+) -> TaskReminderCleanupResult:
+    return dismiss_resolved_task_reminders(db, current)
 
 
 @router.post("/checks", response_model=TaskDiscoveryCheckQueued, status_code=202)

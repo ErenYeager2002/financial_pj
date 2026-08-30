@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import uuid
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Any
 
@@ -39,6 +40,71 @@ def current_material_set(
             WorkflowMaterialSet.state == "current",
         )
     )
+
+
+def successful_reconciliation_dates_for_material_lineage(
+    db: Session,
+    *,
+    owner_id: str,
+    department_id: str,
+    skill_id: str,
+    material_set_id: str | None,
+    reconciliation_dates: Iterable[str],
+) -> set[str]:
+    """Find successful dates whose fixed or published version reaches the current set."""
+    return set(
+        successful_reconciliation_workflows_for_material_lineage(
+            db,
+            owner_id=owner_id,
+            department_id=department_id,
+            skill_id=skill_id,
+            material_set_id=material_set_id,
+            reconciliation_dates=reconciliation_dates,
+        )
+    )
+
+
+def successful_reconciliation_workflows_for_material_lineage(
+    db: Session,
+    *,
+    owner_id: str,
+    department_id: str,
+    skill_id: str,
+    material_set_id: str | None,
+    reconciliation_dates: Iterable[str],
+) -> dict[str, list[str]]:
+    """Map successful dates to the preserved workflow records in the material lineage."""
+    dates = tuple(reconciliation_dates)
+    if not material_set_id or not dates:
+        return {}
+
+    lineage: set[str] = set()
+    cursor: str | None = material_set_id
+    while cursor and cursor not in lineage:
+        material_set = db.get(WorkflowMaterialSet, cursor)
+        if material_set is None:
+            break
+        lineage.add(material_set.id)
+        cursor = material_set.parent_set_id
+
+    if not lineage:
+        return {}
+    found: dict[str, list[str]] = {}
+    rows = db.execute(
+        select(WorkflowSession.reconciliation_date, WorkflowSession.id)
+        .where(
+            WorkflowSession.owner_id == owner_id,
+            WorkflowSession.department_id == department_id,
+            WorkflowSession.skill_id == skill_id,
+            WorkflowSession.material_set_id.in_(lineage),
+            WorkflowSession.state == "succeeded",
+            WorkflowSession.reconciliation_date.in_(dates),
+        )
+        .order_by(WorkflowSession.created_at, WorkflowSession.id)
+    ).all()
+    for reconciliation_date, workflow_id in rows:
+        found.setdefault(reconciliation_date, []).append(workflow_id)
+    return found
 
 
 def list_material_sets(

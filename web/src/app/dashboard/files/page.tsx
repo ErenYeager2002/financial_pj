@@ -20,10 +20,7 @@ export default async function Page({ searchParams }: PageProps) {
   const result = await listFiles(page, 20, kind, query);
 
   return (
-    <PageContainer
-      pageTitle='文件中心'
-      pageDescription='查看当前上传文件和最新任务结果；旧结果仍保留在任务审计记录中'
-    >
+    <PageContainer pageTitle='文件中心' pageDescription='旧结果仍保留在任务审计记录中'>
       <form className='mb-4 flex flex-wrap items-end gap-2' method='get'>
         <label htmlFor='file-query' className='grid min-w-64 gap-1 text-sm'>
           <span className='text-muted-foreground'>文件名</span>

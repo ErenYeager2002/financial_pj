@@ -34,6 +34,7 @@ data/*
 .vscode/
 .DS_Store
 Thumbs.db
+/启动财务Skill平台.exe
 
 # Local runtime state and Codex verification artifacts
 financial.db

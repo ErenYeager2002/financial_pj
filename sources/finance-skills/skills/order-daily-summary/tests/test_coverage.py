@@ -1,11 +1,14 @@
 # -*- coding: utf-8 -*-
 """覆盖台账 + 《统计区间》页：亮晶要能一眼看出"这份表算了哪几天、有没有漏"。"""
-import sys
+import importlib.util
 from datetime import date
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-import coverage  # noqa: E402
+coverage_path = Path(__file__).resolve().parents[1] / "scripts" / "coverage.py"
+coverage_spec = importlib.util.spec_from_file_location("order_daily_summary_coverage", coverage_path)
+assert coverage_spec is not None and coverage_spec.loader is not None
+coverage = importlib.util.module_from_spec(coverage_spec)
+coverage_spec.loader.exec_module(coverage)
 
 
 def test_first_use_has_no_gaps(tmp_path):

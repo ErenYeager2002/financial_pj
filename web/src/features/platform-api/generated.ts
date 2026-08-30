@@ -1258,6 +1258,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/task-reminders/resolved": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Clear Resolved Task Reminders */
+        delete: operations["clear_resolved_task_reminders_api_task_reminders_resolved_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/workbench": {
         parameters: {
             query?: never;
@@ -1423,6 +1440,23 @@ export interface paths {
         put?: never;
         /** New Workflow */
         post: operations["new_workflow_api_workflows_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workflows/fetched-snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Fetched Snapshot Options */
+        get: operations["get_fetched_snapshot_options_api_workflows_fetched_snapshots_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3873,6 +3907,19 @@ export interface components {
             check_failures?: components["schemas"]["TaskDiscoveryFailureRead"][];
             /** Reminders */
             reminders?: components["schemas"]["TaskReminderRead"][];
+            /**
+             * Resolved Count
+             * @default 0
+             */
+            resolved_count: number;
+        };
+        /** TaskReminderCleanupResult */
+        TaskReminderCleanupResult: {
+            /**
+             * Dismissed Count
+             * @default 0
+             */
+            dismissed_count: number;
         };
         /** TaskReminderRead */
         TaskReminderRead: {
@@ -4170,6 +4217,8 @@ export interface components {
              * @default
              */
             fetched_data_review_status: string;
+            /** Fetched Data Source */
+            fetched_data_source?: ("live" | "snapshot") | null;
             /** Fetched Data Summary By Date */
             fetched_data_summary_by_date?: {
                 [key: string]: {
@@ -4239,8 +4288,20 @@ export interface components {
             reconciliation_dates: string[];
             /** Replace Roles */
             replace_roles?: string[];
+            /**
+             * Rerun Reason
+             * @default
+             */
+            rerun_reason: string;
+            /**
+             * Rerun Successful Dates
+             * @default false
+             */
+            rerun_successful_dates: boolean;
             /** Skill Id */
             skill_id: string;
+            /** Snapshot Workflow Id */
+            snapshot_workflow_id?: string | null;
         };
         /** WorkflowCreate */
         WorkflowCreate: {
@@ -4459,6 +4520,31 @@ export interface components {
              */
             writeoff_status: string;
         };
+        /**
+         * WorkflowFetchedSnapshotRead
+         * @description A safe, selectable summary of a locally stored fetch snapshot.
+         */
+        WorkflowFetchedSnapshotRead: {
+            /**
+             * Captured At
+             * Format: date-time
+             */
+            captured_at: string;
+            /** Dates */
+            dates: string[];
+            /** Skill Version */
+            skill_version: string;
+            /** Source Display Id */
+            source_display_id: string;
+            /** Source Workflow Id */
+            source_workflow_id: string;
+            /** Summary By Date */
+            summary_by_date?: {
+                [key: string]: {
+                    [key: string]: unknown;
+                };
+            };
+        };
         /** WorkflowFetchedWriteoff */
         WorkflowFetchedWriteoff: {
             /** Amount Local */
@@ -4621,6 +4707,8 @@ export interface components {
              * @default
              */
             fetched_data_review_status: string;
+            /** Fetched Data Source */
+            fetched_data_source?: ("live" | "snapshot") | null;
             /** Fetched Data Summary */
             fetched_data_summary?: {
                 [key: string]: unknown;
@@ -4732,6 +4820,8 @@ export interface components {
             replace_roles?: string[];
             /** Skill Id */
             skill_id: string;
+            /** Snapshot Workflow Id */
+            snapshot_workflow_id?: string | null;
         };
     };
     responses: never;
@@ -4835,6 +4925,7 @@ export type TaskDiscoveryFailureRead = components['schemas']['TaskDiscoveryFailu
 export type TaskDraft = components['schemas']['TaskDraft'];
 export type TaskDraftUpdate = components['schemas']['TaskDraftUpdate'];
 export type TaskReminderBoard = components['schemas']['TaskReminderBoard'];
+export type TaskReminderCleanupResult = components['schemas']['TaskReminderCleanupResult'];
 export type TaskReminderRead = components['schemas']['TaskReminderRead'];
 export type TaskReminderSubscriptionRead = components['schemas']['TaskReminderSubscriptionRead'];
 export type TaskReminderSubscriptionWrite = components['schemas']['TaskReminderSubscriptionWrite'];
@@ -4867,6 +4958,7 @@ export type WorkflowFetchedDataSupplement = components['schemas']['WorkflowFetch
 export type WorkflowFetchedDelivery = components['schemas']['WorkflowFetchedDelivery'];
 export type WorkflowFetchedOrderDetail = components['schemas']['WorkflowFetchedOrderDetail'];
 export type WorkflowFetchedPayment = components['schemas']['WorkflowFetchedPayment'];
+export type WorkflowFetchedSnapshotRead = components['schemas']['WorkflowFetchedSnapshotRead'];
 export type WorkflowFetchedWriteoff = components['schemas']['WorkflowFetchedWriteoff'];
 export type WorkflowFilesUpdate = components['schemas']['WorkflowFilesUpdate'];
 export type WorkflowMaterialFileRead = components['schemas']['WorkflowMaterialFileRead'];
@@ -7535,6 +7627,26 @@ export interface operations {
             };
         };
     };
+    clear_resolved_task_reminders_api_task_reminders_resolved_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskReminderCleanupResult"];
+                };
+            };
+        };
+    };
     workbench_api_workbench_get: {
         parameters: {
             query?: never;
@@ -7867,6 +7979,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkflowRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_fetched_snapshot_options_api_workflows_fetched_snapshots_get: {
+        parameters: {
+            query: {
+                skill_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowFetchedSnapshotRead"][];
                 };
             };
             /** @description Validation Error */
