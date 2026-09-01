@@ -222,7 +222,7 @@ def test_named_fetch_pipeline_cannot_confirm_without_a_bundle() -> None:
             )
 
 
-def test_fetch_action_publishes_the_workspace_export_as_a_bundle(
+def test_fetch_action_accepts_current_skill_export_schema_and_publishes_bundle(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -244,7 +244,7 @@ def test_fetch_action_publishes_the_workspace_export_as_a_bundle(
         json.dumps(
             {
                 "day": reconciliation_date,
-                "export_schema_version": workflow_service.FETCH_SNAPSHOT_VERSION,
+                "export_schema_version": "2026-08-31-total-received-v7",
                 "read_only": True,
                 "file_sha256": file_hashes,
             }
@@ -270,6 +270,10 @@ def test_fetch_action_publishes_the_workspace_export_as_a_bundle(
         "settings",
         SimpleNamespace(data_dir=tmp_path, fetch_bundle_retention_days=7),
     )
+    monkeypatch.setattr(workflow_service, "assert_workflow_execution_enabled", lambda _item: None)
+    monkeypatch.setattr(workflow_service, "acquire_claim_lock", lambda *_args: None)
+    monkeypatch.setattr(workflow_service, "sync_reminder_from_workflow", lambda *_args: None)
+    monkeypatch.setattr(workflow_service, "_cleanup_terminal_fetched_snapshot", lambda *_args: None)
     with SessionLocal() as db:
         workflow = _workflow()
         action = WorkflowAction(
@@ -282,13 +286,16 @@ def test_fetch_action_publishes_the_workspace_export_as_a_bundle(
         db.add_all([workflow, action])
         db.flush()
 
-        result = workflow_service._fetch_data_action(db, action, workflow)
+        execute_workflow_action(db, action)
 
+        result = json.loads(action.result_json)
         bundle = db.get(FetchedBundle, result["fetched_bundle_id"])
         assert bundle is not None
         assert bundle.source_type == "live"
         assert bundle.state == "ready_for_review"
         assert len(bundle.files) == 5
+        assert action.state == "succeeded"
+        assert workflow.stage == "building_fetch_preview"
         assert workflow.fetched_bundle_id == bundle.id
         assert result["fetched_data"]["bundle_id"] == bundle.id
 

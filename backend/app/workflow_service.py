@@ -190,7 +190,7 @@ CONFIRM_REPLIES = {"确认", "可以", "可以写", "按这个写", "没问题�
 WRITE_STAGING_DIR = "03_写入暂存区"
 BATCH_PUBLISH_TRANSACTION_DIR = ".批次发布事务"
 FETCH_SNAPSHOT_DIR = "01_智云导出"
-FETCH_SNAPSHOT_VERSION = "2026-08-31-total-received-v6"
+FETCH_SNAPSHOT_VERSION = "2026-08-31-total-received-v7"
 FETCHED_DATASET_SPECS = (
     ("payments", "回款记录", "回款记录"),
     ("orders", "订单交付", "订单交付"),
