@@ -34,7 +34,7 @@ from validate_plan import (  # noqa: E402
     DERIVED,
     FIVE,
     _norm,
-    check_one,
+    check_item_write_state,
     duplicate_audit_error,
     read_ledger_rows,
 )
@@ -500,7 +500,7 @@ def precheck_before_write(plan: dict, items: List[dict], src: Path) -> List[str]
                     f"第 {ref} 行已经不是原来那单了：校验时 {key}={was}，现在 {key}={now}"
                 )
         # 内容：这一行还能写吗（她可能刚好自己把这行填了）
-        res = check_one(it, rows)
+        res = check_item_write_state(it, rows)
         if res["verdict"] != "write":
             problems.append(
                 f"第 {ref} 行现在不能写了（{res['verdict']}）：{res['reason']}"

@@ -177,6 +177,30 @@ def test_validate_apply_readback_and_rerun_are_idempotent(tmp_path):
     assert rerun_checked["counts"] == {"write": 0, "skip": 1, "conflict": 0}
 
 
+def test_precheck_allows_idempotent_primary_row_when_historical_accrual_needs_write(tmp_path):
+    ledger_path = tmp_path / "盈亏_当前行已核销.xlsx"
+    _workbook(ledger_path)
+    workbook = openpyxl.load_workbook(ledger_path)
+    sheet = workbook["明细"]
+    sheet.cell(3, 7).value = 200.0
+    sheet.cell(3, 8).value = 200.0
+    sheet.cell(3, 9).value = "是"
+    sheet.cell(3, 10).value = "2026-08-11"
+    sheet.cell(3, 11).value = "汇"
+    workbook.save(ledger_path)
+
+    deliveries = {"SOD1": 100.0, "SOD2": 200.0}
+    plan = C.classify_records(
+        [_record("SOD2", 200.0, deliveries)], C.LedgerIndex(ledger_path)
+    )
+    checked = V.validate(plan, V.read_ledger_rows(ledger_path), ledger_path=ledger_path)
+
+    assert checked["counts"] == {"write": 1, "skip": 0, "conflict": 0}
+    assert checked["write"][0]["_check"]["verdict"] == "write"
+    assert checked["write"][0]["so_accrual_backfills"][0]["_check"]["verdict"] == "write"
+    assert A.precheck_before_write(checked, checked["write"], ledger_path) == []
+
+
 def test_backfill_overwrites_wrong_existing_accrual_after_identity_checks(tmp_path):
     ledger_path = tmp_path / "盈亏_旧计提错误.xlsx"
     output_path = tmp_path / "盈亏_计提已更正.xlsx"
