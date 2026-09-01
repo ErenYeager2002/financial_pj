@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
@@ -639,9 +639,15 @@ def new_workflow(
 @app.post("/api/workflows/start", response_model=WorkflowRead)
 def start_workflow_session(
     body: WorkflowStart,
+    response: Response,
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ) -> WorkflowRead:
+    if body.snapshot_workflow_id:
+        response.headers["Deprecation"] = "true"
+        response.headers["Warning"] = (
+            '299 - "snapshot_workflow_id is deprecated; use fetched_bundle_id"'
+        )
     return serialize_workflow(start_workflow(db, body, user))
 
 
@@ -671,9 +677,15 @@ def _serialize_workflow_batch_for_user(db: Session, user: UserContext, batch):
 @app.post("/api/workflow-batches/start", response_model=WorkflowBatchRead)
 def start_workflow_batch_session(
     body: WorkflowBatchStart,
+    response: Response,
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ) -> WorkflowBatchRead:
+    if body.snapshot_workflow_id:
+        response.headers["Deprecation"] = "true"
+        response.headers["Warning"] = (
+            '299 - "snapshot_workflow_id is deprecated; use fetched_bundle_id"'
+        )
     return _serialize_workflow_batch_for_user(db, user, start_workflow_batch(db, body, user))
 
 

@@ -18,6 +18,7 @@ function parseBody(value: unknown): {
   replace_roles: string[];
   rerun_successful_dates: boolean;
   rerun_reason: string;
+  fetched_bundle_id?: string;
   snapshot_workflow_id?: string;
 } {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -54,17 +55,32 @@ function parseBody(value: unknown): {
   if (rerunSuccessfulDates && !rerunReason) {
     throw new PlatformApiError(400, '勾选重新核销已成功日期后，必须填写重新核销原因。');
   }
-  const snapshotWorkflowId =
+  const fetchedBundleId =
+    body.fetched_bundle_id === undefined
+      ? undefined
+      : typeof body.fetched_bundle_id === 'string'
+        ? body.fetched_bundle_id.trim()
+        : '';
+  if (
+    fetchedBundleId !== undefined &&
+    (fetchedBundleId.length > 64 || !ID.test(fetchedBundleId))
+  ) {
+    throw new PlatformApiError(400, '取数包标识格式无效。');
+  }
+  const legacyWorkflowId =
     body.snapshot_workflow_id === undefined
       ? undefined
       : typeof body.snapshot_workflow_id === 'string'
         ? body.snapshot_workflow_id.trim()
         : '';
   if (
-    snapshotWorkflowId !== undefined &&
-    (snapshotWorkflowId.length > 64 || !ID.test(snapshotWorkflowId))
+    legacyWorkflowId !== undefined &&
+    (legacyWorkflowId.length > 64 || !ID.test(legacyWorkflowId))
   ) {
-    throw new PlatformApiError(400, '取数快照标识格式无效。');
+    throw new PlatformApiError(400, '旧任务标识格式无效。');
+  }
+  if (fetchedBundleId && legacyWorkflowId) {
+    throw new PlatformApiError(400, '取数包 ID 与旧任务 ID 不能同时提供。');
   }
   return {
     skill_id: skillId,
@@ -73,7 +89,8 @@ function parseBody(value: unknown): {
     replace_roles: parseWorkflowReplaceRoles(body.replace_roles),
     rerun_successful_dates: rerunSuccessfulDates,
     rerun_reason: rerunReason,
-    ...(snapshotWorkflowId ? { snapshot_workflow_id: snapshotWorkflowId } : {})
+    ...(fetchedBundleId ? { fetched_bundle_id: fetchedBundleId } : {}),
+    ...(legacyWorkflowId ? { snapshot_workflow_id: legacyWorkflowId } : {})
   };
 }
 
@@ -90,7 +107,15 @@ export async function POST(request: Request): Promise<Response> {
       method: 'POST',
       body: JSON.stringify(input)
     });
-    return NextResponse.json(batch, { status: 201 });
+    return NextResponse.json(batch, {
+      status: 201,
+      headers: input.snapshot_workflow_id
+        ? {
+            Deprecation: 'true',
+            Warning: '299 - "snapshot_workflow_id is deprecated; use fetched_bundle_id"'
+          }
+        : undefined
+    });
   } catch (error) {
     return platformRouteError(error, '批次任务启动失败。');
   }

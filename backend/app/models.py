@@ -1082,6 +1082,115 @@ class ModelTraceRecord(Base):
     )
 
 
+class FetchedBundle(Base):
+    __tablename__ = "fetched_bundles"
+    __table_args__ = (
+        CheckConstraint(
+            "source_type IN ('live', 'replay')",
+            name="ck_fetched_bundles_source_type",
+        ),
+        CheckConstraint(
+            "state IN ('creating', 'ready_for_review', 'confirmed', 'consumed', "
+            "'purge_pending', 'raw_purged', 'invalid')",
+            name="ck_fetched_bundles_state",
+        ),
+        CheckConstraint(
+            "raw_available OR NOT replayable",
+            name="ck_fetched_bundles_raw_replayable",
+        ),
+        CheckConstraint(
+            "state != 'raw_purged' OR (NOT raw_available AND NOT replayable)",
+            name="ck_fetched_bundles_purged_flags",
+        ),
+        CheckConstraint("date_from <= date_to", name="ck_fetched_bundles_date_range"),
+        CheckConstraint("purge_attempts >= 0", name="ck_fetched_bundles_purge_attempts"),
+        UniqueConstraint(
+            "source_workflow_id",
+            "manifest_version",
+            "dates_json",
+            name="uq_fetched_bundles_source_manifest_dates",
+        ),
+        Index("ix_fetched_bundles_owner_skill_state", "owner_id", "skill_id", "state"),
+        Index("ix_fetched_bundles_retention_until", "retention_until"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner_id: Mapped[str] = mapped_column(String(128), index=True)
+    department_id: Mapped[str] = mapped_column(String(128), index=True)
+    skill_id: Mapped[str] = mapped_column(String(128), index=True)
+    source_workflow_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workflow_sessions.id", ondelete="CASCADE"), index=True
+    )
+    source_batch_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("workflow_batches.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    source_type: Mapped[str] = mapped_column(String(16))
+    manifest_version: Mapped[str] = mapped_column(String(64))
+    state: Mapped[str] = mapped_column(String(32), index=True)
+    date_from: Mapped[str] = mapped_column(String(10))
+    date_to: Mapped[str] = mapped_column(String(10))
+    dates_json: Mapped[str] = mapped_column(Text, default="[]")
+    storage_key: Mapped[str] = mapped_column(String(512), default="")
+    raw_available: Mapped[bool] = mapped_column(Boolean, default=False)
+    preview_available: Mapped[bool] = mapped_column(Boolean, default=False)
+    replayable: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    purged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    retention_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    purge_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    purge_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str] = mapped_column(Text, default="")
+
+    files: Mapped[list[FetchedBundleFile]] = relationship(
+        back_populates="bundle",
+        cascade="all, delete-orphan",
+        order_by="FetchedBundleFile.reconciliation_date, FetchedBundleFile.dataset",
+    )
+    source_workflow: Mapped[WorkflowSession] = relationship(
+        foreign_keys=[source_workflow_id]
+    )
+    source_batch: Mapped[WorkflowBatch | None] = relationship(
+        foreign_keys=[source_batch_id]
+    )
+
+
+class FetchedBundleFile(Base):
+    __tablename__ = "fetched_bundle_files"
+    __table_args__ = (
+        CheckConstraint(
+            "dataset IN ('payments', 'orders', 'writeoffs', 'order_details', 'summary')",
+            name="ck_fetched_bundle_files_dataset",
+        ),
+        CheckConstraint("length(sha256) = 64", name="ck_fetched_bundle_files_sha256"),
+        CheckConstraint("size_bytes >= 0", name="ck_fetched_bundle_files_size"),
+        UniqueConstraint(
+            "bundle_id",
+            "reconciliation_date",
+            "dataset",
+            name="uq_fetched_bundle_files_bundle_date_dataset",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    bundle_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("fetched_bundles.id", ondelete="CASCADE"), index=True
+    )
+    reconciliation_date: Mapped[str] = mapped_column(String(10), index=True)
+    dataset: Mapped[str] = mapped_column(String(32))
+    relative_name: Mapped[str] = mapped_column(String(512))
+    sha256: Mapped[str] = mapped_column(String(64))
+    size_bytes: Mapped[int] = mapped_column(Integer)
+
+    bundle: Mapped[FetchedBundle] = relationship(back_populates="files")
+
+
 class WorkflowBatch(Base):
     __tablename__ = "workflow_batches"
 
@@ -1157,6 +1266,12 @@ class WorkflowSession(Base):
     material_set_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("workflow_material_sets.id"), nullable=True, index=True
     )
+    fetched_bundle_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("fetched_bundles.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     context_json: Mapped[str] = mapped_column(Text, default="{}")
     files_json: Mapped[str] = mapped_column(Text, default="{}")
     artifacts_json: Mapped[str] = mapped_column(Text, default="[]")
@@ -1175,6 +1290,12 @@ class WorkflowSession(Base):
         back_populates="workflow", cascade="all, delete-orphan"
     )
     batch: Mapped[WorkflowBatch | None] = relationship(back_populates="workflows")
+    material_set: Mapped[WorkflowMaterialSet | None] = relationship(
+        foreign_keys=[material_set_id]
+    )
+    fetched_bundle: Mapped[FetchedBundle | None] = relationship(
+        foreign_keys=[fetched_bundle_id]
+    )
 
 
 class WorkflowFetchedDataPreview(Base):
@@ -1189,6 +1310,12 @@ class WorkflowFetchedDataPreview(Base):
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    bundle_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("fetched_bundles.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
     workflow_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("workflow_sessions.id", ondelete="CASCADE"), index=True
     )
@@ -1196,6 +1323,8 @@ class WorkflowFetchedDataPreview(Base):
     revision: Mapped[str] = mapped_column(String(64))
     summary_json: Mapped[str] = mapped_column(Text, default="{}")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    bundle: Mapped[FetchedBundle | None] = relationship(foreign_keys=[bundle_id])
 
 
 class WorkflowFetchedDataPreviewArGroup(Base):

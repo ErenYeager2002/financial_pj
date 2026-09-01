@@ -790,7 +790,12 @@ def test_completed_batch_dates_remain_successful_across_material_lineage() -> No
             assert details["reason"] == "财务负责人要求重新核对"
 
 
-def test_batch_tracks_its_own_published_material_for_later_retry() -> None:
+def test_batch_tracks_its_own_published_material_for_later_retry(monkeypatch) -> None:
+    monkeypatch.setattr(
+        workflow_service,
+        "assert_bundle_consumable",
+        lambda *_args, **_kwargs: SimpleNamespace(state="consumed"),
+    )
     username = f"batch-own-material-{uuid.uuid4().hex[:8]}"
     with auth_client(username=username) as client:
         assert client.put(
@@ -820,6 +825,7 @@ def test_batch_tracks_its_own_published_material_for_later_retry() -> None:
             assert initial is not None
             published = _append_material_version(db, initial, children[0].id)
             children[0].material_set_id = published.id
+            children[0].fetched_bundle_id = "shared-bundle-id"
             children[0].state = "succeeded"
             children[0].stage = "completed"
             for action in children[0].actions:
@@ -828,13 +834,18 @@ def test_batch_tracks_its_own_published_material_for_later_retry() -> None:
                 db,
                 children[0],
                 {
-                    "next_files": workflow_service.material_set_bindings(db, published),
                     "material_set_id": published.id,
                     "material_version": published.version,
                     "workspace": "",
                 },
             )
             assert batch.material_set_id == published.id
+            assert children[1].material_set_id == published.id
+            assert children[1].fetched_bundle_id == "shared-bundle-id"
+            assert json.loads(children[1].files_json) == workflow_service.material_set_bindings(
+                db, published
+            )
+            assert "next_files" not in json.loads(children[1].context_json)
             failed = children[1]
             failed.state = "failed"
             failed.stage = "failed"
@@ -845,6 +856,18 @@ def test_batch_tracks_its_own_published_material_for_later_retry() -> None:
         retried = client.post(f"/api/workflow-batches/{batch_id}/retry")
         assert retried.status_code == 200, retried.text
         assert retried.json()["state"] == "running"
+        with SessionLocal() as db:
+            batch = db.get(WorkflowBatch, batch_id)
+            assert batch is not None
+            failed = sorted(batch.workflows, key=lambda item: item.batch_sequence)[1]
+            context = json.loads(failed.context_json)
+            assert failed.fetched_bundle_id == "shared-bundle-id"
+            assert context["fetched_data"]["bundle_id"] == "shared-bundle-id"
+            assert context["fetched_data"]["review_status"] == "confirmed"
+            assert "workspace" not in context
+            retry_action = max(failed.actions, key=lambda item: item.queued_at)
+            assert retry_action.name == "prepare_workspace"
+            assert "resume_existing_workspace" not in json.loads(retry_action.input_json)
 
 
 def test_failed_batch_retry_rejects_superseded_material_version() -> None:
@@ -1378,7 +1401,11 @@ def test_running_fetch_observes_cancellation_before_advancing(monkeypatch) -> No
                 "awaiting_fetched_data_confirmation": True,
             }
 
-        monkeypatch.setattr(workflow_service, "_prepare_worklist", finish_fetch_after_cancel)
+        monkeypatch.setattr(
+            workflow_service,
+            "_execute_named_workflow_phase",
+            finish_fetch_after_cancel,
+        )
         with SessionLocal() as db:
             action = db.get(WorkflowAction, action_id)
             assert action is not None
@@ -1781,7 +1808,7 @@ def test_failed_batch_retry_is_blocked_while_another_ar_task_is_active() -> None
         assert retried.json()["state"] == "running"
 
 
-def test_failed_batch_retry_discards_partial_fetch_snapshot_and_forces_refetch() -> None:
+def test_failed_batch_retry_discards_partial_fetch_snapshot_and_creates_new_attempt() -> None:
     username = f"retry-partial-fetch-{uuid.uuid4().hex[:8]}"
     with auth_client(username=username) as client:
         credential = client.put(
@@ -1814,6 +1841,10 @@ def test_failed_batch_retry_discards_partial_fetch_snapshot_and_forces_refetch()
                 workflow_service._workflow_storage_root(db, workflow)
                 / "batch"
                 / batch_id
+                / "dates"
+                / f"01_{workflow.reconciliation_date.replace('-', '')}"
+                / "actions"
+                / workflow_service._compact_workspace_key(workflow.actions[0].id)
                 / "工作区"
             )
             export_dir = workspace_path / "01_智云导出"
@@ -1847,13 +1878,15 @@ def test_failed_batch_retry_discards_partial_fetch_snapshot_and_forces_refetch()
             workflow = db.get(WorkflowSession, workflow_id)
             assert workflow is not None
             context = json.loads(workflow.context_json)
-            assert context["workspace"] == workspace
+            assert "workspace" not in context
+            assert context["workspace_attempts"][-1] == workspace
             assert context["fetched_data"]["available"] is False
             assert context["fetched_data"]["review_status"] == "deleted"
             assert not export_dir.exists()
+            assert workspace_path.is_dir()
             queued = max(workflow.actions, key=lambda item: item.queued_at)
             queued_input = json.loads(queued.input_json)
-            assert queued_input["resume_existing_workspace"] is True
+            assert "resume_existing_workspace" not in queued_input
             assert sum(action.state == "queued" for action in workflow.actions) == 1
 
 
@@ -2489,7 +2522,11 @@ def test_failed_workflow_action_discards_fetched_snapshot(monkeypatch) -> None:
         db.flush()
         raise RuntimeError("simulated failure after fetch")
 
-    monkeypatch.setattr(workflow_service, "_prepare_worklist", fail_after_fetch)
+    monkeypatch.setattr(
+        workflow_service,
+        "_execute_named_workflow_phase",
+        fail_after_fetch,
+    )
     username = f"failed-fetch-cleanup-{uuid.uuid4().hex[:8]}"
     with auth_client(username=username) as client:
         assert (
@@ -2616,6 +2653,12 @@ def test_successful_workflow_keeps_fetched_preview_readable_after_cleanup() -> N
         detail = client.get(f"/api/workflows/{workflow_id}")
         assert detail.status_code == 200, detail.text
         assert detail.json()["fetched_data_available"] is True
+        snapshots = client.get(
+            "/api/workflows/fetched-snapshots",
+            params={"skill_id": "ar-hexiao-daily"},
+        )
+        assert snapshots.status_code == 200, snapshots.text
+        assert snapshots.json() == []
         preview = client.get(
             f"/api/workflows/{workflow_id}/fetched-data",
             params={"dataset": "ar_groups", "offset": 0, "limit": 50},
@@ -2657,7 +2700,11 @@ def test_fetched_data_review_must_be_confirmed_before_analysis(monkeypatch) -> N
             "artifacts": [],
         }
 
-    monkeypatch.setattr(workflow_service, "_prepare_worklist", fake_prepare)
+    monkeypatch.setattr(
+        workflow_service,
+        "_execute_named_workflow_phase",
+        fake_prepare,
+    )
     monkeypatch.setattr(
         workflow_service,
         "_prime_fetched_data_previews",
@@ -2700,8 +2747,8 @@ def test_fetched_data_review_must_be_confirmed_before_analysis(monkeypatch) -> N
         assert confirmed.status_code == 200, confirmed.text
         assert confirmed.json()["stage"] == "preparing"
         assert [item["name"] for item in confirmed.json()["actions"]] == [
-            "prepare_worklist",
-            "prepare_worklist",
+            "prepare_workspace",
+            "build_reconciliation_plan",
         ]
 
         execute_next_action(workflow_id)
@@ -2709,12 +2756,12 @@ def test_fetched_data_review_must_be_confirmed_before_analysis(monkeypatch) -> N
         assert ready.status_code == 200, ready.text
         assert ready.json()["stage"] == "applying"
         assert [item["name"] for item in ready.json()["actions"]] == [
-            "prepare_worklist",
-            "prepare_worklist",
-            "apply_confirmed",
+            "prepare_workspace",
+            "build_reconciliation_plan",
+            "apply_material_update",
         ]
         assert calls == 2
-        assert primed_dates == ["2026-08-12", "2026-08-12"]
+        assert primed_dates == ["2026-08-12"]
 
 
 def test_worker_can_request_audited_so_ar_supplement_and_returns_to_review(monkeypatch) -> None:
@@ -2757,7 +2804,11 @@ def test_worker_can_request_audited_so_ar_supplement_and_returns_to_review(monke
             },
         }
 
-    monkeypatch.setattr(workflow_service, "_prepare_worklist", fake_prepare)
+    monkeypatch.setattr(
+        workflow_service,
+        "_execute_named_workflow_phase",
+        fake_prepare,
+    )
     monkeypatch.setattr(
         workflow_service,
         "_supplement_fetched_data",
@@ -3733,6 +3784,276 @@ risk:
     ]
 
 
+def test_batch_prepare_workspace_uses_a_date_and_action_scoped_directory(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    workflow_id = str(uuid.uuid4())
+    future_workflow_id = str(uuid.uuid4())
+    action_id = str(uuid.uuid4())
+    batch_id = f"BAT-20260901-{uuid.uuid4().hex[:8].upper()}"
+    storage_root = tmp_path / "primary-workflow"
+    scripts = storage_root / "skill" / "vendor" / "scripts"
+    scripts.mkdir(parents=True)
+    (scripts / "classify_hexiao.py").write_text("", encoding="utf-8")
+
+    def fake_copy_inputs(_db, _action, _workflow, business):
+        copies = business / "02_我的表副本"
+        copies.mkdir(parents=True)
+        (business / "04_产出").mkdir(parents=True)
+        (copies / "2026年测试盈亏表.xlsx").write_bytes(b"ledger")
+        (copies / "测试到账流转表.xlsx").write_bytes(b"flow")
+        return {}
+
+    workflow = SimpleNamespace(
+        id=workflow_id,
+        owner_id="demo-user",
+        department_id="finance",
+        reconciliation_date="2026-08-17",
+        batch_id=batch_id,
+        batch_sequence=1,
+        progress=0,
+        progress_message="",
+        context_json="{}",
+        fetched_bundle_id=None,
+    )
+    future = SimpleNamespace(
+        id=future_workflow_id,
+        reconciliation_date="2026-08-19",
+        batch_sequence=2,
+    )
+    batch = SimpleNamespace(
+        id=batch_id,
+        reconciliation_dates_json=json.dumps(["2026-08-17", "2026-08-19"]),
+        workflows=[workflow, future],
+    )
+    action = SimpleNamespace(
+        id=action_id,
+        name="prepare_workspace",
+        input_json=json.dumps({"context": {}}),
+    )
+    db = SimpleNamespace(
+        commit=lambda: None,
+        execute=lambda *_: None,
+        refresh=lambda *_: None,
+        get=lambda model, identifier: (
+            batch if model is WorkflowBatch and identifier == batch_id else None
+        ),
+        get_bind=lambda: SimpleNamespace(dialect=SimpleNamespace(name="sqlite")),
+    )
+    monkeypatch.setattr(workflow_service, "workflow_root", lambda *_: storage_root)
+    monkeypatch.setattr(workflow_service, "_workflow_storage_root", lambda *_: storage_root)
+    monkeypatch.setattr(workflow_service, "_copy_inputs", fake_copy_inputs)
+
+    result = workflow_service._prepare_workspace_action(db, action, workflow)
+
+    expected = (
+        storage_root
+        / "batch"
+        / batch_id
+        / "dates"
+        / "01_20260817"
+        / "actions"
+        / workflow_service._compact_workspace_key(action_id)
+        / "工作区"
+    ).resolve()
+    future_root = (
+        storage_root
+        / "batch"
+        / batch_id
+        / "dates"
+        / "02_20260819"
+    )
+    assert Path(result["workspace"]) == expected
+    assert expected.is_dir()
+    assert not future_root.exists()
+
+
+def test_batch_prepare_workspace_stages_only_its_date_from_the_shared_bundle(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    workflow_id = str(uuid.uuid4())
+    action_id = str(uuid.uuid4())
+    batch_id = f"BAT-20260901-{uuid.uuid4().hex[:8].upper()}"
+    storage_root = tmp_path / "primary-workflow"
+    scripts = storage_root / "skill" / "vendor" / "scripts"
+    scripts.mkdir(parents=True)
+    (scripts / "classify_hexiao.py").write_text("", encoding="utf-8")
+    prior_workspace = storage_root / "batch" / batch_id / "dates" / "prior" / "工作区"
+    prior_workspace.mkdir(parents=True)
+    staged: list[tuple[list[str], Path]] = []
+
+    def fake_copy_inputs(_db, _action, _workflow, business):
+        copies = business / "02_我的表副本"
+        copies.mkdir(parents=True)
+        (business / "04_产出").mkdir(parents=True)
+        (copies / "2026年测试盈亏表.xlsx").write_bytes(b"ledger")
+        (copies / "测试到账流转表.xlsx").write_bytes(b"flow")
+        return {}
+
+    def fake_stage(_db, *, dates, target, **_kwargs):
+        staged.append((dates, target))
+        target.mkdir(parents=True)
+        return target.resolve()
+
+    context = {
+        "workspace": str(prior_workspace.resolve()),
+        "fetched_data": {
+            "available": True,
+            "review_status": "confirmed",
+            "bundle_id": "shared-bundle",
+            "dates": ["2026-08-17", "2026-08-19"],
+        },
+    }
+    workflow = SimpleNamespace(
+        id=workflow_id,
+        owner_id="demo-user",
+        department_id="finance",
+        reconciliation_date="2026-08-19",
+        batch_id=batch_id,
+        batch_sequence=2,
+        progress=0,
+        progress_message="",
+        context_json=json.dumps(context),
+        fetched_bundle_id="shared-bundle",
+    )
+    batch = SimpleNamespace(
+        id=batch_id,
+        reconciliation_dates_json=json.dumps(["2026-08-17", "2026-08-19"]),
+        workflows=[workflow],
+    )
+    action = SimpleNamespace(
+        id=action_id,
+        name="prepare_workspace",
+        input_json=json.dumps({"context": context}),
+    )
+    db = SimpleNamespace(
+        commit=lambda: None,
+        execute=lambda *_: None,
+        refresh=lambda *_: None,
+        get=lambda model, identifier: (
+            batch if model is WorkflowBatch and identifier == batch_id else None
+        ),
+        get_bind=lambda: SimpleNamespace(dialect=SimpleNamespace(name="sqlite")),
+    )
+    monkeypatch.setattr(workflow_service, "workflow_root", lambda *_: storage_root)
+    monkeypatch.setattr(workflow_service, "_workflow_storage_root", lambda *_: storage_root)
+    monkeypatch.setattr(workflow_service, "_copy_inputs", fake_copy_inputs)
+    monkeypatch.setattr(workflow_service, "stage_bundle_files", fake_stage)
+
+    result = workflow_service._prepare_workspace_action(db, action, workflow)
+
+    assert Path(result["workspace"]) != prior_workspace.resolve()
+    assert staged == [
+        (["2026-08-19"], Path(result["workspace"]) / workflow_service.FETCH_SNAPSHOT_DIR)
+    ]
+
+
+def test_batch_range_report_uses_an_independent_workspace(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    storage_root = tmp_path / "primary-workflow"
+    dates = ["2026-08-17", "2026-08-19"]
+    children = []
+    original_files: list[Path] = []
+    for sequence, reconciliation_date in enumerate(dates, start=1):
+        child_workspace = (
+            storage_root
+            / "batch"
+            / "batch-1"
+            / "dates"
+            / f"{sequence:02d}_{reconciliation_date.replace('-', '')}"
+            / "actions"
+            / f"apply-{sequence}"
+            / "工作区"
+        )
+        output = child_workspace / "04_产出"
+        export = child_workspace / workflow_service.FETCH_SNAPSHOT_DIR
+        output.mkdir(parents=True)
+        export.mkdir(parents=True)
+        token = reconciliation_date.replace("-", "")
+        daily = output / f"核销日清_{token}.xlsx"
+        daily.write_bytes(f"daily-{sequence}".encode())
+        (output / f"判定结果_{token}.json").write_text(
+            json.dumps({"payment_count": sequence, "counts": {"total": sequence}}),
+            encoding="utf-8",
+        )
+        (export / f"取数摘要_{token}.json").write_text(
+            json.dumps({"回款记录笔数": sequence}),
+            encoding="utf-8",
+        )
+        original_files.append(daily)
+        children.append(
+            SimpleNamespace(
+                id=f"child-{sequence}",
+                reconciliation_date=reconciliation_date,
+                batch_sequence=sequence,
+                context_json=json.dumps({"workspace": str(child_workspace.resolve())}),
+            )
+        )
+    workflow = children[-1]
+    workflow.owner_id = "demo-user"
+    workflow.artifacts_json = "[]"
+    batch = SimpleNamespace(
+        id="batch-1",
+        reconciliation_dates_json=json.dumps(dates),
+        workflows=children,
+        state="running",
+        progress=0,
+        progress_message="",
+    )
+    action = SimpleNamespace(id="failed-finalize-action")
+    result = {
+        "workspace": str(Path(json.loads(workflow.context_json)["workspace"])),
+        "artifacts": [],
+    }
+    attempts = 0
+
+    def fake_run_script(_script_dir, script_name, arguments, **_kwargs):
+        nonlocal attempts
+        attempts += 1
+        assert script_name == "build_task_reports.py"
+        report_workspace = Path(arguments[arguments.index("--workspace") + 1])
+        assert all(report_workspace != path.parents[1] for path in original_files)
+        if attempts == 1:
+            next((report_workspace / "04_产出").glob("核销日清_2026*.xlsx")).unlink()
+            raise RuntimeError("synthetic range report failure")
+        report_name = workflow_service._batch_integrated_report_name(dates)
+        (report_workspace / "04_产出" / report_name).write_bytes(b"integrated")
+        for path in (report_workspace / "04_产出").glob("核销日清_2026*.xlsx"):
+            path.unlink()
+        return ""
+
+    monkeypatch.setattr(workflow_service, "_workflow_storage_root", lambda *_: storage_root)
+    monkeypatch.setattr(workflow_service, "workflow_root", lambda *_: storage_root)
+    monkeypatch.setattr(workflow_service, "_run_script", fake_run_script)
+    monkeypatch.setattr(
+        workflow_service,
+        "_register_artifact",
+        lambda _db, _workflow, path, _action_id: {"name": path.name},
+    )
+
+    with pytest.raises(RuntimeError, match="synthetic range report failure"):
+        workflow_service._finalize_batch_reports(
+            SimpleNamespace(), batch, workflow, result, action
+        )
+    assert all(path.is_file() for path in original_files)
+
+    action = SimpleNamespace(id="finalize-action")
+    result = {"artifacts": []}
+    workflow_service._finalize_batch_reports(SimpleNamespace(), batch, workflow, result, action)
+
+    report_workspace = Path(result["workspace"])
+    assert report_workspace.is_relative_to(storage_root)
+    assert "/reports/actions/finalize-action/" in report_workspace.as_posix()
+    assert all(path.is_file() for path in original_files)
+    assert result["artifacts"] == [
+        {"name": workflow_service._batch_integrated_report_name(dates)}
+    ]
+
+
 def test_batch_prepare_accepts_declared_business_result_return_codes(
     monkeypatch,
     tmp_path: Path,
@@ -4152,7 +4473,7 @@ def test_conversational_workflow_hard_gates(monkeypatch) -> None:
     monkeypatch.setattr(workflow_orchestrator.httpx, "post", unavailable_model)
     monkeypatch.setattr(
         workflow_service,
-        "_prepare_worklist",
+        "_execute_named_workflow_phase",
         fake_prepare_worklist,
     )
     monkeypatch.setattr(
@@ -4282,7 +4603,8 @@ def test_conversational_workflow_hard_gates(monkeypatch) -> None:
             json={"content": "上传好了"},
         )
         assert preparing.json()["stage"] == "preparing"
-        assert preparing.json()["actions"][0]["name"] == "prepare_worklist"
+        assert preparing.json()["material_version"] == 1
+        assert preparing.json()["actions"][0]["name"] == "prepare_workspace"
         with SessionLocal() as db:
             queued = db.scalar(
                 select(WorkflowAction).where(
@@ -4291,6 +4613,13 @@ def test_conversational_workflow_hard_gates(monkeypatch) -> None:
                 )
             )
             assert queued is not None
+            assert "files" not in json.loads(queued.input_json)
+            workflow = db.get(WorkflowSession, workflow_id)
+            assert workflow is not None and workflow.material_set_id
+            workflow_context = json.loads(workflow.context_json)
+            assert "material_set_id" not in workflow_context
+            assert "material_version" not in workflow_context
+            assert "material_source_workflow_id" not in workflow_context
             assert test_account not in queued.input_json
             assert test_password not in queued.input_json
 
@@ -4523,7 +4852,7 @@ def test_multi_date_batch_runs_children_in_order_and_chains_files(monkeypatch) -
     )
     monkeypatch.setattr(
         workflow_service,
-        "_prepare_worklist",
+        "_execute_named_workflow_phase",
         fake_prepare_worklist,
     )
 
@@ -4570,14 +4899,15 @@ def test_multi_date_batch_runs_children_in_order_and_chains_files(monkeypatch) -
         assert first["stage"] == "preparing"
         assert second["stage"] == "queued"
         assert len(first["actions"]) == 1
+        assert first["actions"][0]["name"] == "prepare_workspace"
         assert second["actions"] == []
 
         execute_next_action(first["id"])
         after_prepare = client.get(f"/api/workflows/{first['id']}").json()
         assert after_prepare["stage"] == "applying"
         assert [item["name"] for item in after_prepare["actions"]] == [
-            "prepare_worklist",
-            "apply_confirmed",
+            "prepare_workspace",
+            "apply_material_update",
         ]
         assert client.get(f"/api/workflows/{second['id']}").json()["stage"] == "queued"
 
@@ -4586,6 +4916,7 @@ def test_multi_date_batch_runs_children_in_order_and_chains_files(monkeypatch) -
         second_started = client.get(f"/api/workflows/{second['id']}").json()
         assert first_complete["state"] == "succeeded"
         assert second_started["stage"] == "preparing"
+        assert second_started["actions"][0]["name"] == "prepare_workspace"
         assert ledger_id in {
             item["file_id"] for item in second_started["files"]["profit_loss_ledgers"]
         }
@@ -4680,7 +5011,11 @@ def test_multi_date_batch_skips_confirmed_empty_date_and_starts_next(monkeypatch
             raise AssertionError("确认空日后不应再次生成该日核销日清")
         return fake_prepare_worklist(_db, action, workflow)
 
-    monkeypatch.setattr(workflow_service, "_prepare_worklist", fake_prepare)
+    monkeypatch.setattr(
+        workflow_service,
+        "_execute_named_workflow_phase",
+        fake_prepare,
+    )
 
     with auth_client(username=f"empty-date-batch-{uuid.uuid4().hex[:8]}") as client:
         connection = client.post(

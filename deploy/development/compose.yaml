@@ -7,6 +7,7 @@ x-backend-environment: &backend-environment
   FINANCIAL_PROJECT_ROOT: /app
   FINANCIAL_APP_NAME: 财务 Skill 运行平台（开发）
   FINANCIAL_ENV: development
+  FINANCIAL_FETCH_BUNDLE_RETENTION_DAYS: "${FINANCIAL_FETCH_BUNDLE_RETENTION_DAYS:-7}"
   FINANCIAL_DATA_DIR: /var/lib/financial-platform
   FINANCIAL_SKILL_DIR: /app/skills
   FINANCIAL_DATABASE_URL: postgresql+psycopg://financial:${POSTGRES_PASSWORD}@postgres:5432/financial

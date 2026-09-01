@@ -52,12 +52,16 @@ def assert_workflow_execution_enabled(workflow: object) -> None:
             context = json.loads(str(getattr(workflow, "context_json", "{}")))
         except json.JSONDecodeError:
             context = {}
-        snapshot_workflow_id = (
-            str(context.get("snapshot_workflow_id") or "").strip()
+        replay_reference = (
+            str(
+                context.get("replay_source_bundle_id")
+                or context.get("snapshot_workflow_id")
+                or ""
+            ).strip()
             if isinstance(context, dict)
             else ""
         )
-        if snapshot_workflow_id:
+        if replay_reference:
             assert_snapshot_replay_enabled(str(skill_id))
             return
     assert_workflow_skill_execution_enabled(str(skill_id))

@@ -102,10 +102,14 @@ class WorkflowStart(BaseModel):
     reconciliation_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
     files: dict[str, list[str]] = Field(default_factory=dict)
     replace_roles: list[str] = Field(default_factory=list)
-    # Development-only replay of a previously completed four-file fetch.
-    # The backend treats this as an opaque workflow identifier and never
-    # accepts a filesystem path from the client.
-    snapshot_workflow_id: str | None = Field(default=None, max_length=64)
+    fetched_bundle_id: str | None = Field(default=None, max_length=64)
+    # Deprecated compatibility field. New callers identify the immutable
+    # owner-scoped fetch bundle directly.
+    snapshot_workflow_id: str | None = Field(
+        default=None,
+        max_length=64,
+        json_schema_extra={"deprecated": True},
+    )
 
 
 class WorkflowBatchStart(BaseModel):
@@ -117,7 +121,12 @@ class WorkflowBatchStart(BaseModel):
     replace_roles: list[str] = Field(default_factory=list)
     rerun_successful_dates: bool = False
     rerun_reason: str = Field(default="", max_length=500)
-    snapshot_workflow_id: str | None = Field(default=None, max_length=64)
+    fetched_bundle_id: str | None = Field(default=None, max_length=64)
+    snapshot_workflow_id: str | None = Field(
+        default=None,
+        max_length=64,
+        json_schema_extra={"deprecated": True},
+    )
 
 
 class WorkflowMessageCreate(BaseModel):
@@ -178,6 +187,26 @@ class WorkflowActionRead(BaseModel):
     finished_at: datetime | None
 
 
+class FetchedBundleRead(BaseModel):
+    id: str
+    source_type: Literal["live", "replay"]
+    state: Literal[
+        "creating",
+        "ready_for_review",
+        "confirmed",
+        "consumed",
+        "purge_pending",
+        "raw_purged",
+        "invalid",
+    ]
+    dates: list[str]
+    raw_available: bool
+    preview_available: bool
+    replayable: bool
+    retention_until: datetime | None
+    created_at: datetime
+
+
 class WorkflowRead(BaseModel):
     id: str
     display_id: str
@@ -193,6 +222,7 @@ class WorkflowRead(BaseModel):
     batch_id: str | None = None
     batch_sequence: int = 0
     material_set_id: str | None = None
+    fetched_bundle: FetchedBundleRead | None = None
     material_version: int | None = None
     material_source_workflow_id: str = ""
     requires_confirmation: bool = True
@@ -225,14 +255,21 @@ class WorkflowFetchedDataSet(BaseModel):
 
 
 class WorkflowFetchedSnapshotRead(BaseModel):
-    """A safe, selectable summary of a locally stored fetch snapshot."""
+    """A safe fetch history item; only replayable bundles are selectable."""
 
+    bundle_id: str
     source_workflow_id: str
     source_display_id: str
     skill_version: str
     dates: list[str]
     summary_by_date: dict[str, dict[str, Any]] = Field(default_factory=dict)
     captured_at: datetime
+    availability: Literal["replayable_bundle", "historical_preview"]
+    state: str
+    raw_available: bool
+    preview_available: bool
+    replayable: bool
+    retention_until: datetime | None = None
 
 
 class WorkflowFetchedPayment(BaseModel):

@@ -233,6 +233,46 @@ def test_bound_stale_workflow_is_rejected_before_writing() -> None:
         assert selected is not None and selected.id == version_two.id
 
 
+def test_prepare_workspace_rejects_a_superseded_material_version() -> None:
+    init_db()
+    user = _user("prepare-stale")
+    with SessionLocal() as db:
+        ledger_v1 = _file(db, user, name="2026年盈亏核算表.xlsx")
+        flow_v1 = _file(db, user, name="2026年到账流转表.xlsx")
+        version_one = create_or_replace_current_set(
+            db,
+            user,
+            "ar-hexiao-daily",
+            {
+                "profit_loss_ledgers": [_entry(ledger_v1)],
+                "receipt_flow_table": [_entry(flow_v1)],
+            },
+        )
+        workflow = _workflow(user, version_one.id)
+        db.add(workflow)
+        ledger_v2 = _file(db, user, name="2026年盈亏核算表_修订.xlsx")
+        flow_v2 = _file(db, user, name="2026年到账流转表_修订.xlsx")
+        create_or_replace_current_set(
+            db,
+            user,
+            "ar-hexiao-daily",
+            {
+                "profit_loss_ledgers": [_entry(ledger_v2)],
+                "receipt_flow_table": [_entry(flow_v2)],
+            },
+            expected_current_id=version_one.id,
+        )
+        action = SimpleNamespace(name="prepare_workspace", input_json="{}")
+
+        with pytest.raises(MaterialVersionConflict, match="已有更新版本"):
+            workflow_service._copy_inputs(
+                db,
+                action,
+                workflow,
+                workflow_service.workflow_root(user.user_id, workflow.id) / "workspace",
+            )
+
+
 def test_upload_set_becomes_current_and_preserves_all_annual_ledgers() -> None:
     init_db()
     user = _user()
@@ -386,7 +426,6 @@ def test_stale_workflow_cannot_replace_a_newer_current_version() -> None:
                     "receipt_flow_table": [_entry(stale_flow)],
                 },
             )
-
         current = current_material_set(
             db,
             user.user_id,
@@ -394,6 +433,73 @@ def test_stale_workflow_cannot_replace_a_newer_current_version() -> None:
             stale.skill_id,
         )
         assert current is not None and current.id == published.id
+
+
+def test_material_version_readback_failure_keeps_previous_current(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    init_db()
+    user = _user("material-readback")
+    with SessionLocal() as db:
+        ledger = _file(db, user, name="2026年盈亏核算表.xlsx")
+        flow = _file(db, user, name="2026年到账流转表.xlsx")
+        baseline = create_or_replace_current_set(
+            db,
+            user,
+            "ar-hexiao-daily",
+            {
+                "profit_loss_ledgers": [_entry(ledger)],
+                "receipt_flow_table": [_entry(flow)],
+            },
+        )
+        workflow = _workflow(user, baseline.id)
+        db.add(workflow)
+        db.flush()
+        output_ledger = _file(
+            db,
+            user,
+            name="2026年盈亏核算表_写后.xlsx",
+            kind="output",
+            workflow_id=workflow.id,
+        )
+        output_flow = _file(
+            db,
+            user,
+            name="2026年到账流转表_写后.xlsx",
+            kind="output",
+            workflow_id=workflow.id,
+        )
+        original_readback = workflow_service.material_set_bindings
+
+        def fail_new_version_readback(db_session, material_set):
+            if material_set.id != baseline.id:
+                raise ValueError("synthetic material readback failure")
+            return original_readback(db_session, material_set)
+
+        monkeypatch.setattr(
+            workflow_service,
+            "material_set_bindings",
+            fail_new_version_readback,
+        )
+        with pytest.raises(ValueError, match="synthetic material readback failure"):
+            workflow_service._publish_verified_material_set(
+                db,
+                workflow,
+                {
+                    "profit_loss_ledgers": [_entry(output_ledger)],
+                    "receipt_flow_table": [_entry(output_flow)],
+                },
+            )
+
+        db.expire_all()
+        current = current_material_set(
+            db,
+            user.user_id,
+            user.department_id,
+            "ar-hexiao-daily",
+        )
+        assert current is not None and current.id == baseline.id
+        assert current.state == "current"
 
 
 def test_material_set_rejects_files_from_another_owner() -> None:
@@ -475,8 +581,11 @@ def test_next_independent_workflow_can_copy_published_output_version() -> None:
         next_workflow = _workflow(user, published.id)
         db.add(next_workflow)
         db.flush()
-        bindings = material_set_bindings(db, published)
-        action = SimpleNamespace(input_json=json.dumps({"files": bindings}, ensure_ascii=False))
+        stale_bindings = material_set_bindings(db, baseline)
+        action = SimpleNamespace(
+            name="prepare_workspace",
+            input_json=json.dumps({"files": stale_bindings}, ensure_ascii=False),
+        )
         business = (
             workflow_service.workflow_root(user.user_id, next_workflow.id)
             / "actions"

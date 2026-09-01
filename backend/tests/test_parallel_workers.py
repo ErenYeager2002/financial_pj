@@ -4,14 +4,17 @@ import json
 import threading
 import uuid
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
+from sqlalchemy import select
+
 from app import worker
 from app.database import SessionLocal, init_db
 from app.models import RunRecord, WorkflowAction, WorkflowSession
 from app.worker import claim_next_run, run_once
 from app.workflow_service import claim_next_workflow_action
-from sqlalchemy import select
+
 
 def setup_module() -> None:
     init_db()
@@ -377,3 +380,31 @@ def test_workflow_worker_claims_queued_fetched_data_supplement() -> None:
         claimed.state = "succeeded"
         claimed.lease_expires_at = None
         db.commit()
+
+
+def test_worker_loop_survives_one_failed_iteration(monkeypatch) -> None:
+    calls: list[int] = []
+
+    def run_iteration(_pools, _worker_id):
+        calls.append(len(calls) + 1)
+        if len(calls) == 1:
+            raise RuntimeError("synthetic iteration failure")
+        worker.STOP = True
+        return False
+
+    monkeypatch.setattr(worker, "init_db", lambda: None)
+    monkeypatch.setattr(
+        worker,
+        "settings",
+        SimpleNamespace(ensure_directories=lambda: None, queue_poll_seconds=0),
+    )
+    monkeypatch.setattr(worker.signal, "signal", lambda *_args: None)
+    monkeypatch.setattr(worker.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(worker, "run_once", run_iteration)
+    worker.STOP = False
+    try:
+        worker.run_loop(("workflow",), "resilient-worker")
+    finally:
+        worker.STOP = False
+
+    assert calls == [1, 2]

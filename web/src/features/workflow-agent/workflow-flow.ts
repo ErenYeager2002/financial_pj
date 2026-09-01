@@ -95,8 +95,20 @@ function stepKey(input: WorkflowFlowInput): string {
   if (input.stage === 'finalizing') return 'finalize_batch';
   if (input.stage === 'failed') {
     const failedAction = input.actions?.find((action) => action.state === 'failed');
-    if (failedAction?.name === 'apply_confirmed') return 'write_files';
-    if (failedAction?.name === 'prepare_worklist') return 'fetch_zhiyun';
+    if (['apply_confirmed', 'apply_material_update'].includes(failedAction?.name ?? '')) {
+      return 'write_files';
+    }
+    if (
+      [
+        'prepare_worklist',
+        'prepare_workspace',
+        'fetch_data',
+        'build_fetch_preview',
+        'build_reconciliation_plan'
+      ].includes(failedAction?.name ?? '')
+    ) {
+      return 'fetch_zhiyun';
+    }
   }
   return 'queued';
 }

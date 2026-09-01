@@ -115,12 +115,19 @@ export type WorkflowBatchRead = import('./generated').WorkflowBatchRead;
 export type WorkflowAgentContext = GeneratedWorkflowAgentContext;
 
 export interface WorkflowFetchedSnapshot {
+  bundle_id: string;
   source_workflow_id: string;
   source_display_id: string;
   skill_version: string;
   dates: string[];
   summary_by_date: Record<string, Record<string, unknown>>;
   captured_at: string;
+  availability: 'replayable_bundle' | 'historical_preview';
+  state: string;
+  raw_available: boolean;
+  preview_available: boolean;
+  replayable: boolean;
+  retention_until: string | null;
 }
 export type PlatformFile = GeneratedPlatformFile;
 export type PlatformFileDetail = GeneratedPlatformFileDetail;

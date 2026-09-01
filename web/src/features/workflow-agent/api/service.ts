@@ -4,7 +4,7 @@ import type { WorkflowFetchedSnapshot, WorkflowMaterialSet } from '@/features/pl
 export function fetchWorkflowFetchedSnapshots(skillId: string): Promise<WorkflowFetchedSnapshot[]> {
   return platformClientRequest<WorkflowFetchedSnapshot[]>(
     `/api/platform/workflows/fetched-snapshots?skill_id=${encodeURIComponent(skillId)}`,
-    '取数快照加载失败。'
+    '取数记录加载失败。'
   );
 }
 

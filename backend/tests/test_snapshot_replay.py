@@ -6,8 +6,11 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from app import workflow_execution_policy, workflow_service
 from fastapi import HTTPException
+
+from app import workflow_execution_policy, workflow_service
+from app.database import SessionLocal, init_db
+from app.models import FetchedBundle, WorkflowFetchedDataPreview, WorkflowSession
 
 
 def _snapshot_source(tmp_path: Path, reconciliation_date: str) -> tuple[SimpleNamespace, Path]:
@@ -107,251 +110,78 @@ def test_snapshot_policy_requires_an_opaque_source_id(monkeypatch) -> None:
     assert error.value.status_code == 409
 
 
-def test_snapshot_options_deduplicate_shared_workspace_validation(monkeypatch) -> None:
+def test_fetch_history_distinguishes_replayable_bundle_from_purged_preview(
+    monkeypatch,
+) -> None:
     date_value = "2026-08-26"
-    workflows = [
-        SimpleNamespace(
-            id=f"source-{index}",
-            owner_id="owner-1",
-            skill_id="ar-hexiao-daily",
-            skill_version="1.6.11",
-            display_id=f"AR-{index}",
-            reconciliation_date=date_value,
-            batch_id="batch-1",
-            updated_at=None,
-            created_at=datetime.now(UTC),
-            context_json=json.dumps(
-                {
-                    "workspace": "D:/controlled/shared-workspace",
-                    "fetched_data": {"available": True, "dates": [date_value]},
-                }
-            ),
+    monkeypatch.setattr(workflow_service, "assert_skill_permission", lambda *_args: None)
+    init_db()
+    marker = datetime.now(UTC).strftime("%H%M%S%f")
+    owner_id = f"history-owner-{marker}"
+    with SessionLocal() as db:
+        for index, state in enumerate(("consumed", "raw_purged"), start=1):
+            workflow = WorkflowSession(
+                id=f"history-workflow-{marker}-{index}",
+                display_id=f"AR-HISTORY-{marker}-{index}",
+                owner_id=owner_id,
+                owner_name="取数历史测试",
+                department_id="finance",
+                skill_id="ar-hexiao-daily",
+                skill_name="应收核销日清",
+                skill_version="1.6.12",
+                skill_hash="a" * 64,
+                model_connection_id="background",
+                model_provider="platform",
+                model_name="deterministic",
+                reconciliation_date=date_value,
+            )
+            db.add(workflow)
+            db.flush()
+            bundle = FetchedBundle(
+                id=f"history-bundle-{marker}-{index}",
+                owner_id=owner_id,
+                department_id="finance",
+                skill_id="ar-hexiao-daily",
+                source_workflow_id=workflow.id,
+                source_type="live",
+                manifest_version="synthetic-v1",
+                state=state,
+                date_from=date_value,
+                date_to=date_value,
+                dates_json=json.dumps([date_value]),
+                storage_key=f"{owner_id}/history-bundle-{marker}-{index}",
+                raw_available=state == "consumed",
+                preview_available=True,
+                replayable=state == "consumed",
+                created_at=datetime.now(UTC),
+            )
+            db.add(bundle)
+            db.flush()
+            db.add(
+                WorkflowFetchedDataPreview(
+                    id=f"history-preview-{marker}-{index}",
+                    bundle_id=bundle.id,
+                    workflow_id=workflow.id,
+                    reconciliation_date=date_value,
+                    revision=f"revision-{index}",
+                    summary_json=json.dumps(
+                        {"回款记录笔数": index, "file_sha256": {"secret": "hidden"}}
+                    ),
+                )
+            )
+        db.commit()
+
+        options = workflow_service.list_fetched_snapshot_options(
+            db,
+            "ar-hexiao-daily",
+            SimpleNamespace(user_id=owner_id),
         )
-        for index in range(2)
-    ]
 
-    class FakeResult:
-        def __init__(self, values):
-            self.values = values
-
-        def all(self):
-            return self.values
-
-    class FakeDb:
-        def __init__(self):
-            self.calls = 0
-
-        def scalars(self, _query):
-            self.calls += 1
-            return FakeResult(workflows if self.calls == 1 else [])
-
-    calls = []
-    monkeypatch.setattr(workflow_service, "assert_skill_permission", lambda *_args: None)
-    monkeypatch.setattr(
-        workflow_service,
-        "_workflow_storage_root",
-        lambda *_args: Path("D:/controlled"),
-    )
-    monkeypatch.setattr(
-        workflow_service,
-        "_snapshot_context_workspace",
-        lambda *_args, **_kwargs: (
-            {},
-            {"available": True},
-            Path("D:/controlled/shared-workspace"),
-            Path("D:/controlled/shared-workspace/01_智云导出"),
-        ),
-    )
-    monkeypatch.setattr(
-        workflow_service,
-        "_validated_snapshot_for_date",
-        lambda _db, _source, item, **_kwargs: calls.append(item)
-        or {"summary": {"回款记录笔数": 1}},
-    )
-
-    options = workflow_service.list_fetched_snapshot_options(
-        FakeDb(),
-        "ar-hexiao-daily",
-        SimpleNamespace(user_id="owner-1"),
-    )
-
-    assert len(options) == 1
-    assert calls == [date_value]
-
-
-def test_snapshot_options_skip_workflows_without_available_snapshot(monkeypatch) -> None:
-    date_value = "2026-08-26"
-    workflows = [
-        SimpleNamespace(
-            id="workflow-without-snapshot",
-            owner_id="owner-1",
-            skill_id="ar-hexiao-daily",
-            skill_version="1.6.11",
-            display_id="AR-empty",
-            reconciliation_date=date_value,
-            batch_id=None,
-            updated_at=None,
-            created_at=datetime.now(UTC),
-            context_json=json.dumps({}),
-        ),
-        SimpleNamespace(
-            id="workflow-with-snapshot",
-            owner_id="owner-1",
-            skill_id="ar-hexiao-daily",
-            skill_version="1.6.11",
-            display_id="AR-snapshot",
-            reconciliation_date=date_value,
-            batch_id=None,
-            updated_at=None,
-            created_at=datetime.now(UTC),
-            context_json=json.dumps(
-                {
-                    "workspace": "D:/controlled/snapshot-workspace",
-                    "fetched_data": {"available": True, "dates": [date_value]},
-                }
-            ),
-        ),
-    ]
-
-    class FakeResult:
-        def __init__(self, values):
-            self.values = values
-
-        def all(self):
-            return self.values
-
-    class FakeDb:
-        def __init__(self):
-            self.calls = 0
-
-        def scalars(self, _query):
-            self.calls += 1
-            return FakeResult(workflows if self.calls == 1 else [])
-
-    calls = []
-    monkeypatch.setattr(workflow_service, "assert_skill_permission", lambda *_args: None)
-    monkeypatch.setattr(
-        workflow_service,
-        "_workflow_storage_root",
-        lambda *_args: Path("D:/controlled"),
-    )
-    monkeypatch.setattr(
-        workflow_service,
-        "_snapshot_context_workspace",
-        lambda *_args, **_kwargs: (
-            {},
-            {"available": True},
-            Path("D:/controlled/snapshot-workspace"),
-            Path("D:/controlled/snapshot-workspace/01_智云导出"),
-        ),
-    )
-    monkeypatch.setattr(
-        workflow_service,
-        "_validated_snapshot_for_date",
-        lambda _db, source, item, **_kwargs: calls.append(source.id)
-        or {"summary": {"回款记录笔数": 1}},
-    )
-
-    options = workflow_service.list_fetched_snapshot_options(
-        FakeDb(),
-        "ar-hexiao-daily",
-        SimpleNamespace(user_id="owner-1"),
-    )
-
-    assert [item.source_workflow_id for item in options] == ["workflow-with-snapshot"]
-    assert calls == ["workflow-with-snapshot"]
-
-
-def test_snapshot_options_reuse_persisted_preview_for_shared_workspace(monkeypatch) -> None:
-    date_value = "2026-08-26"
-    workflows = [
-        SimpleNamespace(
-            id="source-first",
-            owner_id="owner-1",
-            skill_id="ar-hexiao-daily",
-            skill_version="1.6.11",
-            display_id="AR-first",
-            reconciliation_date=date_value,
-            batch_id="batch-1",
-            updated_at=None,
-            created_at=datetime.now(UTC),
-            context_json=json.dumps(
-                {
-                    "workspace": "D:/controlled/shared-workspace",
-                    "fetched_data": {"available": True, "dates": [date_value]},
-                }
-            ),
-        ),
-        SimpleNamespace(
-            id="source-with-preview",
-            owner_id="owner-1",
-            skill_id="ar-hexiao-daily",
-            skill_version="1.6.11",
-            display_id="AR-preview",
-            reconciliation_date=date_value,
-            batch_id="batch-1",
-            updated_at=None,
-            created_at=datetime.now(UTC),
-            context_json=json.dumps(
-                {
-                    "workspace": "D:/controlled/shared-workspace",
-                    "fetched_data": {"available": True, "dates": [date_value]},
-                }
-            ),
-        ),
-    ]
-    previews = [
-        SimpleNamespace(
-            workflow_id="source-with-preview",
-            reconciliation_date=date_value,
-            summary_json=json.dumps({"回款记录笔数": 7}),
-        )
-    ]
-
-    class FakeResult:
-        def __init__(self, values):
-            self.values = values
-
-        def all(self):
-            return self.values
-
-    class FakeDb:
-        def __init__(self):
-            self.calls = 0
-
-        def scalars(self, _query):
-            self.calls += 1
-            return FakeResult(workflows if self.calls == 1 else previews)
-
-    monkeypatch.setattr(workflow_service, "assert_skill_permission", lambda *_args: None)
-    monkeypatch.setattr(
-        workflow_service,
-        "_workflow_storage_root",
-        lambda *_args: Path("D:/controlled"),
-    )
-    monkeypatch.setattr(
-        workflow_service,
-        "_snapshot_context_workspace",
-        lambda *_args, **_kwargs: (
-            {},
-            {"available": True},
-            Path("D:/controlled/shared-workspace"),
-            Path("D:/controlled/shared-workspace/01_智云导出"),
-        ),
-    )
-    monkeypatch.setattr(
-        workflow_service,
-        "_validated_snapshot_for_date",
-        lambda *_args, **_kwargs: pytest.fail("persisted preview should avoid file probing"),
-    )
-
-    options = workflow_service.list_fetched_snapshot_options(
-        FakeDb(),
-        "ar-hexiao-daily",
-        SimpleNamespace(user_id="owner-1"),
-    )
-
-    assert len(options) == 1
-    assert options[0].source_workflow_id == "source-first"
-    assert options[0].dates == [date_value]
-    assert options[0].summary_by_date[date_value] == {"回款记录笔数": 7}
+    assert {item.availability for item in options} == {
+        "replayable_bundle",
+        "historical_preview",
+    }
+    purged = next(item for item in options if item.availability == "historical_preview")
+    assert purged.raw_available is False
+    assert purged.replayable is False
+    assert purged.summary_by_date[date_value] == {"回款记录笔数": 2}

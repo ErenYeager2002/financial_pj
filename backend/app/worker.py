@@ -16,6 +16,7 @@ from .adapters import ExecutionContext, get_adapter
 from .auth import UserContext
 from .database import SessionLocal, init_db
 from .events import emit_event
+from .fetched_bundle_service import purge_expired_bundles
 from .leases import LeaseHeartbeat, lease_deadline
 from .models import RunRecord
 from .redaction import sanitize_text
@@ -227,6 +228,8 @@ def run_once(
             return True
         if run_workflow_action_once(db, pools, identity):
             return True
+        if "workflow" in pools and purge_expired_bundles(db, limit=1):
+            return True
     if "workflow" in pools:
         from .skill_rollout_service import run_rollout_once
 
@@ -244,7 +247,18 @@ def run_loop(pools: tuple[str, ...], worker_id: str) -> None:
         flush=True,
     )
     while not STOP:
-        if not run_once(pools, worker_id):
+        try:
+            worked = run_once(pools, worker_id)
+        except Exception as exc:
+            safe_error = sanitize_text(str(exc), error=True)
+            print(
+                f"Financial worker iteration failed; type={type(exc).__name__}; "
+                f"error={safe_error}",
+                flush=True,
+            )
+            time.sleep(float(getattr(settings, "queue_poll_seconds", 1)))
+            continue
+        if not worked:
             time.sleep(settings.queue_poll_seconds)
     print("Financial worker stopped", flush=True)
 

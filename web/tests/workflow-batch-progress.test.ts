@@ -222,8 +222,11 @@ test('批次详情页只渲染一张日期流程图并保留手动选择状态',
   assert.match(progress, /\{batch\.can_retry &&/);
   assert.doesNotMatch(progress, /\{batch\.retryable &&/);
   assert.match(progress, /正在重新执行/);
-  assert.match(progress, /workflows\.length > 5/);
-  assert.match(progress, /h-\[25rem\]/);
+  assert.match(
+    progress,
+    /<PaginatedCollection ariaLabel='\u6279\u6b21\u65e5\u671f\u4efb\u52a1\u5217\u8868'/
+  );
+  assert.doesNotMatch(progress, /workflows\.length > 5|h-\[25rem\]/);
   assert.match(progress, /bg-amber-600/);
   assert.match(progress, /批次产出/);
   assert.doesNotMatch(progress, /打开任务详情/);

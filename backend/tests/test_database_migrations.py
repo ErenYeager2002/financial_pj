@@ -441,3 +441,107 @@ def test_workflow_binding_migration_blocks_raw_mutations(tmp_path: Path) -> None
         data_dir=data_dir,
     )
     assert verify.returncode == 0, verify.stderr
+
+
+def test_fetched_bundle_migration_backfills_historical_previews_and_roundtrips(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "fetched-bundles.db"
+    data_dir = tmp_path / "data"
+    db_url = f"sqlite:///{db_path.as_posix()}"
+    previous_head = "a6b7c8d9e0f1"
+
+    old_schema = _alembic(db_url, data_dir, "upgrade", previous_head)
+    assert old_schema.returncode == 0, old_schema.stderr
+
+    seed = _run_python(
+        "from datetime import UTC, datetime\n"
+        "from sqlalchemy import MetaData, Table\n"
+        "from app.database import engine\n"
+        "metadata = MetaData()\n"
+        "workflows = Table('workflow_sessions', metadata, autoload_with=engine)\n"
+        "previews = Table('workflow_fetched_data_previews', metadata, autoload_with=engine)\n"
+        "now = datetime.now(UTC)\n"
+        "with engine.begin() as connection:\n"
+        "    connection.execute(workflows.insert().values(\n"
+        "        id='historical-workflow', owner_id='owner-1', owner_name='owner',\n"
+        "        department_id='finance', skill_id='ar-hexiao-daily',\n"
+        "        skill_name='应收核销日清', skill_version='1.6.12', skill_hash='a'*64,\n"
+        "        skill_commit='', concurrency_limit=1, model_connection_id='model-1',\n"
+        "        model_provider='platform', model_name='deterministic', state='succeeded',\n"
+        "        stage='completed', reconciliation_date='2026-08-20', batch_id=None,\n"
+        "        batch_sequence=0, previous_workflow_id='', material_set_id=None,\n"
+        "        context_json='{}', files_json='{}', artifacts_json='[]', progress=100,\n"
+        "        progress_message='completed', error_message='', created_at=now, updated_at=now,\n"
+        "    ))\n"
+        "    connection.execute(previews.insert().values(\n"
+        "        id='historical-preview', workflow_id='historical-workflow',\n"
+        "        reconciliation_date='2026-08-20', revision='b'*64, summary_json='{}',\n"
+        "        created_at=now,\n"
+        "    ))\n",
+        db_url=db_url,
+        data_dir=data_dir,
+    )
+    assert seed.returncode == 0, seed.stderr
+
+    upgraded = _alembic(db_url, data_dir, "upgrade", "head")
+    assert upgraded.returncode == 0, upgraded.stderr
+
+    verify = _run_python(
+        "import json\n"
+        "from sqlalchemy import inspect, text\n"
+        "from app.database import engine\n"
+        "with engine.connect() as connection:\n"
+        "    inspector = inspect(connection)\n"
+        "    tables = set(inspector.get_table_names())\n"
+        "    assert {'fetched_bundles', 'fetched_bundle_files'} <= tables\n"
+        "    bundle_columns = {item['name'] for item in "
+        "inspector.get_columns('fetched_bundles')}\n"
+        "    assert {'purge_attempts', 'purge_retry_at'} <= bundle_columns\n"
+        "    workflow_columns = {item['name'] for item in "
+        "inspector.get_columns('workflow_sessions')}\n"
+        "    preview_columns = {item['name'] for item in "
+        "inspector.get_columns('workflow_fetched_data_previews')}\n"
+        "    assert 'fetched_bundle_id' in workflow_columns\n"
+        "    assert 'bundle_id' in preview_columns\n"
+        "    row = connection.execute(text(\"\"\"\n"
+        "        SELECT id, state, source_type, dates_json, raw_available,\n"
+        "               preview_available, replayable\n"
+        "        FROM fetched_bundles WHERE source_workflow_id='historical-workflow'\n"
+        "    \"\"\")).mappings().one()\n"
+        "    assert row['state'] == 'raw_purged' and row['source_type'] == 'live'\n"
+        "    assert json.loads(row['dates_json']) == ['2026-08-20']\n"
+        "    assert not row['raw_available'] and row['preview_available'] "
+        "and not row['replayable']\n"
+        "    assert connection.scalar(text(\"select fetched_bundle_id from workflow_sessions "
+        "where id='historical-workflow'\")) == row['id']\n"
+        "    assert connection.scalar(text(\"select bundle_id from "
+        "workflow_fetched_data_previews where id='historical-preview'\")) == row['id']\n"
+        "    checks = {item['name'] for item in "
+        "inspector.get_check_constraints('fetched_bundles')}\n"
+        "    assert {'ck_fetched_bundles_state', 'ck_fetched_bundles_raw_replayable', "
+        "'ck_fetched_bundles_purged_flags', 'ck_fetched_bundles_purge_attempts'} <= checks\n",
+        db_url=db_url,
+        data_dir=data_dir,
+    )
+    assert verify.returncode == 0, verify.stderr
+
+    downgraded = _alembic(db_url, data_dir, "downgrade", previous_head)
+    assert downgraded.returncode == 0, downgraded.stderr
+    verify_down = _run_python(
+        "from sqlalchemy import inspect, text\n"
+        "from app.database import engine\n"
+        "with engine.connect() as connection:\n"
+        "    inspector = inspect(connection)\n"
+        "    tables = set(inspector.get_table_names())\n"
+        "    assert 'fetched_bundles' not in tables and 'fetched_bundle_files' not in tables\n"
+        "    assert 'fetched_bundle_id' not in {item['name'] for item in "
+        "inspector.get_columns('workflow_sessions')}\n"
+        "    assert 'bundle_id' not in {item['name'] for item in "
+        "inspector.get_columns('workflow_fetched_data_previews')}\n"
+        "    assert connection.scalar(text(\"select count(*) from "
+        "workflow_fetched_data_previews where id='historical-preview'\")) == 1\n",
+        db_url=db_url,
+        data_dir=data_dir,
+    )
+    assert verify_down.returncode == 0, verify_down.stderr

@@ -15,6 +15,6 @@ export async function GET(request: Request): Promise<Response> {
     );
     return NextResponse.json(snapshots);
   } catch (error) {
-    return platformRouteError(error, '取数快照加载失败。');
+    return platformRouteError(error, '取数记录加载失败。');
   }
 }

@@ -156,7 +156,7 @@ export function WorkflowLauncher({
   const [snapshotOptionsLoading, setSnapshotOptionsLoading] = React.useState(false);
   const [snapshotOptionsError, setSnapshotOptionsError] = React.useState('');
   const [useSnapshot, setUseSnapshot] = React.useState(false);
-  const [selectedSnapshotWorkflowId, setSelectedSnapshotWorkflowId] = React.useState('');
+  const [selectedFetchedBundleId, setSelectedFetchedBundleId] = React.useState('');
   const [rerunSuccessfulDates, setRerunSuccessfulDates] = React.useState(false);
   const [rerunReason, setRerunReason] = React.useState('');
   const [error, setError] = React.useState('');
@@ -171,8 +171,15 @@ export function WorkflowLauncher({
   const selectedSkill = skills.find((skill) => skill.id === skillId);
   const requiresZhiyunCredential = selectedSkill?.id === 'ar-hexiao-daily' && !useSnapshot;
   const supportsSnapshotReplay = selectedSkill?.id === 'ar-hexiao-daily';
+  const replayableOptions = React.useMemo(
+    () =>
+      snapshotOptions.filter(
+        (item) => item.replayable && item.availability === 'replayable_bundle'
+      ),
+    [snapshotOptions]
+  );
   const selectedSnapshot = snapshotOptions.find(
-    (item) => item.source_workflow_id === selectedSnapshotWorkflowId
+    (item) => item.bundle_id === selectedFetchedBundleId && item.replayable
   );
   const fileInputs = selectedSkill?.file_inputs ?? [];
   const recentTasks = React.useMemo(
@@ -217,7 +224,7 @@ export function WorkflowLauncher({
     setMaterialsError('');
     setSnapshotOptionsError('');
     setUseSnapshot(false);
-    setSelectedSnapshotWorkflowId('');
+    setSelectedFetchedBundleId('');
     setDeletingFileId('');
     setDirtyRoles(new Set());
     if (!skillId) {
@@ -275,21 +282,24 @@ export function WorkflowLauncher({
       cache: 'no-store'
     })
       .then(async (response) => {
-        if (!response.ok) throw new Error(await responseMessage(response, '取数快照加载失败。'));
+        if (!response.ok) throw new Error(await responseMessage(response, '取数记录加载失败。'));
         return (await response.json()) as WorkflowFetchedSnapshot[];
       })
       .then((options) => {
         setSnapshotOptions(options);
-        setSelectedSnapshotWorkflowId((current) =>
-          options.some((item) => item.source_workflow_id === current)
+        const replayable = options.filter(
+          (item) => item.replayable && item.availability === 'replayable_bundle'
+        );
+        setSelectedFetchedBundleId((current) =>
+          replayable.some((item) => item.bundle_id === current)
             ? current
-            : (options[0]?.source_workflow_id ?? '')
+            : (replayable[0]?.bundle_id ?? '')
         );
       })
       .catch((loadError: unknown) => {
         if (loadError instanceof DOMException && loadError.name === 'AbortError') return;
         setSnapshotOptionsError(
-          loadError instanceof Error ? loadError.message : '取数快照加载失败。'
+          loadError instanceof Error ? loadError.message : '取数记录加载失败。'
         );
         setSnapshotOptions([]);
       })
@@ -526,13 +536,13 @@ export function WorkflowLauncher({
       return;
     }
     if (useSnapshot) {
-      if (!selectedSnapshotWorkflowId || !selectedSnapshot) {
-        setError('请选择一个可用的取数快照。');
+      if (!selectedFetchedBundleId || !selectedSnapshot) {
+        setError('请选择一个可回放取数包。');
         return;
       }
       const unavailableDates = dates.filter((item) => !selectedSnapshot.dates.includes(item));
       if (unavailableDates.length) {
-        setError(`所选快照不包含这些日期：${unavailableDates.join('、')}。`);
+        setError(`所选取数包不包含这些日期：${unavailableDates.join('、')}。`);
         return;
       }
     }
@@ -561,7 +571,7 @@ export function WorkflowLauncher({
             reconciliation_date: dates[0],
             files,
             replace_roles,
-            ...(useSnapshot ? { snapshot_workflow_id: selectedSnapshotWorkflowId } : {})
+            ...(useSnapshot ? { fetched_bundle_id: selectedFetchedBundleId } : {})
           }
         : {
             skill_id: skillId,
@@ -570,7 +580,7 @@ export function WorkflowLauncher({
             replace_roles,
             rerun_successful_dates: rerunSuccessfulDates,
             rerun_reason: normalizedRerunReason,
-            ...(useSnapshot ? { snapshot_workflow_id: selectedSnapshotWorkflowId } : {})
+            ...(useSnapshot ? { fetched_bundle_id: selectedFetchedBundleId } : {})
           };
       const response = await fetch(endpoint, {
         method: 'POST',
@@ -639,9 +649,9 @@ export function WorkflowLauncher({
 
           {supportsSnapshotReplay && (
             <div className='rounded-lg border p-3'>
-              <p className='text-sm font-medium'>取数来源</p>
+              <p className='text-sm font-medium'>取数记录</p>
               <p className='mt-1 text-xs text-muted-foreground'>
-                快照模式只在本地开发环境使用，不连接智云；源快照不会被修改。
+                这里只提供仍在保留期限内的可回放取数包。
               </p>
               <div className='mt-3 grid gap-2 text-sm'>
                 <label
@@ -668,57 +678,57 @@ export function WorkflowLauncher({
                 </label>
                 <label
                   htmlFor='fetched-data-source-snapshot'
-                  aria-label='使用已有取数快照'
+                  aria-label='使用可回放取数包'
                   className='flex cursor-pointer items-start gap-2'
                 >
                   <input
                     id='fetched-data-source-snapshot'
-                    aria-label='使用已有取数快照'
+                    aria-label='使用可回放取数包'
                     type='radio'
                     name='fetched-data-source'
                     checked={useSnapshot}
-                    disabled={working || snapshotOptionsLoading || snapshotOptions.length === 0}
+                    disabled={working || snapshotOptionsLoading || replayableOptions.length === 0}
                     onChange={() => setUseSnapshot(true)}
                     className='mt-0.5'
                   />
                   <span className='min-w-0 flex-1'>
-                    <span className='font-medium'>使用已有取数快照</span>
+                    <span className='font-medium'>使用可回放取数包</span>
                     <span className='mt-0.5 block text-xs text-muted-foreground'>
-                      只复制 v5 四件套，后续仍需人工检查和现有审批。
+                      回放原始取数文件，后续仍需人工检查和现有审批。
                     </span>
                   </span>
                 </label>
               </div>
               {snapshotOptionsLoading && (
-                <p className='mt-2 text-xs text-muted-foreground'>正在读取可用快照…</p>
+                <p className='mt-2 text-xs text-muted-foreground'>正在读取取数记录…</p>
               )}
               {snapshotOptionsError && (
                 <p role='alert' className='mt-2 text-sm text-destructive'>
                   {snapshotOptionsError}
                 </p>
               )}
-              {useSnapshot && snapshotOptions.length > 0 && (
+              {useSnapshot && replayableOptions.length > 0 && (
                 <label className='mt-3 grid gap-1.5 text-sm font-medium'>
-                  选择快照
+                  选择可回放取数包
                   <select
                     className='h-10 rounded-md border bg-background px-3 font-normal'
-                    value={selectedSnapshotWorkflowId}
+                    value={selectedFetchedBundleId}
                     disabled={working}
-                    onChange={(event) => setSelectedSnapshotWorkflowId(event.target.value)}
+                    onChange={(event) => setSelectedFetchedBundleId(event.target.value)}
                   >
-                    {snapshotOptions.map((option) => (
-                      <option key={option.source_workflow_id} value={option.source_workflow_id}>
+                    {replayableOptions.map((option) => (
+                      <option key={option.bundle_id} value={option.bundle_id}>
                         {option.source_display_id} · {option.dates.join('、')}
                       </option>
                     ))}
                   </select>
                   <span className='text-xs font-normal text-muted-foreground'>
-                    只能选择包含所选全部核销日期的快照。
+                    只能选择包含所选全部核销日期的取数包。
                   </span>
                 </label>
               )}
-              {!snapshotOptionsLoading && !snapshotOptionsError && snapshotOptions.length === 0 && (
-                <p className='mt-2 text-xs text-muted-foreground'>当前没有可用的本地快照。</p>
+              {!snapshotOptionsLoading && !snapshotOptionsError && replayableOptions.length === 0 && (
+                <p className='mt-2 text-xs text-muted-foreground'>当前没有可回放取数包。</p>
               )}
             </div>
           )}

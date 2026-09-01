@@ -39,6 +39,24 @@ test('后台任务流程卡片把失败定位到当前步骤并展示错误', ()
   });
 });
 
+test('拆分后的取数与写入动作仍定位到原有员工流程步骤', () => {
+  const fetch = workflowFlow({
+    state: 'failed',
+    stage: 'failed',
+    progress: 15,
+    actions: [{ name: 'build_fetch_preview', state: 'failed', error_message: '预览失败' }]
+  });
+  const write = workflowFlow({
+    state: 'failed',
+    stage: 'failed',
+    progress: 85,
+    actions: [{ name: 'apply_material_update', state: 'failed', error_message: '写入失败' }]
+  });
+
+  assert.equal(fetch.find((node) => node.key === 'fetch_zhiyun')?.state, 'error');
+  assert.equal(write.find((node) => node.key === 'write_files')?.state, 'error');
+});
+
 test('完成任务的流程卡片全部完成', () => {
   assert.ok(
     workflowFlow({ state: 'succeeded', stage: 'completed', progress: 100 }).every(

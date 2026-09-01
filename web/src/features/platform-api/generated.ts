@@ -2293,6 +2293,36 @@ export interface components {
             /** Enabled */
             enabled: boolean;
         };
+        /** FetchedBundleRead */
+        FetchedBundleRead: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Dates */
+            dates: string[];
+            /** Id */
+            id: string;
+            /** Preview Available */
+            preview_available: boolean;
+            /** Raw Available */
+            raw_available: boolean;
+            /** Replayable */
+            replayable: boolean;
+            /** Retention Until */
+            retention_until: string | null;
+            /**
+             * Source Type
+             * @enum {string}
+             */
+            source_type: "live" | "replay";
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "creating" | "ready_for_review" | "confirmed" | "consumed" | "purge_pending" | "raw_purged" | "invalid";
+        };
         /** FileInputSpec */
         FileInputSpec: {
             /**
@@ -4369,6 +4399,8 @@ export interface components {
         };
         /** WorkflowBatchStart */
         WorkflowBatchStart: {
+            /** Fetched Bundle Id */
+            fetched_bundle_id?: string | null;
             /** Files */
             files?: {
                 [key: string]: string[];
@@ -4393,7 +4425,10 @@ export interface components {
             rerun_successful_dates: boolean;
             /** Skill Id */
             skill_id: string;
-            /** Snapshot Workflow Id */
+            /**
+             * Snapshot Workflow Id
+             * @deprecated
+             */
             snapshot_workflow_id?: string | null;
         };
         /** WorkflowCreate */
@@ -4623,9 +4658,16 @@ export interface components {
         };
         /**
          * WorkflowFetchedSnapshotRead
-         * @description A safe, selectable summary of a locally stored fetch snapshot.
+         * @description A safe fetch history item; only replayable bundles are selectable.
          */
         WorkflowFetchedSnapshotRead: {
+            /**
+             * Availability
+             * @enum {string}
+             */
+            availability: "replayable_bundle" | "historical_preview";
+            /** Bundle Id */
+            bundle_id: string;
             /**
              * Captured At
              * Format: date-time
@@ -4633,12 +4675,22 @@ export interface components {
             captured_at: string;
             /** Dates */
             dates: string[];
+            /** Preview Available */
+            preview_available: boolean;
+            /** Raw Available */
+            raw_available: boolean;
+            /** Replayable */
+            replayable: boolean;
+            /** Retention Until */
+            retention_until?: string | null;
             /** Skill Version */
             skill_version: string;
             /** Source Display Id */
             source_display_id: string;
             /** Source Workflow Id */
             source_workflow_id: string;
+            /** State */
+            state: string;
             /** Summary By Date */
             summary_by_date?: {
                 [key: string]: {
@@ -4798,6 +4850,7 @@ export interface components {
             display_id: string;
             /** Error Message */
             error_message: string;
+            fetched_bundle?: components["schemas"]["FetchedBundleRead"] | null;
             /**
              * Fetched Data Available
              * @default false
@@ -4907,6 +4960,8 @@ export interface components {
         };
         /** WorkflowStart */
         WorkflowStart: {
+            /** Fetched Bundle Id */
+            fetched_bundle_id?: string | null;
             /** Files */
             files?: {
                 [key: string]: string[];
@@ -4921,7 +4976,10 @@ export interface components {
             replace_roles?: string[];
             /** Skill Id */
             skill_id: string;
-            /** Snapshot Workflow Id */
+            /**
+             * Snapshot Workflow Id
+             * @deprecated
+             */
             snapshot_workflow_id?: string | null;
         };
     };
@@ -4955,6 +5013,7 @@ export type ChangePasswordRequest = components['schemas']['ChangePasswordRequest
 export type ExternalDataSourceSpec = components['schemas']['ExternalDataSourceSpec'];
 export type FeatureControlRead = components['schemas']['FeatureControlRead'];
 export type FeatureControlUpdateRequest = components['schemas']['FeatureControlUpdateRequest'];
+export type FetchedBundleRead = components['schemas']['FetchedBundleRead'];
 export type FileInputSpec = components['schemas']['FileInputSpec'];
 export type HttpValidationError = components['schemas']['HTTPValidationError'];
 export type HandlerSpec = components['schemas']['HandlerSpec'];

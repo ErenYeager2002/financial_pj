@@ -257,7 +257,7 @@ export function WorkflowFetchedDataDialog({
   async function submitReview(action: 'confirm' | 'supplement') {
     if (submitting) return;
     if (action === 'supplement' && isSnapshotReplay) {
-      setActionError('本地取数快照不能补取智云数据，请检查快照内容后继续。');
+      setActionError('回放取数包不能补取智云数据，请检查现有内容后继续。');
       return;
     }
     const arIds = parsedAr.values;
@@ -957,7 +957,7 @@ export function WorkflowFetchedDataDialog({
                 <h3 className='font-medium'>工作人员检查</h3>
                 <p className='text-sm text-muted-foreground'>
                   {isSnapshotReplay
-                    ? '当前使用本地取数快照，确认数据完整后继续。快照模式不能连接智云补取。'
+                    ? '当前使用回放取数包，确认数据完整后继续。回放模式不能连接智云补取。'
                     : '确认数据完整后继续；发现缺失数据时可按 AR/SO 编号补取。'}
                 </p>
               </div>

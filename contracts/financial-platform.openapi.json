@@ -1221,6 +1221,84 @@
         "title": "FeatureControlUpdateRequest",
         "type": "object"
       },
+      "FetchedBundleRead": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "dates": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Dates",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "preview_available": {
+            "title": "Preview Available",
+            "type": "boolean"
+          },
+          "raw_available": {
+            "title": "Raw Available",
+            "type": "boolean"
+          },
+          "replayable": {
+            "title": "Replayable",
+            "type": "boolean"
+          },
+          "retention_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retention Until"
+          },
+          "source_type": {
+            "enum": [
+              "live",
+              "replay"
+            ],
+            "title": "Source Type",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "creating",
+              "ready_for_review",
+              "confirmed",
+              "consumed",
+              "purge_pending",
+              "raw_purged",
+              "invalid"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "source_type",
+          "state",
+          "dates",
+          "raw_available",
+          "preview_available",
+          "replayable",
+          "retention_until",
+          "created_at"
+        ],
+        "title": "FetchedBundleRead",
+        "type": "object"
+      },
       "FileInputSpec": {
         "properties": {
           "description": {
@@ -5862,6 +5940,18 @@
       },
       "WorkflowBatchStart": {
         "properties": {
+          "fetched_bundle_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fetched Bundle Id"
+          },
           "files": {
             "additionalProperties": {
               "items": {
@@ -5935,6 +6025,7 @@
                 "type": "null"
               }
             ],
+            "deprecated": true,
             "title": "Snapshot Workflow Id"
           }
         },
@@ -6493,8 +6584,20 @@
         "type": "object"
       },
       "WorkflowFetchedSnapshotRead": {
-        "description": "A safe, selectable summary of a locally stored fetch snapshot.",
+        "description": "A safe fetch history item; only replayable bundles are selectable.",
         "properties": {
+          "availability": {
+            "enum": [
+              "replayable_bundle",
+              "historical_preview"
+            ],
+            "title": "Availability",
+            "type": "string"
+          },
+          "bundle_id": {
+            "title": "Bundle Id",
+            "type": "string"
+          },
           "captured_at": {
             "format": "date-time",
             "title": "Captured At",
@@ -6506,6 +6609,30 @@
             },
             "title": "Dates",
             "type": "array"
+          },
+          "preview_available": {
+            "title": "Preview Available",
+            "type": "boolean"
+          },
+          "raw_available": {
+            "title": "Raw Available",
+            "type": "boolean"
+          },
+          "replayable": {
+            "title": "Replayable",
+            "type": "boolean"
+          },
+          "retention_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retention Until"
           },
           "skill_version": {
             "title": "Skill Version",
@@ -6519,6 +6646,10 @@
             "title": "Source Workflow Id",
             "type": "string"
           },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
           "summary_by_date": {
             "additionalProperties": {
               "additionalProperties": true,
@@ -6529,11 +6660,17 @@
           }
         },
         "required": [
+          "bundle_id",
           "source_workflow_id",
           "source_display_id",
           "skill_version",
           "dates",
-          "captured_at"
+          "captured_at",
+          "availability",
+          "state",
+          "raw_available",
+          "preview_available",
+          "replayable"
         ],
         "title": "WorkflowFetchedSnapshotRead",
         "type": "object"
@@ -6857,6 +6994,16 @@
             "title": "Error Message",
             "type": "string"
           },
+          "fetched_bundle": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FetchedBundleRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "fetched_data_available": {
             "default": false,
             "title": "Fetched Data Available",
@@ -7106,6 +7253,18 @@
       },
       "WorkflowStart": {
         "properties": {
+          "fetched_bundle_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fetched Bundle Id"
+          },
           "files": {
             "additionalProperties": {
               "items": {
@@ -7164,6 +7323,7 @@
                 "type": "null"
               }
             ],
+            "deprecated": true,
             "title": "Snapshot Workflow Id"
           }
         },
