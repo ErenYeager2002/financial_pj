@@ -15,6 +15,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PaginatedCollection } from '@/components/ui/collection-pagination';
 import { Input } from '@/components/ui/input';
 import { Icons } from '@/components/icons';
 import type { ModelConnection, ModelProvider } from '@/features/platform-api/types';
@@ -322,7 +323,8 @@ export function ModelConnectionManagement({
         </CardHeader>
         <CardContent className='space-y-3'>
           {connections.length ? (
-            connections.map((connection) => {
+            <PaginatedCollection ariaLabel='模型连接' contentClassName='space-y-3'>
+              {connections.map((connection) => {
               const status = connectionStatus(connection);
               const busy = busyConnectionId === connection.id;
               const selectedModel = modelDrafts[connection.id] ?? connection.selected_model;
@@ -408,7 +410,8 @@ export function ModelConnectionManagement({
                   </div>
                 </div>
               );
-            })
+              })}
+            </PaginatedCollection>
           ) : (
             <div className='rounded-lg border border-dashed p-6 text-center'>
               <p className='font-medium'>还没有模型连接</p>

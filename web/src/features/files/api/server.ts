@@ -5,7 +5,11 @@ import {
   platformServerRequest,
   platformServerResponse
 } from '@/features/platform-api/server-client';
-import type { PlatformFileDetail, PlatformFilePage } from '@/features/platform-api/types';
+import type {
+  PlatformFile,
+  PlatformFileDetail,
+  PlatformFilePage
+} from '@/features/platform-api/types';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -16,7 +20,7 @@ function checkedUuid(value: string): string {
 
 export function listFiles(
   page = 1,
-  pageSize = 20,
+  pageSize = 5,
   kind = '',
   query = ''
 ): Promise<PlatformFilePage> {
@@ -28,6 +32,16 @@ export function listFiles(
   if (query) params.set('query', query.slice(0, 100));
   params.set('latest_only', 'true');
   return platformServerRequest<PlatformFilePage>(`/api/files?${params}`);
+}
+
+export async function listAllFiles(kind = '', query = ''): Promise<PlatformFile[]> {
+  const first = await listFiles(1, 100, kind, query);
+  const files = [...(first.items ?? [])];
+  for (let page = 2; page <= first.pages; page += 1) {
+    const result = await listFiles(page, 100, kind, query);
+    files.push(...(result.items ?? []));
+  }
+  return Array.from(new Map(files.map((file) => [file.id, file])).values());
 }
 
 export function getFile(fileId: string): Promise<PlatformFileDetail> {

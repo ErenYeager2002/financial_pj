@@ -5,6 +5,10 @@ import { Icons } from '@/components/icons';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import {
+  PaginatedCollection,
+  PaginatedTableBody
+} from '@/components/ui/collection-pagination';
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -43,7 +47,7 @@ interface WorkflowFetchedDataDialogProps {
   onBatchChange?: (batch: WorkflowBatchRead) => void;
 }
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 5;
 type FetchedArGroup = NonNullable<WorkflowFetchedData['ar_groups']>[number];
 type FetchedOrderGroup = NonNullable<FetchedArGroup['orders']>[number];
 type MoneyValue = { amount: number | null | undefined; currency: string };
@@ -395,18 +399,22 @@ export function WorkflowFetchedDataDialog({
           className='min-h-0 flex-1 overflow-y-auto px-5 py-4'
         >
           {preview && (
-            <dl className='mb-4 grid gap-2 rounded-lg border bg-muted/30 p-3 text-sm sm:grid-cols-2 lg:grid-cols-4'>
+            <PaginatedCollection
+              ariaLabel='取数业务摘要'
+              className='mb-4 rounded-lg border bg-muted/30 p-3'
+              contentClassName='grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4'
+            >
               {businessSummary.map((item) => (
                 <div key={item.label} className='min-w-0'>
-                  <dt className='text-muted-foreground'>{item.label}</dt>
-                  <dd className='mt-0.5 break-words font-medium'>
+                  <p className='text-muted-foreground'>{item.label}</p>
+                  <p className='mt-0.5 break-words font-medium'>
                     {'format' in item && item.format
                       ? item.format(summary)
                       : firstSummaryValue(summary, item.keys)}
-                  </dd>
+                  </p>
                 </div>
               ))}
-            </dl>
+            </PaginatedCollection>
           )}
 
           {preview && isEmptyFetchedSummary(summary) && (
@@ -628,7 +636,10 @@ export function WorkflowFetchedDataDialog({
                                             </th>
                                           </tr>
                                         </thead>
-                                        <tbody>
+                                        <PaginatedTableBody
+                                          ariaLabel={`${group.ar_id}关联 SO`}
+                                          colSpan={8}
+                                        >
                                           {orders.map((order) => {
                                             const deliveries = order.deliveries ?? [];
                                             const orderKey = `${group.ar_id}/${order.so_id}`;
@@ -737,7 +748,10 @@ export function WorkflowFetchedDataDialog({
                                                                   </th>
                                                                 </tr>
                                                               </thead>
-                                                              <tbody>
+                                                              <PaginatedTableBody
+                                                                ariaLabel={`${order.so_id}核销明细`}
+                                                                colSpan={6}
+                                                              >
                                                                 {(order.writeoffs?.length ?? 0) >
                                                                 0 ? (
                                                                   order.writeoffs?.map(
@@ -791,7 +805,7 @@ export function WorkflowFetchedDataDialog({
                                                                     </td>
                                                                   </tr>
                                                                 )}
-                                                              </tbody>
+                                                              </PaginatedTableBody>
                                                             </table>
                                                           </div>
                                                         </section>
@@ -820,7 +834,10 @@ export function WorkflowFetchedDataDialog({
                                                                   </th>
                                                                 </tr>
                                                               </thead>
-                                                              <tbody>
+                                                              <PaginatedTableBody
+                                                                ariaLabel={`${order.so_id} SOD 明细`}
+                                                                colSpan={4}
+                                                              >
                                                                 {(order.order_details?.length ??
                                                                   0) > 0 ? (
                                                                   order.order_details?.map(
@@ -864,7 +881,7 @@ export function WorkflowFetchedDataDialog({
                                                                     </td>
                                                                   </tr>
                                                                 )}
-                                                              </tbody>
+                                                              </PaginatedTableBody>
                                                             </table>
                                                           </div>
                                                         </section>
@@ -875,7 +892,7 @@ export function WorkflowFetchedDataDialog({
                                               </React.Fragment>
                                             );
                                           })}
-                                        </tbody>
+                                        </PaginatedTableBody>
                                       </table>
                                     </div>
                                   </section>
@@ -1014,9 +1031,13 @@ export function WorkflowFetchedDataDialog({
                 {(supplementHistory?.length ?? 0) > 0 && (
                   <div className='rounded-md bg-muted/40 p-3 text-sm'>
                     <p className='font-medium'>补取记录</p>
-                    <ul className='mt-2 space-y-2 text-xs'>
+                    <PaginatedCollection
+                      ariaLabel='补取记录'
+                      className='mt-2'
+                      contentClassName='space-y-2 text-xs'
+                    >
                       {supplementHistory?.map((item, index) => (
-                        <li
+                        <div
                           key={`${String(item.completed_at ?? '')}-${index}`}
                           className='rounded border bg-background p-2'
                         >
@@ -1031,9 +1052,9 @@ export function WorkflowFetchedDataDialog({
                             {supplementCount(item, 'added')}；未解决：
                             {supplementCount(item, 'unresolved')}
                           </p>
-                        </li>
+                        </div>
                       ))}
-                    </ul>
+                    </PaginatedCollection>
                   </div>
                 )}
               </div>

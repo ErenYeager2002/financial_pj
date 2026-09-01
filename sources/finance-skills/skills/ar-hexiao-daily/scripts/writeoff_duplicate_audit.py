@@ -234,13 +234,20 @@ def _audit_whole_payment_orders(
     audit["delta_raw"] = _money(delta)
     audit["delta_dedup"] = _money(delta)
     audit["delta"] = _money(delta)
-    if abs(delta) > tolerance_cents:
+    audit["unallocated_parent_amount"] = _money(max(delta, 0))
+    if delta < -tolerance_cents:
         audit["status"] = "unresolved"
         audit["error_code"] = "E_PARENT_WRITEOFF_MISMATCH"
         audit["reason"] = (
-            "整笔回款的父总到账与订单已核销金额合计差额超过1元"
+            "整笔回款的父总到账低于订单已核销金额合计超过1元"
             if source == "order_written_off"
-            else "整笔回款的父总到账与订单交付额兜底合计差额超过1元"
+            else "整笔回款的父总到账低于订单交付额兜底合计超过1元"
+        )
+    elif delta > tolerance_cents:
+        audit["reason"] = (
+            "整笔回款父总到账高于订单已核销金额合计，超出部分保留为父回款未分配金额"
+            if source == "order_written_off"
+            else "整笔回款父总到账高于订单交付额兜底合计，超出部分保留为父回款未分配金额"
         )
     return logical, audit
 
@@ -337,6 +344,8 @@ def audit_parent_writeoffs(
             if payment.get("total_amount_local") is not None
             else payment.get("amount_local")
         ),
+        "parent_total_source": payment.get("_parent_total_source") or "",
+        "unallocated_parent_amount": None,
     }
 
     if is_whole_payment:
@@ -418,13 +427,18 @@ def audit_parent_writeoffs(
     audit["delta_raw"] = _money(delta_raw_cents)
     audit["delta_dedup"] = _money(delta_raw_cents)
     audit["delta"] = _money(delta_raw_cents)
+    audit["unallocated_parent_amount"] = _money(max(delta_raw_cents, 0))
 
     if delta_raw_cents >= -tolerance_cents:
         audit["status"] = "tolerance" if delta_raw_cents < 0 else "normal"
         audit["reason"] = (
             "负差在1元容差内，不启动相同SO同金额业务去重"
             if delta_raw_cents < 0
-            else "未出现明显超核销，不启动业务去重"
+            else (
+                "父总到账高于逐SO核销合计，超出部分保留为父回款未分配金额"
+                if delta_raw_cents > 0
+                else "未出现明显超核销，不启动业务去重"
+            )
         )
         return physical_kept, audit
 
@@ -488,6 +502,7 @@ def audit_parent_writeoffs(
     audit["logical_total"] = _money(logical_total_cents)
     audit["delta_dedup"] = _money(delta_dedup_cents)
     audit["delta"] = _money(delta_dedup_cents)
+    audit["unallocated_parent_amount"] = _money(max(delta_dedup_cents, 0))
 
     if delta_dedup_cents < -tolerance_cents:
         audit["status"] = "unresolved"

@@ -8,6 +8,10 @@ description: 通过对话补齐输入、口径、输出和风险边界的 Agent 
 tags:
 - Agent
 - 需求澄清
+operational_profile:
+  execution_kind: agent_guidance
+  external_sources: []
+  employee_labels: [对话澄清, 生成任务草稿]
 ui:
   employee_name: 财务任务澄清器
   short_description: 通过 AI 助手补齐目标、文件和限制，并生成待核对的任务草稿。
@@ -54,6 +58,6 @@ permissions:
   run: finance_user
   manage: skill_admin
 upstream:
-  repository: https://github.com/EvanLee2004/finance-skills
+  repository: https://gitee.com/Lee157/finance-skills.git
   path: skills/task-clarifier
 blocked_reason: 属于 Agent 行为指南，需要模型型执行适配器，不是独立 CLI。

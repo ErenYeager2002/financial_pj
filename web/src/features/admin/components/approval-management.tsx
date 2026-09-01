@@ -5,6 +5,7 @@ import { IconChecks, IconClock, IconFileDescription } from '@tabler/icons-react'
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PaginatedCollection } from '@/components/ui/collection-pagination';
 import {
   Dialog,
   DialogContent,
@@ -122,7 +123,10 @@ export function ApprovalManagement({ session, initialApprovals }: Props) {
           </CardContent>
         </Card>
       ) : (
-        <div className='grid gap-4 xl:grid-cols-2'>
+        <PaginatedCollection
+          ariaLabel='审批记录'
+          contentClassName='grid gap-4 xl:grid-cols-2'
+        >
           {visible.map((approval) => {
             const preview = approval.preview as Record<string, unknown>;
             const selfRequested = approval.requested_by === session.user_id;
@@ -150,15 +154,21 @@ export function ApprovalManagement({ session, initialApprovals }: Props) {
                     申请 {formatDate(approval.created_at)} · 到期{' '}
                     {approval.expires_at ? formatDate(approval.expires_at) : '未设置'}
                   </div>
-                  <div className='grid grid-cols-2 gap-2 rounded border p-3'>
+                  <PaginatedCollection
+                    ariaLabel={`${String(preview.skill_name ?? approval.skill_id)}审批摘要`}
+                    contentClassName='grid grid-cols-2 gap-2 rounded border p-3'
+                  >
                     {summaries(preview).map(([label, value]) => (
                       <div key={label}>
                         <p className='text-xs text-muted-foreground'>{label}</p>
                         <p className='font-medium'>{value}</p>
                       </div>
                     ))}
-                  </div>
-                  <div className='space-y-2'>
+                  </PaginatedCollection>
+                  <PaginatedCollection
+                    ariaLabel={`${String(preview.skill_name ?? approval.skill_id)}审批文件`}
+                    contentClassName='space-y-2'
+                  >
                     {artifacts(preview).map((item) => (
                       <div
                         key={String(item.file_id)}
@@ -171,7 +181,7 @@ export function ApprovalManagement({ session, initialApprovals }: Props) {
                         </span>
                       </div>
                     ))}
-                  </div>
+                  </PaginatedCollection>
                   <p className='text-xs text-muted-foreground'>
                     执行快照 {approval.snapshot_sha256.slice(0, 16)}… · 预览{' '}
                     {approval.preview_sha256.slice(0, 16)}…
@@ -200,7 +210,7 @@ export function ApprovalManagement({ session, initialApprovals }: Props) {
               </Card>
             );
           })}
-        </div>
+        </PaginatedCollection>
       )}
 
       <Dialog open={Boolean(selected)} onOpenChange={(open) => !open && setSelected(null)}>

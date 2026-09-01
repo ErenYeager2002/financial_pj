@@ -8,6 +8,10 @@ description: PDF 读取、表单填写、渲染和版面校验的 Agent 基础�
 tags:
 - PDF
 - 基础能力
+operational_profile:
+  execution_kind: document_agent
+  external_sources: []
+  employee_labels: [本地PDF, 读取与编辑]
 file_inputs: []
 input_schema:
   type: object
@@ -45,6 +49,6 @@ permissions:
   run: finance_user
   manage: skill_admin
 upstream:
-  repository: https://github.com/EvanLee2004/finance-skills
+  repository: https://gitee.com/Lee157/finance-skills.git
   path: skills/pdf
 blocked_reason: 基础能力包不是单一业务工具，需要文档型 Agent 运行时。

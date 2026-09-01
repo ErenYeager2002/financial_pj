@@ -18,6 +18,13 @@ tags:
 - 订单
 - 日报
 - 离线
+operational_profile:
+  execution_kind: offline_file
+  external_sources:
+  - system: 智云
+    access: uploaded_export
+    required: true
+  employee_labels: [上传智云导出, 离线统计, 输出ZIP]
 file_inputs:
 - role: orders
   name: 九点下单明细
@@ -95,5 +102,5 @@ permissions:
   run: finance_user
   manage: skill_admin
 upstream:
-  repository: https://github.com/EvanLee2004/finance-skills
+  repository: https://gitee.com/Lee157/finance-skills.git
   path: skills/order-daily-summary

@@ -72,6 +72,8 @@ HUIKUAN_NAMES = {
     "arrival_date": ["到账日期", "回款日期"],
     "amount_orig": ["到账金额/原币", "到账金额原币"],
     "amount_local": ["到账金额/本币", "到账金额本币"],
+    "total_amount_orig": ["总到账金额/原币", "总到账金额原币", "总到账金额"],
+    "total_amount_local": ["总到账金额/本币", "总到账金额本币"],
     "fee": ["手续费/原币", "手续费"],
     "fee_local": ["手续费/本币", "手续费本币"],
     "tax": ["税费/原币", "税费"],
@@ -94,19 +96,30 @@ class CoverageError(Exception):
 
 
 def _prepare_parent_totals(p: dict) -> dict:
-    """Compute auditable gross receipt = net arrival + explicit fee/tax components."""
+    """Prefer Zhiyun's total receipt; otherwise compute arrival + fee + tax."""
     amount_orig = common.to_number(p.get("amount_orig"))
     amount_local = common.to_number(p.get("amount_local"))
+    existing_total_source = p.get("_parent_total_source")
+    explicit_total_orig = (
+        None
+        if existing_total_source == "computed_amount_plus_fee_tax"
+        else common.to_number(p.get("total_amount_orig"))
+    )
+    explicit_total_local = (
+        None
+        if existing_total_source == "computed_amount_plus_fee_tax"
+        else common.to_number(p.get("total_amount_local"))
+    )
+    p.pop("_charge_error", None)
     components = []
     for name, local_name in (
         ("fee", "fee_local"),
         ("tax", "tax_local"),
-        ("other_fee", "other_fee_local"),
     ):
         original = common.to_number(p.get(name)) or 0.0
         local = common.to_number(p.get(local_name))
         if float(original) < -TOL or (local is not None and float(local) < -TOL):
-            p["_charge_error"] = "手续费、税费或其他费用出现负数，无法按总到账金额自动核销"
+            p["_charge_error"] = "手续费或税费出现负数，无法按总到账金额自动核销"
         components.append((name, round(float(original), 2), local))
 
     charge_orig = round(sum(value for _name, value, _local in components), 2)
@@ -131,14 +144,50 @@ def _prepare_parent_totals(p: dict) -> dict:
     charge_local = round(sum(local_values), 2) if len(local_values) == len(components) else None
     p["charge_amount_orig"] = charge_orig
     p["charge_amount_local"] = charge_local
-    p["total_amount_orig"] = (
-        round(float(amount_orig) + charge_orig, 2) if amount_orig is not None else None
+    has_explicit_total = (
+        explicit_total_orig is not None or explicit_total_local is not None
     )
-    p["total_amount_local"] = (
-        round(float(amount_local) + float(charge_local), 2)
-        if amount_local is not None and charge_local is not None
-        else None
-    )
+    if has_explicit_total:
+        total_orig = explicit_total_orig
+        total_local = explicit_total_local
+        if total_orig is None and total_local is not None:
+            if common.is_cny(p.get("currency") or ""):
+                total_orig = total_local
+            elif (
+                amount_orig is not None
+                and amount_local is not None
+                and abs(float(amount_local)) > TOL
+            ):
+                total_orig = round(
+                    float(total_local) * float(amount_orig) / float(amount_local), 2
+                )
+        if total_local is None and total_orig is not None:
+            if common.is_cny(p.get("currency") or ""):
+                total_local = total_orig
+            elif (
+                amount_orig is not None
+                and amount_local is not None
+                and abs(float(amount_orig)) > TOL
+            ):
+                total_local = round(
+                    float(total_orig) * float(amount_local) / float(amount_orig), 2
+                )
+        total_source = "zhiyun_total_received"
+    else:
+        total_orig = (
+            round(float(amount_orig) + charge_orig, 2)
+            if amount_orig is not None
+            else None
+        )
+        total_local = (
+            round(float(amount_local) + float(charge_local), 2)
+            if amount_local is not None and charge_local is not None
+            else None
+        )
+        total_source = "computed_amount_plus_fee_tax"
+    p["total_amount_orig"] = total_orig
+    p["total_amount_local"] = total_local
+    p["_parent_total_source"] = total_source
     return p
 
 
@@ -971,6 +1020,7 @@ def load_exports(workspace: Path, target_date: Optional[dt.date] = None) -> List
         c = _need(h, "回款记录", ["AR", "核销日期"], aliases)
         for k in [
             "到账日期", "到账金额原币", "到账金额本币",
+            "总到账金额原币", "总到账金额本币",
             "手续费", "手续费本币", "税费", "税费本币", "其他费用", "其他费用本币",
             "原币币种", "回款类型", "核销状态", "开票客户",
             "销售名称",
@@ -991,6 +1041,12 @@ def load_exports(workspace: Path, target_date: Optional[dt.date] = None) -> List
                 "arrival_date": common.norm_date(_get(vals, c.get("到账日期"))),
                 "amount_orig": common.to_number(_get(vals, c.get("到账金额原币"))),
                 "amount_local": common.to_number(_get(vals, c.get("到账金额本币"))),
+                "total_amount_orig": common.to_number(
+                    _get(vals, c.get("总到账金额原币"))
+                ),
+                "total_amount_local": common.to_number(
+                    _get(vals, c.get("总到账金额本币"))
+                ),
                 "fee": common.to_number(_get(vals, c.get("手续费"))) or 0.0,
                 "fee_local": common.to_number(_get(vals, c.get("手续费本币"))),
                 "tax": common.to_number(_get(vals, c.get("税费"))) or 0.0,
@@ -1787,7 +1843,7 @@ def expand_payment(p: dict, rates: Dict[str, float]) -> List[dict]:
         )])
 
     # 有逐 SO 本次核销额时原样使用，费用只作为父回款审计信息，不二次加到逐单金额。
-    # 缺逐 SO 金额时，总到账（净到账+明确费用）按剩余未收从小到大依次承接。
+    # 缺逐 SO 金额时，按智云总到账（缺失时为到账金额+手续费+税费）依次承接。
     writeoffs = dict(p.get("writeoffs") or {})
     has_itemized_writeoff = bool(writeoffs)
     inherited_unresolved_by_so = p.get("_parent_audit_unresolved_by_so") or {}
@@ -2788,6 +2844,10 @@ def classify_one(
 
     # 展开阶段已定性的（分笔/超额/没回满/无下单…）直接落地
     forced = rec.get("forced_code")
+    if forced in {"E0", "E12"}:
+        # 兼容旧取数产物：这两个码只描述到账流转表未唯一命中。
+        # 盈亏核算必须继续；流转计划会依据 flow_hits 单独转 hand。
+        forced = None
     if forced:
         result["code"] = forced
         reason = rec.get("forced_reason") or ""
@@ -2810,7 +2870,7 @@ def classify_one(
                 + " 当前无法唯一命中 SOD，先指明承接回款的 SOD；唯一后才能安全写入。"
             )
         result["reason"] = reason
-        result["bucket"] = "exception" if forced in ("E4", "E7", "E10", "E12", "E0") else "hold"
+        result["bucket"] = "exception" if forced in ("E4", "E7", "E10") else "hold"
         return result
 
     amount_orig = rec.get("amount_orig")
@@ -2837,21 +2897,9 @@ def classify_one(
         )
         return result
 
-    # 流转表三键信号（有做才判）
-    flow_hits = rec.get("flow_hits")
-    if flow_hits is not None:
-        try:
-            fh = int(flow_hits)
-        except (TypeError, ValueError):
-            fh = -1
-        if fh == 0:
-            result["code"] = "E0"
-            result["reason"] = "流转表三键对不到账（0 行）"
-            return result
-        if fh > 1:
-            result["code"] = "E12"
-            result["reason"] = "同日同额同名命中多行"
-            return result
+    # 到账流转只决定流转表能否自动回填，不是盈亏核销的数据源。
+    # 未命中、弱命中或多命中由 build_flow_plan 单独标记 hand，
+    # 这里必须继续按智云金额和盈亏表状态完成业务判定。
     if rec.get("customer_archive_failed"):
         result["code"] = "E10"
         result["reason"] = "建档失败/搜不到客户"
@@ -3068,16 +3116,16 @@ def classify_one(
         round(float(deliver) - cumulative_received, 2)
         if deliver is not None else None
     )
-    delivery_above_baseline = (
+    delivery_differs_from_baseline = (
         deliver is not None
         and initial_receivable is not None
-        and float(deliver) > float(initial_receivable) + max(thr, TOL)
+        and abs(float(deliver) - float(initial_receivable)) > max(thr, TOL)
     )
     business_tail_settled = (
         settlement_delta is not None
         and abs(settlement_delta) > max(thr, TOL)
         and abs(settlement_delta) <= BUSINESS_SETTLEMENT_TOL
-        and not delivery_above_baseline
+        and not delivery_differs_from_baseline
     )
     if business_tail_settled:
         result["settlement_tolerance_audit"] = {
@@ -3116,7 +3164,7 @@ def classify_one(
     ):
         remaining = round(float(deliver) - cumulative_received, 2)
         current_receivable = common.to_number(snap.get("yingshou"))
-        preserve_baseline_blank_carry = delivery_above_baseline
+        preserve_baseline_blank_carry = delivery_differs_from_baseline
         if preserve_baseline_blank_carry:
             result["five_cols"] = {
                 "计提": None,
@@ -3734,7 +3782,7 @@ def _make_split_payment_chain(
     )
     preserve_baseline_blank_carry = (
         baseline_receivable is not None
-        and latest > float(baseline_receivable) + max(tolerance, TOL)
+        and abs(latest - float(baseline_receivable)) > max(tolerance, TOL)
         and any(
             (result.get("row_operation") or {}).get("receivable_mode")
             == "preserve_baseline_blank_carry"
@@ -3994,6 +4042,7 @@ def _make_split_payment_chain(
             round(float(current_receivable), 2)
             if current_receivable is not None else None
         ),
+        "business_rows": business_rows,
         "opening_unreceived": opening_remaining,
         # 写前校验用这份快照证明当前行仍是生成分笔链时看到的聚合基线。
         # 这样可以安全迁移旧版“多父回款合并在一行”的已填状态，同时拒绝
@@ -5080,6 +5129,8 @@ def payments_from_fixture(fixture: dict) -> List[dict]:
         q["arrival_date"] = common.norm_date(p.get("arrival_date"))
         q["amount_orig"] = common.to_number(p.get("amount_orig"))
         q["amount_local"] = common.to_number(p.get("amount_local"))
+        q["total_amount_orig"] = common.to_number(p.get("total_amount_orig"))
+        q["total_amount_local"] = common.to_number(p.get("total_amount_local"))
         q["fee"] = common.to_number(p.get("fee")) or 0.0
         q["fee_local"] = common.to_number(p.get("fee_local"))
         q["tax"] = common.to_number(p.get("tax")) or 0.0
@@ -5126,7 +5177,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     )
     ap.add_argument(
         "--flow-complete", action="store_true",
-        help="声明当天所有渠道的流转表都已给全；只有这时才判 E0（对不到账）",
+        help="声明当天所有渠道的流转表都已给全；0 命中明确列为流转人工项，不影响盈亏判定",
     )
     ap.add_argument(
         "--hexiao-date", default="",
@@ -5210,7 +5261,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     else:
         print(
             "WARN: 未认出到账流转表（02_我的表副本/）→ 本轮不做三键匹配，"
-            "E0/E12 不判、清单不给流转定位",
+            "跳过流转定位，盈亏判定继续",
             file=sys.stderr,
         )
 
@@ -5252,8 +5303,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     result["duplicate_writeoff_audit_sha256"] = WDA.audit_fingerprint(duplicate_audits)
     result["flow_sources"] = flow.sources
     result["business_rules"] = {
-        "parent_receipt_basis": "net_arrival_plus_explicit_fees_taxes",
-        "whole_parent_conservation_gate": "effective_details_required_and_abs_delta_lte_1",
+        "parent_receipt_basis": "zhiyun_total_received_else_amount_plus_fee_tax",
+        "whole_parent_conservation_gate": "effective_details_required_and_parent_shortfall_lte_1",
         "itemized_fee_policy": "whole_parent_conservation_then_no_double_allocation",
         "writeoff_basis": "zhiyun_current_writeoff_direct",
         "parent_fallback_allocation": "non_whole_only_delivery_amount_ascending_outstanding_waterfall",

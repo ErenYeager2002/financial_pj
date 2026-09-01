@@ -18,6 +18,10 @@ tags:
 - 劳务
 - 发票
 - 核对
+operational_profile:
+  execution_kind: offline_file
+  external_sources: []
+  employee_labels: [上传两份台账, 本地核对, 输出支付清单]
 file_inputs:
 - role: labor_list
   name: 劳务清单
@@ -90,5 +94,5 @@ permissions:
   run: finance_user
   manage: skill_admin
 upstream:
-  repository: https://github.com/EvanLee2004/finance-skills
+  repository: https://gitee.com/Lee157/finance-skills.git
   path: skills/labor-invoice-check

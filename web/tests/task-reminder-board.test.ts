@@ -43,13 +43,15 @@ test('手动补查日期限制为昨天起向前 31 天', () => {
   });
 });
 
-test('组件提供次要补查入口、待办主操作和可访问错误反馈', () => {
+test('组件固定展示补查入口、待办主操作和可访问错误反馈', () => {
   const source = readFileSync(
     new URL('../src/features/task-reminders/components/task-reminder-board.tsx', import.meta.url),
     'utf8'
   );
 
-  assert.match(source, /<details/);
+  assert.doesNotMatch(source, /<details|<summary/);
+  assert.match(source, /<section[^>]*aria-labelledby='manual-check-date-title'/);
+  assert.match(source, /<h2 id='manual-check-date-title'/);
   assert.match(source, /手动补查日期/);
   assert.match(source, /处理这些日期/);
   assert.match(source, /role='alert'/);
@@ -74,17 +76,13 @@ test('组件提供次要补查入口、待办主操作和可访问错误反馈',
   assert.match(server, /\/api\/task-reminders\/resolved/);
 });
 
-test('待处理日期超过七天后限制高度并在框内滚动', () => {
+test('待处理日期使用共享分页和滚动区', () => {
   const source = readFileSync(
     new URL('../src/features/task-reminders/components/task-reminder-board.tsx', import.meta.url),
     'utf8'
   );
 
-  assert.match(source, /const MAX_VISIBLE_REMINDER_DATES = 7/);
-  assert.match(source, /reminders\.length > MAX_VISIBLE_REMINDER_DATES/);
-  assert.match(source, /<ScrollArea/);
-  assert.match(source, /h-\[33rem\]/);
-  assert.doesNotMatch(source, /滚动可查看全部日期/);
-  assert.match(source, /role='list'/);
+  assert.match(source, /<PaginatedCollection/);
+  assert.match(source, /ariaLabel=\{`\$\{first\.skill_name\}待处理日期`\}/);
   assert.match(source, /role='listitem'/);
 });

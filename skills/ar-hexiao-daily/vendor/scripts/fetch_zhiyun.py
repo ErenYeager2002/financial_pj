@@ -71,7 +71,7 @@ def _assert_platform_network_url(url: str) -> None:
     if os.environ.get("FINANCIAL_NETWORK_ACCESS") != "1" or host not in allowed:
         raise RuntimeError("网络目标不在平台批准的精确域名白名单中。")
 APP_ID = "6ff4fb2e-e68c-4ee9-83a0-836de8f72c11"
-EXPORT_SCHEMA_VERSION = "2026-08-21-atomic-fetch-v5"
+EXPORT_SCHEMA_VERSION = "2026-08-31-total-received-v7"
 CREDENTIAL_SERVICE = "codex.ar-hexiao-daily.zhiyun"
 READ_REQUEST_MAX_ATTEMPTS = 3
 MAX_BATCH_FETCH_CONCURRENCY = 8
@@ -546,6 +546,17 @@ def pick_named(
     return out
 
 
+def first_control_id(
+    client: ZhiyunClient, controls: Sequence[dict], *names: str
+) -> str:
+    """按多个中文列名取第一个存在的 controlId；字段不存在时返回空。"""
+    for name in names:
+        control_id = client.id_by_name(controls, name)
+        if control_id:
+            return control_id
+    return ""
+
+
 def extract_related_orders(
     rows: Sequence[dict], controls: Sequence[dict], source: str
 ) -> List[dict]:
@@ -865,6 +876,23 @@ def fetch_day(
     cid_xiadan = client.id_by_name(hk_ctrls, REL_XIADAN)
     cid_jiesuan = client.id_by_name(hk_ctrls, REL_JIESUAN)
     cid_mingxi = client.id_by_name(hk_ctrls, REL_HEXIAO_MINGXI)
+    total_orig_cid = first_control_id(
+        client,
+        hk_ctrls,
+        "总到账金额/原币（到账金额+手续费+税费）",
+        "总到账金额/原币",
+        "总到账金额原币",
+        "总到账金额",
+    )
+    total_local_cid = first_control_id(
+        client, hk_ctrls, "总到账金额/本币", "总到账金额本币"
+    )
+    tax_orig_cid = first_control_id(
+        client, hk_ctrls, "税费（原币）", "税费/原币", "税费原币", "税费"
+    )
+    tax_local_cid = first_control_id(
+        client, hk_ctrls, "税费/本币", "税费本币"
+    )
     ws_xiadan = client.datasource_of(WS_HUIKUAN, REL_XIADAN)
     ws_mingxi = client.datasource_of(WS_HUIKUAN, REL_HEXIAO_MINGXI)
     ws_sodline = client.datasource_of(WS_HUIKUAN, REL_SODLINE)
@@ -889,7 +917,8 @@ def fetch_day(
     # ── ① 回款记录 ────────────────────────────────────────────
     hk_headers = [
         "回款记录ID", "核销日期", "到账日期", "到账金额/原币", "到账金额/本币",
-        "手续费/原币", "原币币种", "回款类型", "核销状态", "开票客户", "销售名称", "rowid",
+        "总到账金额/原币", "总到账金额/本币", "手续费/原币", "税费/原币", "税费/本币",
+        "原币币种", "回款类型", "核销状态", "开票客户", "销售名称", "rowid",
         "仅历史累计父记录",
     ]
     hk_out: List[List[Any]] = []
@@ -905,7 +934,11 @@ def fetch_day(
             "arrival_date": _plain(row.get(F_HK["arrival_date"])),
             "amount_orig": _plain(row.get(F_HK["amount_orig"])),
             "amount_local": _plain(row.get(F_HK["amount_local"])),
+            "total_amount_orig": _plain(row.get(total_orig_cid)),
+            "total_amount_local": _plain(row.get(total_local_cid)),
             "fee": _plain(row.get(F_HK["fee"])),
+            "tax": _plain(row.get(tax_orig_cid)),
+            "tax_local": _plain(row.get(tax_local_cid)),
             "currency": _plain(row.get(F_HK["currency"]), hk_opts.get(F_HK["currency"])),
             "huikuan_type": htype,
             "status": _plain(row.get(F_HK["status"]), hk_opts.get(F_HK["status"])),
@@ -916,7 +949,8 @@ def fetch_day(
         payments.append(rec)
         hk_out.append([rec[k] for k in (
             "ar", "hexiao_date", "arrival_date", "amount_orig", "amount_local",
-            "fee", "currency", "huikuan_type", "status", "customer", "sales_name", "rowid")] + ["否"])
+            "total_amount_orig", "total_amount_local", "fee", "tax", "tax_local",
+            "currency", "huikuan_type", "status", "customer", "sales_name", "rowid")] + ["否"])
 
     day_tag = day.replace("-", "")
     # ── ② 下单栏（每笔 → SO + 交付额）+ ③ 同币种核销明细 ───────
@@ -1024,7 +1058,11 @@ def fetch_day(
             _plain(row.get(F_HK["arrival_date"])),
             _plain(row.get(F_HK["amount_orig"])),
             _plain(row.get(F_HK["amount_local"])),
+            _plain(row.get(total_orig_cid)),
+            _plain(row.get(total_local_cid)),
             _plain(row.get(F_HK["fee"])),
+            _plain(row.get(tax_orig_cid)),
+            _plain(row.get(tax_local_cid)),
             _plain(row.get(F_HK["currency"]), hk_opts.get(F_HK["currency"])),
             _plain(row.get(F_HK["huikuan_type"]), hk_opts.get(F_HK["huikuan_type"])),
             _plain(row.get(F_HK["status"]), hk_opts.get(F_HK["status"])),
@@ -1072,7 +1110,7 @@ def fetch_day(
     summary = {
         "day": day,
         "export_schema_version": EXPORT_SCHEMA_VERSION,
-        "business_amount_policy": "ignore_fee_conditional_duplicate_writeoff_correction",
+        "business_amount_policy": "zhiyun_total_received_preferred_fallback_amount_fee_tax",
         "架构": "单入口(回款记录·核销日期=T-1)+关联子表",
         "回款记录笔数": len(hk_rows),
         "回款记录_接口报总数": hk_total,

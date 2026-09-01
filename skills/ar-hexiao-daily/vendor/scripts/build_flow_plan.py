@@ -209,7 +209,7 @@ def plan_item_for_ar(ar: str, items: List[dict], summary_row: Optional[dict]) ->
         return {
             **base,
             "verdict": "hand",
-            "reason": "SO交付金额缺失，不能自动前置写入：" + "、".join(missing_delivery),
+            "reason": "SO交付金额缺失，不能自动登记流转单号：" + "、".join(missing_delivery),
         }
 
     # 至少要写单号或是否更新之一；单号空则只写是否更新

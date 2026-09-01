@@ -32,6 +32,8 @@ import type {
   ServiceCredentialRead as GeneratedServiceCredentialRead,
   SkillDetail as GeneratedSkillDetail,
   SkillAvailabilityRead as GeneratedSkillAvailability,
+  SkillDedicationRead as GeneratedSkillDedication,
+  SkillDedicationWrite as GeneratedSkillDedicationWrite,
   SkillPermissionRead as GeneratedSkillPermission,
   SkillPermissionWrite as GeneratedSkillPermissionWrite,
   SkillReleaseInboxItem as GeneratedSkillReleaseInboxItem,
@@ -74,6 +76,8 @@ export type PlatformSession = GeneratedPlatformUser;
 export type SkillSummary = GeneratedSkillSummary;
 export type SkillDetail = GeneratedSkillDetail;
 export type SkillAvailability = GeneratedSkillAvailability;
+export type SkillDedication = GeneratedSkillDedication;
+export type SkillDedicationWrite = GeneratedSkillDedicationWrite;
 export type SkillPermission = GeneratedSkillPermission;
 export type SkillPermissionWrite = GeneratedSkillPermissionWrite;
 export type SkillRelease = GeneratedSkillRelease;

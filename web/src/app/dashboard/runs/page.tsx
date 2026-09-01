@@ -1,14 +1,15 @@
 import PageContainer from '@/components/layout/page-container';
 import { redirect } from 'next/navigation';
 import { getTaskReminderBoard } from '@/features/task-reminders/api/server';
-import { getTaskCenterPage, hasAnyFormalTask } from '@/features/task-center/api/server';
+import { getTaskCenterPage } from '@/features/task-center/api/server';
 import {
   FormalTaskRegion,
   TaskReminderRegion
 } from '@/features/task-center/components/task-center-regions';
 import {
-  hasTaskCenterFilters,
+  hasTaskCenterUnsupportedParams,
   parseTaskCenterQuery,
+  taskCenterHref,
   taskCenterPageRedirect,
   type TaskCenterRawQuery
 } from '@/features/task-center/query';
@@ -23,13 +24,13 @@ type PageProps = {
 };
 
 export default async function Page({ searchParams }: PageProps) {
-  const query = parseTaskCenterQuery(await searchParams);
+  const rawQuery = await searchParams;
+  const query = parseTaskCenterQuery(rawQuery);
+  if (hasTaskCenterUnsupportedParams(rawQuery)) redirect(taskCenterHref(query));
   const [formalTasks, reminders] = await Promise.all([
     settleRegionLoad(async () => {
       const page = await getTaskCenterPage(query);
-      const hasAnyTasks =
-        page.total > 0 || (hasTaskCenterFilters(query) ? await hasAnyFormalTask() : false);
-      return { page, hasAnyTasks };
+      return { page, hasAnyTasks: page.total > 0 };
     }),
     settleRegionLoad(getTaskReminderBoard)
   ]);

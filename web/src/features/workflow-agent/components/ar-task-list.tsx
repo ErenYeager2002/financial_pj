@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
+import { PaginatedCollection } from '@/components/ui/collection-pagination';
 import type { WorkflowBatchRead, WorkflowRead } from '@/features/platform-api/types';
 import {
   buildArTaskListRows,
@@ -72,10 +73,10 @@ export function ArTaskList({ batches, workflows }: ArTaskListProps): React.JSX.E
   }
 
   return (
-    <div className='space-y-3'>
+    <PaginatedCollection ariaLabel='应收核销任务' contentClassName='space-y-3'>
       {rows.map((row) => (
         <ArTaskListItem key={row.key} row={row} />
       ))}
-    </div>
+    </PaginatedCollection>
   );
 }

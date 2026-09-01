@@ -4,7 +4,12 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import type { PlatformFile, SkillDetail, TaskDraft } from '@/features/platform-api/types';
+import type {
+  PlatformFile,
+  SkillDedication,
+  SkillDetail,
+  TaskDraft
+} from '@/features/platform-api/types';
 import { SkillRunSetup } from '@/features/run-setup/components/skill-run-setup';
 import { executionExperienceForSkill } from '@/features/skills/execution-experience';
 import { cn } from '@/lib/utils';
@@ -14,6 +19,7 @@ interface SkillDetailViewProps {
   draft?: TaskDraft;
   draftFiles?: PlatformFile[];
   showExecution?: boolean;
+  adminDedication?: SkillDedication;
 }
 
 function experienceHref(skillId: string, draftId?: string): string {
@@ -25,7 +31,8 @@ export function SkillDetailView({
   skill,
   draft,
   draftFiles,
-  showExecution = false
+  showExecution = false,
+  adminDedication
 }: SkillDetailViewProps) {
   const experience = executionExperienceForSkill(skill.id);
 
@@ -33,14 +40,16 @@ export function SkillDetailView({
     <div className='space-y-5'>
       <header className='grid gap-5 rounded-xl border bg-card p-5 lg:grid-cols-[minmax(0,1fr)_18rem]'>
         <div className='space-y-3'>
-          <div className='flex flex-wrap gap-2'>
-            {skill.categories.map((category) => (
-              <Badge key={category} variant='secondary'>
-                {category}
+          {adminDedication && (
+            <div className='flex flex-wrap gap-2'>
+              <Badge
+                variant={adminDedication.user_status === 'disabled' ? 'destructive' : 'outline'}
+              >
+                专属：{adminDedication.user_display_name}
+                {adminDedication.user_status === 'disabled' ? '（已停用）' : ''}
               </Badge>
-            ))}
-            <Badge variant='outline'>约 {skill.estimated_minutes} 分钟</Badge>
-          </div>
+            </div>
+          )}
           <div>
             <h2 className='text-xl font-semibold tracking-tight'>{skill.name}</h2>
             <p className='mt-2 max-w-3xl leading-7 text-muted-foreground'>{skill.description}</p>

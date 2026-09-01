@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Calendar, CalendarDayButton } from '@/components/ui/calendar';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PaginatedCollection } from '@/components/ui/collection-pagination';
 import { Icons } from '@/components/icons';
 import { ZhiyunCredentialCard } from '@/features/workflow-agent/components/zhiyun-credential-card';
 import {
@@ -868,7 +869,11 @@ export function WorkflowLauncher({
                         </p>
                         <p className='mt-1 text-xs text-muted-foreground'>{input.description}</p>
                         {entries.length > 0 ? (
-                          <div className='mt-2 space-y-1 text-xs text-muted-foreground'>
+                          <PaginatedCollection
+                            ariaLabel={`${input.name}已选材料`}
+                            className='mt-2'
+                            contentClassName='space-y-1 text-xs text-muted-foreground'
+                          >
                             {entries.map((material) => (
                               <div
                                 key={material.id}
@@ -902,7 +907,7 @@ export function WorkflowLauncher({
                                 </Button>
                               </div>
                             ))}
-                          </div>
+                          </PaginatedCollection>
                         ) : (
                           <p className='mt-2 text-xs text-muted-foreground'>
                             {materialsLoading ? '正在检查平台已保存文件…' : '当前没有可复用文件。'}
@@ -994,7 +999,8 @@ export function WorkflowLauncher({
         </CardHeader>
         <CardContent className='space-y-2'>
           {recentTasks.length ? (
-            recentTasks.map((task) => {
+            <PaginatedCollection ariaLabel='最近任务' contentClassName='space-y-2'>
+              {recentTasks.map((task) => {
               const isBatch = task.kind === 'batch';
               const target = isBatch
                 ? `/dashboard/workflows/batches/${encodeURIComponent(task.item.id)}`
@@ -1021,7 +1027,8 @@ export function WorkflowLauncher({
                   </p>
                 </Link>
               );
-            })
+              })}
+            </PaginatedCollection>
           ) : (
             <p className='rounded-lg border border-dashed p-4 text-sm text-muted-foreground'>
               暂无任务记录。

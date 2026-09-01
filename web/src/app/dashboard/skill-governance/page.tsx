@@ -5,6 +5,8 @@ import {
   listSkillAvailability,
   listSkillSourceBindings
 } from '@/features/admin/api/skill-releases';
+import { listSkillDedications } from '@/features/admin/api/skill-dedications';
+import { listAdminUsers } from '@/features/admin/api/server';
 import { platformServerRequest } from '@/features/platform-api/server-client';
 import type { PlatformSession } from '@/features/platform-api/types';
 import {
@@ -17,7 +19,9 @@ import {
 } from '@/features/skill-governance/api/server';
 import { SkillGovernanceData } from '@/features/skill-governance/components/skill-governance-data';
 import { SkillGovernanceSkeleton } from '@/features/skill-governance/components/skill-governance-skeleton';
+import { SkillDedicatedUserManagement } from '@/features/skills/components/skill-dedicated-user-management';
 import { SkillSourceManagement } from '@/features/skills/components/skill-source-management';
+import { listSkillCatalog } from '@/features/skills/api/server';
 import { getQueryClient } from '@/lib/query-client';
 
 export const metadata = {
@@ -43,9 +47,12 @@ export default async function SkillGovernancePage(): Promise<React.JSX.Element> 
   void queryClient.prefetchQuery(
     observabilityQueryOptions(hours, () => getObservabilitySummary(hours))
   );
-  const [bindings, availabilityItems] = await Promise.all([
+  const [bindings, availabilityItems, dedications, users, skills] = await Promise.all([
     listSkillSourceBindings(),
-    listSkillAvailability()
+    listSkillAvailability(),
+    listSkillDedications(),
+    listAdminUsers(),
+    listSkillCatalog()
   ]);
   const availability = Object.fromEntries(availabilityItems.map((item) => [item.skill_id, item]));
   return (
@@ -54,6 +61,12 @@ export default async function SkillGovernancePage(): Promise<React.JSX.Element> 
       pageDescription='禁用 Skill 后从 Gitee 拉取最新代码，更新成功后自动重新启用'
     >
       <div className='space-y-6'>
+        <SkillDedicatedUserManagement
+          initialDedications={dedications}
+          users={users}
+          skills={skills}
+          skillIds={availabilityItems.map((item) => item.skill_id)}
+        />
         <SkillSourceManagement initialBindings={bindings} initialAvailability={availability} />
         <HydrationBoundary state={dehydrate(queryClient)}>
           <Suspense fallback={<SkillGovernanceSkeleton />}>

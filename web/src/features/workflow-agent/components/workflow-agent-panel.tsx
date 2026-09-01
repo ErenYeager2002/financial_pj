@@ -6,6 +6,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PaginatedCollection } from '@/components/ui/collection-pagination';
 import { Icons } from '@/components/icons';
 import { WorkflowFetchedDataDialog } from '@/features/workflow-agent/components/workflow-fetched-data-dialog';
 import { WorkflowMaterialHistory } from '@/features/workflow-agent/components/workflow-material-history';
@@ -397,8 +398,12 @@ export function WorkflowAgentPanel({
               核销日期：{workflow.reconciliation_date}；写入状态：已完成
             </CardDescription>
           </CardHeader>
-          <CardContent className='grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4'>
-            {[
+          <CardContent>
+            <PaginatedCollection
+              ariaLabel='核销结果'
+              contentClassName='grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4'
+            >
+              {[
               ['本日写入', '今天要填'],
               ['已填过·跳过', '已填过·跳过'],
               ['挂账待办', '挂账待办'],
@@ -406,14 +411,15 @@ export function WorkflowAgentPanel({
               ['流转确认后自动写', '流转确认后自动写'],
               ['流转须手填', '流转须手填'],
               ['异常', '异常']
-            ].map(([label, key]) => (
-              <div key={key} className='rounded-md border bg-muted/20 p-3'>
-                <p className='text-muted-foreground'>{label}</p>
-                <p className='mt-1 font-medium'>
-                  {summaryValue(workflow.result_summary ?? {}, key)}
-                </p>
-              </div>
-            ))}
+              ].map(([label, key]) => (
+                <div key={key} className='rounded-md border bg-muted/20 p-3'>
+                  <p className='text-muted-foreground'>{label}</p>
+                  <p className='mt-1 font-medium'>
+                    {summaryValue(workflow.result_summary ?? {}, key)}
+                  </p>
+                </div>
+              ))}
+            </PaginatedCollection>
           </CardContent>
         </Card>
       )}
@@ -455,7 +461,11 @@ export function WorkflowAgentPanel({
                   )}
                 </div>
                 {entries.length ? (
-                  <div className='mt-2 space-y-1 text-xs text-muted-foreground'>
+                  <PaginatedCollection
+                    ariaLabel={`${item.label}任务材料`}
+                    className='mt-2'
+                    contentClassName='space-y-1 text-xs text-muted-foreground'
+                  >
                     {entries.map((entry, index) => (
                       <div
                         key={`${String(entry.file_id)}-${index}`}
@@ -493,7 +503,7 @@ export function WorkflowAgentPanel({
                         )}
                       </div>
                     ))}
-                  </div>
+                  </PaginatedCollection>
                 ) : (
                   <p className='mt-2 text-xs text-muted-foreground'>
                     尚未上传，将尝试复用历史材料。
@@ -512,7 +522,8 @@ export function WorkflowAgentPanel({
             <CardTitle className='text-base'>任务产出</CardTitle>
             <CardDescription>《核销日清》为本日主要结果。</CardDescription>
           </CardHeader>
-          <CardContent className='space-y-2'>
+          <CardContent>
+            <PaginatedCollection ariaLabel='任务产出' contentClassName='space-y-2'>
             {[...workflow.artifacts]
               .toSorted((left, right) => {
                 const leftName = typeof left.name === 'string' ? left.name : '';
@@ -536,6 +547,7 @@ export function WorkflowAgentPanel({
                   </a>
                 ) : null;
               })}
+            </PaginatedCollection>
           </CardContent>
         </Card>
       )}

@@ -19,6 +19,10 @@ tags:
 - 盈亏核算
 - 字段映射
 - 副本
+operational_profile:
+  execution_kind: offline_file
+  external_sources: []
+  employee_labels: [上传两份工作簿, 本地补录, 输出新副本]
 file_inputs:
 - role: project_detail
   name: 项目明细表
@@ -89,5 +93,5 @@ permissions:
   run: finance_user
   manage: skill_admin
 upstream:
-  repository: https://github.com/EvanLee2004/finance-skills
+  repository: https://gitee.com/Lee157/finance-skills.git
   path: skills/project-detail-to-ledger

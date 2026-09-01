@@ -58,6 +58,7 @@ from .resource_policy import assert_owner
 from .routers import admin_approvals as admin_approvals_router
 from .routers import admin_feature_controls as admin_feature_controls_router
 from .routers import admin_observability as admin_observability_router
+from .routers import admin_skill_dedications as admin_skill_dedications_router
 from .routers import admin_skills as admin_skills_router
 from .routers import admin_users as admin_users_router
 from .routers import admin_workflows as admin_workflows_router
@@ -216,6 +217,7 @@ app.include_router(profile_router.router)
 app.include_router(admin_approvals_router.router)
 app.include_router(admin_feature_controls_router.router)
 app.include_router(admin_observability_router.router)
+app.include_router(admin_skill_dedications_router.router)
 app.include_router(admin_skills_router.router)
 app.include_router(admin_skills_router.source_router)
 app.include_router(admin_skills_router.availability_router)

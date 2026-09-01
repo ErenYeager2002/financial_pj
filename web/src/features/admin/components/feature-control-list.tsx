@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PaginatedCollection } from '@/components/ui/collection-pagination';
 import { Switch } from '@/components/ui/switch';
 import type { FeatureControl } from '@/features/platform-api/types';
 import { cn } from '@/lib/utils';
@@ -54,7 +55,10 @@ export function FeatureControlList({ initialControls }: { initialControls: Featu
         <CardDescription>可在线修改的开关立即生效；部署级配置不可在线修改。</CardDescription>
       </CardHeader>
       <CardContent>
-        <div className='divide-y rounded-lg border'>
+        <PaginatedCollection
+          ariaLabel='功能开关'
+          contentClassName='divide-y rounded-lg border'
+        >
           {controls.map((control) => {
             const saving = savingKey === control.key;
             return (
@@ -99,7 +103,7 @@ export function FeatureControlList({ initialControls }: { initialControls: Featu
               </div>
             );
           })}
-        </div>
+        </PaginatedCollection>
         {message ? (
           <p className='mt-3 text-sm text-emerald-700 dark:text-emerald-400'>{message}</p>
         ) : null}

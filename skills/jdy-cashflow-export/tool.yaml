@@ -9,6 +9,13 @@ tags:
 - RPA
 - 金蝶云
 - 现金流量
+operational_profile:
+  execution_kind: browser_rpa
+  external_sources:
+  - system: 金蝶云
+    access: browser_rpa
+    required: true
+  employee_labels: [金蝶云RPA, 需要受控凭据, 导出明细]
 file_inputs: []
 input_schema:
   type: object
@@ -45,7 +52,4 @@ risk:
 permissions:
   run: finance_user
   manage: skill_admin
-upstream:
-  repository: https://github.com/EvanLee2004/finance-skills
-  path: skills/jdy-cashflow-export
 blocked_reason: 需先接入独立凭据保管和受控浏览器会话，禁止把账号密码写入任务参数。

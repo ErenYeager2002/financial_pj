@@ -142,6 +142,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/skill-dedications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin List Skill Dedications */
+        get: operations["admin_list_skill_dedications_api_admin_skill_dedications_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/skill-dedications/{skill_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Admin Set Skill Dedication */
+        put: operations["admin_set_skill_dedication_api_admin_skill_dedications__skill_id__put"];
+        post?: never;
+        /** Admin Clear Skill Dedication */
+        delete: operations["admin_clear_skill_dedication_api_admin_skill_dedications__skill_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/skill-releases": {
         parameters: {
             query?: never;
@@ -1815,6 +1850,7 @@ export interface components {
             };
             /** Name */
             name: string;
+            operational_profile?: components["schemas"]["SkillOperationalProfileSpec"];
             /** Output Schema */
             output_schema?: {
                 [key: string]: unknown;
@@ -2198,6 +2234,21 @@ export interface components {
             current_password: string;
             /** New Password */
             new_password: string;
+        };
+        /** ExternalDataSourceSpec */
+        ExternalDataSourceSpec: {
+            /**
+             * Access
+             * @enum {string}
+             */
+            access: "uploaded_export" | "direct_read" | "browser_rpa" | "repository_sync";
+            /**
+             * Required
+             * @default true
+             */
+            required: boolean;
+            /** System */
+            system: string;
         };
         /** FeatureControlRead */
         FeatureControlRead: {
@@ -3101,6 +3152,32 @@ export interface components {
              */
             target_state: "enabled" | "draining" | "disabled";
         };
+        /** SkillDedicationRead */
+        SkillDedicationRead: {
+            /** Skill Id */
+            skill_id: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Updated By */
+            updated_by: string;
+            /** User Display Name */
+            user_display_name: string;
+            /** User Id */
+            user_id: string;
+            /**
+             * User Status
+             * @enum {string}
+             */
+            user_status: "active" | "disabled";
+        };
+        /** SkillDedicationWrite */
+        SkillDedicationWrite: {
+            /** User Id */
+            user_id: string;
+        };
         /** SkillDetail */
         SkillDetail: {
             /** Action Label */
@@ -3127,6 +3204,8 @@ export interface components {
             };
             /** Name */
             name: string;
+            /** Operation Labels */
+            operation_labels: string[];
             /** Output Summary */
             output_summary: string;
             /**
@@ -3147,6 +3226,18 @@ export interface components {
             tags?: string[];
             /** Version */
             version: string;
+        };
+        /** SkillOperationalProfileSpec */
+        SkillOperationalProfileSpec: {
+            /** Employee Labels */
+            employee_labels: string[];
+            /**
+             * Execution Kind
+             * @enum {string}
+             */
+            execution_kind: "offline_file" | "guided_workflow" | "browser_rpa" | "agent_guidance" | "document_agent";
+            /** External Sources */
+            external_sources?: components["schemas"]["ExternalDataSourceSpec"][];
         };
         /** SkillPermissionRead */
         SkillPermissionRead: {
@@ -3530,6 +3621,8 @@ export interface components {
             id: string;
             /** Name */
             name: string;
+            /** Operation Labels */
+            operation_labels: string[];
             /** Output Summary */
             output_summary: string;
             /**
@@ -4514,6 +4607,14 @@ export interface components {
              * @default
              */
             salesperson: string;
+            /** Tax Local */
+            tax_local?: number | null;
+            /** Tax Original */
+            tax_original?: number | null;
+            /** Total Amount Local */
+            total_amount_local?: number | null;
+            /** Total Amount Original */
+            total_amount_original?: number | null;
             /**
              * Writeoff Status
              * @default
@@ -4851,6 +4952,7 @@ export type AuditEventRead = components['schemas']['AuditEventRead'];
 export type BodyUploadAvatarApiProfileAvatarPost = components['schemas']['Body_upload_avatar_api_profile_avatar_post'];
 export type BodyUploadFileApiFilesPost = components['schemas']['Body_upload_file_api_files_post'];
 export type ChangePasswordRequest = components['schemas']['ChangePasswordRequest'];
+export type ExternalDataSourceSpec = components['schemas']['ExternalDataSourceSpec'];
 export type FeatureControlRead = components['schemas']['FeatureControlRead'];
 export type FeatureControlUpdateRequest = components['schemas']['FeatureControlUpdateRequest'];
 export type FileInputSpec = components['schemas']['FileInputSpec'];
@@ -4891,7 +4993,10 @@ export type ServiceCredentialWrite = components['schemas']['ServiceCredentialWri
 export type SessionRead = components['schemas']['SessionRead'];
 export type SkillAvailabilityRead = components['schemas']['SkillAvailabilityRead'];
 export type SkillAvailabilityTransitionRequest = components['schemas']['SkillAvailabilityTransitionRequest'];
+export type SkillDedicationRead = components['schemas']['SkillDedicationRead'];
+export type SkillDedicationWrite = components['schemas']['SkillDedicationWrite'];
 export type SkillDetail = components['schemas']['SkillDetail'];
+export type SkillOperationalProfileSpec = components['schemas']['SkillOperationalProfileSpec'];
 export type SkillPermissionRead = components['schemas']['SkillPermissionRead'];
 export type SkillPermissionWrite = components['schemas']['SkillPermissionWrite'];
 export type SkillPermissionsReplace = components['schemas']['SkillPermissionsReplace'];
@@ -5243,6 +5348,90 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RegistryReloadResponse"];
+                };
+            };
+        };
+    };
+    admin_list_skill_dedications_api_admin_skill_dedications_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillDedicationRead"][];
+                };
+            };
+        };
+    };
+    admin_set_skill_dedication_api_admin_skill_dedications__skill_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillDedicationWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillDedicationRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_clear_skill_dedication_api_admin_skill_dedications__skill_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

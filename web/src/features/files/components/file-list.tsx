@@ -4,13 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  Pagination,
-  PaginationContent,
-  PaginationItem,
-  PaginationNext,
-  PaginationPrevious
-} from '@/components/ui/pagination';
+import { ScrollableCollection } from '@/components/ui/scrollable-collection';
 import {
   Table,
   TableBody,
@@ -19,30 +13,20 @@ import {
   TableHeader,
   TableRow
 } from '@/components/ui/table';
-import type { PlatformFilePage } from '@/features/platform-api/types';
+import type { PlatformFile } from '@/features/platform-api/types';
 import { WorkflowMaterialHistory } from '@/features/workflow-agent/components/workflow-material-history';
 import { formatDate } from '@/lib/format';
 import { cn, formatBytes } from '@/lib/utils';
 
 interface FileListProps {
-  result: PlatformFilePage;
-  kind: string;
-  query: string;
+  files: PlatformFile[];
 }
 
-function pageUrl(page: number, kind: string, query: string): string {
-  const params = new URLSearchParams({ page: String(page) });
-  if (kind) params.set('kind', kind);
-  if (query) params.set('query', query);
-  return `/dashboard/files?${params}`;
-}
-
-export function FileList({ result, kind, query }: FileListProps) {
+export function FileList({ files }: FileListProps) {
   const router = useRouter();
   const [deletingId, setDeletingId] = useState('');
   const [error, setError] = useState('');
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
-  const files = result.items ?? [];
   const groups = Array.from(
     files
       .reduce((map, file) => {
@@ -112,12 +96,12 @@ export function FileList({ result, kind, query }: FileListProps) {
           </div>
         </div>
         <CardDescription>
-          共 {result.total} 个当前文件；同名任务结果只显示最新版本。
+          共 {files.length} 个当前文件；同名任务结果只显示最新版本。
         </CardDescription>
       </CardHeader>
       <CardContent>
         {error && <p className='mb-3 text-sm text-destructive'>{error}</p>}
-        <div className='space-y-6'>
+        <ScrollableCollection ariaLabel='文件分组' contentClassName='space-y-6'>
           {groups.map(([key, group]) => (
             <details
               key={key}
@@ -143,7 +127,11 @@ export function FileList({ result, kind, query }: FileListProps) {
                   <span className='text-xs text-muted-foreground'>{group.files.length} 个文件</span>
                 </span>
               </summary>
-              <div className='overflow-x-auto border-t px-2 pb-2'>
+              <div
+                className='overflow-x-auto border-t px-2 pb-2'
+                role='region'
+                aria-label={`${group.label}文件列表`}
+              >
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -198,32 +186,7 @@ export function FileList({ result, kind, query }: FileListProps) {
               </div>
             </details>
           ))}
-        </div>
-        {result.pages > 1 && (
-          <Pagination className='mt-4'>
-            <PaginationContent>
-              <PaginationItem>
-                <PaginationPrevious
-                  href={pageUrl(Math.max(result.page - 1, 1), kind, query)}
-                  aria-disabled={result.page <= 1}
-                  className={result.page <= 1 ? 'pointer-events-none opacity-50' : undefined}
-                />
-              </PaginationItem>
-              <PaginationItem className='px-3 text-sm text-muted-foreground'>
-                第 {result.page} / {result.pages} 页
-              </PaginationItem>
-              <PaginationItem>
-                <PaginationNext
-                  href={pageUrl(Math.min(result.page + 1, result.pages), kind, query)}
-                  aria-disabled={result.page >= result.pages}
-                  className={
-                    result.page >= result.pages ? 'pointer-events-none opacity-50' : undefined
-                  }
-                />
-              </PaginationItem>
-            </PaginationContent>
-          </Pagination>
-        )}
+        </ScrollableCollection>
       </CardContent>
     </Card>
   );

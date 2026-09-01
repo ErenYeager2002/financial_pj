@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { PaginatedCollection } from '@/components/ui/collection-pagination';
 import {
   workflowMaterialKeys,
   workflowMaterialSetsQueryOptions
@@ -77,7 +78,8 @@ export function WorkflowMaterialHistory({
         {!loading && versions.length === 0 && (
           <p className='text-sm text-muted-foreground'>尚未建立业务材料版本。</p>
         )}
-        {visibleVersions.map((version) => (
+        <PaginatedCollection ariaLabel='业务材料版本' contentClassName='space-y-3'>
+          {visibleVersions.map((version) => (
           <section key={version.id} className='rounded-md border bg-background p-3'>
             <div className='flex flex-wrap items-start justify-between gap-2'>
               <div className='flex flex-wrap items-center gap-2'>
@@ -111,7 +113,11 @@ export function WorkflowMaterialHistory({
                 version.source_workflow_id ||
                 '首次上传或人工指定'}
             </p>
-            <div className='mt-2 space-y-2'>
+            <PaginatedCollection
+              ariaLabel={`业务材料版本 V${version.version}文件`}
+              className='mt-2'
+              contentClassName='space-y-2'
+            >
               {(version.files ?? []).map((file) => (
                 <div key={`${version.id}-${file.role}-${file.year ?? 0}`} className='text-xs'>
                   <p>
@@ -127,9 +133,10 @@ export function WorkflowMaterialHistory({
                   )}
                 </div>
               ))}
-            </div>
+            </PaginatedCollection>
           </section>
-        ))}
+          ))}
+        </PaginatedCollection>
       </div>
     </details>
   );

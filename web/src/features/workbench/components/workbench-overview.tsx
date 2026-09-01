@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PaginatedCollection } from '@/components/ui/collection-pagination';
 import type { PlatformHealth, Workbench } from '@/features/platform-api/types';
 import { runStateLabel, runStateVariant } from '@/features/runs/run-display';
 import { formatDate } from '@/lib/format';
@@ -106,7 +107,10 @@ export function WorkbenchOverview({ data, health }: { data: Workbench; health: P
         </CardContent>
       </Card>
 
-      <div className='grid gap-4 sm:grid-cols-2 xl:grid-cols-4'>
+      <PaginatedCollection
+        ariaLabel='任务概览'
+        contentClassName='grid gap-4 sm:grid-cols-2 xl:grid-cols-4'
+      >
         {cards.map(([label, value, description]) => (
           <Card key={label}>
             <CardHeader>
@@ -116,7 +120,7 @@ export function WorkbenchOverview({ data, health }: { data: Workbench; health: P
             <CardContent className='text-sm text-muted-foreground'>{description}</CardContent>
           </Card>
         ))}
-      </div>
+      </PaginatedCollection>
 
       <div className='grid gap-4 xl:grid-cols-2'>
         <Card>
@@ -126,7 +130,8 @@ export function WorkbenchOverview({ data, health }: { data: Workbench; health: P
           </CardHeader>
           <CardContent className='space-y-3'>
             {commonSkills.length ? (
-              commonSkills.map((item) => (
+              <PaginatedCollection ariaLabel='常用 Skill' contentClassName='space-y-3'>
+                {commonSkills.map((item) => (
                 <div
                   key={item.skill.id}
                   className='flex items-center justify-between gap-3 rounded-lg border p-3'
@@ -147,7 +152,8 @@ export function WorkbenchOverview({ data, health }: { data: Workbench; health: P
                     </Link>
                   </div>
                 </div>
-              ))
+                ))}
+              </PaginatedCollection>
             ) : (
               <p className='text-sm text-muted-foreground'>当前没有可用的 Skill。</p>
             )}
@@ -161,7 +167,8 @@ export function WorkbenchOverview({ data, health }: { data: Workbench; health: P
           </CardHeader>
           <CardContent className='space-y-3'>
             {pendingRuns.length ? (
-              pendingRuns.map((run) => (
+              <PaginatedCollection ariaLabel='待处理任务' contentClassName='space-y-3'>
+                {pendingRuns.map((run) => (
                 <Link
                   key={run.id}
                   href={`/dashboard/runs/${run.id}`}
@@ -175,7 +182,8 @@ export function WorkbenchOverview({ data, health }: { data: Workbench; health: P
                   </div>
                   <Badge variant={runStateVariant(run.state)}>{runStateLabel(run.state)}</Badge>
                 </Link>
-              ))
+                ))}
+              </PaginatedCollection>
             ) : (
               <p className='text-sm text-muted-foreground'>当前没有需要处理的任务。</p>
             )}
@@ -189,7 +197,8 @@ export function WorkbenchOverview({ data, health }: { data: Workbench; health: P
           </CardHeader>
           <CardContent className='space-y-3'>
             {recentResults.length ? (
-              recentResults.map((run) => (
+              <PaginatedCollection ariaLabel='最近结果' contentClassName='space-y-3'>
+                {recentResults.map((run) => (
                 <Link
                   key={run.id}
                   href={`/dashboard/runs/${run.id}`}
@@ -206,7 +215,8 @@ export function WorkbenchOverview({ data, health }: { data: Workbench; health: P
                   </div>
                   <Badge variant='secondary'>已完成</Badge>
                 </Link>
-              ))
+                ))}
+              </PaginatedCollection>
             ) : (
               <p className='text-sm text-muted-foreground'>还没有已完成的任务。</p>
             )}
@@ -220,7 +230,8 @@ export function WorkbenchOverview({ data, health }: { data: Workbench; health: P
           </CardHeader>
           <CardContent className='space-y-3'>
             {recentFiles.length ? (
-              recentFiles.map((file) => (
+              <PaginatedCollection ariaLabel='最近文件' contentClassName='space-y-3'>
+                {recentFiles.map((file) => (
                 <div
                   key={file.id}
                   className='flex items-center justify-between gap-3 rounded-lg border p-3'
@@ -231,7 +242,8 @@ export function WorkbenchOverview({ data, health }: { data: Workbench; health: P
                   </div>
                   <Badge variant='outline'>{file.kind === 'output' ? '结果' : '上传'}</Badge>
                 </div>
-              ))
+                ))}
+              </PaginatedCollection>
             ) : (
               <p className='text-sm text-muted-foreground'>当前没有文件。</p>
             )}

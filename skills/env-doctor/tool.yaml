@@ -8,6 +8,10 @@ description: 检查 Python、Office、LibreOffice、依赖和目录条件的 Age
 tags:
 - 环境诊断
 - Agent
+operational_profile:
+  execution_kind: agent_guidance
+  external_sources: []
+  employee_labels: [环境诊断, 不处理业务数据]
 ui:
   employee_name: 运行环境诊断
   short_description: 查看平台服务、Skill 注册和执行容量的非敏感健康摘要。
@@ -54,6 +58,6 @@ permissions:
   run: finance_user
   manage: skill_admin
 upstream:
-  repository: https://github.com/EvanLee2004/finance-skills
+  repository: https://gitee.com/Lee157/finance-skills.git
   path: skills/env-doctor
 blocked_reason: 属于 Agent 行为指南，需要受控系统诊断适配器。

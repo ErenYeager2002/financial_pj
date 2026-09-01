@@ -19,6 +19,11 @@ tags:
   - 总账
   - 只读
 
+operational_profile:
+  execution_kind: offline_file
+  external_sources: []
+  employee_labels: [上传两份账表, 本地对账, 输出差异清单]
+
 file_inputs:
   - role: bank_file
     name: 银行流水

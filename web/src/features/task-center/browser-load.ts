@@ -1,10 +1,5 @@
 import type { TaskCenterPage, TaskReminderBoard } from '@/features/platform-api/types';
-import {
-  hasTaskCenterFilters,
-  taskCenterBrowserPath,
-  taskCenterPageRedirect,
-  type TaskCenterQuery
-} from './query.ts';
+import { taskCenterBrowserPath, taskCenterPageRedirect, type TaskCenterQuery } from './query.ts';
 
 export type RegionRequest = (input: string, init?: RequestInit) => Promise<Response>;
 
@@ -26,24 +21,9 @@ export async function loadFormalTaskRegion(
   request: RegionRequest = fetch
 ): Promise<{ page: TaskCenterPage; hasAnyTasks: boolean; canonicalHref: string | null }> {
   const page = await readJson<TaskCenterPage>(request, taskCenterBrowserPath(query));
-  let hasAnyTasks = page.total > 0;
-  if (!hasAnyTasks && hasTaskCenterFilters(query)) {
-    const unfiltered: TaskCenterQuery = {
-      page: 1,
-      state: '',
-      type: '',
-      skill: '',
-      businessFrom: '',
-      businessTo: '',
-      updatedFrom: '',
-      updatedTo: ''
-    };
-    const allTasks = await readJson<TaskCenterPage>(request, taskCenterBrowserPath(unfiltered, 1));
-    hasAnyTasks = allTasks.total > 0;
-  }
   return {
     page,
-    hasAnyTasks,
+    hasAnyTasks: page.total > 0,
     canonicalHref: taskCenterPageRedirect(query, page.pages)
   };
 }

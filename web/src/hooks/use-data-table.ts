@@ -109,29 +109,29 @@ export function useDataTable<TData>(props: UseDataTableProps<TData>) {
     PAGE_KEY,
     parseAsInteger.withOptions(queryStateOptions).withDefault(1)
   );
-  const [perPage, setPerPage] = useQueryState(
+  const [, setPerPage] = useQueryState(
     PER_PAGE_KEY,
     parseAsInteger
       .withOptions(queryStateOptions)
-      .withDefault(initialState?.pagination?.pageSize ?? 10)
+      .withDefault(initialState?.pagination?.pageSize ?? 5)
   );
 
   const pagination: PaginationState = React.useMemo(() => {
     return {
       pageIndex: page - 1, // zero-based index -> one-based index
-      pageSize: perPage
+      pageSize: 5
     };
-  }, [page, perPage]);
+  }, [page]);
 
   const onPaginationChange = React.useCallback(
     (updaterOrValue: Updater<PaginationState>) => {
       if (typeof updaterOrValue === 'function') {
         const newPagination = updaterOrValue(pagination);
         void setPage(newPagination.pageIndex + 1);
-        void setPerPage(newPagination.pageSize);
+        void setPerPage(5);
       } else {
         void setPage(updaterOrValue.pageIndex + 1);
-        void setPerPage(updaterOrValue.pageSize);
+        void setPerPage(5);
       }
     },
     [pagination, setPage, setPerPage]

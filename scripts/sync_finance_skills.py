@@ -65,6 +65,118 @@ DISPLAY_METADATA: dict[str, dict[str, Any]] = {
     },
 }
 
+OPERATIONAL_PROFILES: dict[str, dict[str, Any]] = {
+    "ar-hexiao-daily": {
+        "execution_kind": "guided_workflow",
+        "external_sources": [
+            {"system": "智云", "access": "direct_read", "required": True}
+        ],
+        "employee_labels": ["智云取数", "复用业务材料", "写入工作副本"],
+    },
+    "compliance-spot-check": {
+        "execution_kind": "offline_file",
+        "external_sources": [],
+        "employee_labels": ["上传应收台账", "本地生成建议", "输出Excel"],
+    },
+    "dept-expense-alloc": {
+        "execution_kind": "offline_file",
+        "external_sources": [
+            {"system": "用友", "access": "uploaded_export", "required": True}
+        ],
+        "employee_labels": ["上传用友导出", "本地归集分摊", "输出工作簿"],
+    },
+    "docx": {
+        "execution_kind": "document_agent",
+        "external_sources": [],
+        "employee_labels": ["本地文档", "创建与编辑"],
+    },
+    "dreame-ar-progress-diff": {
+        "execution_kind": "offline_file",
+        "external_sources": [],
+        "employee_labels": ["上传多个版本", "本地对比", "输出报告"],
+    },
+    "env-doctor": {
+        "execution_kind": "agent_guidance",
+        "external_sources": [],
+        "employee_labels": ["环境诊断", "不处理业务数据"],
+    },
+    "jdy-cashflow-export": {
+        "execution_kind": "browser_rpa",
+        "external_sources": [
+            {"system": "金蝶云", "access": "browser_rpa", "required": True}
+        ],
+        "employee_labels": ["金蝶云RPA", "需要受控凭据", "导出明细"],
+    },
+    "jdy-cashflow-reconcile": {
+        "execution_kind": "offline_file",
+        "external_sources": [],
+        "employee_labels": ["上传两份明细", "本地核对", "输出差异表"],
+    },
+    "labor-invoice-check": {
+        "execution_kind": "offline_file",
+        "external_sources": [],
+        "employee_labels": ["上传两份台账", "本地核对", "输出支付清单"],
+    },
+    "order-daily-summary": {
+        "execution_kind": "offline_file",
+        "external_sources": [
+            {"system": "智云", "access": "uploaded_export", "required": True}
+        ],
+        "employee_labels": ["上传智云导出", "离线统计", "输出ZIP"],
+    },
+    "pdf": {
+        "execution_kind": "document_agent",
+        "external_sources": [],
+        "employee_labels": ["本地PDF", "读取与编辑"],
+    },
+    "pptx": {
+        "execution_kind": "document_agent",
+        "external_sources": [],
+        "employee_labels": ["本地演示文稿", "创建与编辑"],
+    },
+    "project-detail-to-ledger": {
+        "execution_kind": "offline_file",
+        "external_sources": [],
+        "employee_labels": ["上传两份工作簿", "本地补录", "输出新副本"],
+    },
+    "receivables-merge": {
+        "execution_kind": "offline_file",
+        "external_sources": [],
+        "employee_labels": ["上传应收台账", "本地合并", "输出新副本"],
+    },
+    "reconcile-bank": {
+        "execution_kind": "offline_file",
+        "external_sources": [],
+        "employee_labels": ["上传两份账表", "本地对账", "输出差异清单"],
+    },
+    "split-by-sales": {
+        "execution_kind": "offline_file",
+        "external_sources": [],
+        "employee_labels": ["上传应收台账", "本地拆分", "输出ZIP"],
+    },
+    "task-clarifier": {
+        "execution_kind": "agent_guidance",
+        "external_sources": [],
+        "employee_labels": ["对话澄清", "生成任务草稿"],
+    },
+    "withholding-report-rename": {
+        "execution_kind": "offline_file",
+        "external_sources": [
+            {
+                "system": "电子税务局",
+                "access": "uploaded_export",
+                "required": True,
+            }
+        ],
+        "employee_labels": ["只读或生成副本"],
+    },
+    "xlsx": {
+        "execution_kind": "document_agent",
+        "external_sources": [],
+        "employee_labels": ["本地表格", "创建与编辑"],
+    },
+}
+
 DEFAULT_PROGRESS_STAGES = [
     {"key": "reading_files", "label": "正在读取文件"},
     {"key": "validating_fields", "label": "正在检查字段"},
@@ -115,6 +227,7 @@ def manifest(
     network_targets: list[str] | None = None,
     version: str = "1.0.0",
     blocked_reason: str = "",
+    upstream_repository: str | None = "https://gitee.com/Lee157/finance-skills.git",
 ) -> dict[str, Any]:
     display = DISPLAY_METADATA.get(skill_id, {})
     value = {
@@ -135,6 +248,7 @@ def manifest(
             "popular": display.get("popular", False),
         },
         "tags": tags,
+        "operational_profile": OPERATIONAL_PROFILES[skill_id],
         "file_inputs": file_inputs,
         "input_schema": input_schema,
         "output_schema": COMMON_OUTPUT_SCHEMA,
@@ -165,11 +279,12 @@ def manifest(
         "safety_constraints": {},
         "progress_stages": DEFAULT_PROGRESS_STAGES,
         "result_presentation": {"metrics": []},
-        "upstream": {
-            "repository": "https://gitee.com/Lee157/finance-skills.git",
-            "path": f"skills/{skill_id}",
-        },
     }
+    if upstream_repository:
+        value["upstream"] = {
+            "repository": upstream_repository,
+            "path": f"skills/{skill_id}",
+        }
     if blocked_reason:
         value["blocked_reason"] = blocked_reason
     return value
@@ -534,7 +649,7 @@ CATALOG_ONLY: dict[str, dict[str, Any]] = {
         timeout=1800,
         network_access=True,
         network_targets=["http://192.168.10.167:18880"],
-        version="1.6.11",
+        version="1.6.14",
     ),
     "jdy-cashflow-export": manifest(
         "jdy-cashflow-export",
@@ -549,6 +664,7 @@ CATALOG_ONLY: dict[str, dict[str, Any]] = {
         risk="external_action",
         confirmation=True,
         timeout=3600,
+        upstream_repository=None,
         blocked_reason="需先接入独立凭据保管和受控浏览器会话，禁止把账号密码写入任务参数。",
     ),
     "jdy-cashflow-reconcile": manifest(
@@ -560,6 +676,7 @@ CATALOG_ONLY: dict[str, dict[str, Any]] = {
         [],
         {"type": "object", "additionalProperties": True, "properties": {}},
         status="disabled",
+        upstream_repository=None,
         blocked_reason="期间分组问题已修复；发布前仍需为平台 Worker 打包受控 Node.js 和 @oai/artifact-tool 运行时，并接入专属双文件执行体验。",
     ),
     "task-clarifier": manifest(
@@ -629,6 +746,11 @@ CATALOG_ONLY: dict[str, dict[str, Any]] = {
         blocked_reason="基础能力包不是单一业务工具，需要文档型 Agent 运行时。",
     ),
 }
+
+
+# These Skills only exist in the platform repository. A Gitee sync must leave
+# their platform-owned package and operational profile untouched.
+PRESERVED_PLATFORM_ONLY = {"reconcile-bank"}
 
 
 IGNORED_DIRS = {
@@ -771,10 +893,16 @@ def main() -> None:
     PLATFORM_SKILLS.mkdir(parents=True, exist_ok=True)
 
     requested = set(args.skill_id)
-    known = set(EXECUTABLES) | set(CATALOG_ONLY)
+    synced = set(EXECUTABLES) | set(CATALOG_ONLY)
+    known = synced | PRESERVED_PLATFORM_ONLY
     unknown = sorted(requested - known)
     if unknown:
         raise ValueError("未知 Skill：" + ", ".join(unknown))
+    preserved_requested = sorted(requested & PRESERVED_PLATFORM_ONLY)
+    if preserved_requested:
+        raise ValueError(
+            "平台独有 Skill 不能从 Gitee 同步：" + ", ".join(preserved_requested)
+        )
     source_metadata = {
         "repository_url": args.repository_url.strip(),
         "source_path": args.source_path.strip().replace("\\", "/"),
@@ -827,6 +955,10 @@ def main() -> None:
     )
     if skipped:
         print("远端缺少目录级 Skill，已保留平台现有版本：" + ", ".join(skipped))
+    print(
+        "平台独有 Skill 不参与 Gitee 同步，已保留平台版本："
+        + ", ".join(sorted(PRESERVED_PLATFORM_ONLY))
+    )
 
 
 if __name__ == "__main__":

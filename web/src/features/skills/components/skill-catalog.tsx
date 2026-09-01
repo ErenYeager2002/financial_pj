@@ -3,23 +3,22 @@ import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import {
   Card,
-  CardAction,
   CardContent,
   CardDescription,
   CardFooter,
   CardHeader,
   CardTitle
 } from '@/components/ui/card';
-import type { SkillDetail } from '@/features/platform-api/types';
+import { ScrollableCollection } from '@/components/ui/scrollable-collection';
+import type { SkillDedication, SkillDetail } from '@/features/platform-api/types';
 import { cn } from '@/lib/utils';
 
-const riskLabels = {
-  read_only: '只读或生成副本',
-  write: '写入型',
-  external_action: '外部操作'
-} as const;
+interface SkillCatalogProps {
+  skills: SkillDetail[];
+  adminDedications?: Record<string, SkillDedication>;
+}
 
-export function SkillCatalog({ skills }: { skills: SkillDetail[] }) {
+export function SkillCatalog({ skills, adminDedications }: SkillCatalogProps) {
   if (skills.length === 0) {
     return (
       <Card>
@@ -32,31 +31,29 @@ export function SkillCatalog({ skills }: { skills: SkillDetail[] }) {
   }
 
   return (
-    <div className='grid gap-4 md:grid-cols-2 xl:grid-cols-3'>
+    <ScrollableCollection
+      ariaLabel='Skill 目录'
+      contentClassName='grid gap-4 md:grid-cols-2 xl:grid-cols-3'
+    >
       {skills.map((skill) => (
         <Card key={skill.id} className='h-full'>
           <CardHeader>
-            <div className='mb-2 flex flex-wrap gap-2'>
-              {skill.categories.map((category) => (
-                <Badge key={category} variant='secondary'>
-                  {category}
+            {adminDedications?.[skill.id] && (
+              <div className='mb-2 flex flex-wrap gap-2'>
+                <Badge
+                  variant={
+                    adminDedications[skill.id].user_status === 'disabled'
+                      ? 'destructive'
+                      : 'outline'
+                  }
+                >
+                  专属：{adminDedications[skill.id].user_display_name}
+                  {adminDedications[skill.id].user_status === 'disabled' ? '（已停用）' : ''}
                 </Badge>
-              ))}
-              <Badge variant='outline'>{riskLabels[skill.risk.level]}</Badge>
-            </div>
+              </div>
+            )}
             <CardTitle>{skill.name}</CardTitle>
             <CardDescription className='line-clamp-3'>{skill.description}</CardDescription>
-            <CardAction>
-              <Badge
-                variant={skill.status === 'published' && skill.popular ? 'default' : 'outline'}
-              >
-                {skill.status === 'published'
-                  ? skill.popular
-                    ? '常用'
-                    : `v${skill.version}`
-                  : '辅助入口'}
-              </Badge>
-            </CardAction>
           </CardHeader>
           <CardContent className='mt-auto space-y-2 text-sm'>
             <p>
@@ -78,6 +75,6 @@ export function SkillCatalog({ skills }: { skills: SkillDetail[] }) {
           </CardFooter>
         </Card>
       ))}
-    </div>
+    </ScrollableCollection>
   );
 }

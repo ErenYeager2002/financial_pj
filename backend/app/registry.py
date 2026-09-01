@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import subprocess
 from pathlib import Path
 from typing import Any, Literal
@@ -12,6 +13,18 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 from .network_policy import validate_runtime_network_policy
 from .settings import settings
 from .skill_execution_experiences import validate_published_execution_experience
+
+EMPLOYEE_LABEL_SENSITIVE_PATTERNS = (
+    re.compile(r"(?i)(?:https?://|www\.)"),
+    re.compile(r"(?i)(?:[A-Za-z0-9-]+\.)+(?:com|cn|net|org|io|local)(?:[/:]|$)"),
+    re.compile(r"(?<!\d)(?:\d{1,3}\.){3}\d{1,3}(?::\d{1,5})?(?!\d)"),
+    re.compile(r"[\\/]"),
+    re.compile(
+        r"(?i)(?:password|passwd|api[_ -]?key|secret|token|account|账号|账户|密码|密钥)"
+    ),
+    re.compile(r"(?i)(?<![0-9a-f])[0-9a-f]{7,40}(?![0-9a-f])"),
+    re.compile(r"\S+@\S+\.\S+"),
+)
 
 
 class FileInputSpec(BaseModel):
@@ -55,6 +68,63 @@ class RiskSpec(BaseModel):
     requires_change_review: bool = False
     requires_approval: bool = False
     modifies_uploaded_files: bool = False
+
+
+class ExternalDataSourceSpec(BaseModel):
+    system: str = Field(min_length=1, max_length=80)
+    access: Literal[
+        "uploaded_export",
+        "direct_read",
+        "browser_rpa",
+        "repository_sync",
+    ]
+    required: bool = True
+
+
+class SkillOperationalProfileSpec(BaseModel):
+    execution_kind: Literal[
+        "offline_file",
+        "guided_workflow",
+        "browser_rpa",
+        "agent_guidance",
+        "document_agent",
+    ]
+    external_sources: list[ExternalDataSourceSpec] = Field(
+        default_factory=list,
+        max_length=10,
+    )
+    employee_labels: list[str] = Field(min_length=1, max_length=4)
+
+    @model_validator(mode="after")
+    def validate_labels(self) -> SkillOperationalProfileSpec:
+        labels = [label.strip() for label in self.employee_labels]
+        if any(not label or len(label) > 20 for label in labels):
+            raise ValueError("employee_labels 每项必须为 1 至 20 个字符")
+        if len(labels) != len(set(labels)):
+            raise ValueError("employee_labels 不能重复")
+        if any(
+            pattern.search(label)
+            for label in labels
+            for pattern in EMPLOYEE_LABEL_SENSITIVE_PATTERNS
+        ):
+            raise ValueError("employee_labels 不能包含地址、账号、密钥、路径或源码版本")
+        self.employee_labels = labels
+        return self
+
+
+def _legacy_operational_profile() -> SkillOperationalProfileSpec:
+    return SkillOperationalProfileSpec(
+        execution_kind="offline_file",
+        external_sources=[],
+        employee_labels=["历史运行快照", "按原配置执行"],
+    )
+
+
+def validate_declared_operational_profile(payload: Any) -> None:
+    if not isinstance(payload, dict) or not isinstance(
+        payload.get("operational_profile"), dict
+    ):
+        raise ValueError("Skill 必须显式声明 operational_profile")
 
 
 class SkillUiSpec(BaseModel):
@@ -120,6 +190,9 @@ class SkillManifest(BaseModel):
     handler: HandlerSpec
     runtime: RuntimeSpec = Field(default_factory=RuntimeSpec)
     risk: RiskSpec = Field(default_factory=RiskSpec)
+    operational_profile: SkillOperationalProfileSpec = Field(
+        default_factory=_legacy_operational_profile
+    )
     permissions: PermissionSpec = Field(default_factory=PermissionSpec)
     ui: SkillUiSpec | None = None
     safety_constraints: dict[str, SafetyConstraintSpec] = Field(default_factory=dict)
@@ -138,6 +211,27 @@ class SkillManifest(BaseModel):
         metric_keys = [item.key for item in self.result_presentation.metrics]
         if len(metric_keys) != len(set(metric_keys)):
             raise ValueError("result_presentation.metrics.key 不能重复")
+        direct_access = {"direct_read", "browser_rpa", "repository_sync"}
+        if any(
+            source.access in direct_access
+            for source in self.operational_profile.external_sources
+        ) and not self.runtime.network_access:
+            raise ValueError("外部直连取数必须启用 runtime.network_access")
+        if (
+            self.operational_profile.execution_kind == "guided_workflow"
+            and self.handler.adapter != "workflow"
+        ):
+            raise ValueError("guided_workflow 必须使用 workflow handler")
+        if (
+            self.operational_profile.execution_kind == "browser_rpa"
+            and self.handler.adapter != "rpa"
+        ):
+            raise ValueError("browser_rpa 必须使用 rpa handler")
+        if (
+            self.handler.adapter == "rpa"
+            and self.operational_profile.execution_kind != "browser_rpa"
+        ):
+            raise ValueError("rpa handler 必须声明 browser_rpa 运行方式")
         properties = self.input_schema.get("properties", {})
         for name, constraint in self.safety_constraints.items():
             schema = properties.get(name)
@@ -201,6 +295,7 @@ class RegisteredSkill(BaseModel):
             "action_label": ui.action_label,
             "popular": ui.popular,
             "tags": self.manifest.tags,
+            "operation_labels": self.manifest.operational_profile.employee_labels,
             "file_inputs": [item.model_dump() for item in self.manifest.file_inputs],
             "risk": {
                 "level": self.manifest.risk.level,
@@ -287,6 +382,7 @@ class SkillRegistry:
             for manifest_path in sorted(root.glob("*/tool.yaml")):
                 try:
                     payload = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+                    validate_declared_operational_profile(payload)
                     manifest = SkillManifest.model_validate(payload)
                     if manifest.status == "published" and manifest.ui is None:
                         raise ValueError("published Skill 必须配置 ui")

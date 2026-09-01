@@ -241,7 +241,11 @@ class WorkflowFetchedPayment(BaseModel):
     arrival_date: str = ""
     amount_original: float | None = None
     amount_local: float | None = None
+    total_amount_original: float | None = None
+    total_amount_local: float | None = None
     fee_original: float | None = None
+    tax_original: float | None = None
+    tax_local: float | None = None
     currency: str = ""
     payment_type: str = ""
     writeoff_status: str = ""

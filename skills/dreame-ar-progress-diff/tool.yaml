@@ -18,6 +18,10 @@ tags:
 - 应收
 - 多版本对比
 - 追觅
+operational_profile:
+  execution_kind: offline_file
+  external_sources: []
+  employee_labels: [上传多个版本, 本地对比, 输出报告]
 file_inputs:
 - role: versions
   name: 应收进度版本
@@ -80,5 +84,5 @@ permissions:
   run: finance_user
   manage: skill_admin
 upstream:
-  repository: https://github.com/EvanLee2004/finance-skills
+  repository: https://gitee.com/Lee157/finance-skills.git
   path: skills/dreame-ar-progress-diff

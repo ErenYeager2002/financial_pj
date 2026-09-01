@@ -18,6 +18,10 @@ tags:
 - 合规
 - 抽查
 - 建议
+operational_profile:
+  execution_kind: offline_file
+  external_sources: []
+  employee_labels: [上传应收台账, 本地生成建议, 输出Excel]
 file_inputs:
 - role: receivables
   name: 应收 all
@@ -89,5 +93,5 @@ permissions:
   run: finance_user
   manage: skill_admin
 upstream:
-  repository: https://github.com/EvanLee2004/finance-skills
+  repository: https://gitee.com/Lee157/finance-skills.git
   path: skills/compliance-spot-check

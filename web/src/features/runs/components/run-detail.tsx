@@ -8,6 +8,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PaginatedCollection } from '@/components/ui/collection-pagination';
 import { LoadingButton } from '@/components/ui/loading-button';
 import { Progress, ProgressLabel } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
@@ -389,9 +390,9 @@ export function RunDetailView({ runId }: RunDetailViewProps): React.JSX.Element 
             {inputs.length > 0 && (
               <div>
                 <p className='mb-2 font-medium'>文件</p>
-                <ul className='space-y-2'>
+                <PaginatedCollection ariaLabel='任务输入文件' contentClassName='space-y-2'>
                   {inputs.map((file, index) => (
-                    <li
+                    <div
                       key={`${file.role}-${index}`}
                       className='flex justify-between gap-3 rounded-lg border p-2'
                     >
@@ -399,15 +400,15 @@ export function RunDetailView({ runId }: RunDetailViewProps): React.JSX.Element 
                         {experience?.fileRoleLabels?.[file.role] ?? file.role}
                       </span>
                       <span className='truncate'>{file.name}</span>
-                    </li>
+                    </div>
                   ))}
-                </ul>
+                </PaginatedCollection>
               </div>
             )}
             {Object.keys(runParameters).length > 0 && (
               <div>
                 <p className='mb-2 font-medium'>参数</p>
-                <dl className='space-y-2'>
+                <PaginatedCollection ariaLabel='任务输入参数' contentClassName='space-y-2'>
                   {Object.entries(runParameters).map(([key, value]) => (
                     <div key={key} className='flex justify-between gap-3 rounded-lg border p-2'>
                       <dt className='text-muted-foreground'>
@@ -416,7 +417,7 @@ export function RunDetailView({ runId }: RunDetailViewProps): React.JSX.Element 
                       <dd>{metricText(value)}</dd>
                     </div>
                   ))}
-                </dl>
+                </PaginatedCollection>
               </div>
             )}
             {run.message && (
@@ -438,9 +439,9 @@ export function RunDetailView({ runId }: RunDetailViewProps): React.JSX.Element 
           </CardHeader>
           <CardContent>
             {events.length ? (
-              <ol className='max-h-96 space-y-3 overflow-y-auto pr-2'>
+              <PaginatedCollection ariaLabel='任务处理记录' contentClassName='space-y-3'>
                 {events.map((event) => (
-                  <li key={event.id} className='grid grid-cols-[auto_1fr] gap-x-3'>
+                  <div key={event.id} className='grid grid-cols-[auto_1fr] gap-x-3'>
                     <span className='mt-1 size-2 rounded-full bg-primary' />
                     <div>
                       <div className='flex flex-wrap items-center gap-2'>
@@ -460,9 +461,9 @@ export function RunDetailView({ runId }: RunDetailViewProps): React.JSX.Element 
                         {event.message || runStateLabel(event.state)}
                       </p>
                     </div>
-                  </li>
+                  </div>
                 ))}
-              </ol>
+              </PaginatedCollection>
             ) : (
               <p className='text-muted-foreground'>
                 {connection === 'complete' ? '暂无处理记录。' : '正在读取任务事件…'}
@@ -484,18 +485,21 @@ export function RunDetailView({ runId }: RunDetailViewProps): React.JSX.Element 
           </CardHeader>
           <CardContent className='space-y-5'>
             {metrics.length > 0 && (
-              <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-3'>
+              <PaginatedCollection
+                ariaLabel='任务结果指标'
+                contentClassName='grid gap-3 sm:grid-cols-2 lg:grid-cols-3'
+              >
                 {metrics.map((metric) => (
                   <div key={metric.key} className='rounded-lg border p-3'>
                     <p className='text-sm text-muted-foreground'>{metric.label}</p>
                     <p className='mt-1 text-2xl font-semibold'>{metricText(metric.value)}</p>
                   </div>
                 ))}
-              </div>
+              </PaginatedCollection>
             )}
             {metrics.length > 0 && files.length > 0 && <Separator />}
             {files.length > 0 ? (
-              <div className='space-y-2'>
+              <PaginatedCollection ariaLabel='任务结果文件' contentClassName='space-y-2'>
                 {files.map((file) => (
                   <div
                     key={file.fileId}
@@ -517,7 +521,7 @@ export function RunDetailView({ runId }: RunDetailViewProps): React.JSX.Element 
                     </a>
                   </div>
                 ))}
-              </div>
+              </PaginatedCollection>
             ) : TERMINAL_RUN_STATES.has(run.state) ? (
               <p className='text-muted-foreground'>该任务没有可下载的结果文件。</p>
             ) : null}

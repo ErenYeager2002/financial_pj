@@ -19,6 +19,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import { PaginatedCollection } from '@/components/ui/collection-pagination';
 import { FilePreview } from '@/components/ui/file-preview';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -465,14 +466,17 @@ export function SkillRunSetup({ skill, experience, draft, draftFiles = [] }: Ski
           </div>
           <div className='space-y-2'>
             <p className='text-sm font-medium'>{experience.reviewTitle}</p>
-            <ul className='space-y-2 text-sm text-muted-foreground'>
+            <PaginatedCollection
+              ariaLabel='任务提交前检查项'
+              contentClassName='space-y-2 text-sm text-muted-foreground'
+            >
               {experience.reviewItems.map((item) => (
-                <li key={item} className='flex gap-2'>
+                <div key={item} className='flex gap-2'>
                   <Icons.circleCheck className='mt-0.5 size-4 shrink-0 text-primary' />
                   <span>{item}</span>
-                </li>
+                </div>
               ))}
-            </ul>
+            </PaginatedCollection>
           </div>
         </section>
 
@@ -515,9 +519,13 @@ export function SkillRunSetup({ skill, experience, draft, draftFiles = [] }: Ski
                   </p>
                 )}
                 {experience.orderedFileRole === input.role && uploaded.length > 0 && (
-                  <ol className='space-y-2 rounded-lg bg-muted/40 p-3' aria-label='版本顺序'>
+                  <PaginatedCollection
+                    ariaLabel='文件版本顺序'
+                    className='rounded-lg bg-muted/40 p-3'
+                    contentClassName='space-y-2'
+                  >
                     {uploaded.map((file, index) => (
-                      <li key={file.id} className='flex items-center gap-2 text-sm'>
+                      <div key={file.id} className='flex items-center gap-2 text-sm'>
                         <span className='w-16 shrink-0 font-medium'>
                           {index === uploaded.length - 1 ? '最新版' : `版本 ${index + 1}`}
                         </span>
@@ -542,9 +550,9 @@ export function SkillRunSetup({ skill, experience, draft, draftFiles = [] }: Ski
                         >
                           <Icons.chevronDown />
                         </Button>
-                      </li>
+                      </div>
                     ))}
-                  </ol>
+                  </PaginatedCollection>
                 )}
                 <FilePreview
                   files={uploaded.map((file) => ({
@@ -657,11 +665,15 @@ export function SkillRunSetup({ skill, experience, draft, draftFiles = [] }: Ski
           </div>
           <div>
             <h3 className='font-medium'>任务执行时检查</h3>
-            <ul className='mt-1 space-y-1 text-sm text-muted-foreground'>
-              {experience.workerChecks.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
+          <PaginatedCollection
+            ariaLabel='任务执行时检查项'
+            className='mt-1'
+            contentClassName='space-y-1 text-sm text-muted-foreground'
+          >
+            {experience.workerChecks.map((item) => (
+              <div key={item}>{item}</div>
+            ))}
+          </PaginatedCollection>
           </div>
         </section>
 
@@ -688,21 +700,27 @@ export function SkillRunSetup({ skill, experience, draft, draftFiles = [] }: Ski
           <div className='max-h-80 space-y-4 overflow-y-auto rounded-lg border p-3 text-sm'>
             <div>
               <p className='mb-2 font-medium'>文件</p>
-              <ul className='space-y-1 text-muted-foreground'>
+              <PaginatedCollection
+                ariaLabel='确认提交文件'
+                contentClassName='space-y-1 text-muted-foreground'
+              >
                 {(skill.file_inputs ?? []).flatMap((input) =>
                   (filesByRole[input.role] ?? []).map((file) => (
-                    <li key={file.id} className='flex justify-between gap-3'>
+                    <div key={file.id} className='flex justify-between gap-3'>
                       <span>{input.name}</span>
                       <span className='truncate'>{file.name}</span>
-                    </li>
+                    </div>
                   ))
                 )}
-              </ul>
+              </PaginatedCollection>
             </div>
             {properties.length > 0 && (
               <div className='border-t pt-3'>
                 <p className='mb-2 font-medium'>参数</p>
-                <dl className='space-y-1 text-muted-foreground'>
+                <PaginatedCollection
+                  ariaLabel='确认提交参数'
+                  contentClassName='space-y-1 text-muted-foreground'
+                >
                   {properties.map(([name, property]) => (
                     <div key={name} className='flex justify-between gap-3'>
                       <dt>{property.title ?? name}</dt>
@@ -715,16 +733,19 @@ export function SkillRunSetup({ skill, experience, draft, draftFiles = [] }: Ski
                       </dd>
                     </div>
                   ))}
-                </dl>
+                </PaginatedCollection>
               </div>
             )}
             <div className='border-t pt-3'>
               <p className='mb-2 font-medium'>{experience.reviewTitle}</p>
-              <ul className='space-y-1 text-muted-foreground'>
+              <PaginatedCollection
+                ariaLabel='确认提交检查项'
+                contentClassName='space-y-1 text-muted-foreground'
+              >
                 {experience.reviewItems.map((item) => (
-                  <li key={item}>{item}</li>
+                  <div key={item}>{item}</div>
                 ))}
-              </ul>
+              </PaginatedCollection>
             </div>
           </div>
           <AlertDialogFooter>

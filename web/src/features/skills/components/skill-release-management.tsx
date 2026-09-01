@@ -5,6 +5,7 @@ import { IconGitBranch, IconPackageImport } from '@tabler/icons-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PaginatedCollection } from '@/components/ui/collection-pagination';
 import {
   Dialog,
   DialogContent,
@@ -217,7 +218,8 @@ export function SkillReleaseManagement({ initialReleases = [], initialInbox = []
               {inbox.length === 0 ? (
                 <p className='text-sm text-muted-foreground'>当前没有待导入发布包。</p>
               ) : (
-                inbox.map((item) => (
+                <PaginatedCollection ariaLabel='待导入发布包' contentClassName='space-y-2'>
+                  {inbox.map((item) => (
                   <div
                     key={item.package_name}
                     className='flex flex-wrap items-center gap-3 rounded border p-3'
@@ -238,7 +240,8 @@ export function SkillReleaseManagement({ initialReleases = [], initialInbox = []
                       导入并校验
                     </Button>
                   </div>
-                ))
+                  ))}
+                </PaginatedCollection>
               )}
             </CardContent>
           </Card>
@@ -259,7 +262,10 @@ export function SkillReleaseManagement({ initialReleases = [], initialInbox = []
               </CardContent>
             </Card>
           ) : (
-            <div className='grid gap-3 lg:grid-cols-2'>
+            <PaginatedCollection
+              ariaLabel='Skill 发布记录'
+              contentClassName='grid gap-3 lg:grid-cols-2'
+            >
               {releases.map((release) => (
                 <Card key={release.id}>
                   <CardHeader>
@@ -295,7 +301,7 @@ export function SkillReleaseManagement({ initialReleases = [], initialInbox = []
                   </CardContent>
                 </Card>
               ))}
-            </div>
+            </PaginatedCollection>
           )}
         </section>
       )}

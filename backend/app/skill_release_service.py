@@ -40,10 +40,10 @@ from .models import (
     WorkflowAction,
     WorkflowSession,
 )
-from .registry import SkillManifest, registry
-from .skill_execution_experiences import validate_published_execution_experience
+from .registry import SkillManifest, registry, validate_declared_operational_profile
 from .settings import settings
 from .skill_availability_service import disable_after_drain, transition_availability
+from .skill_execution_experiences import validate_published_execution_experience
 
 PACKAGE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*\.zip$")
 COMMIT = re.compile(r"^[0-9a-fA-F]{7,64}$")
@@ -331,6 +331,7 @@ def _validate_content(content: Path) -> tuple[SkillManifest, dict[str, Any], dic
         )
     try:
         raw_manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        validate_declared_operational_profile(raw_manifest)
         manifest = SkillManifest.model_validate(raw_manifest)
         release_meta = json.loads(release_path.read_text(encoding="utf-8"))
     except (OSError, ValueError, ValidationError, yaml.YAMLError, json.JSONDecodeError) as exc:

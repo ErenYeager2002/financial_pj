@@ -52,13 +52,13 @@ test('进度、结果变化、错误和刷新成功具有可访问语义', () =>
   assert.match(reminders, /role='alert'/);
 });
 
-test('筛选、分页、提醒和详情入口保持键盘可操作', () => {
-  assert.match(list, /htmlFor='task-center-skill'/);
-  assert.match(list, /type='submit'/);
-  assert.match(list, /清除筛选/);
+test('分页、固定补查入口和详情入口保持键盘可操作', () => {
+  assert.doesNotMatch(list, /TaskCenterFilters|应用筛选|清除筛选/);
   assert.match(list, /tabIndex=\{data\.page <= 1 \? -1 : undefined\}/);
   assert.match(list, /tabIndex=\{data\.page >= data\.pages \? -1 : undefined\}/);
-  assert.match(reminders, /<summary[^>]*>手动补查日期<\/summary>/);
+  assert.doesNotMatch(reminders, /<details|<summary/);
+  assert.match(reminders, /<section[^>]*aria-labelledby='manual-check-date-title'/);
+  assert.match(reminders, /htmlFor='task-reminder-manual-date'/);
   assert.match(reminders, /处理这些日期/);
   assert.match(list, /href=\{item\.detail_href\}/);
 });

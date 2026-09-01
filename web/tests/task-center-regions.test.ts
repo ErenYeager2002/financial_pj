@@ -25,7 +25,7 @@ function taskPage(overrides: Record<string, unknown> = {}) {
   return {
     items: [],
     page: 1,
-    page_size: 20,
+    page_size: 5,
     pages: 0,
     total: 0,
     state_counts: { pending: 0, running: 0, failed: 0, succeeded: 0, cancelled: 0 },
@@ -86,7 +86,7 @@ test('认证和授权失败继续交给页面级错误处理', async () => {
   );
 });
 
-test('客户端区域加载器只请求自己的数据源并保留筛选', async () => {
+test('客户端区域加载器只请求自己的数据源和正式任务页码', async () => {
   const reminderRequests: string[] = [];
   const reminderRequest: RegionRequest = async (input) => {
     reminderRequests.push(input);
@@ -98,17 +98,13 @@ test('客户端区域加载器只请求自己的数据源并保留筛选', async
   const formalRequests: string[] = [];
   const formalRequest: RegionRequest = async (input) => {
     formalRequests.push(input);
-    return jsonResponse(
-      formalRequests.length === 1 ? taskPage() : taskPage({ total: 2, pages: 2 })
-    );
+    return jsonResponse(taskPage({ total: 2, pages: 1, page: 2 }));
   };
   const query = parseTaskCenterQuery({ page: '2', state: 'failed', skill: 'ar-hexiao-daily' });
   const result = await loadFormalTaskRegion(query, formalRequest);
-  assert.equal(formalRequests.length, 2);
+  assert.equal(formalRequests.length, 1);
   assert.match(formalRequests[0], /page=2/);
-  assert.match(formalRequests[0], /view_state=failed/);
-  assert.match(formalRequests[0], /skill_id=ar-hexiao-daily/);
-  assert.doesNotMatch(formalRequests[1], /view_state|skill_id/);
+  assert.doesNotMatch(formalRequests[0], /view_state|skill_id/);
   assert.equal(result.hasAnyTasks, true);
 });
 
@@ -117,7 +113,7 @@ test('客户端重试恢复越界页并把权限失败交给页面', async () =>
   const recovered = await loadFormalTaskRegion(query, async () =>
     jsonResponse(taskPage({ total: 25, pages: 3, page: 9 }))
   );
-  assert.equal(recovered.canonicalHref, '/dashboard/runs?page=3&state=failed');
+  assert.equal(recovered.canonicalHref, '/dashboard/runs?page=3');
 
   await assert.rejects(
     loadTaskReminderRegion(async () => jsonResponse({}, 403)),

@@ -87,24 +87,25 @@ def test_expand_uses_sod_subset(tmp_path):
     assert sum(r["amount_orig"] for r in recs) == 100.0
 
 
-def test_whole_payment_without_order_written_off_uses_delivery_fallback(tmp_path):
-    """整笔回款全部缺订单已核销金额时，按完整交付额形成逐SO金额。"""
+def test_whole_payment_without_order_written_off_allows_parent_surplus(tmp_path):
+    """整笔回款按完整交付额形成逐SO金额，父额超出部分留在父回款。"""
     _mk_exports(
         tmp_path,
         with_writeoff=False,
         with_order_written_off=False,
     )
-    # 到账额改成 250 才等于交付额
+    # 到账额高于 250 的订单交付合计，超出部分不进入订单。
     _write(tmp_path / "01_智云导出" / "回款记录_test.xlsx",
            ["回款记录ID", "核销日期", "到账日期", "到账金额/原币", "到账金额/本币",
             "手续费/原币", "原币币种", "回款类型", "核销状态", "开票客户"],
-           [["AR26079999", "2026-07-22", "2026-07-21", 250, 250, 0,
+            [["AR26079999", "2026-07-22", "2026-07-21", 300, 300, 0,
              "人民币CNY", "整笔回款", "手动核销", "测试客户甲"]])
     recs = C.expand_payments(C.load_exports(tmp_path), {})
     assert {rec["sod"] for rec in recs} == {
         "SOD26070222", "SOD26070221", "SOD26070220"
     }
     assert sum(rec["amount_orig"] for rec in recs) == 250
+    assert recs[0]["duplicate_writeoff_audit"]["unallocated_parent_amount"] == 50.0
     assert all(
         "W_WHOLE_PAYMENT_DELIVERY_FALLBACK" in rec["warning_codes"]
         for rec in recs

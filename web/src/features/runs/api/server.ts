@@ -17,7 +17,7 @@ function checkedUuid(value: string, label: string): string {
   return value;
 }
 
-export function listRuns(page = 1, pageSize = 20, state = ''): Promise<RunPage> {
+export function listRuns(page = 1, pageSize = 5, state = ''): Promise<RunPage> {
   const checkedPage = Math.max(Math.trunc(page), 1);
   const checkedPageSize = Math.min(Math.max(Math.trunc(pageSize), 1), 100);
   const params = new URLSearchParams({

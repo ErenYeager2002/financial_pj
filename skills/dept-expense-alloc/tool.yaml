@@ -18,6 +18,13 @@ tags:
 - 费用
 - 部门
 - 分摊
+operational_profile:
+  execution_kind: offline_file
+  external_sources:
+  - system: 用友
+    access: uploaded_export
+    required: true
+  employee_labels: [上传用友导出, 本地归集分摊, 输出工作簿]
 file_inputs:
 - role: materials
   name: 费用分摊材料
@@ -81,5 +88,5 @@ permissions:
   run: finance_user
   manage: skill_admin
 upstream:
-  repository: https://github.com/EvanLee2004/finance-skills
+  repository: https://gitee.com/Lee157/finance-skills.git
   path: skills/dept-expense-alloc

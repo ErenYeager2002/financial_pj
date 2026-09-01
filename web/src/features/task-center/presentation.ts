@@ -40,36 +40,12 @@ export function taskCenterActionLabel(viewState: string): string {
 export function taskCenterResultAnnouncement(
   itemCount: number,
   total: number,
-  page: number,
-  queryContext: string
+  page: number
 ): string {
-  return `${queryContext}。第 ${page} 页显示 ${itemCount} 条任务，共 ${total} 条匹配结果。`;
+  return `第 ${page} 页显示 ${itemCount} 条任务，共 ${total} 条任务。`;
 }
 
-export function taskCenterQueryContext(query: TaskCenterQuery): string {
-  const filters = [
-    query.state ? `状态 ${taskCenterStateLabel(query.state)}` : '',
-    query.type ? `类型 ${TYPE_LABELS[query.type] ?? '任务'}` : '',
-    query.skill ? `Skill ${query.skill}` : '',
-    query.businessFrom ? `业务日期从 ${query.businessFrom}` : '',
-    query.businessTo ? `业务日期到 ${query.businessTo}` : '',
-    query.updatedFrom ? `更新时间从 ${query.updatedFrom}` : '',
-    query.updatedTo ? `更新时间到 ${query.updatedTo}` : ''
-  ].filter(Boolean);
-  return filters.length ? filters.join('，') : '全部任务';
-}
-
-export function taskCenterEmptyState(
-  hasAnyTasks: boolean,
-  hasFilters: boolean
-): TaskCenterEmptyState {
-  if (hasAnyTasks && hasFilters) {
-    return {
-      title: '当前筛选没有匹配任务',
-      description: '调整筛选条件，或清除筛选查看全部正式任务。',
-      action: '清除筛选'
-    };
-  }
+export function taskCenterEmptyState(hasAnyTasks: boolean): TaskCenterEmptyState {
   if (!hasAnyTasks) {
     return {
       title: '暂无正式任务',
@@ -83,4 +59,3 @@ export function taskCenterEmptyState(
     action: '返回第一页'
   };
 }
-import type { TaskCenterQuery } from './query.ts';

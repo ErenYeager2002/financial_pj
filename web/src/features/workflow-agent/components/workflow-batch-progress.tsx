@@ -6,8 +6,8 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PaginatedCollection } from '@/components/ui/collection-pagination';
 import { Progress } from '@/components/ui/progress';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { WorkflowProgressCard } from '@/features/workflow-agent/components/workflow-progress-card';
 import { WorkflowFetchedDataDialog } from '@/features/workflow-agent/components/workflow-fetched-data-dialog';
 import type { WorkflowBatchRead } from '@/features/platform-api/types';
@@ -91,8 +91,7 @@ function BatchOutputCard({ batch }: { batch: WorkflowBatchRead }): React.JSX.Ele
       </CardHeader>
       <CardContent>
         {outputs.length ? (
-          <ScrollArea className='max-h-80 pr-3'>
-            <div className='space-y-2'>
+          <PaginatedCollection ariaLabel='批次产出' contentClassName='space-y-2'>
               {outputs.map((output) => (
                 <div
                   key={output.fileId}
@@ -109,8 +108,7 @@ function BatchOutputCard({ batch }: { batch: WorkflowBatchRead }): React.JSX.Ele
                   </a>
                 </div>
               ))}
-            </div>
-          </ScrollArea>
+          </PaginatedCollection>
         ) : (
           <p className='text-sm text-muted-foreground'>当前批次还没有可下载的产出文件。</p>
         )}
@@ -340,8 +338,7 @@ export function WorkflowBatchProgress({
           <CardTitle className='text-base'>日期任务</CardTitle>
         </CardHeader>
         <CardContent className='space-y-2'>
-          <ScrollArea className={batch.workflows.length > 5 ? 'h-[25rem] pr-3' : 'pr-3'}>
-            <div role='list' aria-label='批次日期任务列表' className='space-y-2'>
+          <PaginatedCollection ariaLabel='批次日期任务列表' contentClassName='space-y-2'>
               {batch.workflows.map((workflow) => {
                 const status = workflowStatusInBatch(batch.state, batch.workflows, workflow);
                 const selected = selectedWorkflow?.id === workflow.id;
@@ -403,8 +400,7 @@ export function WorkflowBatchProgress({
                   </div>
                 );
               })}
-            </div>
-          </ScrollArea>
+          </PaginatedCollection>
         </CardContent>
       </Card>
 
@@ -470,8 +466,12 @@ export function WorkflowBatchProgress({
                       {selectedWorkflow.reconciliation_date} · 写入状态：已完成
                     </CardDescription>
                   </CardHeader>
-                  <CardContent className='grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4'>
-                    {[
+                  <CardContent>
+                    <PaginatedCollection
+                      ariaLabel='本日期核销结果'
+                      contentClassName='grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4'
+                    >
+                      {[
                       ['本日写入', '今天要填'],
                       ['已填过·跳过', '已填过·跳过'],
                       ['挂账待办', '挂账待办'],
@@ -479,14 +479,15 @@ export function WorkflowBatchProgress({
                       ['流转确认后自动写', '流转确认后自动写'],
                       ['流转须手填', '流转须手填'],
                       ['异常', '异常']
-                    ].map(([label, key]) => (
-                      <div key={key} className='rounded-md border bg-muted/20 p-3'>
-                        <p className='text-muted-foreground'>{label}</p>
-                        <p className='mt-1 font-medium'>
-                          {resultSummaryValue(selectedWorkflow.result_summary ?? {}, key)}
-                        </p>
-                      </div>
-                    ))}
+                      ].map(([label, key]) => (
+                        <div key={key} className='rounded-md border bg-muted/20 p-3'>
+                          <p className='text-muted-foreground'>{label}</p>
+                          <p className='mt-1 font-medium'>
+                            {resultSummaryValue(selectedWorkflow.result_summary ?? {}, key)}
+                          </p>
+                        </div>
+                      ))}
+                    </PaginatedCollection>
                   </CardContent>
                 </Card>
               )}

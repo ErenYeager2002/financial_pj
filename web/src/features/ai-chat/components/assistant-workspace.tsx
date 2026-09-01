@@ -14,6 +14,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { ScrollableCollection } from '@/components/ui/scrollable-collection';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
 import { parseAgentWireEvent, type AgentWireEvent } from '@/features/agent-runtime/agent-wire';
@@ -330,7 +331,12 @@ export function AssistantWorkspace({
             </Alert>
           )}
 
-          <div className='min-h-0 flex-1 space-y-4 overflow-y-auto rounded-lg border bg-muted/20 p-4'>
+          <ScrollableCollection
+            ariaLabel='对话消息'
+            className='min-h-0 flex-1 rounded-lg border bg-muted/20 p-4'
+            contentClassName='space-y-4'
+            followEnd
+          >
             {messages.map((message) => (
               <div
                 key={message.id}
@@ -349,7 +355,7 @@ export function AssistantWorkspace({
                 </div>
               </div>
             ))}
-          </div>
+          </ScrollableCollection>
 
           {toolMessage && <p className='text-xs text-muted-foreground'>{toolMessage}</p>}
           {error && (
@@ -392,7 +398,7 @@ export function AssistantWorkspace({
           </CardHeader>
           <CardContent>
             {files.length ? (
-              <div className='grid max-h-64 gap-2 overflow-y-auto'>
+              <ScrollableCollection ariaLabel='AI 助手相关文件' contentClassName='grid gap-2'>
                 {files.map((file) => (
                   <label
                     key={file.id}
@@ -413,7 +419,7 @@ export function AssistantWorkspace({
                     </span>
                   </label>
                 ))}
-              </div>
+              </ScrollableCollection>
             ) : (
               <p className='text-sm text-muted-foreground'>文件中心暂无上传文件。</p>
             )}

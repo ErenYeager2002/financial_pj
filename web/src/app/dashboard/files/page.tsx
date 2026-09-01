@@ -1,7 +1,7 @@
 import PageContainer from '@/components/layout/page-container';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { listFiles } from '@/features/files/api/server';
+import { listAllFiles } from '@/features/files/api/server';
 import { FileList } from '@/features/files/components/file-list';
 
 export const metadata = {
@@ -9,15 +9,14 @@ export const metadata = {
 };
 
 type PageProps = {
-  searchParams: Promise<{ page?: string; kind?: string; query?: string }>;
+  searchParams: Promise<{ kind?: string; query?: string }>;
 };
 
 export default async function Page({ searchParams }: PageProps) {
   const params = await searchParams;
-  const page = Math.max(Number.parseInt(params.page ?? '1', 10) || 1, 1);
   const kind = ['input', 'output'].includes(params.kind ?? '') ? (params.kind ?? '') : '';
   const query = (params.query ?? '').slice(0, 100);
-  const result = await listFiles(page, 20, kind, query);
+  const files = await listAllFiles(kind, query);
 
   return (
     <PageContainer pageTitle='文件中心' pageDescription='旧结果仍保留在任务审计记录中'>
@@ -42,7 +41,7 @@ export default async function Page({ searchParams }: PageProps) {
           查询
         </Button>
       </form>
-      <FileList result={result} kind={kind} query={query} />
+      <FileList files={files} />
     </PageContainer>
   );
 }

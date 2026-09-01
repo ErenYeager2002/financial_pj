@@ -18,6 +18,10 @@ tags:
 - 应收
 - 合并
 - 离线
+operational_profile:
+  execution_kind: offline_file
+  external_sources: []
+  employee_labels: [上传应收台账, 本地合并, 输出新副本]
 file_inputs:
 - role: source
   name: 本期应收源台账
@@ -96,5 +100,5 @@ permissions:
   run: finance_user
   manage: skill_admin
 upstream:
-  repository: https://github.com/EvanLee2004/finance-skills
+  repository: https://gitee.com/Lee157/finance-skills.git
   path: skills/receivables-merge

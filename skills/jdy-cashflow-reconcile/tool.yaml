@@ -18,6 +18,10 @@ tags:
 - Excel
 - 现金流量
 - 凭证核对
+operational_profile:
+  execution_kind: offline_file
+  external_sources: []
+  employee_labels: [上传两份明细, 本地核对, 输出差异表]
 file_inputs: []
 input_schema:
   type: object
@@ -70,7 +74,4 @@ progress_stages:
   label: 正在生成结果文件
 result_presentation:
   metrics: []
-upstream:
-  repository: https://gitee.com/Lee157/finance-skills.git
-  path: skills/jdy-cashflow-reconcile
 blocked_reason: 期间分组问题已修复；发布前仍需为平台 Worker 打包受控 Node.js 和 @oai/artifact-tool 运行时，并接入专属双文件执行体验。

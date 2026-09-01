@@ -434,6 +434,92 @@ def test_historical_writeoffs_for_sos_gets_cross_parent_history_only():
     assert got[1][10] == "是"
 
 
+def test_fetch_day_preserves_zhiyun_total_received_and_tax_fields(tmp_path):
+    controls = [
+        {"controlId": F.F_HK["ar"], "controlName": "回款记录ID"},
+        {"controlId": F.F_HK["hexiao_date"], "controlName": "核销日期"},
+        {"controlId": F.F_HK["arrival_date"], "controlName": "到账日期"},
+        {"controlId": F.F_HK["amount_orig"], "controlName": "到账金额/原币"},
+        {"controlId": F.F_HK["amount_local"], "controlName": "到账金额/本币"},
+        {"controlId": F.F_HK["fee"], "controlName": "手续费/原币"},
+        {"controlId": F.F_HK["currency"], "controlName": "原币币种"},
+        {"controlId": F.F_HK["huikuan_type"], "controlName": "回款类型"},
+        {"controlId": F.F_HK["status"], "controlName": "核销状态"},
+        {
+            "controlId": "total",
+            "controlName": "总到账金额/原币（到账金额+手续费+税费）",
+        },
+        {"controlId": "tax", "controlName": "税费（原币）"},
+        {"controlId": "tax-local", "controlName": "税费/本币"},
+        {"controlId": "xiadan", "controlName": F.REL_XIADAN},
+    ]
+    payment_row = {
+        F.F_HK["ar"]: "AR26020142",
+        F.F_HK["hexiao_date"]: "2026-08-31",
+        F.F_HK["arrival_date"]: "2026-08-30",
+        F.F_HK["amount_orig"]: 83420.79,
+        F.F_HK["amount_local"]: 83420.79,
+        F.F_HK["fee"]: 13.17,
+        F.F_HK["currency"]: "CNY",
+        F.F_HK["huikuan_type"]: "预存回款",
+        F.F_HK["status"]: "核销成功",
+        "total": 88440.0,
+        "tax": 5006.04,
+        "tax-local": 5006.04,
+        "rowid": "row-ar-1",
+    }
+
+    class FakeClient:
+        @staticmethod
+        def controls(worksheet_id):
+            return controls if worksheet_id == F.WS_HUIKUAN else []
+
+        @staticmethod
+        def id_by_name(available, name):
+            for control in available:
+                if control.get("controlName") == name:
+                    return control.get("controlId", "")
+            return ""
+
+        @staticmethod
+        def option_maps(_controls):
+            return {}
+
+        @staticmethod
+        def datasource_of(_worksheet_id, _control_name):
+            return ""
+
+        @staticmethod
+        def filter_rows_by_date(_worksheet_id, _date_control_id, _day):
+            return [payment_row], 1
+
+        @staticmethod
+        def relation_rows(_worksheet_id, _row_id, _control_id):
+            return [], []
+
+        @staticmethod
+        def search_rows(_worksheet_id, _keyword):
+            return []
+
+    summary = F.fetch_day(FakeClient(), "2026-08-31", tmp_path)
+    assert summary["export_schema_version"] == F.EXPORT_SCHEMA_VERSION
+
+    from openpyxl import load_workbook
+
+    workbook = load_workbook(
+        tmp_path / "回款记录_20260831.xlsx", read_only=True, data_only=True
+    )
+    try:
+        worksheet = workbook.active
+        headers = [cell.value for cell in next(worksheet.iter_rows(min_row=1, max_row=1))]
+        values = [cell.value for cell in next(worksheet.iter_rows(min_row=2, max_row=2))]
+    finally:
+        workbook.close()
+
+    assert float(values[headers.index("总到账金额/原币")]) == 88440.0
+    assert float(values[headers.index("税费/原币")]) == 5006.04
+
+
 def test_historical_writeoffs_only_dedup_same_record_id_and_never_business_fields():
     names = [
         "核销记录NUM", "回款记录NUM", "订单NUM", "本次核销金额", "本次核销金额本币",

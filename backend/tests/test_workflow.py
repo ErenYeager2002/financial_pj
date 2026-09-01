@@ -2168,10 +2168,18 @@ def test_fetched_data_preview_groups_complete_business_data_by_ar(monkeypatch) -
             payment_path = export_dir / f"回款记录_{tag}.xlsx"
             write_workbook(
                 payment_path,
-                ["回款记录ID", "核销日期", "到账金额/本币", "开票客户", "rowid"],
                 [
-                    ["AR-1", "2026-08-12", 300, "客户甲", 1],
-                    ["AR-2", "2026-08-12", 80, "客户乙", 2],
+                    "回款记录ID",
+                    "核销日期",
+                    "到账金额/本币",
+                    "总到账金额/本币",
+                    "税费/本币",
+                    "开票客户",
+                    "rowid",
+                ],
+                [
+                    ["AR-1", "2026-08-12", 300, 350, 50, "客户甲", 1],
+                    ["AR-2", "2026-08-12", 80, 80, 0, "客户乙", 2],
                 ],
             )
             write_workbook(
@@ -2240,7 +2248,7 @@ def test_fetched_data_preview_groups_complete_business_data_by_ar(monkeypatch) -
         assert body["headers"] == []
         assert body["rows"] == []
         assert len(body["ar_groups"]) == 1
-        assert body["summary"][fetched_data_preview.CURRENT_AR_AMOUNT_SUMMARY_KEY] == {"CNY": 380.0}
+        assert body["summary"][fetched_data_preview.CURRENT_AR_AMOUNT_SUMMARY_KEY] == {"CNY": 430.0}
         assert body["summary"][fetched_data_preview.CURRENT_WRITEOFF_AMOUNT_SUMMARY_KEY] == {
             "CNY": 380.0
         }
@@ -2249,6 +2257,8 @@ def test_fetched_data_preview_groups_complete_business_data_by_ar(monkeypatch) -
         assert group["payments"][0]["ar_id"] == "AR-1"
         assert group["payments"][0]["reconciliation_date"] == "2026-08-12"
         assert group["payments"][0]["amount_local"] == 300
+        assert group["payments"][0]["total_amount_local"] == 350
+        assert group["payments"][0]["tax_local"] == 50
         assert group["payments"][0]["customer"] == "客户甲"
         assert [order["so_id"] for order in group["orders"]] == ["SO-1", "SO-2"]
         assert len(group["orders"][0]["writeoffs"]) == 2
@@ -2347,7 +2357,9 @@ def test_current_ar_amount_summary_excludes_historical_parent_payments() -> None
         WorkflowFetchedDataArGroup(
             ar_id="AR-CURRENT",
             payments=[
-                WorkflowFetchedPayment(ar_id="AR-CURRENT", amount_local=300),
+                WorkflowFetchedPayment(
+                    ar_id="AR-CURRENT", amount_local=300, total_amount_local=350
+                ),
                 WorkflowFetchedPayment(
                     ar_id="AR-CURRENT",
                     amount_local=900,
@@ -2368,7 +2380,7 @@ def test_current_ar_amount_summary_excludes_historical_parent_payments() -> None
     ]
 
     assert fetched_data_preview.current_ar_amounts_by_currency(groups) == {
-        "CNY": 300.0,
+        "CNY": 350.0,
         "USD": 80.0,
     }
 

@@ -6,8 +6,8 @@ import { useRouter } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
+import { PaginatedCollection } from '@/components/ui/collection-pagination';
 import { Input } from '@/components/ui/input';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import type { TaskReminderBoard } from '@/features/platform-api/types';
 import { actionableReminderDates, taskReminderWorkflowHref } from '@/features/task-reminders/links';
 import {
@@ -16,8 +16,6 @@ import {
 } from '@/features/task-reminders/task-reminder-board-presentation';
 import { formatDate } from '@/lib/format';
 import { cn } from '@/lib/utils';
-
-const MAX_VISIBLE_REMINDER_DATES = 7;
 
 function responseMessage(response: Response): Promise<string> {
   return response
@@ -134,43 +132,38 @@ export function TaskReminderBoardView({ data }: { data: TaskReminderBoard }) {
           <Badge variant='secondary'>暂无提醒</Badge>
         </div>
       ) : null}
-      {visibility.showPending &&
-        groups.map((reminders) => {
-          const first = reminders[0];
-          const actionableDates = actionableReminderDates(reminders);
-          return (
-            <Card key={`${first.skill_id}:${first.owner_id}`}>
-              <CardHeader>
-                <div className='flex flex-wrap items-start justify-between gap-3'>
-                  <div>
-                    <h2 className='text-base leading-snug font-medium'>{first.skill_name}</h2>
-                    <CardDescription>
-                      负责人：{first.owner_name} · {reminders.length} 个未成功日期
-                    </CardDescription>
+      {visibility.showPending ? (
+        <PaginatedCollection ariaLabel='待处理任务提醒' contentClassName='space-y-4'>
+          {groups.map((reminders) => {
+            const first = reminders[0];
+            const actionableDates = actionableReminderDates(reminders);
+            return (
+              <Card key={`${first.skill_id}:${first.owner_id}`}>
+                <CardHeader>
+                  <div className='flex flex-wrap items-start justify-between gap-3'>
+                    <div>
+                      <h2 className='text-base leading-snug font-medium'>{first.skill_name}</h2>
+                      <CardDescription>
+                        负责人：{first.owner_name} · {reminders.length} 个未成功日期
+                      </CardDescription>
+                    </div>
+                    <div className='flex items-center gap-2'>
+                      <Badge variant='secondary'>{reminders.length} 天</Badge>
+                      {actionableDates.length ? (
+                        <Link
+                          href={taskReminderWorkflowHref(first.skill_id, actionableDates)}
+                          className={cn(buttonVariants({ size: 'sm' }))}
+                        >
+                          处理这些日期
+                        </Link>
+                      ) : null}
+                    </div>
                   </div>
-                  <div className='flex items-center gap-2'>
-                    <Badge variant='secondary'>{reminders.length} 天</Badge>
-                    {actionableDates.length ? (
-                      <Link
-                        href={taskReminderWorkflowHref(first.skill_id, actionableDates)}
-                        className={cn(buttonVariants({ size: 'sm' }))}
-                      >
-                        处理这些日期
-                      </Link>
-                    ) : null}
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className='space-y-2'>
-                <ScrollArea
-                  className={
-                    reminders.length > MAX_VISIBLE_REMINDER_DATES ? 'h-[33rem] pr-3' : 'pr-3'
-                  }
-                >
-                  <div
-                    role='list'
-                    aria-label={`${first.skill_name}待处理日期`}
-                    className='space-y-2'
+                </CardHeader>
+                <CardContent className='space-y-2'>
+                  <PaginatedCollection
+                    ariaLabel={`${first.skill_name}待处理日期`}
+                    contentClassName='space-y-2'
                   >
                     {reminders.map((reminder) => (
                       <div
@@ -212,42 +205,53 @@ export function TaskReminderBoardView({ data }: { data: TaskReminderBoard }) {
                         </div>
                       </div>
                     ))}
-                  </div>
-                </ScrollArea>
+                  </PaginatedCollection>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </PaginatedCollection>
+      ) : null}
+      {visibility.showFailures ? (
+        <PaginatedCollection ariaLabel='任务检查失败记录' contentClassName='space-y-4'>
+          {failures.map((failure) => (
+            <Card
+              key={failure.id}
+              role='alert'
+              aria-live='polite'
+              className='border-destructive/40'
+            >
+              <CardHeader>
+                <h2 className='text-base leading-snug font-medium'>任务检查失败</h2>
+                <CardDescription>
+                  {failure.skill_name} · {failure.owner_name} ·{' '}
+                  {(failure.business_dates ?? []).join('、')}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className='flex flex-wrap items-center justify-between gap-3'>
+                <div className='space-y-1 text-sm'>
+                  <p className='text-destructive'>
+                    {failure.error_message || '检查未完成，可稍后重试。'}
+                  </p>
+                  <p className='text-muted-foreground'>已尝试 {failure.attempt_count} 次。</p>
+                </div>
+                <Button
+                  size='sm'
+                  variant='outline'
+                  disabled={retrying === failure.id}
+                  onClick={() => void retry(failure.id)}
+                >
+                  {retrying === failure.id ? '正在排队' : '重试检查'}
+                </Button>
               </CardContent>
             </Card>
-          );
-        })}
-      {visibility.showFailures &&
-        failures.map((failure) => (
-          <Card key={failure.id} role='alert' aria-live='polite' className='border-destructive/40'>
-            <CardHeader>
-              <h2 className='text-base leading-snug font-medium'>任务检查失败</h2>
-              <CardDescription>
-                {failure.skill_name} · {failure.owner_name} ·{' '}
-                {(failure.business_dates ?? []).join('、')}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className='flex flex-wrap items-center justify-between gap-3'>
-              <div className='space-y-1 text-sm'>
-                <p className='text-destructive'>
-                  {failure.error_message || '检查未完成，可稍后重试。'}
-                </p>
-                <p className='text-muted-foreground'>已尝试 {failure.attempt_count} 次。</p>
-              </div>
-              <Button
-                size='sm'
-                variant='outline'
-                disabled={retrying === failure.id}
-                onClick={() => void retry(failure.id)}
-              >
-                {retrying === failure.id ? '正在排队' : '重试检查'}
-              </Button>
-            </CardContent>
-          </Card>
-        ))}
-      <details className='rounded-lg border px-4 py-3'>
-        <summary className='cursor-pointer text-sm font-medium'>手动补查日期</summary>
+          ))}
+        </PaginatedCollection>
+      ) : null}
+      <section className='rounded-lg border px-4 py-3' aria-labelledby='manual-check-date-title'>
+        <h2 id='manual-check-date-title' className='text-sm font-medium'>
+          手动补查日期
+        </h2>
         <div className='mt-3 flex flex-wrap items-end gap-2'>
           <label htmlFor='task-reminder-manual-date' className='grid gap-1 text-sm'>
             <span className='text-muted-foreground'>最近 31 天内的日期</span>
@@ -269,7 +273,7 @@ export function TaskReminderBoardView({ data }: { data: TaskReminderBoard }) {
             {retrying === 'manual' ? '正在排队' : '补查日期'}
           </Button>
         </div>
-      </details>
+      </section>
     </div>
   );
 }

@@ -19,7 +19,7 @@ BACKEND_DIR = PROJECT_ROOT / "backend"
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from app.registry import SkillManifest
+from app.registry import SkillManifest, validate_declared_operational_profile
 
 IGNORED_PARTS = {"__pycache__", ".pytest_cache", ".ruff_cache", "node_modules", "output"}
 SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
@@ -80,9 +80,9 @@ def validate_package(skill_dir: Path) -> SkillManifest:
     manifest_path = skill_dir / "tool.yaml"
     if not manifest_path.is_file():
         raise RuntimeError("待发布目录缺少 tool.yaml。")
-    manifest = SkillManifest.model_validate(
-        yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
-    )
+    payload = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    validate_declared_operational_profile(payload)
+    manifest = SkillManifest.model_validate(payload)
     if not SAFE_ID.fullmatch(manifest.id):
         raise RuntimeError("Skill ID 只能包含字母、数字、点、下划线和短横线。")
     if manifest.ui is None:

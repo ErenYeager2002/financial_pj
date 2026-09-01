@@ -154,7 +154,7 @@ CONFIRM_REPLIES = {"确认", "可以", "可以写", "按这个写", "没问题�
 WRITE_STAGING_DIR = "03_写入暂存区"
 BATCH_PUBLISH_TRANSACTION_DIR = ".批次发布事务"
 FETCH_SNAPSHOT_DIR = "01_智云导出"
-FETCH_SNAPSHOT_VERSION = "2026-08-21-atomic-fetch-v5"
+FETCH_SNAPSHOT_VERSION = "2026-08-31-total-received-v6"
 FETCHED_DATASET_SPECS = (
     ("payments", "回款记录", "回款记录"),
     ("orders", "订单交付", "订单交付"),
@@ -1172,7 +1172,15 @@ def _fetched_ar_groups(
                 arrival_date=_record_identifier(payment, "到账日期"),
                 amount_original=_record_number(payment, "到账金额/原币", "到账金额"),
                 amount_local=_record_number(payment, "到账金额/本币"),
+                total_amount_original=_record_number(
+                    payment, "总到账金额/原币", "总到账金额原币", "总到账金额"
+                ),
+                total_amount_local=_record_number(
+                    payment, "总到账金额/本币", "总到账金额本币"
+                ),
                 fee_original=_record_number(payment, "手续费/原币"),
+                tax_original=_record_number(payment, "税费/原币", "税费原币", "税费"),
+                tax_local=_record_number(payment, "税费/本币", "税费本币"),
                 currency=_record_identifier(payment, "原币币种", "币种"),
                 payment_type=_record_identifier(payment, "回款类型"),
                 writeoff_status=_record_identifier(payment, "核销状态"),

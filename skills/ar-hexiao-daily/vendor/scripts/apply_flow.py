@@ -204,7 +204,7 @@ def _line_colors(value) -> Dict[str, str]:
 
 
 def _desired_order_value(item: dict, current, phase: str, xlsx_patch):
-    """生成本阶段单号格值；前置阶段保留旧颜色，状态阶段只改本批 SO 的颜色。"""
+    """生成本阶段单号格值；单号阶段保留旧颜色，状态阶段只改本批 SO 的颜色。"""
     import re
 
     text = str(item.get("order_suggest") or "").strip()

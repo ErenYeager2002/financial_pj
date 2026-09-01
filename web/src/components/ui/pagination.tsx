@@ -63,7 +63,7 @@ function PaginationPrevious({
     <PaginationLink
       aria-label='前往上一页'
       size='default'
-      className={cn('pl-1.5!', className)}
+      className={cn('min-h-11 min-w-11 pl-1.5!', className)}
       {...props}
     >
       <IconChevronLeft data-icon='inline-start' />
@@ -81,7 +81,7 @@ function PaginationNext({
     <PaginationLink
       aria-label='前往下一页'
       size='default'
-      className={cn('pr-1.5!', className)}
+      className={cn('min-h-11 min-w-11 pr-1.5!', className)}
       {...props}
     >
       <span className='hidden sm:block'>{text}</span>

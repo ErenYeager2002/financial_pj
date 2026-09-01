@@ -18,7 +18,7 @@ from .registry import (
     SkillUiSpec,
 )
 
-CONTRACT_VERSION = "2026-08-15-stage10"
+CONTRACT_VERSION = "2026-08-31-operational-profile"
 
 
 class PlatformUser(BaseModel):
@@ -47,6 +47,7 @@ class SkillSummary(BaseModel):
     description: str
     categories: list[str]
     tags: list[str] = Field(default_factory=list)
+    operation_labels: list[str] = Field(min_length=1, max_length=4)
     estimated_minutes: int
     output_summary: str
     action_label: str
@@ -224,6 +225,19 @@ class SkillAvailabilityRead(BaseModel):
     changed_by: str
     changed_at: datetime | None
     active_work_count: int
+
+
+class SkillDedicationWrite(BaseModel):
+    user_id: str = Field(min_length=1, max_length=128)
+
+
+class SkillDedicationRead(BaseModel):
+    skill_id: str
+    user_id: str
+    user_display_name: str
+    user_status: Literal["active", "disabled"]
+    updated_by: str
+    updated_at: datetime
 
 
 class FeatureControlUpdateRequest(BaseModel):
@@ -661,6 +675,8 @@ DOMAIN_CONTRACT_MODELS: tuple[type[BaseModel], ...] = (
     AssistantConversationRead,
     AdminAssistantProfile,
     FeatureControlRead,
+    SkillDedicationRead,
+    SkillDedicationWrite,
     ApprovalRecord,
 )
 

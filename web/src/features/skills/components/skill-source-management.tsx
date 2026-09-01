@@ -5,6 +5,7 @@ import { IconGitBranch, IconPlayerPause, IconPlayerPlay, IconRefresh } from '@ta
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PaginatedCollection } from '@/components/ui/collection-pagination';
 import {
   Dialog,
   DialogContent,
@@ -272,14 +273,14 @@ export function SkillSourceManagement({ initialBindings, initialAvailability }: 
               当前没有可管理的 Skill。
             </p>
           ) : (
-            <ul className='space-y-3' aria-label='Skill 管理列表'>
+            <PaginatedCollection ariaLabel='Skill 管理列表' contentClassName='space-y-3'>
               {rows.map((row) => {
                 const item = row.availability;
                 const binding = row.binding;
                 const candidate = row.candidate;
                 const isCandidate = candidate?.match_state === 'candidate' && !binding;
                 return (
-                  <li key={row.key} className='rounded-lg border p-4 text-sm'>
+                  <div key={row.key} className='rounded-lg border p-4 text-sm'>
                     <div className='grid gap-4 lg:grid-cols-[minmax(12rem,1.1fr)_minmax(10rem,.8fr)_minmax(16rem,1.5fr)_auto] lg:items-start'>
                       <div className='min-w-0'>
                         <p className='break-words font-medium'>{row.skillId}</p>
@@ -453,10 +454,10 @@ export function SkillSourceManagement({ initialBindings, initialAvailability }: 
                         发布恢复失败，保持禁用。请先核对生产目录和发布记录，不能直接重新启用。
                       </p>
                     )}
-                  </li>
+                  </div>
                 );
               })}
-            </ul>
+            </PaginatedCollection>
           )}
         </CardContent>
       </Card>

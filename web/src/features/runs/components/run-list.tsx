@@ -59,7 +59,12 @@ export function RunList({
         <CardDescription>共 {total} 条，失败原因和重试条件由平台统一判断。</CardDescription>
       </CardHeader>
       <CardContent>
-        <Table>
+        <div
+          className='max-h-[36rem] overflow-auto overscroll-contain rounded-lg [scrollbar-gutter:stable]'
+          role='region'
+          aria-label='任务记录，每页最多 5 项'
+        >
+          <Table>
           <TableHeader>
             <TableRow>
               <TableHead>任务</TableHead>
@@ -120,7 +125,8 @@ export function RunList({
               </TableRow>
             ))}
           </TableBody>
-        </Table>
+          </Table>
+        </div>
         {pages > 1 && (
           <Pagination className='mt-4'>
             <PaginationContent>

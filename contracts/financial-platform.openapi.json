@@ -125,6 +125,9 @@
             "title": "Name",
             "type": "string"
           },
+          "operational_profile": {
+            "$ref": "#/components/schemas/SkillOperationalProfileSpec"
+          },
           "output_schema": {
             "additionalProperties": true,
             "title": "Output Schema",
@@ -1097,6 +1100,37 @@
           "new_password"
         ],
         "title": "ChangePasswordRequest",
+        "type": "object"
+      },
+      "ExternalDataSourceSpec": {
+        "properties": {
+          "access": {
+            "enum": [
+              "uploaded_export",
+              "direct_read",
+              "browser_rpa",
+              "repository_sync"
+            ],
+            "title": "Access",
+            "type": "string"
+          },
+          "required": {
+            "default": true,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "system": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "System",
+            "type": "string"
+          }
+        },
+        "required": [
+          "system",
+          "access"
+        ],
+        "title": "ExternalDataSourceSpec",
         "type": "object"
       },
       "FeatureControlRead": {
@@ -3095,6 +3129,64 @@
         "title": "SkillAvailabilityTransitionRequest",
         "type": "object"
       },
+      "SkillDedicationRead": {
+        "properties": {
+          "skill_id": {
+            "title": "Skill Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "updated_by": {
+            "title": "Updated By",
+            "type": "string"
+          },
+          "user_display_name": {
+            "title": "User Display Name",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          },
+          "user_status": {
+            "enum": [
+              "active",
+              "disabled"
+            ],
+            "title": "User Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "skill_id",
+          "user_id",
+          "user_display_name",
+          "user_status",
+          "updated_by",
+          "updated_at"
+        ],
+        "title": "SkillDedicationRead",
+        "type": "object"
+      },
+      "SkillDedicationWrite": {
+        "properties": {
+          "user_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id"
+        ],
+        "title": "SkillDedicationWrite",
+        "type": "object"
+      },
       "SkillDetail": {
         "properties": {
           "action_label": {
@@ -3144,6 +3236,15 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "operation_labels": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 4,
+            "minItems": 1,
+            "title": "Operation Labels",
+            "type": "array"
           },
           "output_summary": {
             "title": "Output Summary",
@@ -3195,12 +3296,51 @@
           "status",
           "description",
           "categories",
+          "operation_labels",
           "estimated_minutes",
           "output_summary",
           "action_label",
           "risk"
         ],
         "title": "SkillDetail",
+        "type": "object"
+      },
+      "SkillOperationalProfileSpec": {
+        "properties": {
+          "employee_labels": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 4,
+            "minItems": 1,
+            "title": "Employee Labels",
+            "type": "array"
+          },
+          "execution_kind": {
+            "enum": [
+              "offline_file",
+              "guided_workflow",
+              "browser_rpa",
+              "agent_guidance",
+              "document_agent"
+            ],
+            "title": "Execution Kind",
+            "type": "string"
+          },
+          "external_sources": {
+            "items": {
+              "$ref": "#/components/schemas/ExternalDataSourceSpec"
+            },
+            "maxItems": 10,
+            "title": "External Sources",
+            "type": "array"
+          }
+        },
+        "required": [
+          "execution_kind",
+          "employee_labels"
+        ],
+        "title": "SkillOperationalProfileSpec",
         "type": "object"
       },
       "SkillPermissionRead": {
@@ -4094,6 +4234,15 @@
             "title": "Name",
             "type": "string"
           },
+          "operation_labels": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 4,
+            "minItems": 1,
+            "title": "Operation Labels",
+            "type": "array"
+          },
           "output_summary": {
             "title": "Output Summary",
             "type": "string"
@@ -4134,6 +4283,7 @@
           "status",
           "description",
           "categories",
+          "operation_labels",
           "estimated_minutes",
           "output_summary",
           "action_label",
@@ -6286,6 +6436,50 @@
             "title": "Salesperson",
             "type": "string"
           },
+          "tax_local": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tax Local"
+          },
+          "tax_original": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tax Original"
+          },
+          "total_amount_local": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Amount Local"
+          },
+          "total_amount_original": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Amount Original"
+          },
           "writeoff_status": {
             "default": "",
             "title": "Writeoff Status",
@@ -7382,6 +7576,116 @@
           }
         },
         "summary": "Reload Registry"
+      }
+    },
+    "/api/admin/skill-dedications": {
+      "get": {
+        "operationId": "admin_list_skill_dedications_api_admin_skill_dedications_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SkillDedicationRead"
+                  },
+                  "title": "Response Admin List Skill Dedications Api Admin Skill Dedications Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Admin List Skill Dedications",
+        "tags": [
+          "admin-skill-dedications"
+        ]
+      }
+    },
+    "/api/admin/skill-dedications/{skill_id}": {
+      "delete": {
+        "operationId": "admin_clear_skill_dedication_api_admin_skill_dedications__skill_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Admin Clear Skill Dedication",
+        "tags": [
+          "admin-skill-dedications"
+        ]
+      },
+      "put": {
+        "operationId": "admin_set_skill_dedication_api_admin_skill_dedications__skill_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillDedicationWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillDedicationRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Admin Set Skill Dedication",
+        "tags": [
+          "admin-skill-dedications"
+        ]
       }
     },
     "/api/admin/skill-releases": {

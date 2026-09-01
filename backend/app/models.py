@@ -510,6 +510,34 @@ class SkillAvailability(Base):
     changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class SkillDedicatedUser(Base):
+    """管理员调试用的 Skill 专属员工标记，不参与权限判断。"""
+
+    __tablename__ = "skill_dedicated_users"
+    __table_args__ = (
+        UniqueConstraint(
+            "department_id",
+            "skill_id",
+            name="uq_skill_dedicated_users_department_skill",
+        ),
+        Index(
+            "ix_skill_dedicated_users_department_user",
+            "department_id",
+            "user_id",
+        ),
+    )
+
+    department_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    skill_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), index=True)
+    created_by: Mapped[str] = mapped_column(String(36))
+    updated_by: Mapped[str] = mapped_column(String(36))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
 class PlatformFeatureControl(Base):
     __tablename__ = "platform_feature_controls"
 

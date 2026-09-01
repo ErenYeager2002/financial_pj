@@ -28,12 +28,15 @@ def test_openapi_contains_frozen_domain_contracts() -> None:
         "ApprovalRecord",
     }
     assert required <= schemas.keys()
-    assert CONTRACT_VERSION == "2026-08-15-stage10"
+    assert CONTRACT_VERSION == "2026-08-31-operational-profile"
     assert specification["info"]["version"] == "0.4.0"
 
 
 def test_employee_skill_contract_excludes_admin_execution_fields() -> None:
     properties = app.openapi()["components"]["schemas"]["SkillDetail"]["properties"]
+    assert "operation_labels" in properties
+    assert "operational_profile" not in properties
+    assert "external_sources" not in properties
     assert "handler" not in properties
     assert "runtime" not in properties
     assert "permissions" not in properties

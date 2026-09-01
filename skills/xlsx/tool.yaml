@@ -8,6 +8,10 @@ description: Excel 创建、编辑、公式重算和视觉检查的 Agent 基础
 tags:
 - Excel
 - 基础能力
+operational_profile:
+  execution_kind: document_agent
+  external_sources: []
+  employee_labels: [本地表格, 创建与编辑]
 file_inputs: []
 input_schema:
   additionalProperties: true

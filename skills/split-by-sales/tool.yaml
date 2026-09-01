@@ -18,6 +18,10 @@ tags:
 - 应收
 - 销售拆分
 - 离线
+operational_profile:
+  execution_kind: offline_file
+  external_sources: []
+  employee_labels: [上传应收台账, 本地拆分, 输出ZIP]
 file_inputs:
 - role: receivables
   name: 应收 all
@@ -86,5 +90,5 @@ permissions:
   run: finance_user
   manage: skill_admin
 upstream:
-  repository: https://github.com/EvanLee2004/finance-skills
+  repository: https://gitee.com/Lee157/finance-skills.git
   path: skills/split-by-sales

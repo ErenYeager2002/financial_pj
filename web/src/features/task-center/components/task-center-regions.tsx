@@ -8,10 +8,7 @@ import type { TaskCenterPage, TaskReminderBoard } from '@/features/platform-api/
 import { TaskReminderBoardView } from '@/features/task-reminders/components/task-reminder-board';
 import { loadFormalTaskRegion, loadTaskReminderRegion } from '@/features/task-center/browser-load';
 import { TaskCenterList } from '@/features/task-center/components/task-center-list';
-import {
-  taskCenterQueryContext,
-  taskCenterResultAnnouncement
-} from '@/features/task-center/presentation';
+import { taskCenterResultAnnouncement } from '@/features/task-center/presentation';
 import { taskCenterHref, type TaskCenterQuery } from '@/features/task-center/query';
 import {
   initialRegionDisplay,
@@ -171,7 +168,7 @@ function FormalTaskRegionContent({
   return (
     <RegionError
       title='正式任务加载失败'
-      description='正式任务列表、计数和筛选结果暂时无法读取，任务提醒不受影响。'
+      description='正式任务列表和计数暂时无法读取，任务提醒不受影响。'
       retryLabel='重新加载正式任务'
       retrying={retrying}
       onRetry={() => void retry()}
@@ -187,17 +184,14 @@ export function FormalTaskRegion({
   query: TaskCenterQuery;
 }) {
   const queryKey = taskCenterHref(query);
-  const queryContext = taskCenterQueryContext(query);
   const readyPage = initial.state === 'ready' ? initial.data.page : null;
   const itemCount = readyPage?.items?.length ?? 0;
   const [resultAnnouncement, setResultAnnouncement] = React.useState('');
 
   React.useEffect(() => {
     if (!readyPage) return;
-    setResultAnnouncement(
-      taskCenterResultAnnouncement(itemCount, readyPage.total, readyPage.page, queryContext)
-    );
-  }, [itemCount, queryContext, queryKey, readyPage]);
+    setResultAnnouncement(taskCenterResultAnnouncement(itemCount, readyPage.total, readyPage.page));
+  }, [itemCount, queryKey, readyPage]);
 
   return (
     <>

@@ -5,6 +5,11 @@ import { IconHistory, IconPlus, IconShield, IconUserCog } from '@tabler/icons-re
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  CollectionPaginationControls,
+  PaginatedCollection,
+  useResponsiveCollectionPagination
+} from '@/components/ui/collection-pagination';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
@@ -126,6 +131,11 @@ export function PlatformUserManagement({
   const [auditAction, setAuditAction] = useState('');
   const [auditActor, setAuditActor] = useState('');
   const usersById = useMemo(() => new Map(users.map((user) => [user.id, user])), [users]);
+  const permissionPage = useResponsiveCollectionPagination(skills, {
+    base: 5,
+    md: 6,
+    lg: 8
+  });
 
   function openUser(user: AdminUser) {
     setSelected(user);
@@ -304,7 +314,11 @@ export function PlatformUserManagement({
               新增平台用户
             </Button>
           </div>
-          <div className='grid gap-3 lg:grid-cols-2'>
+          <PaginatedCollection
+            ariaLabel='平台用户'
+            contentClassName='grid gap-3 lg:grid-cols-2'
+            responsivePageSize={{ base: 3, lg: 6 }}
+          >
             {users.map((user) => (
               <Card key={user.id}>
                 <CardHeader className='pb-3'>
@@ -343,7 +357,7 @@ export function PlatformUserManagement({
                 </CardContent>
               </Card>
             ))}
-          </div>
+          </PaginatedCollection>
         </TabsContent>
 
         <TabsContent value='audit' className='space-y-4'>
@@ -384,7 +398,7 @@ export function PlatformUserManagement({
               </Button>
             </CardContent>
           </Card>
-          <div className='space-y-2'>
+          <PaginatedCollection ariaLabel='审计记录' contentClassName='space-y-2'>
             {auditEvents.map((event) => (
               <Card key={event.id}>
                 <CardContent className='grid gap-2 py-3 text-sm md:grid-cols-[11rem_1fr_auto] md:items-center'>
@@ -411,7 +425,7 @@ export function PlatformUserManagement({
                 </CardContent>
               </Card>
             ))}
-          </div>
+          </PaginatedCollection>
         </TabsContent>
       </Tabs>
 
@@ -582,7 +596,11 @@ export function PlatformUserManagement({
                       默认不授权。只有选中的已发布 Skill 才能出现在员工目录中。
                     </p>
                   </div>
-                  <div className='overflow-x-auto rounded-lg border'>
+                  <div
+                    className='max-h-[36rem] overflow-auto overscroll-contain rounded-lg border [scrollbar-gutter:stable]'
+                    role='region'
+                    aria-label={`Skill 权限，每页最多 ${permissionPage.pageSize} 项`}
+                  >
                     <table className='w-full min-w-3xl text-sm'>
                       <thead className='bg-muted/50 text-left'>
                         <tr>
@@ -594,7 +612,7 @@ export function PlatformUserManagement({
                         </tr>
                       </thead>
                       <tbody>
-                        {skills.map((skill) => {
+                        {permissionPage.items.map((skill) => {
                           const item = permissions[skill.id] ?? EMPTY_PERMISSION;
                           return (
                             <tr key={skill.id} className='border-t'>
@@ -631,6 +649,13 @@ export function PlatformUserManagement({
                       </tbody>
                     </table>
                   </div>
+                  <CollectionPaginationControls
+                    ariaLabel='Skill 权限'
+                    page={permissionPage.page}
+                    pageCount={permissionPage.pageCount}
+                    total={permissionPage.total}
+                    onPageChange={permissionPage.setPage}
+                  />
                   <Button type='button' onClick={() => void savePermissions()} disabled={busy}>
                     {busy ? '保存中…' : '保存 Skill 权限'}
                   </Button>

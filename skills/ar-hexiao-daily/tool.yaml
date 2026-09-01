@@ -1,13 +1,13 @@
 schema_version: 1
 id: ar-hexiao-daily
 name: 应收核销日清
-version: 1.6.11
+version: 1.6.15
 status: published
 category: 应收管理
-description: 应收核销多阶段流程，自动登录智云取数，按核销记录身份审计并纠正可解释的系统重复核销；日清与写前校验通过后直接安全写入副本，并按真实单元格坐标归一化公式差异。
+description: 应收核销多阶段流程，自动登录智云取数，按核销记录身份审计并纠正可解释的系统重复核销；盈亏按最新交付额独立判定和写入，流转异常仅转人工处理。
 ui:
   employee_name: 应收核销日清
-  short_description: 应收核销多阶段流程，自动登录智云取数，按核销记录身份审计并纠正可解释的系统重复核销；日清与写前校验通过后直接安全写入副本，并按真实单元格坐标归一化公式差异。
+  short_description: 应收核销多阶段流程，自动登录智云取数；盈亏按最新交付额独立判定和写入，流转异常仅转人工处理。
   categories:
   - 应收管理
   estimated_minutes: 10
@@ -18,6 +18,13 @@ tags:
 - 应收核销
 - 自动写入
 - 多阶段
+operational_profile:
+  execution_kind: guided_workflow
+  external_sources:
+  - system: 智云
+    access: direct_read
+    required: true
+  employee_labels: [智云取数, 复用业务材料, 写入工作副本]
 file_inputs:
 - role: profit_loss_ledgers
   name: 年度盈亏核算表

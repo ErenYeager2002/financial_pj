@@ -3,6 +3,7 @@
 import Image from 'next/image';
 import type { FC } from 'react';
 import { Icons } from '@/components/icons';
+import { PaginatedCollection } from '@/components/ui/collection-pagination';
 import { cn } from '@/lib/utils';
 
 export interface UploadedFile {
@@ -115,7 +116,10 @@ export const FilePreview: FC<FilePreviewProps> = ({
 
   return (
     <div className={cn('flex w-full flex-col gap-2 rounded-xl p-2', className)}>
-      <div className='flex w-full flex-wrap gap-2'>
+      <PaginatedCollection
+        ariaLabel='已选择文件'
+        contentClassName='flex w-full flex-wrap gap-2'
+      >
         {files.map((file) => (
           <div
             key={file.id}
@@ -192,7 +196,7 @@ export const FilePreview: FC<FilePreviewProps> = ({
             )}
           </div>
         ))}
-      </div>
+      </PaginatedCollection>
     </div>
   );
 };

@@ -6,9 +6,37 @@ import sys
 from pathlib import Path
 
 import yaml
+from scripts.sync_finance_skills import (
+    CATALOG_ONLY,
+    EXECUTABLES,
+    OPERATIONAL_PROFILES,
+    PRESERVED_PLATFORM_ONLY,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = PROJECT_ROOT / "scripts" / "sync_finance_skills.py"
+
+
+def test_sync_catalog_profiles_cover_every_known_skill_without_false_gitee_sources() -> None:
+    known = set(EXECUTABLES) | set(CATALOG_ONLY)
+
+    assert PRESERVED_PLATFORM_ONLY == {"reconcile-bank"}
+    assert set(OPERATIONAL_PROFILES) == known | PRESERVED_PLATFORM_ONLY
+    reconcile_manifest = yaml.safe_load(
+        (PROJECT_ROOT / "skills" / "reconcile-bank" / "tool.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert reconcile_manifest["operational_profile"] == OPERATIONAL_PROFILES["reconcile-bank"]
+    assert OPERATIONAL_PROFILES["withholding-report-rename"]["employee_labels"] == [
+        "只读或生成副本"
+    ]
+    assert "upstream" not in CATALOG_ONLY["jdy-cashflow-export"]
+    assert "upstream" not in CATALOG_ONLY["jdy-cashflow-reconcile"]
+    assert EXECUTABLES["compliance-spot-check"]["manifest"]["upstream"] == {
+        "repository": "https://gitee.com/Lee157/finance-skills.git",
+        "path": "skills/compliance-spot-check",
+    }
 
 
 def test_sync_single_skill_records_bound_source_and_version(tmp_path: Path) -> None:
@@ -54,6 +82,11 @@ def test_sync_single_skill_records_bound_source_and_version(tmp_path: Path) -> N
     )
     assert manifest["id"] == "compliance-spot-check"
     assert manifest["version"] == "2.4.0"
+    assert manifest["operational_profile"] == {
+        "execution_kind": "offline_file",
+        "external_sources": [],
+        "employee_labels": ["上传应收台账", "本地生成建议", "输出Excel"],
+    }
     assert manifest["upstream"] == {
         "repository": "https://gitee.com/Lee157/finance-skills.git",
         "path": "skills/compliance-spot-check",

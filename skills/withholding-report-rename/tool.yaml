@@ -19,6 +19,13 @@ tags:
 - 申报表
 - 批量重命名
 - 副本
+operational_profile:
+  execution_kind: offline_file
+  external_sources:
+  - system: 电子税务局
+    access: uploaded_export
+    required: true
+  employee_labels: [只读或生成副本]
 file_inputs:
 - role: reports
   name: 申报表 PDF

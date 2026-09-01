@@ -106,10 +106,19 @@ def _whole_parent_gate_error(audit: dict) -> str:
         expected_delta = round(float(parent_total) - float(order_total), 2)
         if abs(expected_delta - float(delta)) > 0.01:
             return "整笔回款审计中的父总到账、订单金额合计与差额不守恒"
+        expected_unallocated = round(max(expected_delta, 0.0), 2)
+        actual_unallocated = common.to_number(
+            audit.get("unallocated_parent_amount")
+        )
+        if (
+            actual_unallocated is not None
+            and abs(expected_unallocated - float(actual_unallocated)) > 0.01
+        ):
+            return "整笔回款审计中的未分配父回款金额与差额不一致"
         if basis.startswith("delivery_fallback") and not audit.get("fallback_used"):
             return "整笔回款使用交付额兜底但缺少兜底审计标记"
-    if abs(float(delta)) > threshold:
-        return f"整笔回款的父总到账与订单金额合计差额超过{threshold:g}元"
+    if float(delta) < -threshold:
+        return f"整笔回款的父总到账低于订单金额合计超过{threshold:g}元"
     return ""
 
 
@@ -349,6 +358,27 @@ def resolve_same_so_multi_sod_row(
     return None, f"按 SO 和多 SOD 成员找到 {len(candidates)} 行，无法唯一重定位"
 
 
+def _special_baseline_error(
+    op: dict, rows: Dict[int, dict], ref: int, baseline: float
+) -> str:
+    """特殊空应收模式须由全部原业务行证明历史应收基线。"""
+    raw_refs = op.get("business_rows") or [ref]
+    try:
+        business_refs = sorted({int(row_no) for row_no in raw_refs})
+    except (TypeError, ValueError):
+        return "特殊拆行业务行号无效"
+    if ref not in business_refs or any(row_no not in rows for row_no in business_refs):
+        return "特殊拆行业务行范围与当前盈亏表不一致"
+    actual_values = [
+        common.to_number((rows.get(row_no) or {}).get("应收金额"))
+        for row_no in business_refs
+    ]
+    actual_total = round(sum(float(value) for value in actual_values if value is not None), 2)
+    if abs(actual_total - baseline) > 0.011:
+        return f"表内业务行应收合计={actual_total} 计划基线={baseline}"
+    return ""
+
+
 def _check_split_payment_chain(item: dict, rows: Dict[int, dict], ref: int) -> Optional[dict]:
     """复核逐笔分笔链的结构、金额守恒及完整幂等状态。"""
     op = item.get("row_operation") or {}
@@ -371,13 +401,17 @@ def _check_split_payment_chain(item: dict, rows: Dict[int, dict], ref: int) -> O
     if special_mode:
         if (
             source != baseline
-            or latest <= baseline
+            or abs(latest - baseline) <= 0.011
             or initial < 0
             or abs((latest - initial) - opening_unreceived) > 0.011
-            or source_row_receivable is not None
-            and abs(float(source_row_receivable) - baseline) > 0.011
         ):
             return {"verdict": "conflict", "reason": "特殊分笔链基线或内部未收金额不成立"}
+        baseline_error = _special_baseline_error(op, rows, ref, baseline)
+        if baseline_error:
+            return {
+                "verdict": "conflict",
+                "reason": f"特殊分笔链基线不一致：{baseline_error}",
+            }
     elif source < 0 or initial < 0 or latest <= 0 or abs((latest - initial) - source) > 0.011:
         return {"verdict": "conflict", "reason": "分笔链起点不守恒：最新交付额-历史累计必须等于当前应收"}
 
@@ -1055,10 +1089,14 @@ def check_one(item: dict, rows: Dict[int, dict]) -> dict:
           except (KeyError, TypeError, ValueError):
             return {"verdict": "conflict", "reason": "部分回款拆行参数缺失或不是数字"}
           if receivable_mode == "preserve_baseline_blank_carry":
-            if latest <= baseline or source != baseline:
-              return {"verdict": "conflict", "reason": "特殊拆行必须满足交付额大于原始应收且保留原始应收基线"}
-            if planned_current is not None and abs(float(planned_current) - baseline) > 0.011:
-              return {"verdict": "conflict", "reason": "特殊拆行首行的非空应收必须等于原始应收基线"}
+            if abs(latest - baseline) <= 0.011 or source != baseline:
+              return {"verdict": "conflict", "reason": "特殊拆行必须满足交付额与历史应收不一致且保留现有应收"}
+            baseline_error = _special_baseline_error(op, rows, int(ref), baseline)
+            if baseline_error:
+              return {
+                  "verdict": "conflict",
+                  "reason": f"特殊拆行原始应收基线不一致：{baseline_error}",
+              }
             if remaining <= 0 or abs((latest - cumulative) - remaining) > 0.011:
               return {"verdict": "conflict", "reason": f"特殊拆行内部未收公式不成立：{latest}-{cumulative}!={remaining}"}
           else:

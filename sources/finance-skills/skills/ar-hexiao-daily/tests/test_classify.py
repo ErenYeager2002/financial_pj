@@ -571,7 +571,7 @@ def test_fee_is_included_in_parent_total_without_itemized_writeoff():
 
 
 def test_fee_completes_parent_waterfall_amount():
-    """没有逐单金额时，手续费加回净到账形成总到账并参与顺序核销。"""
+    """没有逐单金额时，手续费加回到账金额形成总到账并参与顺序核销。"""
     p = _pay(
         amount=298.38,
         fee=1.62,
@@ -1149,13 +1149,41 @@ def test_delivery_amount_changed_flags_warning():
     assert "3242" in r["reason"] and "408" in r["reason"]
 
 
-def test_flow_signals():
+@pytest.mark.parametrize("flow_hits", [0, 3])
+def test_flow_signals_do_not_block_ledger_classification(flow_hits):
     led = _led({1: {"so": "SO1", "sod": "", "yingshou": 100.0}})
-    assert C.classify_one(_rec("SO1", "SOD1", flow_hits=0), led, {}, 0.0, 2026)["code"] == "E0"
-    assert C.classify_one(_rec("SO1", "SOD1", flow_hits=3), led, {}, 0.0, 2026)["code"] == "E12"
+    result = C.classify_one(
+        _rec(
+            "SO1", "SOD1", flow_hits=flow_hits,
+            flow_matched_by="日期+金额(名字不符)",
+        ),
+        led, {}, 0.0, 2026,
+    )
+
+    assert result["bucket"] == "auto"
+    assert result["code"] not in {"E0", "E12"}
+    assert result["flow_hits"] == flow_hits
     assert C.classify_one(
         _rec("SO1", "SOD1", customer_archive_failed=True), led, {}, 0.0, 2026
     )["code"] == "E10"
+
+
+@pytest.mark.parametrize("legacy_code", ["E0", "E12"])
+def test_legacy_flow_forced_code_does_not_block_ledger_classification(legacy_code):
+    """旧取数产物里的流转 E 码也只能交给流转计划人工处理。"""
+    led = _led({1: {"so": "SO1", "sod": "", "yingshou": 100.0}})
+
+    result = C.classify_one(
+        _rec(
+            "SO1", "SOD1", forced_code=legacy_code,
+            forced_reason="到账流转表未唯一命中",
+            flow_hits=0 if legacy_code == "E0" else 2,
+        ),
+        led, {}, 0.0, 2026,
+    )
+
+    assert result["bucket"] == "auto"
+    assert result["code"] not in {"E0", "E12"}
 
 
 def test_no_ledger_never_auto():
@@ -1310,6 +1338,102 @@ def test_same_so_sod_distinct_ar_builds_sequential_split_chain():
     assert op["steps"][0]["five_cols"]["计提"] is None
     assert op["steps"][1]["five_cols"]["计提"] == 100.0
     assert op["final_unpaid"] is None
+
+
+def test_flow_multi_hit_does_not_prevent_same_sod_sequential_split_chain():
+    """流转表须人工处理时，盈亏仍按同一 SO/SOD 的父 AR 顺序建立分笔链。"""
+    led = _led({1: {"so": "SO1", "sod": "SOD1", "yingshou": 100.0}})
+    first = _rec(
+        "SO1", "SOD1", 50.0, ar="AR1", deliver_local=100.0,
+        cumulative_received_local=50.0, flow_hits=2,
+        flow_matched_by="日期+金额(名字不符)",
+        writeoff_sequence_key=["2026-07-22", "HX1", "1", "AR1", "SO1"],
+    )
+    second = _rec(
+        "SO1", "SOD1", 50.0, ar="AR2", deliver_local=100.0,
+        cumulative_received_local=100.0, flow_hits=2,
+        flow_matched_by="日期+金额(名字不符)",
+        writeoff_sequence_key=["2026-07-22", "HX2", "2", "AR2", "SO1"],
+    )
+
+    result = C.classify_records([first, second], led, {})
+
+    assert result["counts"] == {"auto": 2, "hold": 0, "exception": 0, "total": 2}
+    operation = result["auto"][0]["row_operation"]
+    assert operation["type"] == "split_payment_chain"
+    assert [step["ar"] for step in operation["steps"]] == ["AR1", "AR2"]
+    assert all(item["flow_hits"] == 2 for item in result["auto"])
+
+
+def test_delivery_baseline_mismatch_ignores_current_open_row_capacity():
+    """当前未结清行应收较小时，仍按最新交付额计算剩余未收。"""
+    led = _led({
+        1: {
+            "so": "SO24110809", "sod": "SOD24111361",
+            "yingshou": 487140.0, "huikuan": 487140.0, "jiezhang": "是",
+        },
+        2: {
+            "so": "SO24110809", "sod": "SOD24111361",
+            "yingshou": 23580.0, "huikuan": None, "jiezhang": "否",
+        },
+    })
+    record = _rec(
+        "SO24110809", "SOD24111361", 412200.0,
+        ar="AR26040071", deliver_local=626400.0,
+        cumulative_received_local=487140.0,
+    )
+
+    result = C.classify_one(record, led, {}, 0.0, 2026)
+
+    assert result["bucket"] == "auto"
+    operation = result["row_operation"]
+    assert operation["receivable_mode"] == "preserve_baseline_blank_carry"
+    assert operation["source_row_receivable"] == 23580.0
+    assert operation["remaining_unreceived"] == 139260.0
+    assert operation["inserted_five_cols"]["是否结账"] == "否"
+
+
+def test_real_shape_three_parent_chain_ignores_flow_conflicts_and_open_row_capacity():
+    """回归旧任务：三笔父 AR 按顺序承接，流转多命中不拦盈亏。"""
+    led = _led({
+        1: {
+            "so": "SO24110809", "sod": "SOD24111361",
+            "yingshou": 487140.0, "huikuan": 487140.0, "jiezhang": "是",
+        },
+        2: {
+            "so": "SO24110809", "sod": "SOD24111361",
+            "yingshou": 23580.0, "huikuan": None, "jiezhang": "否",
+        },
+    })
+    records = [
+        _rec(
+            "SO24110809", "SOD24111361", amount, ar=ar,
+            deliver_local=626400.0, cumulative_received_local=cumulative,
+            flow_hits=flow_hits,
+            flow_matched_by="三键" if flow_hits == 1 else "日期+金额(名字不符)",
+            writeoff_sequence_key=["2026-08-20", record_no, record_no, ar, "SO24110809"],
+        )
+        for ar, amount, cumulative, flow_hits, record_no in [
+            ("AR26040071", 412200.0, 487140.0, 1, "1"),
+            ("AR26050141", 54000.0, 541140.0, 2, "2"),
+            ("AR26050139", 54000.0, 595140.0, 2, "3"),
+        ]
+    ]
+
+    result = C.classify_records(records, led, {})
+
+    assert result["counts"] == {"auto": 3, "hold": 0, "exception": 0, "total": 3}
+    operation = result["auto"][0]["row_operation"]
+    assert operation["type"] == "split_payment_chain"
+    assert operation["receivable_mode"] == "preserve_baseline_blank_carry"
+    assert [step["ar"] for step in operation["steps"]] == [
+        "AR26040071", "AR26050141", "AR26050139",
+    ]
+    assert [step["remaining_after"] for step in operation["steps"]] == [
+        139260.0, 85260.0, 31260.0,
+    ]
+    assert operation["source_row_receivable"] == 23580.0
+    assert operation["final_unpaid"]["receivable"] is None
 
 
 def test_settled_reverse_order_split_chain_is_idempotent():
@@ -1713,7 +1837,7 @@ def test_fee_logic_has_no_named_order_overrides():
     assert "_fee_net_payment" not in src
     assert "_fee_net_writeoffs" not in src
     assert "_allocate_weighted_cents" not in src
-    assert "net_arrival_plus_explicit_fees_taxes" in src
+    assert "zhiyun_total_received_else_amount_plus_fee_tax" in src
 
 
 # ══════════════════════════════════════════════════════════

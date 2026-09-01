@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import {
+  hasTaskCenterUnsupportedParams,
   parseTaskCenterQuery,
   taskCenterApiPath,
   taskCenterHref,
@@ -11,13 +12,12 @@ import {
 import {
   taskCenterActionLabel,
   taskCenterEmptyState,
-  taskCenterQueryContext,
   taskCenterResultAnnouncement,
   taskCenterStateLabel,
   taskCenterTypeLabel
 } from '../src/features/task-center/presentation.ts';
 
-test('任务中心查询只保留受支持参数并规范页码', () => {
+test('我的任务查询只保留页码并忽略旧筛选参数', () => {
   assert.deepEqual(
     parseTaskCenterQuery({
       page: '-3',
@@ -25,100 +25,42 @@ test('任务中心查询只保留受支持参数并规范页码', () => {
       type: 'workflow_batch',
       skill: 'ar-hexiao-daily',
       business_from: '2026-08-01',
-      business_to: '2026-08-24',
-      updated_from: '2026-08-01T09:10',
       updated_to: '2026-08-24T18:00'
     }),
-    {
-      page: 1,
-      state: 'failed',
-      type: 'workflow_batch',
-      skill: 'ar-hexiao-daily',
-      businessFrom: '2026-08-01',
-      businessTo: '2026-08-24',
-      updatedFrom: '2026-08-01T09:10',
-      updatedTo: '2026-08-24T18:00'
-    }
+    { page: 1 }
   );
-  assert.equal(parseTaskCenterQuery({ state: 'secret', type: 'other' }).state, '');
-  assert.equal(parseTaskCenterQuery({ state: 'secret', type: 'other' }).type, '');
+  assert.deepEqual(parseTaskCenterQuery({ page: '999999999' }), { page: 100_000 });
+  assert.deepEqual(parseTaskCenterQuery({ page: ['3', '4'] }), { page: 3 });
+  assert.equal(hasTaskCenterUnsupportedParams({ page: '2' }), false);
+  assert.equal(hasTaskCenterUnsupportedParams({ page: '2', state: 'failed' }), true);
 });
 
-test('后端查询与翻页链接保留全部筛选条件', () => {
-  const query = parseTaskCenterQuery({
-    page: '2',
-    state: 'running',
-    type: 'workflow',
-    skill: 'ar-hexiao-daily',
-    business_from: '2026-08-01',
-    business_to: '2026-08-24',
-    updated_from: '2026-08-01T09:10',
-    updated_to: '2026-08-24T18:00'
-  });
+test('正式任务请求和翻页链接只携带分页参数', () => {
+  const query = parseTaskCenterQuery({ page: '2', state: 'running', skill: 'ignored' });
   const api = new URL(taskCenterApiPath(query), 'http://backend');
   assert.equal(api.pathname, '/api/task-center');
   assert.equal(api.searchParams.get('page'), '2');
-  assert.equal(api.searchParams.get('page_size'), '20');
-  assert.equal(api.searchParams.get('view_state'), 'running');
-  assert.equal(api.searchParams.get('item_type'), 'workflow');
-  assert.equal(api.searchParams.get('skill_id'), 'ar-hexiao-daily');
-  assert.equal(api.searchParams.get('business_date_from'), '2026-08-01');
-  assert.equal(api.searchParams.get('business_date_to'), '2026-08-24');
-  assert.equal(api.searchParams.get('updated_from'), '2026-08-01T09:10:00+08:00');
-  assert.equal(api.searchParams.get('updated_to'), '2026-08-24T18:00:00+08:00');
+  assert.equal(api.searchParams.get('page_size'), '5');
+  assert.equal([...api.searchParams.keys()].toSorted().join(','), 'page,page_size');
 
   const next = new URL(taskCenterHref(query, 3), 'http://localhost');
+  assert.equal(next.pathname, '/dashboard/runs');
   assert.equal(next.searchParams.get('page'), '3');
-  assert.equal(next.searchParams.get('state'), 'running');
-  assert.equal(next.searchParams.get('type'), 'workflow');
-  assert.equal(next.searchParams.get('business_from'), '2026-08-01');
-  assert.equal(next.searchParams.get('updated_to'), '2026-08-24T18:00');
+  assert.equal([...next.searchParams.keys()].join(','), 'page');
 });
 
-test('越界页保留筛选并回到最后一个有效页', () => {
-  const query = parseTaskCenterQuery({ page: '9', state: 'failed', skill: 'ar-hexiao-daily' });
-  assert.equal(
-    taskCenterPageRedirect(query, 3),
-    '/dashboard/runs?page=3&state=failed&skill=ar-hexiao-daily'
-  );
+test('越界页回到最后一个有效页', () => {
+  const query = parseTaskCenterQuery({ page: '9', state: 'failed' });
+  assert.equal(taskCenterPageRedirect(query, 3), '/dashboard/runs?page=3');
   assert.equal(taskCenterPageRedirect(query, 9), null);
   assert.equal(taskCenterPageRedirect(query, 0), null);
 });
 
-test('空态区分从未创建任务和当前筛选无结果', () => {
-  assert.equal(taskCenterEmptyState(false, true).title, '暂无正式任务');
-  assert.equal(taskCenterEmptyState(false, true).action, '创建任务');
-  assert.equal(taskCenterEmptyState(false, false).title, '暂无正式任务');
-  assert.equal(taskCenterEmptyState(false, false).action, '创建任务');
-  assert.equal(taskCenterEmptyState(true, true).title, '当前筛选没有匹配任务');
-});
-
-test('非法日期、反向范围、重复参数和超大页码被安全规范', () => {
-  const query = parseTaskCenterQuery({
-    page: '999999999',
-    state: ['failed', 'running'],
-    business_from: '2026-08-24',
-    business_to: '2026-02-30',
-    updated_from: '2026-08-25T29:80',
-    updated_to: '2026-08-01T09:10'
-  });
-  assert.equal(query.page, 100_000);
-  assert.equal(query.state, 'failed');
-  assert.equal(query.businessFrom, '2026-08-24');
-  assert.equal(query.businessTo, '');
-  assert.equal(query.updatedFrom, '');
-  assert.equal(query.updatedTo, '2026-08-01T09:10');
-
-  const reversed = parseTaskCenterQuery({
-    business_from: '2026-08-24',
-    business_to: '2026-08-01',
-    updated_from: '2026-08-24T09:10',
-    updated_to: '2026-08-01T09:10'
-  });
-  assert.equal(reversed.businessFrom, '');
-  assert.equal(reversed.businessTo, '');
-  assert.equal(reversed.updatedFrom, '');
-  assert.equal(reversed.updatedTo, '');
+test('空态只区分没有任务和页码变化', () => {
+  assert.equal(taskCenterEmptyState(false).title, '暂无正式任务');
+  assert.equal(taskCenterEmptyState(false).action, '创建任务');
+  assert.equal(taskCenterEmptyState(true).title, '当前页没有任务');
+  assert.equal(taskCenterEmptyState(true).action, '返回第一页');
 });
 
 test('三种任务类型、中文状态和下一步操作具有统一语义', () => {
@@ -129,31 +71,10 @@ test('三种任务类型、中文状态和下一步操作具有统一语义', ()
   assert.equal(taskCenterStateLabel('running'), '执行中');
   assert.equal(taskCenterActionLabel('failed'), '查看失败原因');
   assert.equal(taskCenterActionLabel('succeeded'), '查看结果');
-  assert.equal(
-    taskCenterResultAnnouncement(7, 27, 2, '状态 失败'),
-    '状态 失败。第 2 页显示 7 条任务，共 27 条匹配结果。'
-  );
-  assert.equal(
-    taskCenterQueryContext(parseTaskCenterQuery({ state: 'failed', business_from: '2026-08-01' })),
-    '状态 失败，业务日期从 2026-08-01'
-  );
-  assert.notEqual(
-    taskCenterResultAnnouncement(
-      7,
-      27,
-      1,
-      taskCenterQueryContext(parseTaskCenterQuery({ state: 'failed' }))
-    ),
-    taskCenterResultAnnouncement(
-      7,
-      27,
-      1,
-      taskCenterQueryContext(parseTaskCenterQuery({ state: 'running' }))
-    )
-  );
+  assert.equal(taskCenterResultAnnouncement(5, 27, 2), '第 2 页显示 5 条任务，共 27 条任务。');
 });
 
-test('我的任务页面只使用统一正式任务数据源并保留独立提醒区', () => {
+test('我的任务保留统一数据源、分页和提醒，但不提供筛选', () => {
   const page = readFileSync(new URL('../src/app/dashboard/runs/page.tsx', import.meta.url), 'utf8');
   const server = readFileSync(
     new URL('../src/features/task-center/api/server.ts', import.meta.url),
@@ -165,13 +86,17 @@ test('我的任务页面只使用统一正式任务数据源并保留独立提�
   );
 
   assert.match(page, /getTaskCenterPage\(query\)/);
+  assert.match(page, /hasTaskCenterUnsupportedParams\(rawQuery\)/);
   assert.match(page, /<TaskReminderRegion/);
   assert.match(page, /<FormalTaskRegion/);
   assert.doesNotMatch(page, /listRuns|listWorkflowSessions|listWorkflowBatches|ArTaskList/);
   assert.match(server, /platformServerRequest<TaskCenterPage>\(taskCenterApiPath\(query\)\)/);
   assert.match(list, /data\.state_counts\.pending/);
   assert.match(list, /data\.state_counts\.failed/);
-  assert.match(list, /name='business_from'/);
-  assert.match(list, /name='updated_to'/);
+  assert.doesNotMatch(list, /TaskCenterFilters|应用筛选|清除筛选/);
+  assert.doesNotMatch(list, /name='state'|name='type'|name='skill'|business_from|updated_to/);
   assert.match(list, /taskCenterHref\(query, Math\.min/);
+  assert.match(list, /<Pagination className='pt-2'>/);
+  assert.doesNotMatch(list, /data\.pages > 1/);
+  assert.doesNotMatch(list, /<PaginatedCollection ariaLabel='正式任务'/);
 });

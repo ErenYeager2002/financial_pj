@@ -755,6 +755,44 @@ def test_delivery_above_baseline_split_keeps_baseline_and_writes_blank_carry(tmp
     assert comparison["matched_count"] == 2
 
 
+def test_delivery_below_baseline_split_keeps_existing_receivable_and_blank_carry(tmp_path):
+    ledger = _ledger(tmp_path, [("SO26010001", "SOD26010001", None)])
+    workbook = openpyxl.load_workbook(str(ledger))
+    workbook["明细"].cell(2, 6).value = 150.0
+    workbook.save(str(ledger))
+    workbook.close()
+
+    item = _delivery_above_baseline_split_item(current=40.0, cumulative=40.0)
+    item["five_cols"]["回款明细"] = 40.0
+    item["row_operation"].update({
+        "source_receivable": 150.0,
+        "baseline_receivable": 150.0,
+        "source_row_receivable": 150.0,
+        "remaining_unreceived": 60.0,
+        "existing_received": 0.0,
+        "current_received": 40.0,
+        "cumulative_received": 40.0,
+        "latest_delivery": 100.0,
+    })
+
+    checked = V.validate({"auto": [item]}, V.read_ledger_rows(ledger))
+    assert checked["counts"] == {"write": 1, "skip": 0, "conflict": 0}
+
+    out = tmp_path / "交付额低于原应收_首次部分回款.xlsx"
+    A.write_plan(ledger, out, checked["write"])
+
+    assert A.verify_written(out, checked["write"]) == []
+    ws = openpyxl.load_workbook(str(out), data_only=True)["明细"]
+    assert ws.cell(2, 6).value == 150.0
+    assert ws.cell(2, 8).value == 40.0
+    assert ws.cell(3, 6).value is None
+    assert ws.cell(3, 8).value is None
+    assert ws.cell(3, 9).value == "否"
+
+    rerun = V.validate({"auto": [item]}, V.read_ledger_rows(out))
+    assert rerun["counts"] == {"write": 0, "skip": 1, "conflict": 0}
+
+
 def test_delivery_above_baseline_split_rejects_changed_nonblank_source_receivable(tmp_path):
     ledger = _ledger(tmp_path, [("SO26010001", "SOD26010001", None)])
     workbook = openpyxl.load_workbook(str(ledger))

@@ -76,13 +76,23 @@ def _add_current_ar_payment_amount(
     *,
     amount_original: object,
     amount_local: object,
+    total_amount_original: object,
+    total_amount_local: object,
     currency: object,
     historical_parent_only: object,
 ) -> None:
     """Add one current-day parent payment without mixing currencies or history."""
     if historical_parent_only is True:
         return
-    amount = amount_original if amount_original is not None else amount_local
+    amount = (
+        total_amount_original
+        if total_amount_original is not None
+        else (
+            total_amount_local
+            if total_amount_local is not None
+            else (amount_original if amount_original is not None else amount_local)
+        )
+    )
     if isinstance(amount, bool):
         return
     try:
@@ -91,7 +101,11 @@ def _add_current_ar_payment_amount(
         return
     if not math.isfinite(numeric_amount):
         return
-    amount_currency = str(currency or "").strip() if amount_original is not None else "CNY"
+    uses_original = (
+        total_amount_original is not None
+        or (total_amount_local is None and amount_original is not None)
+    )
+    amount_currency = str(currency or "").strip() if uses_original else "CNY"
     amount_currency = amount_currency or "币种未提供"
     totals[amount_currency] = round(totals.get(amount_currency, 0.0) + numeric_amount, 2)
 
@@ -107,6 +121,8 @@ def current_ar_amounts_by_currency(
                 totals,
                 amount_original=payment.amount_original,
                 amount_local=payment.amount_local,
+                total_amount_original=payment.total_amount_original,
+                total_amount_local=payment.total_amount_local,
                 currency=payment.currency,
                 historical_parent_only=payment.historical_parent_only,
             )
@@ -191,6 +207,8 @@ def _current_ar_amounts_from_payloads(payloads: Sequence[str]) -> dict[str, floa
                 totals,
                 amount_original=payment.get("amount_original"),
                 amount_local=payment.get("amount_local"),
+                total_amount_original=payment.get("total_amount_original"),
+                total_amount_local=payment.get("total_amount_local"),
                 currency=payment.get("currency"),
                 historical_parent_only=payment.get("historical_parent_only"),
             )

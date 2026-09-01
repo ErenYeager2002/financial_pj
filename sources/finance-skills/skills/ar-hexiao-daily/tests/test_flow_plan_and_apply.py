@@ -377,7 +377,47 @@ def test_apply_all_resnapshots_after_all_writes_succeed(tmp_path, monkeypatch):
 
     assert rc == 0
     assert calls == [tmp_path]
-    assert events == ["prefill", "ledger", "status"]
+    assert events == ["ledger", "prefill", "status"]
+
+
+def test_apply_all_flow_prefill_failure_does_not_block_ledger(tmp_path, monkeypatch):
+    checked = tmp_path / "checked.json"
+    checked.write_text(
+        json.dumps({"hexiao_date": "2026-07-27", "write": [], "skip": [], "conflict": []}),
+        encoding="utf-8",
+    )
+    flow_plan = tmp_path / "flow.json"
+    flow_plan.write_text(json.dumps({"items": []}), encoding="utf-8")
+    ledger = tmp_path / "ledger.xlsx"
+    ledger.write_bytes(b"placeholder")
+    events = []
+    done = []
+    snapshots = []
+
+    monkeypatch.setattr(AA.apply_to_copy, "main", lambda _args: events.append("ledger") or 0)
+    monkeypatch.setattr(
+        AA.apply_flow, "main",
+        lambda _args: events.append("flow-prefill-failed") or 9,
+    )
+    monkeypatch.setattr(
+        AA, "_record_done",
+        lambda *args, **kwargs: done.append(kwargs),
+    )
+    monkeypatch.setattr(AA, "_resnapshot_sources", lambda workspace: snapshots.append(Path(workspace)))
+
+    rc = AA.main([
+        "--checked", str(checked),
+        "--flow-plan", str(flow_plan),
+        "--ledger", str(ledger),
+        "--workspace", str(tmp_path),
+        "--in-place",
+        "--flow-in-place",
+    ])
+
+    assert rc == 0
+    assert events == ["ledger", "flow-prefill-failed"]
+    assert done == [{"ledger_written": False, "flow_written": False}]
+    assert snapshots == [tmp_path]
 
 
 def test_plan_empty_so_preserves_existing_order_and_exact_strong():

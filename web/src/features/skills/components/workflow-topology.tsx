@@ -1,5 +1,6 @@
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PaginatedCollection } from '@/components/ui/collection-pagination';
 import type { WorkflowDefinition } from '@/features/platform-api/types';
 import { stepTypeLabel } from '@/features/workflows/step-display';
 
@@ -24,7 +25,7 @@ export function WorkflowTopology({ definitions }: WorkflowTopologyProps): React.
       </CardHeader>
       <CardContent>
         {definitions.length ? (
-          <div className='space-y-5'>
+          <PaginatedCollection ariaLabel='受控执行流程' contentClassName='space-y-5'>
             {definitions.map((definition) => (
               <section key={definition.id} className='rounded-lg border p-4'>
                 <div className='flex flex-wrap items-start justify-between gap-3'>
@@ -59,7 +60,7 @@ export function WorkflowTopology({ definitions }: WorkflowTopologyProps): React.
                 </ol>
               </section>
             ))}
-          </div>
+          </PaginatedCollection>
         ) : (
           <p className='text-muted-foreground'>当前部门还没有受控执行流程。</p>
         )}

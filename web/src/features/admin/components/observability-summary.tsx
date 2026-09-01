@@ -1,4 +1,5 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PaginatedCollection } from '@/components/ui/collection-pagination';
 import type { ObservabilitySummary as Summary } from '@/features/platform-api/types';
 import { stepTypeLabel } from '@/features/workflows/step-display';
 
@@ -29,19 +30,25 @@ export function ObservabilitySummary({ summary }: ObservabilitySummaryProps): Re
         </CardDescription>
       </CardHeader>
       <CardContent className='space-y-5'>
-        <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-6'>
+        <PaginatedCollection
+          ariaLabel='运行指标'
+          contentClassName='grid gap-3 sm:grid-cols-2 lg:grid-cols-6'
+        >
           {metrics.map(([label, value]) => (
             <div key={label} className='rounded-lg border p-3'>
               <p className='text-sm text-muted-foreground'>{label}</p>
               <p className='mt-1 text-xl font-semibold'>{value}</p>
             </div>
           ))}
-        </div>
+        </PaginatedCollection>
         <div className='grid gap-4 lg:grid-cols-2'>
           <div>
             <h3 className='mb-2 font-medium'>步骤指标</h3>
             {(summary.step_metrics ?? []).length ? (
-              <div className='space-y-2 text-sm'>
+              <PaginatedCollection
+                ariaLabel='步骤指标'
+                contentClassName='space-y-2 text-sm'
+              >
                 {(summary.step_metrics ?? []).map((item) => (
                   <div
                     key={item.step_type}
@@ -54,7 +61,7 @@ export function ObservabilitySummary({ summary }: ObservabilitySummaryProps): Re
                     </span>
                   </div>
                 ))}
-              </div>
+              </PaginatedCollection>
             ) : (
               <p className='text-sm text-muted-foreground'>当前时段没有步骤数据。</p>
             )}
@@ -62,7 +69,10 @@ export function ObservabilitySummary({ summary }: ObservabilitySummaryProps): Re
           <div>
             <h3 className='mb-2 font-medium'>模型调用</h3>
             {(summary.model_usage ?? []).length ? (
-              <div className='space-y-2 text-sm'>
+              <PaginatedCollection
+                ariaLabel='模型调用'
+                contentClassName='space-y-2 text-sm'
+              >
                 {(summary.model_usage ?? []).map((item) => (
                   <div
                     key={`${item.provider}-${item.model}`}
@@ -80,7 +90,7 @@ export function ObservabilitySummary({ summary }: ObservabilitySummaryProps): Re
                     </span>
                   </div>
                 ))}
-              </div>
+              </PaginatedCollection>
             ) : (
               <p className='text-sm text-muted-foreground'>当前时段没有模型调用记录。</p>
             )}

@@ -174,6 +174,25 @@ def test_delivery_above_baseline_keeps_original_receivable_and_blank_carry_row()
     }
 
 
+def test_delivery_below_baseline_keeps_original_receivable_and_blank_carry_row():
+    """交付额低于历史应收时也只按交付额算未收，不改原应收。"""
+    result = C.classify_one(
+        _record(amount=40.0, delivery=100.0, cumulative=40.0),
+        _synthetic_ledger(receivable=150.0),
+        {},
+        0.0,
+        2026,
+    )
+
+    assert result["bucket"] == "auto"
+    operation = result["row_operation"]
+    assert operation["receivable_mode"] == "preserve_baseline_blank_carry"
+    assert operation["baseline_receivable"] == 150.0
+    assert operation["source_row_receivable"] == 150.0
+    assert operation["remaining_unreceived"] == 60.0
+    assert operation["inserted_five_cols"]["是否结账"] == "否"
+
+
 def test_blank_carry_row_accepts_final_payment_and_uses_existing_closeout_rule(tmp_path):
     ledger = _ledger(
         tmp_path,
