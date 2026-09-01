@@ -11,7 +11,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Literal, Protocol
 
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from .models import FetchedBundle, FetchedBundleFile, WorkflowAction, WorkflowSession
@@ -19,9 +19,7 @@ from .resource_policy import SAFE_STORAGE_COMPONENT
 from .settings import settings
 from .storage import sha256_file
 
-FETCH_BUNDLE_DATASETS = frozenset(
-    {"payments", "orders", "writeoffs", "order_details", "summary"}
-)
+FETCH_BUNDLE_DATASETS = frozenset({"payments", "orders", "writeoffs", "order_details", "summary"})
 
 
 class FetchedBundleError(ValueError):
@@ -186,7 +184,62 @@ def _validated_manifest_files(
                 size_bytes=resolved.stat().st_size,
             )
         )
+    _validate_export_summaries(
+        target,
+        manifest_version=version,
+        dates=dates,
+        files=validated,
+    )
     return validated
+
+
+def _validate_export_summaries(
+    target: Path,
+    *,
+    manifest_version: str,
+    dates: list[str],
+    files: list[_ValidatedFile],
+) -> None:
+    export_schema_version = manifest_version
+    base_version, separator, revision = manifest_version.rpartition("-s")
+    if (
+        separator
+        and len(revision) == 12
+        and all(character in "0123456789abcdef" for character in revision)
+    ):
+        export_schema_version = base_version
+    by_date = {
+        reconciliation_date: [
+            item
+            for item in files
+            if item.reconciliation_date == reconciliation_date and item.dataset != "summary"
+        ]
+        for reconciliation_date in dates
+    }
+    summaries = {item.reconciliation_date: item for item in files if item.dataset == "summary"}
+    for reconciliation_date in dates:
+        summary_file = summaries[reconciliation_date]
+        try:
+            summary = json.loads((target / summary_file.relative_name).read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise FetchedBundleError("取数摘要格式无效。") from exc
+        if not isinstance(summary, dict):
+            raise FetchedBundleError("取数摘要格式无效。")
+        if (
+            summary.get("day") != reconciliation_date
+            or summary.get("export_schema_version") != export_schema_version
+            or summary.get("read_only") is not True
+        ):
+            raise FetchedBundleError("取数摘要的日期、版本或只读标记无效。")
+        hashes = summary.get("file_sha256")
+        expected_hashes = {item.relative_name: item.sha256 for item in by_date[reconciliation_date]}
+        if not isinstance(hashes, dict) or set(hashes) != set(expected_hashes):
+            raise FetchedBundleError("取数摘要的文件哈希清单不完整。")
+        if any(
+            not isinstance(hashes[name], str) or hashes[name].casefold() != expected.casefold()
+            for name, expected in expected_hashes.items()
+        ):
+            raise FetchedBundleError("取数摘要的文件哈希不一致。")
 
 
 def _write_manifest(
@@ -224,11 +277,17 @@ def _make_read_only(target: Path) -> None:
     for path in target.iterdir():
         if path.is_file() and not path.is_symlink():
             path.chmod(stat.S_IREAD)
+    if os.name != "nt":
+        target.chmod(stat.S_IREAD | stat.S_IEXEC)
 
 
 def _remove_tree(target: Path) -> None:
+    if target.is_symlink():
+        target.unlink()
+        return
     if not target.exists():
         return
+    target.chmod(stat.S_IREAD | stat.S_IWRITE | stat.S_IEXEC)
     for path in target.rglob("*"):
         if path.is_file() and not path.is_symlink():
             path.chmod(stat.S_IREAD | stat.S_IWRITE)
@@ -287,29 +346,61 @@ def materialize_bundle(
     owner_root = _owner_storage_root(workflow.owner_id)
     owner_root.mkdir(parents=True, exist_ok=True)
     bundle_id = str(uuid.uuid4())
-    temporary = owner_root / f".{bundle_id}.{uuid.uuid4().hex}.tmp"
+    temporary = owner_root / f".{bundle_id}.tmp"
     final = owner_root / bundle_id
     published = False
+    now = datetime.now(UTC)
+    retention_days = max(0, int(getattr(settings, "fetch_bundle_retention_days", 0)))
+    dates_json = json.dumps(normalized_dates, ensure_ascii=False, separators=(",", ":"))
+    bundle = FetchedBundle(
+        id=bundle_id,
+        owner_id=workflow.owner_id,
+        department_id=workflow.department_id,
+        skill_id=workflow.skill_id,
+        source_workflow_id=workflow.id,
+        source_batch_id=workflow.batch_id,
+        source_type=source.source_type,
+        manifest_version=f"creating-{bundle_id[:12]}",
+        state="creating",
+        date_from=normalized_dates[0],
+        date_to=normalized_dates[-1],
+        dates_json=dates_json,
+        storage_key=f"{workflow.owner_id}/{bundle_id}",
+        raw_available=False,
+        preview_available=False,
+        replayable=False,
+        retention_until=now + timedelta(days=retention_days),
+        created_at=now,
+        last_error="",
+    )
+    discard_bundle_after_cleanup = False
     try:
+        # Make every raw-data directory derivable from a durable lifecycle row,
+        # including a process exit while the source adapter is still exporting.
+        db.add(bundle)
+        db.flush([bundle])
+        db.commit()
         temporary.mkdir(exist_ok=False)
         manifest = source.export(normalized_dates, temporary)
         files = _validated_manifest_files(manifest, normalized_dates, temporary)
-        dates_json = json.dumps(normalized_dates, ensure_ascii=False, separators=(",", ":"))
         existing = db.scalar(
             select(FetchedBundle).where(
+                FetchedBundle.id != bundle.id,
                 FetchedBundle.source_workflow_id == workflow.id,
                 FetchedBundle.manifest_version == manifest.manifest_version,
                 FetchedBundle.dates_json == dates_json,
             )
         )
         if existing is not None:
-            if (
-                existing.source_type != source.source_type
-                or _stored_file_signature(existing.files) != _file_signature(files)
-            ):
+            if existing.source_type != source.source_type or _stored_file_signature(
+                existing.files
+            ) != _file_signature(files):
+                discard_bundle_after_cleanup = True
                 raise FetchedBundleError("重复取数请求的文件内容与现有取数包不一致。")
             _validated_bundle_members(existing, normalized_dates)
+            discard_bundle_after_cleanup = True
             workflow.fetched_bundle_id = existing.id
+            db.commit()
             return _result(existing)
         _write_manifest(
             temporary,
@@ -319,32 +410,7 @@ def materialize_bundle(
             dates=normalized_dates,
             files=files,
         )
-        _make_read_only(temporary)
-        os.replace(temporary, final)
-        published = True
-        now = datetime.now(UTC)
-        retention_days = max(0, int(getattr(settings, "fetch_bundle_retention_days", 0)))
-        bundle = FetchedBundle(
-            id=bundle_id,
-            owner_id=workflow.owner_id,
-            department_id=workflow.department_id,
-            skill_id=workflow.skill_id,
-            source_workflow_id=workflow.id,
-            source_batch_id=workflow.batch_id,
-            source_type=source.source_type,
-            manifest_version=manifest.manifest_version,
-            state="ready_for_review",
-            date_from=normalized_dates[0],
-            date_to=normalized_dates[-1],
-            dates_json=dates_json,
-            storage_key=f"{workflow.owner_id}/{bundle_id}",
-            raw_available=True,
-            preview_available=False,
-            replayable=retention_days > 0,
-            retention_until=now + timedelta(days=retention_days),
-            created_at=now,
-            last_error="",
-        )
+        bundle.manifest_version = manifest.manifest_version
         bundle.files = [
             FetchedBundleFile(
                 id=str(uuid.uuid4()),
@@ -356,20 +422,51 @@ def materialize_bundle(
             )
             for item in files
         ]
-        db.add(bundle)
-        # FetchedBundle.source_workflow_id and WorkflowSession.fetched_bundle_id
-        # form a deliberate bidirectional audit link. Persist the new bundle first
-        # so PostgreSQL never sees the workflow reference before its target row.
         db.flush([bundle])
+        db.commit()
+        _make_read_only(temporary)
+        os.replace(temporary, final)
+        published = True
+        bundle.state = "ready_for_review"
+        bundle.raw_available = True
+        bundle.replayable = retention_days > 0
         workflow.fetched_bundle_id = bundle.id
         db.flush([workflow])
+        db.commit()
         return _result(bundle)
     except Exception:
         if published:
             _remove_tree(final)
+        db.rollback()
+        failed_bundle = db.get(FetchedBundle, bundle_id)
+        if failed_bundle is not None and failed_bundle.state == "creating":
+            failed_bundle.state = "invalid"
+            failed_bundle.raw_available = False
+            failed_bundle.replayable = False
+            failed_bundle.retention_until = datetime.now(UTC)
+            failed_bundle.last_error = "取数包发布失败，原始文件不可用。"
+            db.commit()
         raise
     finally:
-        _remove_tree(temporary)
+        temporary_cleanup_failed = False
+        try:
+            _remove_tree(temporary)
+        except Exception:
+            temporary_cleanup_failed = True
+            db.rollback()
+            failed_bundle = db.get(FetchedBundle, bundle_id)
+            if failed_bundle is not None:
+                failed_bundle.state = "invalid"
+                failed_bundle.raw_available = True
+                failed_bundle.replayable = False
+                failed_bundle.retention_until = datetime.now(UTC)
+                failed_bundle.last_error = "取数包临时文件清理失败，平台将自动重试。"
+                db.commit()
+        if discard_bundle_after_cleanup and not temporary_cleanup_failed:
+            discarded_bundle = db.get(FetchedBundle, bundle_id)
+            if discarded_bundle is not None:
+                db.delete(discarded_bundle)
+                db.commit()
         if owner_root.exists() and not any(owner_root.iterdir()):
             owner_root.rmdir()
 
@@ -404,11 +501,20 @@ def _validated_bundle_members(
     available = set(json.loads(bundle.dates_json))
     if not requested <= available:
         raise FetchedBundleError("取数包不包含所选核销日期。")
-    selected = [item for item in bundle.files if item.reconciliation_date in requested]
+    all_members = list(bundle.files)
+    selected = [item for item in all_members if item.reconciliation_date in requested]
     expected = {(item, dataset) for item in requested for dataset in FETCH_BUNDLE_DATASETS}
     if {(item.reconciliation_date, item.dataset) for item in selected} != expected:
         raise FetchedBundleError("取数包数据集不完整。")
-    for item in selected:
+    expected_names = {item.relative_name for item in all_members} | {"manifest.json"}
+    actual_names = {
+        path.relative_to(root).as_posix()
+        for path in root.rglob("*")
+        if path.is_file() or path.is_symlink()
+    }
+    if actual_names != expected_names:
+        raise FetchedBundleError("取数包目录包含未知文件或缺少已登记文件。")
+    for item in all_members:
         path = root / item.relative_name
         if (
             path.is_symlink()
@@ -418,7 +524,44 @@ def _validated_bundle_members(
             raise FetchedBundleError("取数包成员无效。")
         if path.stat().st_size != item.size_bytes or sha256_file(path) != item.sha256:
             raise FetchedBundleError("取数包成员哈希不一致。")
+    _validate_published_manifest(bundle, root, all_members)
     return selected
+
+
+def _validate_published_manifest(
+    bundle: FetchedBundle,
+    root: Path,
+    members: list[FetchedBundleFile],
+) -> None:
+    manifest_path = root / "manifest.json"
+    if manifest_path.is_symlink() or not manifest_path.is_file():
+        raise FetchedBundleError("取数包发布清单不存在。")
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise FetchedBundleError("取数包发布清单格式无效。") from exc
+    expected_files = [
+        {
+            "dataset": item.dataset,
+            "reconciliation_date": item.reconciliation_date,
+            "relative_name": item.relative_name,
+            "sha256": item.sha256,
+            "size_bytes": item.size_bytes,
+        }
+        for item in sorted(
+            members,
+            key=lambda value: (value.reconciliation_date, value.dataset),
+        )
+    ]
+    expected = {
+        "bundle_id": bundle.id,
+        "source_type": bundle.source_type,
+        "manifest_version": bundle.manifest_version,
+        "dates": json.loads(bundle.dates_json),
+        "files": expected_files,
+    }
+    if manifest != expected:
+        raise FetchedBundleError("取数包发布清单与数据库登记不一致。")
 
 
 def confirm_bundle(
@@ -554,16 +697,29 @@ def _assert_staged_members(
     target: Path,
     members: list[FetchedBundleFile],
 ) -> None:
+    _assert_member_copy(
+        target,
+        members,
+        missing_message="日期工作区的取数目录无效。",
+        members_message="日期工作区的取数文件与取数包不一致。",
+        hash_message="日期工作区的取数文件哈希不一致。",
+    )
+
+
+def _assert_member_copy(
+    target: Path,
+    members: list[FetchedBundleFile],
+    *,
+    missing_message: str,
+    members_message: str,
+    hash_message: str,
+) -> None:
     if not target.is_dir() or target.is_symlink():
-        raise FetchedBundleError("日期工作区的取数目录无效。")
+        raise FetchedBundleError(missing_message)
     expected_names = {item.relative_name for item in members}
-    actual_names = {
-        path.name
-        for path in target.iterdir()
-        if path.is_file() or path.is_symlink()
-    }
+    actual_names = {path.name for path in target.iterdir() if path.is_file() or path.is_symlink()}
     if actual_names != expected_names:
-        raise FetchedBundleError("日期工作区的取数文件与取数包不一致。")
+        raise FetchedBundleError(members_message)
     for item in members:
         path = target / item.relative_name
         if (
@@ -572,7 +728,7 @@ def _assert_staged_members(
             or path.stat().st_size != item.size_bytes
             or sha256_file(path) != item.sha256
         ):
-            raise FetchedBundleError("日期工作区的取数文件哈希不一致。")
+            raise FetchedBundleError(hash_message)
 
 
 def _stage_validated_bundle_files(
@@ -654,26 +810,13 @@ def assert_bundle_preview_mirror(
         dates=dates,
     )
     members = _validated_bundle_members(bundle, dates)
-    mirror_root = mirror.resolve()
-    if not mirror_root.is_dir() or mirror_root.is_symlink():
-        raise FetchedBundleError("取数预览目录不存在。")
-    expected_names = {item.relative_name for item in members}
-    actual_names = {
-        path.name
-        for path in mirror_root.iterdir()
-        if path.is_file() or path.is_symlink()
-    }
-    if actual_names != expected_names:
-        raise FetchedBundleError("取数预览目录与已发布取数包不一致。")
-    for item in members:
-        path = mirror_root / item.relative_name
-        if (
-            path.is_symlink()
-            or not path.is_file()
-            or path.stat().st_size != item.size_bytes
-            or sha256_file(path) != item.sha256
-        ):
-            raise FetchedBundleError("取数预览文件与已发布取数包哈希不一致。")
+    _assert_member_copy(
+        mirror.resolve(),
+        members,
+        missing_message="取数预览目录不存在。",
+        members_message="取数预览目录与已发布取数包不一致。",
+        hash_message="取数预览文件与已发布取数包哈希不一致。",
+    )
     return bundle
 
 
@@ -684,21 +827,54 @@ def finalize_bundle(db: Session, *, bundle_id: str, outcome: str) -> None:
     now = datetime.now(UTC)
     if outcome == "succeeded":
         if bundle.state == "consumed":
+            bundle.replayable = bool(
+                bundle.raw_available
+                and (bundle.retention_until is None or _utc(bundle.retention_until) > _utc(now))
+            )
+            bundle.last_error = ""
+            db.flush()
             return
         if bundle.state != "confirmed":
             raise FetchedBundleError("取数包尚未确认，不能完成消费。")
         bundle.state = "consumed"
         bundle.consumed_at = bundle.consumed_at or now
+        bundle.replayable = bool(
+            bundle.raw_available
+            and (bundle.retention_until is None or _utc(bundle.retention_until) > _utc(now))
+        )
+        bundle.last_error = ""
     elif outcome in {"failed", "cancelled"}:
         if bundle.state == "invalid":
             return
-        if bundle.state == "consumed":
-            raise FetchedBundleError("已消费的取数包不能改为失败状态。")
         bundle.state = "invalid"
         bundle.replayable = False
+        bundle.retention_until = now
         bundle.last_error = "任务未完成，取数包已停止消费。"
     else:
         raise FetchedBundleError("取数包完成结果无效。")
+    db.flush()
+
+
+def suspend_bundle_for_retry(db: Session, *, bundle_id: str) -> None:
+    """Keep a verified failed-date bundle available only to its explicit retry path."""
+    bundle = db.get(FetchedBundle, bundle_id)
+    if bundle is None:
+        raise FetchedBundleError("取数包不存在。")
+    if (
+        bundle.state not in {"ready_for_review", "confirmed", "consumed"}
+        or not bundle.raw_available
+    ):
+        raise FetchedBundleError("取数包当前不能保留给失败日期重试。")
+    now = datetime.now(UTC)
+    retry_retention_days = max(
+        1,
+        int(getattr(settings, "fetch_bundle_retention_days", 0)),
+    )
+    retry_until = now + timedelta(days=retry_retention_days)
+    if bundle.retention_until is None or _utc(bundle.retention_until) < retry_until:
+        bundle.retention_until = retry_until
+    bundle.replayable = False
+    bundle.last_error = "任务未完成，取数包仅保留给原任务重试。"
     db.flush()
 
 
@@ -712,6 +888,19 @@ def _bundle_has_active_reference(db: Session, bundle_id: str) -> bool:
         .limit(1)
     )
     if active_workflow is not None:
+        return True
+    active_source_workflow = db.scalar(
+        select(WorkflowSession.id)
+        .where(
+            WorkflowSession.id
+            == select(FetchedBundle.source_workflow_id)
+            .where(FetchedBundle.id == bundle_id)
+            .scalar_subquery(),
+            WorkflowSession.state.not_in(("succeeded", "failed", "cancelled")),
+        )
+        .limit(1)
+    )
+    if active_source_workflow is not None:
         return True
     active_action = db.scalar(
         select(WorkflowAction.id)
@@ -744,10 +933,7 @@ def is_bundle_replayable(
         bundle.replayable
         and bundle.raw_available
         and bundle.state in {"confirmed", "consumed"}
-        and (
-            bundle.retention_until is None
-            or _utc(bundle.retention_until) > _utc(current_time)
-        )
+        and (bundle.retention_until is None or _utc(bundle.retention_until) > _utc(current_time))
     )
 
 
@@ -769,7 +955,10 @@ def purge_fetched_bundle(
         raise FetchedBundleError("取数包不存在。")
     if bundle.state == "raw_purged" and not bundle.raw_available:
         return True
-    if not bundle.raw_available or bundle.state not in {
+    if (
+        not bundle.raw_available and bundle.state not in {"creating", "purge_pending"}
+    ) or bundle.state not in {
+        "creating",
         "ready_for_review",
         "confirmed",
         "consumed",
@@ -777,13 +966,18 @@ def purge_fetched_bundle(
         "purge_pending",
     }:
         return False
-    if bundle.retention_until is None or _utc(bundle.retention_until) > _utc(current_time):
+    if bundle.state == "creating":
+        if _utc(bundle.created_at) + timedelta(minutes=15) > _utc(current_time):
+            return False
+    elif bundle.retention_until is None or _utc(bundle.retention_until) > _utc(current_time):
         return False
     if bundle.purge_retry_at is not None and _utc(bundle.purge_retry_at) > _utc(current_time):
         return False
     if _bundle_has_active_reference(db, bundle.id):
         return False
 
+    if bundle.state == "creating":
+        bundle.retention_until = current_time
     bundle.state = "purge_pending"
     bundle.purge_attempts += 1
     # This timestamp also acts as a short lease after the row lock is released
@@ -791,11 +985,16 @@ def purge_fetched_bundle(
     bundle.purge_retry_at = current_time + timedelta(minutes=5)
     bundle.last_error = ""
     purge_attempt = bundle.purge_attempts
-    storage_path = _bundle_storage_path(bundle)
+    storage_paths = [_bundle_storage_path(bundle)]
+    owner_root = _owner_storage_root(bundle.owner_id)
+    storage_paths.extend(
+        path for path in owner_root.glob(f".{bundle.id}*.tmp") if path.parent == owner_root
+    )
     db.commit()
 
     try:
-        _remove_tree(storage_path)
+        for storage_path in dict.fromkeys(storage_paths):
+            _remove_tree(storage_path)
     except Exception:
         db.rollback()
         failed = db.scalar(
@@ -807,9 +1006,7 @@ def purge_fetched_bundle(
         if failed is None:
             raise FetchedBundleError("取数包不存在。") from None
         if failed.state != "purge_pending" or failed.purge_attempts != purge_attempt:
-            completed_elsewhere = (
-                failed.state == "raw_purged" and not failed.raw_available
-            )
+            completed_elsewhere = failed.state == "raw_purged" and not failed.raw_available
             db.rollback()
             return completed_elsewhere
         failed.state = "purge_pending"
@@ -852,12 +1049,26 @@ def purge_expired_bundles(
         db.scalars(
             select(FetchedBundle.id)
             .where(
-                FetchedBundle.raw_available.is_(True),
-                FetchedBundle.retention_until.is_not(None),
-                FetchedBundle.retention_until <= current_time,
+                or_(
+                    and_(
+                        FetchedBundle.raw_available.is_(True),
+                        FetchedBundle.retention_until.is_not(None),
+                        FetchedBundle.retention_until <= current_time,
+                    ),
+                    and_(
+                        FetchedBundle.state == "creating",
+                        FetchedBundle.created_at <= current_time - timedelta(minutes=15),
+                    ),
+                    and_(
+                        FetchedBundle.state == "purge_pending",
+                        FetchedBundle.retention_until.is_not(None),
+                        FetchedBundle.retention_until <= current_time,
+                    ),
+                ),
                 FetchedBundle.state.in_(
                     (
                         "ready_for_review",
+                        "creating",
                         "confirmed",
                         "consumed",
                         "invalid",
@@ -881,7 +1092,7 @@ def purge_expired_bundles(
 
 
 @dataclass
-class SnapshotReplayAdapter:
+class FetchedBundleReplayAdapter:
     db: Session
     bundle_id: str
     owner_id: str

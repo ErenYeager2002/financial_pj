@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import uuid
 from pathlib import Path
@@ -233,14 +234,19 @@ def test_fetch_action_publishes_the_workspace_export_as_a_bundle(
     export_dir.mkdir(parents=True)
     reconciliation_date = "2026-08-20"
     tag = reconciliation_date.replace("-", "")
+    file_hashes: dict[str, str] = {}
     for _, _, prefix in workflow_service.FETCHED_DATASET_SPECS:
-        (export_dir / f"{prefix}_{tag}.xlsx").write_bytes(prefix.encode())
+        name = f"{prefix}_{tag}.xlsx"
+        content = prefix.encode()
+        (export_dir / name).write_bytes(content)
+        file_hashes[name] = hashlib.sha256(content).hexdigest()
     (export_dir / f"取数摘要_{tag}.json").write_text(
         json.dumps(
             {
                 "day": reconciliation_date,
                 "export_schema_version": workflow_service.FETCH_SNAPSHOT_VERSION,
                 "read_only": True,
+                "file_sha256": file_hashes,
             }
         ),
         encoding="utf-8",
@@ -387,6 +393,6 @@ def test_fetch_action_replays_bundle_without_live_fetch(monkeypatch, tmp_path: P
 
     assert staged == [("replayed-bundle", [reconciliation_date])]
     assert result["fetched_bundle_id"] == "replayed-bundle"
-    assert result["fetched_data"]["source"] == "snapshot"
+    assert result["fetched_data"]["source"] == "replay"
     assert result["fetched_data"]["source_bundle_id"] == "source-bundle"
     assert result["fetched_data"]["summary"] == {"回款记录笔数": 3}

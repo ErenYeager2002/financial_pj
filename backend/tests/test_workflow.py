@@ -343,10 +343,13 @@ def test_multi_date_batch_accepts_nonconsecutive_selected_dates() -> None:
     _finish_all_ar_workflows()
     username = f"sparse-batch-{uuid.uuid4().hex[:8]}"
     with auth_client(username=username) as client:
-        assert client.put(
-            "/api/service-credentials/zhiyun",
-            json={"account": "sparse-batch", "password": "sparse-batch-password"},
-        ).status_code == 200
+        assert (
+            client.put(
+                "/api/service-credentials/zhiyun",
+                json={"account": "sparse-batch", "password": "sparse-batch-password"},
+            ).status_code
+            == 200
+        )
         ledger_id = upload(client, "profit_loss_ledgers", "2026年盈亏核算表.xlsx")
         flow_id = upload(client, "receipt_flow_table", "到账流转表.xlsx")
         too_wide = client.post(
@@ -387,14 +390,15 @@ def test_multi_date_batch_accepts_exactly_31_past_or_current_dates() -> None:
     _finish_all_ar_workflows()
     username = f"thirty-one-day-batch-{uuid.uuid4().hex[:8]}"
     today = workflow_service.datetime.now(workflow_service.PLATFORM_TIMEZONE).date()
-    selected_dates = [
-        (today - timedelta(days=offset)).isoformat() for offset in range(30, -1, -1)
-    ]
+    selected_dates = [(today - timedelta(days=offset)).isoformat() for offset in range(30, -1, -1)]
     with auth_client(username=username) as client:
-        assert client.put(
-            "/api/service-credentials/zhiyun",
-            json={"account": "thirty-one-day", "password": "thirty-one-day-password"},
-        ).status_code == 200
+        assert (
+            client.put(
+                "/api/service-credentials/zhiyun",
+                json={"account": "thirty-one-day", "password": "thirty-one-day-password"},
+            ).status_code
+            == 200
+        )
         ledger_id = upload(client, "profit_loss_ledgers", "2026年盈亏核算表.xlsx")
         flow_id = upload(client, "receipt_flow_table", "到账流转表.xlsx")
         started = client.post(
@@ -468,10 +472,13 @@ def test_multi_date_batch_defers_child_skill_snapshots_until_execution(monkeypat
     monkeypatch.setattr(workflow_service, "_snapshot_skill", fake_snapshot)
     username = f"deferred-batch-snapshot-{uuid.uuid4().hex[:8]}"
     with auth_client(username=username) as client:
-        assert client.put(
-            "/api/service-credentials/zhiyun",
-            json={"account": "deferred-batch", "password": "deferred-batch-password"},
-        ).status_code == 200
+        assert (
+            client.put(
+                "/api/service-credentials/zhiyun",
+                json={"account": "deferred-batch", "password": "deferred-batch-password"},
+            ).status_code
+            == 200
+        )
         ledger_id = upload(client, "profit_loss_ledgers", "2026年盈亏核算表.xlsx")
         flow_id = upload(client, "receipt_flow_table", "到账流转表.xlsx")
         started = client.post(
@@ -502,10 +509,13 @@ def test_workflow_date_validation_uses_platform_calendar(monkeypatch) -> None:
 def test_batch_excludes_successful_prefix_on_current_material_version() -> None:
     username = f"exclude-success-{uuid.uuid4().hex[:8]}"
     with auth_client(username=username) as client:
-        assert client.put(
-            "/api/service-credentials/zhiyun",
-            json={"account": "exclude-success", "password": "exclude-success-password"},
-        ).status_code == 200
+        assert (
+            client.put(
+                "/api/service-credentials/zhiyun",
+                json={"account": "exclude-success", "password": "exclude-success-password"},
+            ).status_code
+            == 200
+        )
         ledger_id = upload(client, "profit_loss_ledgers", "2026年盈亏核算表.xlsx")
         flow_id = upload(client, "receipt_flow_table", "到账流转表.xlsx")
         files = {
@@ -546,10 +556,13 @@ def test_batch_excludes_successful_prefix_on_current_material_version() -> None:
 def test_batch_excludes_successful_suffix_on_current_material_version() -> None:
     username = f"exclude-success-suffix-{uuid.uuid4().hex[:8]}"
     with auth_client(username=username) as client:
-        assert client.put(
-            "/api/service-credentials/zhiyun",
-            json={"account": "exclude-suffix", "password": "exclude-suffix-password"},
-        ).status_code == 200
+        assert (
+            client.put(
+                "/api/service-credentials/zhiyun",
+                json={"account": "exclude-suffix", "password": "exclude-suffix-password"},
+            ).status_code
+            == 200
+        )
         ledger_id = upload(client, "profit_loss_ledgers", "2026年盈亏核算表.xlsx")
         flow_id = upload(client, "receipt_flow_table", "到账流转表.xlsx")
         files = {
@@ -590,10 +603,13 @@ def test_batch_excludes_successful_suffix_on_current_material_version() -> None:
 def test_reopened_successful_date_can_start_a_new_batch() -> None:
     username = f"reopened-success-{uuid.uuid4().hex[:8]}"
     with auth_client(username=username) as client:
-        assert client.put(
-            "/api/service-credentials/zhiyun",
-            json={"account": "reopened-success", "password": "reopened-success-password"},
-        ).status_code == 200
+        assert (
+            client.put(
+                "/api/service-credentials/zhiyun",
+                json={"account": "reopened-success", "password": "reopened-success-password"},
+            ).status_code
+            == 200
+        )
         ledger_id = upload(client, "profit_loss_ledgers", "2026年盈亏核算表.xlsx")
         flow_id = upload(client, "receipt_flow_table", "到账流转表.xlsx")
         files = {
@@ -645,10 +661,13 @@ def test_reopened_successful_date_can_start_a_new_batch() -> None:
 def test_batch_excludes_successful_middle_date_on_current_material_version() -> None:
     username = f"exclude-success-middle-{uuid.uuid4().hex[:8]}"
     with auth_client(username=username) as client:
-        assert client.put(
-            "/api/service-credentials/zhiyun",
-            json={"account": "exclude-middle", "password": "exclude-middle-password"},
-        ).status_code == 200
+        assert (
+            client.put(
+                "/api/service-credentials/zhiyun",
+                json={"account": "exclude-middle", "password": "exclude-middle-password"},
+            ).status_code
+            == 200
+        )
         ledger_id = upload(client, "profit_loss_ledgers", "2026年盈亏核算表.xlsx")
         flow_id = upload(client, "receipt_flow_table", "到账流转表.xlsx")
         files = {
@@ -689,10 +708,13 @@ def test_batch_excludes_successful_middle_date_on_current_material_version() -> 
 def test_completed_batch_dates_remain_successful_across_material_lineage() -> None:
     username = f"success-lineage-{uuid.uuid4().hex[:8]}"
     with auth_client(username=username) as client:
-        assert client.put(
-            "/api/service-credentials/zhiyun",
-            json={"account": "success-lineage", "password": "success-lineage-password"},
-        ).status_code == 200
+        assert (
+            client.put(
+                "/api/service-credentials/zhiyun",
+                json={"account": "success-lineage", "password": "success-lineage-password"},
+            ).status_code
+            == 200
+        )
         ledger_id = upload(client, "profit_loss_ledgers", "2026年盈亏核算表.xlsx")
         flow_id = upload(client, "receipt_flow_table", "到账流转表.xlsx")
         files = {
@@ -790,6 +812,57 @@ def test_completed_batch_dates_remain_successful_across_material_lineage() -> No
             assert details["reason"] == "财务负责人要求重新核对"
 
 
+@pytest.mark.parametrize("as_batch", [False, True])
+def test_replay_source_bundle_is_not_attached_as_the_new_workflow_output(
+    monkeypatch,
+    as_batch: bool,
+) -> None:
+    _finish_all_ar_workflows()
+    monkeypatch.setattr(
+        workflow_service,
+        "resolve_replay_bundle",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            bundle=SimpleNamespace(id="source-bundle-id"),
+            deprecated_reference=False,
+        ),
+    )
+    username = f"replay-source-link-{as_batch}-{uuid.uuid4().hex[:8]}"
+    with auth_client(username=username) as client:
+        ledger_id = upload(client, "profit_loss_ledgers", "2026年盈亏核算表.xlsx")
+        flow_id = upload(client, "receipt_flow_table", "到账流转表.xlsx")
+        payload = {
+            "skill_id": "ar-hexiao-daily",
+            "files": {
+                "profit_loss_ledgers": [ledger_id],
+                "receipt_flow_table": [flow_id],
+            },
+            "fetched_bundle_id": "source-bundle-id",
+        }
+        if as_batch:
+            payload["reconciliation_dates"] = ["2026-08-17", "2026-08-18"]
+            response = client.post("/api/workflow-batches/start", json=payload)
+        else:
+            payload["reconciliation_date"] = "2026-08-20"
+            response = client.post("/api/workflows/start", json=payload)
+        assert response.status_code == 200, response.text
+
+        with SessionLocal() as db:
+            if as_batch:
+                batch = db.get(WorkflowBatch, response.json()["id"])
+                assert batch is not None
+                workflows = list(batch.workflows)
+            else:
+                workflow = db.get(WorkflowSession, response.json()["id"])
+                assert workflow is not None
+                workflows = [workflow]
+            assert all(item.fetched_bundle_id is None for item in workflows)
+            assert all(
+                json.loads(item.context_json)["replay_source_bundle_id"] == "source-bundle-id"
+                for item in workflows
+            )
+    _finish_all_ar_workflows()
+
+
 def test_batch_tracks_its_own_published_material_for_later_retry(monkeypatch) -> None:
     monkeypatch.setattr(
         workflow_service,
@@ -798,10 +871,13 @@ def test_batch_tracks_its_own_published_material_for_later_retry(monkeypatch) ->
     )
     username = f"batch-own-material-{uuid.uuid4().hex[:8]}"
     with auth_client(username=username) as client:
-        assert client.put(
-            "/api/service-credentials/zhiyun",
-            json={"account": "batch-own-material", "password": "batch-own-material-password"},
-        ).status_code == 200
+        assert (
+            client.put(
+                "/api/service-credentials/zhiyun",
+                json={"account": "batch-own-material", "password": "batch-own-material-password"},
+            ).status_code
+            == 200
+        )
         ledger_id = upload(client, "profit_loss_ledgers", "2026年盈亏核算表.xlsx")
         flow_id = upload(client, "receipt_flow_table", "到账流转表.xlsx")
         started = client.post(
@@ -847,14 +923,43 @@ def test_batch_tracks_its_own_published_material_for_later_retry(monkeypatch) ->
             )
             assert "next_files" not in json.loads(children[1].context_json)
             failed = children[1]
+            failed_context = json.loads(failed.context_json)
+            failed_context["fetched_data_source"] = "replay"
+            failed_context["replay_source_bundle_id"] = "source-bundle-id"
+            failed.context_json = json.dumps(failed_context)
             failed.state = "failed"
             failed.stage = "failed"
             failed.actions[-1].state = "failed"
             batch.state = "failed"
             db.commit()
 
+        replay_gates: list[str] = []
+        monkeypatch.setattr(
+            workflow_service,
+            "assert_workflow_skill_execution_enabled",
+            lambda _skill_id: (_ for _ in ()).throw(
+                AssertionError("replay retry must not require live execution")
+            ),
+        )
+        monkeypatch.setattr(
+            workflow_service,
+            "assert_snapshot_replay_enabled",
+            lambda skill_id: replay_gates.append(skill_id),
+        )
+        monkeypatch.setattr(workflow_service, "finalize_bundle", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(
+            workflow_service,
+            "suspend_bundle_for_retry",
+            lambda *_args, **_kwargs: None,
+        )
+        monkeypatch.setattr(
+            workflow_service,
+            "purge_fetched_bundle",
+            lambda *_args, **_kwargs: False,
+        )
         retried = client.post(f"/api/workflow-batches/{batch_id}/retry")
         assert retried.status_code == 200, retried.text
+        assert replay_gates == ["ar-hexiao-daily"]
         assert retried.json()["state"] == "running"
         with SessionLocal() as db:
             batch = db.get(WorkflowBatch, batch_id)
@@ -873,10 +978,13 @@ def test_batch_tracks_its_own_published_material_for_later_retry(monkeypatch) ->
 def test_failed_batch_retry_rejects_superseded_material_version() -> None:
     username = f"stale-material-{uuid.uuid4().hex[:8]}"
     with auth_client(username=username) as client:
-        assert client.put(
-            "/api/service-credentials/zhiyun",
-            json={"account": "stale-material", "password": "stale-material-password"},
-        ).status_code == 200
+        assert (
+            client.put(
+                "/api/service-credentials/zhiyun",
+                json={"account": "stale-material", "password": "stale-material-password"},
+            ).status_code
+            == 200
+        )
         ledger_id = upload(client, "profit_loss_ledgers", "2026年盈亏核算表.xlsx")
         flow_id = upload(client, "receipt_flow_table", "到账流转表.xlsx")
         started = client.post(
@@ -3857,13 +3965,7 @@ def test_batch_prepare_workspace_uses_a_date_and_action_scoped_directory(
         / workflow_service._compact_workspace_key(action_id)
         / "工作区"
     ).resolve()
-    future_root = (
-        storage_root
-        / "batch"
-        / batch_id
-        / "dates"
-        / "02_20260819"
-    )
+    future_root = storage_root / "batch" / batch_id / "dates" / "02_20260819"
     assert Path(result["workspace"]) == expected
     assert expected.is_dir()
     assert not future_root.exists()
@@ -4036,9 +4138,7 @@ def test_batch_range_report_uses_an_independent_workspace(
     )
 
     with pytest.raises(RuntimeError, match="synthetic range report failure"):
-        workflow_service._finalize_batch_reports(
-            SimpleNamespace(), batch, workflow, result, action
-        )
+        workflow_service._finalize_batch_reports(SimpleNamespace(), batch, workflow, result, action)
     assert all(path.is_file() for path in original_files)
 
     action = SimpleNamespace(id="finalize-action")
@@ -4049,9 +4149,7 @@ def test_batch_range_report_uses_an_independent_workspace(
     assert report_workspace.is_relative_to(storage_root)
     assert "/reports/actions/finalize-action/" in report_workspace.as_posix()
     assert all(path.is_file() for path in original_files)
-    assert result["artifacts"] == [
-        {"name": workflow_service._batch_integrated_report_name(dates)}
-    ]
+    assert result["artifacts"] == [{"name": workflow_service._batch_integrated_report_name(dates)}]
 
 
 def test_batch_prepare_accepts_declared_business_result_return_codes(

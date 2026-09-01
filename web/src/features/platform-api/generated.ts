@@ -4341,7 +4341,7 @@ export interface components {
              */
             fetched_data_review_status: string;
             /** Fetched Data Source */
-            fetched_data_source?: ("live" | "snapshot") | null;
+            fetched_data_source?: ("live" | "replay") | null;
             /** Fetched Data Summary By Date */
             fetched_data_summary_by_date?: {
                 [key: string]: {
@@ -4862,7 +4862,7 @@ export interface components {
              */
             fetched_data_review_status: string;
             /** Fetched Data Source */
-            fetched_data_source?: ("live" | "snapshot") | null;
+            fetched_data_source?: ("live" | "replay") | null;
             /** Fetched Data Summary */
             fetched_data_summary?: {
                 [key: string]: unknown;

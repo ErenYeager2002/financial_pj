@@ -1,23 +1,26 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import shutil
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.database import Base, SessionLocal, init_db
 from app.fetched_bundle_service import (
     FetchedBundleError,
+    FetchedBundleReplayAdapter,
     FetchExportFile,
     FetchManifest,
-    SnapshotReplayAdapter,
     assert_bundle_consumable,
     assert_bundle_preview_mirror,
+    assert_bundle_reviewable,
     confirm_bundle,
     finalize_bundle,
     materialize_bundle,
@@ -26,8 +29,9 @@ from app.fetched_bundle_service import (
     resolve_replay_bundle,
     stage_bundle_files,
     stage_bundle_preview_files,
+    suspend_bundle_for_retry,
 )
-from app.models import FetchedBundle, WorkflowSession
+from app.models import FetchedBundle, WorkflowAction, WorkflowSession
 
 DATASETS = ("payments", "orders", "writeoffs", "order_details", "summary")
 
@@ -71,6 +75,7 @@ class SyntheticFetchSource:
         files: list[FetchExportFile] = []
         for reconciliation_date in dates:
             tag = reconciliation_date.replace("-", "")
+            file_hashes: dict[str, str] = {}
             for dataset in DATASETS:
                 if dataset == self.omit_dataset:
                     continue
@@ -82,9 +87,20 @@ class SyntheticFetchSource:
                     else name
                 )
                 if dataset != self.declare_missing_dataset and not self.unsafe_relative_name:
-                    (target / name).write_bytes(
-                        f"{dataset}:{reconciliation_date}:{self.content_marker}".encode()
-                    )
+                    if dataset == "summary":
+                        content = json.dumps(
+                            {
+                                "day": reconciliation_date,
+                                "export_schema_version": "synthetic-v1",
+                                "read_only": True,
+                                "file_sha256": file_hashes,
+                            },
+                            ensure_ascii=False,
+                        ).encode()
+                    else:
+                        content = f"{dataset}:{reconciliation_date}:{self.content_marker}".encode()
+                        file_hashes[name] = hashlib.sha256(content).hexdigest()
+                    (target / name).write_bytes(content)
                 files.append(
                     FetchExportFile(
                         dataset=dataset,
@@ -140,6 +156,397 @@ def test_materialize_bundle_atomically_publishes_validated_members(
             *{item.relative_name for item in bundle.files},
         }
         assert not list(bundle_root.parent.glob(".*.tmp"))
+
+
+def test_materialized_bundle_survives_a_later_caller_rollback(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from app import fetched_bundle_service
+
+    monkeypatch.setattr(fetched_bundle_service, "settings", _settings(tmp_path))
+    init_db()
+    owner_id = f"bundle-durable-{uuid.uuid4().hex[:8]}"
+    with SessionLocal() as db:
+        workflow = _workflow(owner_id)
+        db.add(workflow)
+        db.flush()
+
+        result = materialize_bundle(
+            db,
+            workflow=workflow,
+            source=SyntheticFetchSource(),
+            dates=["2026-08-20"],
+        )
+        db.rollback()
+
+        bundle = db.get(FetchedBundle, result.bundle_id)
+        stored_workflow = db.get(WorkflowSession, workflow.id)
+        assert bundle is not None and bundle.state == "ready_for_review"
+        assert stored_workflow is not None
+        assert stored_workflow.fetched_bundle_id == bundle.id
+        assert (tmp_path / "fetched-bundles" / owner_id / bundle.id).is_dir()
+
+
+def test_publication_failure_leaves_a_recoverable_database_record(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from app import fetched_bundle_service
+
+    monkeypatch.setattr(fetched_bundle_service, "settings", _settings(tmp_path))
+    monkeypatch.setattr(
+        fetched_bundle_service.os,
+        "replace",
+        lambda *_args: (_ for _ in ()).throw(OSError("synthetic publish failure")),
+    )
+    init_db()
+    owner_id = f"bundle-publish-failure-{uuid.uuid4().hex[:8]}"
+    with SessionLocal() as db:
+        workflow = _workflow(owner_id)
+        db.add(workflow)
+        with pytest.raises(OSError, match="synthetic publish failure"):
+            materialize_bundle(
+                db,
+                workflow=workflow,
+                source=SyntheticFetchSource(),
+                dates=["2026-08-20"],
+            )
+
+        bundle = db.scalar(
+            select(FetchedBundle).where(FetchedBundle.source_workflow_id == workflow.id)
+        )
+        assert bundle is not None
+        assert bundle.state == "invalid"
+        assert bundle.raw_available is False
+        assert bundle.replayable is False
+        assert bundle.last_error == "取数包发布失败，原始文件不可用。"
+
+
+def test_failed_export_temp_cleanup_is_retried_by_bundle_purge(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from app import fetched_bundle_service
+
+    class InterruptedExportSource:
+        source_type = "live"
+
+        def export(self, _dates: list[str], target: Path) -> FetchManifest:
+            (target / "partial-sensitive.xlsx").write_bytes(b"synthetic-sensitive-data")
+            raise RuntimeError("synthetic interrupted export")
+
+    monkeypatch.setattr(fetched_bundle_service, "settings", _settings(tmp_path))
+    real_remove_tree = fetched_bundle_service._remove_tree
+
+    def fail_temporary_cleanup(target: Path) -> None:
+        if target.name.endswith(".tmp"):
+            raise OSError("synthetic locked temporary directory")
+        real_remove_tree(target)
+
+    monkeypatch.setattr(fetched_bundle_service, "_remove_tree", fail_temporary_cleanup)
+    init_db()
+    owner_id = f"bundle-temp-failure-{uuid.uuid4().hex[:8]}"
+    with SessionLocal() as db:
+        workflow = _workflow(owner_id)
+        db.add(workflow)
+        with pytest.raises(RuntimeError, match="synthetic interrupted export"):
+            materialize_bundle(
+                db,
+                workflow=workflow,
+                source=InterruptedExportSource(),
+                dates=["2026-08-20"],
+            )
+
+        bundle = db.scalar(
+            select(FetchedBundle).where(FetchedBundle.source_workflow_id == workflow.id)
+        )
+        assert bundle is not None
+        assert bundle.state == "invalid"
+        assert bundle.raw_available is True
+        temporary_root = tmp_path / "fetched-bundles" / owner_id / f".{bundle.id}.tmp"
+        assert temporary_root.is_dir()
+        workflow.state = "failed"
+        workflow.stage = "failed"
+        db.commit()
+
+        monkeypatch.setattr(fetched_bundle_service, "_remove_tree", real_remove_tree)
+        assert (
+            purge_expired_bundles(
+                db,
+                now=datetime.now(UTC) + timedelta(seconds=1),
+            )
+            == 1
+        )
+        db.refresh(bundle)
+        assert bundle.state == "raw_purged"
+        assert bundle.raw_available is False
+        assert not temporary_root.exists()
+
+
+def test_bundle_rejects_unknown_file_added_after_publication(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from app import fetched_bundle_service
+
+    monkeypatch.setattr(fetched_bundle_service, "settings", _settings(tmp_path))
+    init_db()
+    owner_id = f"bundle-injected-{uuid.uuid4().hex[:8]}"
+    with SessionLocal() as db:
+        workflow = _workflow(owner_id)
+        db.add(workflow)
+        result = materialize_bundle(
+            db,
+            workflow=workflow,
+            source=SyntheticFetchSource(),
+            dates=["2026-08-20"],
+        )
+        bundle_root = tmp_path / "fetched-bundles" / owner_id / result.bundle_id
+        bundle_root.chmod(0o700)
+        (bundle_root / "injected.txt").write_text("unexpected", encoding="utf-8")
+
+        with pytest.raises(FetchedBundleError, match="未知文件"):
+            assert_bundle_reviewable(
+                db,
+                bundle_id=result.bundle_id,
+                owner_id=owner_id,
+                dates=["2026-08-20"],
+            )
+
+
+def test_bundle_rejects_invalid_export_summary_before_publication(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from app import fetched_bundle_service
+
+    class InvalidSummarySource(SyntheticFetchSource):
+        def export(self, dates: list[str], target: Path) -> FetchManifest:
+            manifest = super().export(dates, target)
+            summary_path = target / "summary_20260820.json"
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+            summary["read_only"] = False
+            summary_path.write_text(json.dumps(summary), encoding="utf-8")
+            return manifest
+
+    monkeypatch.setattr(fetched_bundle_service, "settings", _settings(tmp_path))
+    init_db()
+    owner_id = f"bundle-summary-{uuid.uuid4().hex[:8]}"
+    with SessionLocal() as db:
+        workflow = _workflow(owner_id)
+        db.add(workflow)
+        with pytest.raises(FetchedBundleError, match="只读标记"):
+            materialize_bundle(
+                db,
+                workflow=workflow,
+                source=InvalidSummarySource(),
+                dates=["2026-08-20"],
+            )
+        assert not (tmp_path / "fetched-bundles" / owner_id).exists()
+
+
+def test_failed_workflow_invalidates_and_purges_its_bundle(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from app import fetched_bundle_service, workflow_service
+
+    monkeypatch.setattr(fetched_bundle_service, "settings", _settings(tmp_path))
+    init_db()
+    owner_id = f"bundle-failed-{uuid.uuid4().hex[:8]}"
+    with SessionLocal() as db:
+        workflow = _workflow(owner_id)
+        db.add(workflow)
+        result = materialize_bundle(
+            db,
+            workflow=workflow,
+            source=SyntheticFetchSource(),
+            dates=["2026-08-20"],
+        )
+        confirm_bundle(
+            db,
+            bundle_id=result.bundle_id,
+            actor=SimpleNamespace(user_id=owner_id),
+        )
+        workflow.state = "failed"
+        workflow.stage = "failed"
+        db.commit()
+        bundle_root = tmp_path / "fetched-bundles" / owner_id / result.bundle_id
+
+        workflow_service._cleanup_terminal_fetched_snapshot(db, workflow)
+        db.commit()
+
+        bundle = db.get(FetchedBundle, result.bundle_id)
+        assert bundle is not None
+        assert bundle.state == "raw_purged"
+        assert bundle.raw_available is False
+        assert bundle.replayable is False
+        assert not bundle_root.exists()
+
+
+def test_retryable_preview_failure_preserves_reviewable_bundle_for_retry(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from app import fetched_bundle_service, workflow_service
+
+    monkeypatch.setattr(fetched_bundle_service, "settings", _settings(tmp_path))
+    init_db()
+    owner_id = f"bundle-preview-retry-{uuid.uuid4().hex[:8]}"
+    with SessionLocal() as db:
+        workflow = _workflow(owner_id)
+        db.add(workflow)
+        result = materialize_bundle(
+            db,
+            workflow=workflow,
+            source=SyntheticFetchSource(),
+            dates=["2026-08-20"],
+        )
+        workflow.state = "failed"
+        workflow.stage = "failed"
+        db.add(
+            WorkflowAction(
+                id=str(uuid.uuid4()),
+                workflow_id=workflow.id,
+                name="build_fetch_preview",
+                state="failed",
+            )
+        )
+        db.commit()
+        bundle_root = tmp_path / "fetched-bundles" / owner_id / result.bundle_id
+
+        workflow_service._cleanup_terminal_fetched_snapshot(db, workflow)
+        db.commit()
+
+        bundle = db.get(FetchedBundle, result.bundle_id)
+        assert bundle is not None
+        assert bundle.state == "ready_for_review"
+        assert bundle.raw_available is True
+        assert bundle.replayable is False
+        assert bundle_root.is_dir()
+
+
+@pytest.mark.parametrize("confirmed", [False, True])
+def test_retryable_failure_keeps_raw_bundle_but_removes_replay_listing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    confirmed: bool,
+) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from app import fetched_bundle_service
+
+    retention_days = 7 if confirmed else 0
+    monkeypatch.setattr(
+        fetched_bundle_service,
+        "settings",
+        SimpleNamespace(
+            data_dir=tmp_path,
+            fetch_bundle_retention_days=retention_days,
+        ),
+    )
+    init_db()
+    owner_id = f"bundle-retry-only-{uuid.uuid4().hex[:8]}"
+    with SessionLocal() as db:
+        workflow = _workflow(owner_id)
+        db.add(workflow)
+        result = materialize_bundle(
+            db,
+            workflow=workflow,
+            source=SyntheticFetchSource(),
+            dates=["2026-08-20"],
+        )
+        if confirmed:
+            confirm_bundle(
+                db,
+                bundle_id=result.bundle_id,
+                actor=SimpleNamespace(user_id=owner_id),
+            )
+
+        suspend_bundle_for_retry(db, bundle_id=result.bundle_id)
+
+        assertion = assert_bundle_consumable if confirmed else assert_bundle_reviewable
+        bundle = assertion(
+            db,
+            bundle_id=result.bundle_id,
+            owner_id=owner_id,
+            dates=["2026-08-20"],
+        )
+        assert bundle.state == ("confirmed" if confirmed else "ready_for_review")
+        assert bundle.raw_available is True
+        assert bundle.replayable is False
+        assert bundle.retention_until is not None
+        assert bundle.retention_until.replace(tzinfo=UTC) > datetime.now(UTC) + timedelta(hours=23)
+        assert (tmp_path / "fetched-bundles" / owner_id / bundle.id).is_dir()
+
+
+def test_stale_creating_bundle_is_recovered_by_cleanup(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from app import fetched_bundle_service
+
+    monkeypatch.setattr(fetched_bundle_service, "settings", _settings(tmp_path))
+    init_db()
+    now = datetime(2026, 9, 1, 12, tzinfo=UTC)
+    owner_id = f"bundle-creating-{uuid.uuid4().hex[:8]}"
+    bundle_id = str(uuid.uuid4())
+    with SessionLocal() as db:
+        workflow = _workflow(owner_id)
+        workflow.state = "failed"
+        workflow.stage = "failed"
+        db.add(workflow)
+        db.flush()
+        db.add(
+            FetchedBundle(
+                id=bundle_id,
+                owner_id=owner_id,
+                department_id=workflow.department_id,
+                skill_id=workflow.skill_id,
+                source_workflow_id=workflow.id,
+                source_type="live",
+                manifest_version="synthetic-v1",
+                state="creating",
+                date_from="2026-08-20",
+                date_to="2026-08-20",
+                dates_json='["2026-08-20"]',
+                storage_key=f"{owner_id}/{bundle_id}",
+                raw_available=False,
+                replayable=False,
+                created_at=now - timedelta(minutes=16),
+                retention_until=now + timedelta(days=7),
+            )
+        )
+        db.commit()
+        bundle_root = tmp_path / "fetched-bundles" / owner_id / bundle_id
+        temporary_root = tmp_path / "fetched-bundles" / owner_id / f".{bundle_id}.tmp"
+        temporary_root.mkdir(parents=True)
+        (temporary_root / "partial.xlsx").write_bytes(b"partial")
+
+        real_remove_tree = fetched_bundle_service._remove_tree
+
+        def fail_temporary_once(target: Path) -> None:
+            if target == temporary_root:
+                raise OSError("synthetic temporary cleanup failure")
+            real_remove_tree(target)
+
+        monkeypatch.setattr(fetched_bundle_service, "_remove_tree", fail_temporary_once)
+        assert purge_expired_bundles(db, now=now) == 0
+        bundle = db.get(FetchedBundle, bundle_id)
+        assert bundle is not None and bundle.state == "purge_pending"
+        assert temporary_root.is_dir()
+
+        monkeypatch.setattr(fetched_bundle_service, "_remove_tree", real_remove_tree)
+        assert purge_expired_bundles(db, now=now + timedelta(hours=2)) == 1
+        bundle = db.get(FetchedBundle, bundle_id)
+        assert bundle is not None and bundle.state == "raw_purged"
+        assert not bundle_root.exists()
+        assert not temporary_root.exists()
 
 
 def test_materialize_bundle_persists_bundle_before_linking_workflow_with_foreign_keys(
@@ -207,7 +614,12 @@ def test_materialize_bundle_rejects_unknown_files_without_publishing(
             )
         db.rollback()
 
-        assert db.query(FetchedBundle).filter_by(source_workflow_id=workflow.id).count() == 0
+        failed = db.scalar(
+            select(FetchedBundle).where(FetchedBundle.source_workflow_id == workflow.id)
+        )
+        assert failed is not None
+        assert failed.state == "invalid"
+        assert failed.raw_available is False
         owner_root = tmp_path / "fetched-bundles" / owner_id
         assert not owner_root.exists() or not list(owner_root.iterdir())
 
@@ -246,7 +658,7 @@ def test_snapshot_replay_revalidates_hashes_and_stays_with_original_owner(
         replay = materialize_bundle(
             db,
             workflow=replay_workflow,
-            source=SnapshotReplayAdapter(
+            source=FetchedBundleReplayAdapter(
                 db=db,
                 bundle_id=source.bundle_id,
                 owner_id=owner_id,
@@ -261,7 +673,7 @@ def test_snapshot_replay_revalidates_hashes_and_stays_with_original_owner(
         ]
 
         with pytest.raises(FetchedBundleError, match="不存在"):
-            SnapshotReplayAdapter(
+            FetchedBundleReplayAdapter(
                 db=db,
                 bundle_id=source.bundle_id,
                 owner_id="another-owner",
@@ -281,7 +693,7 @@ def test_snapshot_replay_revalidates_hashes_and_stays_with_original_owner(
             materialize_bundle(
                 db,
                 workflow=tampered_workflow,
-                source=SnapshotReplayAdapter(
+                source=FetchedBundleReplayAdapter(
                     db=db,
                     bundle_id=source.bundle_id,
                     owner_id=owner_id,
@@ -492,8 +904,12 @@ def test_confirm_and_finalize_are_owner_scoped_and_idempotent(
         bundle = db.get(FetchedBundle, result.bundle_id)
         assert bundle.state == "consumed"
         assert bundle.consumed_at == consumed_at
-        with pytest.raises(FetchedBundleError, match="已消费"):
-            finalize_bundle(db, bundle_id=result.bundle_id, outcome="failed")
+        finalize_bundle(db, bundle_id=result.bundle_id, outcome="failed")
+        bundle = db.get(FetchedBundle, result.bundle_id)
+        assert bundle.state == "invalid"
+        assert bundle.replayable is False
+        assert bundle.retention_until is not None
+        assert bundle.consumed_at == consumed_at
 
 
 def test_preview_mirror_must_match_the_published_bundle(
@@ -934,7 +1350,7 @@ def test_replay_adapter_rechecks_retention_at_export(
         )
         confirm_bundle(db, bundle_id=result.bundle_id, actor=SimpleNamespace(user_id=owner_id))
         finalize_bundle(db, bundle_id=result.bundle_id, outcome="succeeded")
-        adapter = SnapshotReplayAdapter(
+        adapter = FetchedBundleReplayAdapter(
             db=db,
             bundle_id=result.bundle_id,
             owner_id=owner_id,

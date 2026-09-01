@@ -182,7 +182,7 @@ export function WorkflowFetchedDataDialog({
   const resourceId = batch?.id ?? workflow?.id ?? '';
   const stage = batch ? (batchReviewWorkflow?.stage ?? '') : (workflow?.stage ?? '');
   const fetchedDataSource = batch ? batch.fetched_data_source : workflow?.fetched_data_source;
-  const isSnapshotReplay = fetchedDataSource === 'snapshot';
+  const isBundleReplay = fetchedDataSource === 'replay';
   const supplementHistory = batch
     ? batch.fetched_data_supplement_history
     : workflow?.fetched_data_supplement_history;
@@ -256,7 +256,7 @@ export function WorkflowFetchedDataDialog({
 
   async function submitReview(action: 'confirm' | 'supplement') {
     if (submitting) return;
-    if (action === 'supplement' && isSnapshotReplay) {
+    if (action === 'supplement' && isBundleReplay) {
       setActionError('回放取数包不能补取智云数据，请检查现有内容后继续。');
       return;
     }
@@ -956,13 +956,13 @@ export function WorkflowFetchedDataDialog({
               <div className='min-w-0'>
                 <h3 className='font-medium'>工作人员检查</h3>
                 <p className='text-sm text-muted-foreground'>
-                  {isSnapshotReplay
+                  {isBundleReplay
                     ? '当前使用回放取数包，确认数据完整后继续。回放模式不能连接智云补取。'
                     : '确认数据完整后继续；发现缺失数据时可按 AR/SO 编号补取。'}
                 </p>
               </div>
               <div className='flex flex-wrap gap-2'>
-                {!isSnapshotReplay && (
+                {!isBundleReplay && (
                   <Button
                     type='button'
                     variant='outline'
@@ -983,7 +983,7 @@ export function WorkflowFetchedDataDialog({
               </div>
             </div>
 
-            {!isSnapshotReplay && showSupplementForm && (
+            {!isBundleReplay && showSupplementForm && (
               <div className='mt-3 space-y-3 rounded-lg border bg-muted/20 p-3'>
                 <p className='text-sm text-muted-foreground'>
                   可填写多个完整编号，用空格、换行、逗号或分号分隔。补取完成后任务会再次暂停供你确认。

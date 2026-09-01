@@ -235,7 +235,7 @@ class WorkflowRead(BaseModel):
     step_error_detail: dict[str, str] = Field(default_factory=dict)
     fetched_data_available: bool = False
     # Optional for compatibility with task rows created before source tracking.
-    fetched_data_source: Literal["live", "snapshot"] | None = None
+    fetched_data_source: Literal["live", "replay"] | None = None
     fetched_data_summary: dict[str, Any] = Field(default_factory=dict)
     fetched_data_review_status: str = ""
     fetched_data_supplement_history: list[dict[str, Any]] = Field(default_factory=list)
@@ -450,7 +450,7 @@ class WorkflowBatchRead(BaseModel):
     retry_block_reason: str = ""
     fetched_data_available: bool = False
     # Optional for compatibility with batch rows created before source tracking.
-    fetched_data_source: Literal["live", "snapshot"] | None = None
+    fetched_data_source: Literal["live", "replay"] | None = None
     fetched_data_review_status: str = ""
     fetched_data_summary_by_date: dict[str, dict[str, Any]] = Field(default_factory=dict)
     fetched_data_supplement_history: list[dict[str, Any]] = Field(default_factory=list)
