@@ -4044,6 +4044,16 @@ def _run_script(
     return completed.stdout
 
 
+def _script_declares_argument(script_path: Path, argument: str) -> bool:
+    source = script_path.read_text(encoding="utf-8")
+    return bool(
+        re.search(
+            rf"add_argument\(\s*['\"]{re.escape(argument)}['\"]",
+            source,
+        )
+    )
+
+
 def _run_shifted_details_audit(
     script_dir: Path,
     workspace: str,
@@ -4051,10 +4061,7 @@ def _run_shifted_details_audit(
 ) -> None:
     """Run the pinned audit through its current or legacy date-selection interface."""
     script_path = script_dir / "audit_shifted_details.py"
-    source = script_path.read_text(encoding="utf-8")
-    supports_selected_dates = bool(
-        re.search(r"add_argument\(\s*['\"]--date['\"]", source)
-    )
+    supports_selected_dates = _script_declares_argument(script_path, "--date")
     if supports_selected_dates:
         _run_script(
             script_dir,
@@ -4081,6 +4088,50 @@ def _run_shifted_details_audit(
             ["--workspace", workspace, "--date-from", item, "--date-to", item],
             accepted_returncodes=(0, 1),
         )
+
+
+def _batch_report_arguments(
+    workspace: Path,
+    batch_dates: list[str],
+) -> list[str]:
+    return [
+        "--workspace",
+        str(workspace),
+        "--date-from",
+        batch_dates[0],
+        "--date-to",
+        batch_dates[-1],
+        *[part for item in batch_dates for part in ("--date", item)],
+    ]
+
+
+def _run_batch_report_builder(
+    script_dir: Path,
+    workspace: Path,
+    batch_dates: list[str],
+) -> None:
+    script_path = script_dir / "build_task_reports.py"
+    if _script_declares_argument(script_path, "--date"):
+        _run_script(
+            script_dir,
+            script_path.name,
+            _batch_report_arguments(workspace, batch_dates),
+        )
+        return
+
+    adapter_path = Path(__file__).resolve().with_name("legacy_range_report_adapter.py")
+    _run_script(
+        adapter_path.parent,
+        adapter_path.name,
+        [
+            "--script",
+            str(script_path),
+            "--workspace",
+            str(workspace),
+            *[part for item in batch_dates for part in ("--date", item)],
+        ],
+        sensitive_values=(str(script_path), str(workspace)),
+    )
 
 
 TRANSIENT_FETCH_FAILURE = re.compile(
@@ -5559,19 +5610,7 @@ def _finalize_batch_reports(
     batch.state = "finalizing"
     batch.progress = 99
     batch.progress_message = "每日核销已完成，正在生成范围报告"
-    _run_script(
-        script_dir,
-        "build_task_reports.py",
-        [
-            "--workspace",
-            str(workspace),
-            "--date-from",
-            dates[0],
-            "--date-to",
-            dates[-1],
-            *[part for item in dates for part in ("--date", item)],
-        ],
-    )
+    _run_batch_report_builder(script_dir, workspace, dates)
     report_name = _batch_integrated_report_name(dates)
     reports = (
         [workspace / "04_产出" / report_name]

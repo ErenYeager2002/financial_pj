@@ -4058,6 +4058,12 @@ def test_batch_range_report_uses_an_independent_workspace(
 ) -> None:
     storage_root = tmp_path / "primary-workflow"
     dates = ["2026-08-17", "2026-08-19"]
+    script_dir = storage_root / "skill" / "vendor" / "scripts"
+    script_dir.mkdir(parents=True)
+    (script_dir / "build_task_reports.py").write_text(
+        "parser.add_argument('--date', action='append')\n",
+        encoding="utf-8",
+    )
     children = []
     original_files: list[Path] = []
     for sequence, reconciliation_date in enumerate(dates, start=1):
@@ -4117,6 +4123,11 @@ def test_batch_range_report_uses_an_independent_workspace(
         nonlocal attempts
         attempts += 1
         assert script_name == "build_task_reports.py"
+        assert [
+            arguments[index + 1]
+            for index, value in enumerate(arguments)
+            if value == "--date"
+        ] == dates
         report_workspace = Path(arguments[arguments.index("--workspace") + 1])
         assert all(report_workspace != path.parents[1] for path in original_files)
         if attempts == 1:
@@ -4150,6 +4161,79 @@ def test_batch_range_report_uses_an_independent_workspace(
     assert "/reports/actions/finalize-action/" in report_workspace.as_posix()
     assert all(path.is_file() for path in original_files)
     assert result["artifacts"] == [{"name": workflow_service._batch_integrated_report_name(dates)}]
+
+
+def test_legacy_range_report_snapshot_uses_selected_date_adapter(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    script_dir = tmp_path / "scripts"
+    script_dir.mkdir()
+    (script_dir / "build_task_reports.py").write_text(
+        "parser.add_argument('--date-from')\nparser.add_argument('--date-to')\n",
+        encoding="utf-8",
+    )
+    calls: list[tuple[Path, str, list[str], tuple[str, ...]]] = []
+
+    def fake_run_script(
+        called_dir: Path,
+        name: str,
+        arguments: list[str],
+        *,
+        sensitive_values: tuple[str, ...] = (),
+    ) -> None:
+        calls.append((called_dir, name, arguments, sensitive_values))
+
+    monkeypatch.setattr(
+        workflow_service,
+        "_run_script",
+        fake_run_script,
+    )
+
+    workflow_service._run_batch_report_builder(
+        script_dir,
+        tmp_path / "report-workspace",
+        ["2026-08-04"],
+    )
+
+    called_dir, script_name, arguments, sensitive_values = calls[0]
+    assert called_dir == Path(workflow_service.__file__).resolve().parent
+    assert script_name == "legacy_range_report_adapter.py"
+    assert arguments == [
+        "--script",
+        str(script_dir / "build_task_reports.py"),
+        "--workspace",
+        str(tmp_path / "report-workspace"),
+        "--date",
+        "2026-08-04",
+    ]
+    assert sensitive_values == (
+        str(script_dir / "build_task_reports.py"),
+        str(tmp_path / "report-workspace"),
+    )
+
+
+def test_current_range_report_snapshot_keeps_explicit_selected_dates(
+    tmp_path: Path,
+) -> None:
+    script_dir = tmp_path / "scripts"
+    script_dir.mkdir()
+    (script_dir / "build_task_reports.py").write_text(
+        "parser.add_argument('--date', action='append')\n",
+        encoding="utf-8",
+    )
+
+    arguments = workflow_service._batch_report_arguments(
+        tmp_path / "report-workspace",
+        ["2026-08-17", "2026-08-19"],
+    )
+
+    assert arguments[-4:] == [
+        "--date",
+        "2026-08-17",
+        "--date",
+        "2026-08-19",
+    ]
 
 
 def test_batch_prepare_accepts_declared_business_result_return_codes(
