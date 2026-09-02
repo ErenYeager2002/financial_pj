@@ -18,6 +18,8 @@ def list_audit_events(
     action: str = Query(default="", max_length=128),
     actor_id: str = Query(default="", max_length=128),
     limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    before_id: int | None = Query(default=None, ge=1),
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ) -> list[AuditEventRead]:
@@ -35,7 +37,13 @@ def list_audit_events(
             created_at=item.created_at,
         )
         for item in query_audit_events(
-            db, user, action=action, actor_id=actor_id, limit=limit
+            db,
+            user,
+            action=action,
+            actor_id=actor_id,
+            limit=limit,
+            offset=offset,
+            before_id=before_id,
         )
     ]
     record_audit(
@@ -43,7 +51,13 @@ def list_audit_events(
         actor=user,
         action="admin.audit.read",
         resource_type="audit_event",
-        details={"action_filter": action, "actor_filter_used": bool(actor_id), "limit": limit},
+        details={
+            "action_filter": action,
+            "actor_filter_used": bool(actor_id),
+            "limit": limit,
+            "offset": offset,
+            "cursor_used": before_id is not None,
+        },
     )
     db.commit()
     return rows

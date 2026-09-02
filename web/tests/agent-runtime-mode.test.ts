@@ -79,15 +79,33 @@ test('unknown configuration remains on the legacy runtime while empty uses Pi', 
   assert.equal(resolveAgentRuntime('ordinary-user', {}), 'pi');
 });
 
-test('legacy fallback is enabled by default and can be explicitly disabled', () => {
-  assert.equal(legacyFallbackEnabled({}), true);
+test('legacy fallback is opt-in so ordinary chat failures do not become task drafts', () => {
+  assert.equal(legacyFallbackEnabled({}), false);
   assert.equal(legacyFallbackEnabled({ AGENT_RUNTIME_FALLBACK: 'legacy' }), true);
   assert.equal(legacyFallbackEnabled({ AGENT_RUNTIME_FALLBACK: 'off' }), false);
 });
 
-test('Pi errors before any work can fall back to legacy events', async () => {
+test('Pi errors remain visible by default instead of replaying the task-only legacy flow', async () => {
+  let fallbackCalled = false;
+  async function* legacyEvents() {
+    fallbackCalled = true;
+    yield { type: 'done' as const, messageCount: 0 };
+  }
+
   const events = [];
-  for await (const event of withLegacyFallback(errorPiEvents(), legacyDoneEvents, {})) {
+  for await (const event of withLegacyFallback(errorPiEvents(), legacyEvents, {})) {
+    events.push(event);
+  }
+
+  assert.equal(fallbackCalled, false);
+  assert.deepEqual(events, [{ type: 'error', code: 'agent_runtime_error', message: 'upstream' }]);
+});
+
+test('Pi errors before any work can use an explicitly enabled legacy fallback', async () => {
+  const events = [];
+  for await (const event of withLegacyFallback(errorPiEvents(), legacyDoneEvents, {
+    AGENT_RUNTIME_FALLBACK: 'legacy'
+  })) {
     events.push(event);
   }
   assert.deepEqual(events, [{ type: 'done', messageCount: 0 }]);
@@ -102,13 +120,30 @@ test('Pi completes without text or tools by falling back to the legacy draft flo
   }
 
   const events = [];
-  for await (const event of withLegacyFallback(emptyPiEvents(), legacyEvents, {})) {
+  for await (const event of withLegacyFallback(emptyPiEvents(), legacyEvents, {
+    AGENT_RUNTIME_FALLBACK: 'legacy'
+  })) {
     events.push(event);
   }
 
   assert.equal(fallbackCalled, true);
   assert.equal(events[0]?.type, 'tool_start');
   assert.equal(events.at(-1)?.type, 'done');
+});
+
+test('Pi empty responses surface a chat error when legacy fallback is disabled', async () => {
+  const events = [];
+  for await (const event of withLegacyFallback(emptyPiEvents(), legacyDoneEvents, {})) {
+    events.push(event);
+  }
+
+  assert.deepEqual(events, [
+    {
+      type: 'error',
+      code: 'assistant_no_response',
+      message: 'AI 助手没有返回内容，请重试。'
+    }
+  ]);
 });
 
 test('Pi errors after a tool starts never replay the legacy flow', async () => {

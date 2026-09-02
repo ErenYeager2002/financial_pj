@@ -266,7 +266,13 @@ export function AssistantWorkspace({
               )
             );
           }
-          setToolMessage(event.isError ? '查询未完成。' : '平台数据已返回给 AI。');
+          setToolMessage(
+            event.isError
+              ? '查询未完成。'
+              : event.toolName === 'prepare_context'
+                ? '正在生成回答…'
+                : '平台数据已返回给 AI。'
+          );
         }
         if (event.type === 'await_confirmation') setToolMessage(event.message);
         if (event.type === 'error') {

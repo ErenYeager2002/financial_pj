@@ -28,6 +28,17 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Agent 运行失败。';
 }
 
+function modelErrorMessage(error: unknown): string {
+  const normalized = typeof error === 'string' ? error.toLowerCase() : '';
+  if (normalized.includes('404')) return 'AI 助手模型网关地址不正确。';
+  if (normalized.includes('401') || normalized.includes('403')) {
+    return 'AI 助手模型认证失败。';
+  }
+  if (normalized.includes('422')) return 'AI 助手模型请求格式不兼容。';
+  if (normalized.includes('429')) return 'AI 助手模型当前繁忙，请稍后重试。';
+  return 'AI 助手模型请求失败。';
+}
+
 function confirmationDetails(value: unknown): ConfirmationDetails {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
   const details = value as Record<string, unknown>;
@@ -51,7 +62,11 @@ function mapEvent(event: unknown): AgentEvent[] {
     const assistant = value.assistantMessageEvent;
     if (!assistant || typeof assistant !== 'object') return [];
     const update = assistant as Record<string, unknown>;
-    if (update.type === 'text_delta' && typeof update.delta === 'string') {
+    if (
+      update.type === 'text_delta' &&
+      typeof update.delta === 'string' &&
+      update.delta.length > 0
+    ) {
       return [{ type: 'text_delta', delta: update.delta }];
     }
     return [];
@@ -135,7 +150,16 @@ export class PiAgentRuntime implements AgentRuntime {
       });
       try {
         await session.agent.prompt(request.message);
-        queue.push({ type: 'done', messageCount: session.agent.state.messages.length });
+        const lastMessage = session.agent.state.messages.at(-1);
+        if (lastMessage?.role === 'assistant' && lastMessage.stopReason === 'error') {
+          queue.push({
+            type: 'error',
+            code: 'agent_model_error',
+            message: modelErrorMessage(lastMessage.errorMessage)
+          });
+        } else {
+          queue.push({ type: 'done', messageCount: session.agent.state.messages.length });
+        }
       } finally {
         unsubscribe();
       }

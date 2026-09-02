@@ -10,6 +10,7 @@ import {
 import { Type } from 'typebox';
 import { PlatformApiError } from '@/features/platform-api/errors';
 import { safeCatalog, type SafeSkill } from '@/features/ai-chat/safe-catalog';
+import { createPlatformInformationTool } from '@/features/ai-chat/platform-information-tool';
 import {
   resolveAgentRuntime,
   runtimeSelectorId,
@@ -261,8 +262,12 @@ function textResult(text: string, details: Record<string, unknown> = {}) {
 function createTools(
   skills: SafeSkill[],
   files: PlatformFile[],
-  input: AssistantTurnInput
+  input: AssistantTurnInput,
+  role: PlatformSession['role']
 ): AgentTool[] {
+  const platformInformationTool = createPlatformInformationTool(role, (path) =>
+    platformServerRequest<unknown>(path)
+  );
   const listTool: AgentTool = {
     name: 'list_authorized_skills',
     label: '查询可用 Skill',
@@ -384,7 +389,15 @@ function createTools(
     }
   };
 
-  return [listTool, recommendTool, prepareTool, statusTool, runningTasksTool, clarificationTool];
+  return [
+    platformInformationTool,
+    listTool,
+    recommendTool,
+    prepareTool,
+    statusTool,
+    runningTasksTool,
+    clarificationTool
+  ];
 }
 
 function systemPrompt(
@@ -400,6 +413,8 @@ function systemPrompt(
   return [
     '你是财务平台的 AI 助手，可以像正常大模型一样回答问题、解释业务、总结任务状态并协助用户规划财务工作。',
     '你不能访问本地路径、运行命令、读取凭据或直接写入文件。真实 Skill 任务只能由平台任务执行器运行。',
+    '用户询问平台中的业务信息时，调用 query_platform_information。它可以按需读取当前登录账号有权查看的工作台、Skill、任务、文件元数据、工作流、提醒和个人资料；管理员还可以读取管理页面信息。不能声称能看到账号权限以外的数据。',
+    'query_platform_information 不提供密码、API Key、会话令牌、服务凭据、文件正文或本地路径；不要向用户索要这些内容。列表较长时按页查询并说明当前页范围。',
     '用户询问正在运行、排队、失败或完成的任务时，优先调用 list_running_tasks 或 get_task_status，不要猜测状态。',
     '需要创建标准只读任务时，才能从授权目录中选择 Skill，并通过 prepare_task_draft 生成草稿；不能绕过平台校验直接执行。',
     '文件只能使用下方 file_catalog 中的 alias，不能猜测文件 ID 或路径。',
@@ -514,7 +529,7 @@ export async function createAssistantTurn(input: AssistantTurnInput): Promise<As
         runningTasks,
         history
       ),
-      tools: createTools(safeSkills, availableFiles, checked)
+      tools: createTools(safeSkills, availableFiles, checked, session.role)
     });
     yield* withLegacyFallback(turn, () => legacyTurn(checked));
   }

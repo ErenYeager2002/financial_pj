@@ -69,6 +69,36 @@ test('Pi runtime streams text and executes only the supplied business tool', asy
   assert.equal(runtime.getSessionState('session-1', 'other-user'), null);
 });
 
+test('Pi runtime surfaces model failures instead of reporting an empty successful turn', async () => {
+  const faux = fauxProvider({ provider: `test-model-error-${Date.now()}`, tokensPerSecond: 0 });
+  const models = createModels();
+  models.setProvider(faux.provider);
+  faux.setResponses([
+    fauxAssistantMessage('', {
+      stopReason: 'error',
+      errorMessage: '404 Not Found: synthetic upstream detail'
+    })
+  ]);
+
+  const runtime = new PiAgentRuntime({ streamFn: models.streamSimple.bind(models) });
+  const events = await collect(runtime.startTurn({
+    sessionId: 'session-model-error',
+    ownerId: 'user-1',
+    model: faux.getModel() as never,
+    message: '你好',
+    systemPrompt: '测试模型错误。',
+    tools: []
+  }));
+
+  assert.deepEqual(events, [
+    {
+      type: 'error',
+      code: 'agent_model_error',
+      message: 'AI 助手模型网关地址不正确。'
+    }
+  ]);
+});
+
 test('Pi runtime blocks a tool that was not supplied by the platform', async () => {
   const faux = fauxProvider({ provider: `test-block-${Date.now()}`, tokensPerSecond: 0 });
   const models = createModels();

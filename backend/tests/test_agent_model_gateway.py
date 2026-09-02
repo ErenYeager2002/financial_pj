@@ -208,7 +208,7 @@ def test_agent_model_endpoint_streams_and_records_only_safe_metrics(monkeypatch)
 
         monkeypatch.setattr(assistant_router, "open_agent_model_stream", fake_stream)
         response = client.post(
-            "/api/assistant/model",
+            "/api/assistant/model/chat/completions",
             json={
                 "model": "synthetic-model",
                 "connection_id": connection_id,

@@ -30,6 +30,7 @@ from .contracts import (
     RegistryReloadResponse,
     RunApprovalRead,
     RunDetail,
+    RunEventRead,
     RunPage,
     SkillDetail,
     StepRunRead,
@@ -342,11 +343,7 @@ def get_catalog_skill(
         raise HTTPException(status_code=404, detail="Skill 不存在。")
     if skill.manifest.ui is None:
         raise HTTPException(status_code=404, detail="Skill 不存在。")
-    if (
-        not supporting_entry
-        and not user.is_admin
-        and skill_id not in allowed_skill_ids(db, user)
-    ):
+    if not supporting_entry and not user.is_admin and skill_id not in allowed_skill_ids(db, user):
         raise HTTPException(status_code=404, detail="Skill 不存在。")
     return SkillDetail.model_validate(skill.employee_dict(include_schema=True))
 
@@ -621,10 +618,11 @@ def new_run(
 @app.get("/api/workflows", response_model=list[WorkflowRead])
 def workflows(
     limit: int = 50,
+    offset: int = 0,
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ) -> list[WorkflowRead]:
-    return [serialize_workflow(item) for item in list_workflows(db, user, limit)]
+    return [serialize_workflow(item) for item in list_workflows(db, user, limit, offset)]
 
 
 @app.post("/api/workflows", response_model=WorkflowRead)
@@ -654,10 +652,11 @@ def start_workflow_session(
 @app.get("/api/workflow-batches", response_model=list[WorkflowBatchRead])
 def workflow_batches(
     limit: int = 50,
+    offset: int = 0,
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ) -> list[WorkflowBatchRead]:
-    batches = list_workflow_batches(db, user, limit)
+    batches = list_workflow_batches(db, user, limit, offset)
     runnable_skill_ids = set() if user.is_admin else allowed_skill_ids(db, user)
     return [
         serialize_workflow_batch(
@@ -717,9 +716,7 @@ def cancel_workflow_batch_session(
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ) -> WorkflowBatchRead:
-    return _serialize_workflow_batch_for_user(
-        db, user, cancel_workflow_batch(db, batch_id, user)
-    )
+    return _serialize_workflow_batch_for_user(db, user, cancel_workflow_batch(db, batch_id, user))
 
 
 @app.get(
@@ -1186,6 +1183,36 @@ def get_run_approvals(
     user: UserContext = Depends(get_current_user),
 ) -> list[RunApprovalRead]:
     return list_run_approvals(db, run_id, user)
+
+
+@app.get("/api/runs/{run_id}/event-history", response_model=list[RunEventRead])
+def get_run_event_history(
+    run_id: str,
+    offset: int = 0,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> list[RunEventRead]:
+    get_run_or_404(db, run_id, user)
+    rows = db.scalars(
+        select(RunEvent)
+        .where(RunEvent.run_id == run_id)
+        .order_by(RunEvent.id.desc())
+        .offset(max(offset, 0))
+        .limit(min(max(limit, 1), 200))
+    ).all()
+    return [
+        RunEventRead(
+            id=item.id,
+            type=item.event_type,
+            state=item.state,
+            progress=item.progress,
+            message=sanitize_text(item.message, error=item.state in {"failed", "timed_out"}),
+            data=sanitize_value(json.loads(item.data_json or "{}")),
+            created_at=item.created_at,
+        )
+        for item in rows
+    ]
 
 
 @app.post("/api/runs/{run_id}/retry", response_model=RunDetail)

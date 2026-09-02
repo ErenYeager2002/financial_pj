@@ -34,7 +34,7 @@ export function resolveAgentRuntime(
 
 export function legacyFallbackEnabled(environment: RuntimeEnvironment = process.env): boolean {
   const value = environment.AGENT_RUNTIME_FALLBACK?.trim().toLowerCase();
-  return value === undefined || value === '' || value === 'legacy' || value === 'true';
+  return value === 'legacy' || value === 'true';
 }
 
 function hasStartedWork(event: AgentEvent): boolean {
@@ -53,14 +53,22 @@ export async function* withLegacyFallback(
 ): AsyncIterable<AgentEvent> {
   let startedWork = false;
   for await (const event of piEvents) {
-    if (event.type === 'done' && !startedWork && legacyFallbackEnabled(environment)) {
-      try {
-        yield* legacyEvents();
-      } catch {
+    if (event.type === 'done' && !startedWork) {
+      if (legacyFallbackEnabled(environment)) {
+        try {
+          yield* legacyEvents();
+        } catch {
+          yield {
+            type: 'error',
+            code: 'legacy_fallback_failed',
+            message: 'AI 助手和旧实现当前都不可用。'
+          };
+        }
+      } else {
         yield {
           type: 'error',
-          code: 'legacy_fallback_failed',
-          message: 'AI 助手和旧实现当前都不可用。'
+          code: 'assistant_no_response',
+          message: 'AI 助手没有返回内容，请重试。'
         };
       }
       return;

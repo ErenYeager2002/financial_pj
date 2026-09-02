@@ -105,6 +105,7 @@ def append_assistant_conversation_message(
     return message
 
 
+@router.post("/api/assistant/model/chat/completions", include_in_schema=False)
 @router.post(
     "/api/assistant/model",
     responses={

@@ -10,6 +10,7 @@ from app.auth_service import get_user_by_username
 from app.database import SessionLocal
 from app.models import (
     FileRecord,
+    RunEvent,
     RunRecord,
     WorkflowMaterialSet,
     WorkflowMaterialSetFile,
@@ -77,6 +78,40 @@ def test_workbench_and_run_pagination_are_owner_scoped() -> None:
         assert page_body["total"] == 1
         assert page_body["pages"] == 1
         assert [item["id"] for item in page_body["items"]] == [run_id]
+
+
+def test_run_event_history_is_owner_scoped_and_pageable() -> None:
+    username = "event-history-owner"
+    with auth_client(username=username) as client:
+        run_id, _, _ = _create_failed_run(client, username)
+        with SessionLocal() as db:
+            db.add_all(
+                [
+                    RunEvent(
+                        run_id=run_id,
+                        event_type="progress",
+                        state="running",
+                        progress=10,
+                        message="第一条",
+                    ),
+                    RunEvent(
+                        run_id=run_id,
+                        event_type="progress",
+                        state="running",
+                        progress=20,
+                        message="第二条",
+                    ),
+                ]
+            )
+            db.commit()
+
+        first = client.get(f"/api/runs/{run_id}/event-history", params={"offset": 0, "limit": 1})
+        second = client.get(f"/api/runs/{run_id}/event-history", params={"offset": 1, "limit": 1})
+
+        assert first.status_code == 200, first.text
+        assert second.status_code == 200, second.text
+        assert first.json()[0]["message"] == "第二条"
+        assert second.json()[0]["message"] == "第一条"
 
 
 def test_file_detail_retention_and_reference_deletion_rule() -> None:

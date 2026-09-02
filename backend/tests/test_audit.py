@@ -82,6 +82,39 @@ def test_login_file_and_permission_events_are_admin_queryable() -> None:
         assert download_event["details"]["sha256"] == upload_event["details"]["sha256"]
 
 
+def test_audit_cursor_stays_stable_when_reads_create_new_audit_events() -> None:
+    username = "audit-cursor-admin"
+    with auth_client(role="skill_admin", username=username) as admin:
+        with SessionLocal() as db:
+            user = get_user_by_username(db, username)
+            assert user is not None
+            actor = UserContext(
+                user_id=user.id,
+                display_name=user.display_name,
+                role=user.role,
+                department_id=user.department_id,
+                username=user.username,
+            )
+            record_audit(db, actor=actor, action="cursor.first")
+            record_audit(db, actor=actor, action="cursor.second")
+            db.commit()
+
+        first = admin.get("/api/admin/audit-events", params={"limit": 2})
+        assert first.status_code == 200, first.text
+        first_rows = first.json()
+        assert len(first_rows) == 2
+
+        cursor = first_rows[-1]["id"]
+        second = admin.get(
+            "/api/admin/audit-events",
+            params={"limit": 2, "before_id": cursor},
+        )
+        assert second.status_code == 200, second.text
+        second_rows = second.json()
+        assert all(item["id"] < cursor for item in second_rows)
+        assert {item["id"] for item in first_rows}.isdisjoint(item["id"] for item in second_rows)
+
+
 def test_audit_details_redact_sensitive_keys() -> None:
     username = "audit-redaction-user"
     with auth_client(username=username):
@@ -123,8 +156,6 @@ def test_admin_user_and_audit_reads_are_audited() -> None:
         user = get_user_by_username(db, username)
         assert user is not None
         actions = set(
-            db.scalars(
-                select(AuditEvent.action).where(AuditEvent.actor_id == user.id)
-            ).all()
+            db.scalars(select(AuditEvent.action).where(AuditEvent.actor_id == user.id)).all()
         )
         assert {"admin.users.read", "admin.audit.read"} <= actions

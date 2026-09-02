@@ -3061,7 +3061,12 @@ def _store_workflow_error(workflow: WorkflowSession, detail: TaskErrorDetail) ->
     workflow.error_message = public_error["message"]
 
 
-def list_workflows(db: Session, user: UserContext, limit: int = 50) -> list[WorkflowSession]:
+def list_workflows(
+    db: Session,
+    user: UserContext,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[WorkflowSession]:
     query = (
         select(WorkflowSession)
         .where(
@@ -3074,6 +3079,7 @@ def list_workflows(db: Session, user: UserContext, limit: int = 50) -> list[Work
             WorkflowSession.batch_id.is_(None),
         )
         .order_by(WorkflowSession.updated_at.desc())
+        .offset(max(offset, 0))
         .limit(min(max(limit, 1), 200))
     )
     return list(db.scalars(query).all())
@@ -3083,11 +3089,13 @@ def list_workflow_batches(
     db: Session,
     user: UserContext,
     limit: int = 50,
+    offset: int = 0,
 ) -> list[WorkflowBatch]:
     query = (
         select(WorkflowBatch)
         .where(owner_list_filter(WorkflowBatch, user))
         .order_by(WorkflowBatch.updated_at.desc())
+        .offset(max(offset, 0))
         .limit(min(max(limit, 1), 200))
     )
     return list(db.scalars(query).all())

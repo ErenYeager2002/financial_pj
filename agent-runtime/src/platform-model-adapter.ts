@@ -92,14 +92,25 @@ export function createPlatformModel(options: PlatformModelOptions): PlatformMode
     currentModel,
     context,
     streamOptions
-  ) =>
-    models.streamSimple(currentModel, context, {
+  ) => {
+    const callerOnPayload = streamOptions?.onPayload;
+    return models.streamSimple(currentModel, context, {
       ...streamOptions,
+      onPayload: (payload, payloadModel) => {
+        const gatewayPayload = { ...(payload as Record<string, unknown>) };
+        delete gatewayPayload.store;
+        delete gatewayPayload.prompt_cache_key;
+        delete gatewayPayload.prompt_cache_retention;
+        return callerOnPayload
+          ? callerOnPayload(gatewayPayload as never, payloadModel)
+          : gatewayPayload;
+      },
       samplingParams: {
         ...(streamOptions?.samplingParams ?? {}),
         ...(options.gatewayFields ?? {})
       }
     });
+  };
   return {
     // The provider above is constructed with exactly one openai-completions
     // model. The registry widens its return type to Model<Api>, so narrow it

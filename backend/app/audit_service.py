@@ -64,6 +64,8 @@ def query_audit_events(
     action: str = "",
     actor_id: str = "",
     limit: int = 100,
+    offset: int = 0,
+    before_id: int | None = None,
 ) -> list[AuditEvent]:
     query = select(AuditEvent).where(
         or_(
@@ -75,10 +77,12 @@ def query_audit_events(
         query = query.where(AuditEvent.action == action)
     if actor_id:
         query = query.where(AuditEvent.actor_id == actor_id)
+    if before_id is not None:
+        query = query.where(AuditEvent.id < before_id)
     return list(
         db.scalars(
-            query.order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc()).limit(
-                min(max(limit, 1), 500)
-            )
+            query.order_by(AuditEvent.id.desc())
+            .offset(max(offset, 0))
+            .limit(min(max(limit, 1), 500))
         ).all()
     )

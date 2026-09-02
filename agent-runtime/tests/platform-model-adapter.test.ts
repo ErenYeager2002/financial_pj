@@ -10,6 +10,7 @@ test('platform model binds workflow connection fields into the gateway payload',
     gatewayFields: { connection_id: 'connection-1' }
   });
   let captured: Record<string, unknown> | undefined;
+  let requestedUrl = '';
 
   const stream = handle.streamSimple(
     handle.model,
@@ -19,11 +20,18 @@ test('platform model binds workflow connection fields into the gateway payload',
       tools: []
     } as never,
     {
-      fetch: async () =>
-        new Response('data: [DONE]\n\n', {
+      fetch: async (input) => {
+        requestedUrl =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url;
+        return new Response('data: [DONE]\n\n', {
           status: 200,
           headers: { 'content-type': 'text/event-stream' }
-        }),
+        });
+      },
       onPayload: (payload) => {
         captured = payload as Record<string, unknown>;
         return payload;
@@ -35,6 +43,13 @@ test('platform model binds workflow connection fields into the gateway payload',
   }
 
   assert.equal(captured?.model, 'synthetic-workflow-model');
+  assert.equal(
+    requestedUrl,
+    'https://platform.synthetic.example/api/assistant/model/chat/completions'
+  );
   assert.equal(captured?.connection_id, 'connection-1');
   assert.equal(captured?.stream, true);
+  assert.equal('store' in (captured ?? {}), false);
+  assert.equal('prompt_cache_key' in (captured ?? {}), false);
+  assert.equal('prompt_cache_retention' in (captured ?? {}), false);
 });
