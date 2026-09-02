@@ -140,6 +140,37 @@ function Ensure-Dependencies(
     Set-Content -LiteralPath $Stamp -Value $Fingerprint -Encoding ascii
 }
 
+function Ensure-AgentRuntimeModuleCopy {
+    $NodeModulesRoot = Join-Path $WebRoot "node_modules"
+    $ScopeRoot = Join-Path $NodeModulesRoot "@financial-platform"
+    $ModulePath = Join-Path $ScopeRoot "agent-runtime"
+    $RuntimePackage = Join-Path $AgentRuntimeRoot "package.json"
+    $RuntimeDist = Join-Path $AgentRuntimeRoot "dist"
+    $RuntimeEntry = Join-Path $RuntimeDist "index.js"
+    if (-not (Test-Path -LiteralPath $RuntimeEntry)) {
+        throw "Agent Runtime 构建产物不存在：$RuntimeEntry"
+    }
+
+    New-Item -ItemType Directory -Path $ScopeRoot -Force | Out-Null
+    if (Test-Path -LiteralPath $ModulePath) {
+        $Module = Get-Item -LiteralPath $ModulePath -Force
+        $ExpectedParent = [IO.Path]::GetFullPath($ScopeRoot).TrimEnd('\')
+        $ActualParent = [IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($ModulePath)).TrimEnd('\')
+        if ($ActualParent -ne $ExpectedParent) {
+            throw "Agent Runtime 模块路径不在前端依赖目录内，拒绝替换：$ModulePath"
+        }
+        if ($Module.LinkType -in @("Junction", "SymbolicLink")) {
+            [IO.Directory]::Delete($ModulePath, $false)
+        } else {
+            Remove-Item -LiteralPath $ModulePath -Recurse -Force
+        }
+    }
+
+    New-Item -ItemType Directory -Path $ModulePath -Force | Out-Null
+    Copy-Item -LiteralPath $RuntimePackage -Destination $ModulePath
+    Copy-Item -LiteralPath $RuntimeDist -Destination $ModulePath -Recurse
+}
+
 if ($Stop) {
     Stop-HostFrontend
     return
@@ -191,14 +222,16 @@ try {
         -Directory $AgentRuntimeRoot `
         -ExpectedBinary (Join-Path $AgentRuntimeRoot "node_modules\.bin\tsc.cmd") `
         -IgnoreScripts
-    Ensure-Dependencies `
-        -Directory $WebRoot `
-        -ExpectedBinary (Join-Path $WebRoot "node_modules\.bin\next.cmd")
 
     & corepack pnpm --dir $AgentRuntimeRoot run build
     if ($LASTEXITCODE -ne 0) {
         throw "Agent Runtime 构建失败。"
     }
+
+    Ensure-Dependencies `
+        -Directory $WebRoot `
+        -ExpectedBinary (Join-Path $WebRoot "node_modules\.bin\next.cmd")
+    Ensure-AgentRuntimeModuleCopy
 
     foreach ($Key in $ForwardedKeys) {
         if ($Values.ContainsKey($Key)) {

@@ -216,21 +216,45 @@ def validate() -> None:
         "process_start_time_utc_ticks",
         "--hostname",
         "Get-ProcessTree",
+        "[IO.Directory]::Delete($ModulePath, $false)",
+        "Copy-Item -LiteralPath $RuntimeDist -Destination $ModulePath -Recurse",
     ):
         if marker not in host_frontend_script:
             raise AssertionError(f"host frontend script is missing {marker}")
+    if "New-Item -ItemType Junction -Path $ModulePath" in host_frontend_script:
+        raise AssertionError(
+            "Agent Runtime must be copied because Turbopack cannot resolve the Junction"
+        )
     secret_clear_index = host_frontend_script.find('Remove-Item -LiteralPath "Env:$Key"')
     dependency_prepare_index = host_frontend_script.find("& corepack prepare")
     runtime_forward_index = host_frontend_script.rfind("foreach ($Key in $ForwardedKeys)")
     dependency_build_index = host_frontend_script.find(
         "& corepack pnpm --dir $AgentRuntimeRoot run build"
     )
+    runtime_dependency_index = host_frontend_script.find("-Directory $AgentRuntimeRoot")
+    web_dependency_index = host_frontend_script.find("-Directory $WebRoot")
+    runtime_copy_index = host_frontend_script.rfind("Ensure-AgentRuntimeModuleCopy")
     if min(secret_clear_index, dependency_prepare_index, runtime_forward_index) < 0:
         raise AssertionError("host frontend must isolate runtime credentials from dependency setup")
     if not secret_clear_index < dependency_prepare_index < runtime_forward_index:
         raise AssertionError("runtime credentials must be cleared until dependency setup finishes")
     if dependency_build_index < 0 or runtime_forward_index < dependency_build_index:
         raise AssertionError("runtime credentials must not be exposed to dependency build scripts")
+    if min(
+        runtime_dependency_index,
+        dependency_build_index,
+        web_dependency_index,
+        runtime_copy_index,
+    ) < 0 or not (
+        runtime_dependency_index
+        < dependency_build_index
+        < web_dependency_index
+        < runtime_copy_index
+        < runtime_forward_index
+    ):
+        raise AssertionError(
+            "Agent Runtime must build before web install and copy into the host frontend"
+        )
     for marker in ("Get-NetTCPConnection", "OwningProcess", "Stop-HostFrontend"):
         if marker not in dev_script:
             raise AssertionError(f"host frontend readiness handling is missing {marker}")
