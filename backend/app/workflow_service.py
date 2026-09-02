@@ -4044,6 +4044,45 @@ def _run_script(
     return completed.stdout
 
 
+def _run_shifted_details_audit(
+    script_dir: Path,
+    workspace: str,
+    batch_dates: list[str],
+) -> None:
+    """Run the pinned audit through its current or legacy date-selection interface."""
+    script_path = script_dir / "audit_shifted_details.py"
+    source = script_path.read_text(encoding="utf-8")
+    supports_selected_dates = bool(
+        re.search(r"add_argument\(\s*['\"]--date['\"]", source)
+    )
+    if supports_selected_dates:
+        _run_script(
+            script_dir,
+            script_path.name,
+            [
+                "--workspace",
+                workspace,
+                "--date-from",
+                batch_dates[0],
+                "--date-to",
+                batch_dates[-1],
+                *[part for item in batch_dates for part in ("--date", item)],
+            ],
+            accepted_returncodes=(0, 1),
+        )
+        return
+
+    # Legacy Skill snapshots do not declare --date. Run each selected date as
+    # an exact one-day range so gaps between selected dates are never audited.
+    for item in batch_dates:
+        _run_script(
+            script_dir,
+            script_path.name,
+            ["--workspace", workspace, "--date-from", item, "--date-to", item],
+            accepted_returncodes=(0, 1),
+        )
+
+
 TRANSIENT_FETCH_FAILURE = re.compile(
     r"(?:\b408\b|\b429\b|\b5\d\d\b|bad gateway|timeout|connectionerror|urlerror)",
     re.IGNORECASE,
@@ -4769,20 +4808,7 @@ def _execute_named_workflow_phase(
         _set_progress_step(db, workflow, "audit_shifted_details", "正在审计跨日迁移明细", 22)
         # The audit uses exit code 1 for a business finding: selected dates need
         # shifted details restored by the per-date classification steps below.
-        _run_script(
-            script_dir,
-            "audit_shifted_details.py",
-            [
-                "--workspace",
-                workspace,
-                "--date-from",
-                batch_dates[0],
-                "--date-to",
-                batch_dates[-1],
-                *[part for item in batch_dates for part in ("--date", item)],
-            ],
-            accepted_returncodes=(0, 1),
-        )
+        _run_shifted_details_audit(script_dir, workspace, batch_dates)
     steps = [
         (
             "inspect_inputs.py",
