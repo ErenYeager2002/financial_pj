@@ -52,7 +52,7 @@ DISPLAY_METADATA: dict[str, dict[str, Any]] = {
         "popular": True,
     },
     "ar-hexiao-daily": {
-        "output_summary": "写入后的到账流转表、年度盈亏核算表和整合核销日清",
+        "output_summary": "写入后的到账流转表、年度盈亏核算表和核销日清",
         "action_label": "开始核销",
         "estimated_minutes": 10,
         "popular": False,
@@ -649,7 +649,7 @@ CATALOG_ONLY: dict[str, dict[str, Any]] = {
         timeout=1800,
         network_access=True,
         network_targets=["http://192.168.10.167:18880"],
-        version="1.6.18",
+        version="1.5.1",
     ),
     "jdy-cashflow-export": manifest(
         "jdy-cashflow-export",

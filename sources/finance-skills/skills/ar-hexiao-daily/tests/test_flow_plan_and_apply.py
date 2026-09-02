@@ -12,9 +12,10 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
-import apply_all as AA  # noqa: E402
-import apply_flow as AF  # noqa: E402
 import build_flow_plan as BFP  # noqa: E402
+import apply_flow as AF  # noqa: E402
+import apply_all as AA  # noqa: E402
+import apply_to_copy as AC  # noqa: E402
 import build_worklist as BW  # noqa: E402
 import workbook_finalize as WF  # noqa: E402
 
@@ -377,47 +378,7 @@ def test_apply_all_resnapshots_after_all_writes_succeed(tmp_path, monkeypatch):
 
     assert rc == 0
     assert calls == [tmp_path]
-    assert events == ["ledger", "prefill", "status"]
-
-
-def test_apply_all_flow_prefill_failure_does_not_block_ledger(tmp_path, monkeypatch):
-    checked = tmp_path / "checked.json"
-    checked.write_text(
-        json.dumps({"hexiao_date": "2026-07-27", "write": [], "skip": [], "conflict": []}),
-        encoding="utf-8",
-    )
-    flow_plan = tmp_path / "flow.json"
-    flow_plan.write_text(json.dumps({"items": []}), encoding="utf-8")
-    ledger = tmp_path / "ledger.xlsx"
-    ledger.write_bytes(b"placeholder")
-    events = []
-    done = []
-    snapshots = []
-
-    monkeypatch.setattr(AA.apply_to_copy, "main", lambda _args: events.append("ledger") or 0)
-    monkeypatch.setattr(
-        AA.apply_flow, "main",
-        lambda _args: events.append("flow-prefill-failed") or 9,
-    )
-    monkeypatch.setattr(
-        AA, "_record_done",
-        lambda *args, **kwargs: done.append(kwargs),
-    )
-    monkeypatch.setattr(AA, "_resnapshot_sources", lambda workspace: snapshots.append(Path(workspace)))
-
-    rc = AA.main([
-        "--checked", str(checked),
-        "--flow-plan", str(flow_plan),
-        "--ledger", str(ledger),
-        "--workspace", str(tmp_path),
-        "--in-place",
-        "--flow-in-place",
-    ])
-
-    assert rc == 0
-    assert events == ["ledger", "flow-prefill-failed"]
-    assert done == [{"ledger_written": False, "flow_written": False}]
-    assert snapshots == [tmp_path]
+    assert events == ["prefill", "ledger", "status"]
 
 
 def test_plan_empty_so_preserves_existing_order_and_exact_strong():
@@ -553,93 +514,6 @@ def test_apply_all_skips_flow_when_ledger_fails(tmp_path):
     ])
     assert rc != 0
     assert _sha(flow_path) == before
-
-
-def _multi_year_apply_fixture(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
-    workspace = tmp_path / "multi-year"
-    workbook_dir = workspace / "02_我的表副本"
-    output_dir = workspace / "04_产出"
-    workbook_dir.mkdir(parents=True)
-    output_dir.mkdir(parents=True)
-    ledger_2025 = workbook_dir / "2025年盈亏.xlsx"
-    ledger_2026 = workbook_dir / "2026年盈亏.xlsx"
-    ledger_2025.write_bytes(b"old-2025")
-    ledger_2026.write_bytes(b"old-2026")
-    plan = {
-        "hexiao_date": "2026-08-17",
-        "write": [
-            {"ledger_year": 2025, "case_id": "AR1|SO1|SOD1"},
-            {"ledger_year": 2026, "case_id": "AR2|SO2|SOD2"},
-        ],
-        "skip": [],
-        "conflict": [],
-        "ledger_checks": {
-            "2025": {"path": str(ledger_2025), "sha256": _sha(ledger_2025)},
-            "2026": {"path": str(ledger_2026), "sha256": _sha(ledger_2026)},
-        },
-    }
-    checked = output_dir / "写入计划_校验后.json"
-    checked.write_text(json.dumps(plan, ensure_ascii=False), encoding="utf-8")
-    return workspace, checked, ledger_2025, ledger_2026
-
-
-def _patch_multi_year_apply_dependencies(monkeypatch) -> None:
-    monkeypatch.setattr(AA.apply_to_copy, "precheck_before_write", lambda *_: [])
-    monkeypatch.setattr(AA.apply_to_copy, "_mark_review_applied", lambda *_: None)
-    monkeypatch.setattr(AA.verify_sources, "register_mutable", lambda *_: None)
-    monkeypatch.setattr(AA, "_merge_annual_reports", lambda *_: None)
-    monkeypatch.setattr(AA, "_record_done", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(AA, "_resnapshot_sources", lambda *_: None)
-
-
-def test_apply_all_multi_year_failure_keeps_every_original(tmp_path, monkeypatch) -> None:
-    workspace, checked, ledger_2025, ledger_2026 = _multi_year_apply_fixture(tmp_path)
-    _patch_multi_year_apply_dependencies(monkeypatch)
-    calls: list[Path] = []
-
-    def fail_second(arguments) -> int:
-        target = Path(arguments[arguments.index("--ledger") + 1])
-        calls.append(target)
-        if len(calls) == 2:
-            return 2
-        target.write_bytes(b"new-2025")
-        return 0
-
-    monkeypatch.setattr(AA.apply_to_copy, "main", fail_second)
-    result = AA.main([
-        "--checked", str(checked),
-        "--workspace", str(workspace),
-        "--in-place",
-    ])
-
-    assert result == 2
-    assert ledger_2025.read_bytes() == b"old-2025"
-    assert ledger_2026.read_bytes() == b"old-2026"
-    assert all(path not in {ledger_2025, ledger_2026} for path in calls)
-
-
-def test_apply_all_multi_year_publishes_only_after_every_year_succeeds(
-    tmp_path, monkeypatch
-) -> None:
-    workspace, checked, ledger_2025, ledger_2026 = _multi_year_apply_fixture(tmp_path)
-    _patch_multi_year_apply_dependencies(monkeypatch)
-
-    def write_staged(arguments) -> int:
-        target = Path(arguments[arguments.index("--ledger") + 1])
-        target.write_bytes(b"new-2025" if "2025" in target.name else b"new-2026")
-        return 0
-
-    monkeypatch.setattr(AA.apply_to_copy, "main", write_staged)
-    result = AA.main([
-        "--checked", str(checked),
-        "--workspace", str(workspace),
-        "--in-place",
-    ])
-
-    assert result == 0
-    assert ledger_2025.read_bytes() == b"new-2025"
-    assert ledger_2026.read_bytes() == b"new-2026"
-    assert not (workspace / ".多年度写入发布事务").exists()
 
 
 def test_flow_plan_writes_so_and_delivery_amount_one_per_line():

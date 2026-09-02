@@ -7,7 +7,6 @@ import openpyxl
 import pytest
 
 import classify_hexiao as C
-import audit_shifted_details as A
 
 
 def _xlsx(path: Path, headers, rows):
@@ -136,32 +135,6 @@ def test_blank_order_delivery_is_recovered_from_complete_sod_sum(tmp_path):
     assert C.source_coverage(payments, records)["recovered_delivery_orders"] == 1
 
 
-def test_sod_duplicate_is_collapsed_after_loading_four_exports(tmp_path):
-    _bundle(
-        tmp_path, "20260727",
-        [["AR1", dt.date(2026, 7, 27), dt.date(2026, 7, 27), 200, 200, 0,
-          "人民币CNY", "", "", "甲"]],
-        [["AR1", "SO1", 100, 1, "人民币CNY", ""]],
-        [
-            ["AR1", dt.date(2026, 7, 27), 100, "SO1"],
-            ["AR1", dt.date(2026, 7, 27), 100, "SO1"],
-        ],
-        [["SO1", "SOD1", 100]],
-    )
-
-    payments = C.load_exports(tmp_path, dt.date(2026, 7, 27))
-    records = C.expand_payments(payments, {})
-
-    audit = payments[0]["duplicate_writeoff_audit"]
-    assert audit["status"] == "normal"
-    assert len(audit["sod_duplicate_groups"]) == 1
-    assert payments[0]["writeoffs"] == {"SO1": 100.0}
-    assert payments[0]["cumulative_writeoffs"] == {"SO1": 100.0}
-    assert len(records) == 1
-    assert records[0]["sod"] == "SOD1"
-    assert "W_SYSTEM_DUPLICATE_WRITEOFF_COLLAPSED" in records[0]["warning_codes"]
-
-
 def test_incomplete_sod_amount_does_not_guess_delivery(tmp_path):
     _bundle(
         tmp_path, "20260727",
@@ -229,31 +202,3 @@ def test_shifted_detail_assessment_only_flags_missing_keys(tmp_path):
     )
     assert done["2026-07-27"]["needs_rerun"] is False
     assert done["2026-07-27"]["missing_order_keys"] == []
-
-
-def test_shifted_detail_audit_filters_to_explicit_selected_dates(tmp_path):
-    _bundle(
-        tmp_path, "20260729",
-        [["ARL", dt.date(2026, 7, 29), dt.date(2026, 7, 24), 140, 140, 0,
-          "人民币CNY", "", "", "乙"]],
-        [["ARL", "SO27", 70, 1, "人民币CNY", ""], ["ARL", "SO28", 70, 1, "人民币CNY", ""]],
-        [
-            ["ARL", dt.date(2026, 7, 27), 70, "SO27"],
-            ["ARL", dt.date(2026, 7, 28), 70, "SO28"],
-        ],
-        [["SO27", "SOD27", 70], ["SO28", "SOD28", 70]],
-    )
-    report = tmp_path / "selected-shifted-details.json"
-
-    result = A.main(
-        [
-            "--workspace", str(tmp_path),
-            "--date-from", "2026-07-27",
-            "--date-to", "2026-07-28",
-            "--date", "2026-07-27",
-            "--out", str(report),
-        ]
-    )
-
-    assert result == 1
-    assert list(json.loads(report.read_text(encoding="utf-8"))) == ["2026-07-27"]

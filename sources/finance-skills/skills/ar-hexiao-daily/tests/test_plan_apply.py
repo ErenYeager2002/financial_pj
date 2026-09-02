@@ -87,32 +87,6 @@ def _split_item(row=2, so="SO26010001", sod="SOD26010001"):
     return item
 
 
-def _delivery_above_baseline_split_item(
-    row=2, so="SO26010001", sod="SOD26010001", *, current=120.0, cumulative=120.0
-):
-    item = _item(
-        row, so=so, sod=sod, 计提=None, 回款明细=current, 是否结账="是"
-    )
-    item["row_operation"] = {
-        "type": "split_below",
-        "receivable_mode": "preserve_baseline_blank_carry",
-        "source_receivable": 100.0,
-        "baseline_receivable": 100.0,
-        "source_row_receivable": 100.0 if row == 2 else None,
-        "remaining_unreceived": round(150.0 - cumulative, 2),
-        "existing_received": round(cumulative - current, 2),
-        "current_received": current,
-        "cumulative_received": cumulative,
-        "latest_delivery": 150.0,
-        "business_rows": [row],
-        "inserted_five_cols": {
-            "计提": None, "回款明细": None, "是否结账": "否",
-            "收款时间": None, "收款方式": None, "实收SOD": sod,
-        },
-    }
-    return item
-
-
 # ---------- 校验 ----------
 
 def test_empty_row_is_writable(tmp_path):
@@ -182,32 +156,6 @@ def test_apply_all_writes_two_annual_ledgers_and_builds_combined_reports(tmp_pat
     assert rows26[2]["回款明细"] == 100
     assert (out_dir / "变更清单_20260810.xlsx").is_file()
     assert (out_dir / "订单写入差异_20260810.xlsx").is_file()
-
-
-def test_apply_all_keeps_formula_text_static_in_combined_annual_change_report(tmp_path):
-    """年度报告中的公式说明是文本，合并后也不得变成 Excel 公式。"""
-    report = tmp_path / "年度变更清单.xlsx"
-    source = openpyxl.Workbook()
-    source.active.title = "变更清单"
-    source.active["A1"] = "公式原文"
-    source.active["A2"] = "=L4638-M4638"
-    source.active["A2"].data_type = "s"
-    source.save(str(report))
-    source.close()
-
-    target = tmp_path / "多年度变更清单.xlsx"
-    AA._merge_annual_reports(
-        [(2025, tmp_path / "2025年盈亏表.xlsx", report)],
-        target,
-        "变更清单",
-    )
-
-    merged = openpyxl.load_workbook(str(target), data_only=False)
-    change_sheet = merged["2025_1_变更清单"]
-    formula_text = change_sheet["A2"]
-    assert formula_text.value == "=L4638-M4638"
-    assert formula_text.data_type == "s"
-    merged.close()
 
 
 def test_default_jiezhang_no_is_still_writable(tmp_path):
@@ -333,76 +281,6 @@ def test_already_filled_different_is_conflict(tmp_path):
     rows = V.read_ledger_rows(led)
     res = V.check_one(_item(2), rows)
     assert res["verdict"] == "conflict" and "收款方式" in res["reason"]
-
-
-def test_classification_policy_overwrites_existing_receipt_fields(tmp_path):
-    old = {
-        "计提": 100.0,
-        "回款明细": 100.0,
-        "是否结账": "是",
-        "收款时间": dt.date(2026, 7, 13),
-        "收款方式": "汇",
-    }
-    led = _ledger(tmp_path, [
-        ("SO26010001", "SOD26010001", old),
-        ("SO26010001", "SOD26010001", None),
-    ])
-    item = _item(2, 收款时间="2026-08-02", 收款方式="冲预收")
-    item["existing_value_policy"] = "overwrite_with_classification"
-
-    checked = V.validate({"auto": [item]}, V.read_ledger_rows(led))
-
-    assert checked["counts"] == {"write": 1, "skip": 0, "conflict": 0}
-    assert "按应收核销判定覆盖" in checked["write"][0]["_check"]["reason"]
-    out = tmp_path / "按核销判定覆盖.xlsx"
-    A.write_plan(led, out, checked["write"])
-    assert A.verify_written(out, checked["write"]) == []
-    row = V.read_ledger_rows(out)[2]
-    assert row["收款时间"].date() == dt.date(2026, 8, 2)
-    assert row["收款方式"] == "冲预收"
-
-
-def test_classification_policy_does_not_clear_existing_nonempty_value(tmp_path):
-    old = {
-        "计提": 100.0,
-        "回款明细": 100.0,
-        "是否结账": "是",
-        "收款时间": dt.date(2026, 7, 13),
-        "收款方式": "汇",
-    }
-    led = _ledger(tmp_path, [
-        ("SO26010001", "SOD26010001", old),
-        ("SO26010001", "SOD26010001", None),
-    ])
-    item = _item(2, 计提=None, 收款时间="2026-08-02", 收款方式="冲预收")
-    item["existing_value_policy"] = "overwrite_with_classification"
-
-    checked = V.validate({"auto": [item]}, V.read_ledger_rows(led))
-
-    assert checked["counts"] == {"write": 1, "skip": 0, "conflict": 0}
-    out = tmp_path / "保留已有非空值.xlsx"
-    A.write_plan(led, out, checked["write"])
-    row = V.read_ledger_rows(out)[2]
-    assert row["计提"] == 100.0
-    assert row["收款时间"].date() == dt.date(2026, 8, 2)
-    assert row["收款方式"] == "冲预收"
-
-
-def test_classification_policy_requires_complete_so_sod_identity(tmp_path):
-    old = {
-        "计提": 100.0,
-        "回款明细": 100.0,
-        "是否结账": "是",
-        "收款时间": dt.date(2026, 7, 13),
-        "收款方式": "汇",
-    }
-    led = _ledger(tmp_path, [("SO26010001", "SOD26010001", old)])
-    item = _item(2, sod="", 收款时间="2026-08-02", 收款方式="冲预收")
-    item["existing_value_policy"] = "overwrite_with_classification"
-
-    result = V.check_one(item, V.read_ledger_rows(led))
-
-    assert result["verdict"] == "conflict"
 
 
 def test_reference_or_named_marker_cannot_bypass_existing_value_conflict(tmp_path):
@@ -722,131 +600,6 @@ def test_split_plan_validates_receivable_invariants(tmp_path):
     bad = _split_item()
     bad["row_operation"]["unpaid_receivable"] = 59.0
     assert V.check_one(bad, rows)["verdict"] == "conflict"
-
-
-def test_delivery_above_baseline_split_keeps_baseline_and_writes_blank_carry(tmp_path):
-    ledger = _ledger(tmp_path, [("SO26010001", "SOD26010001", None)])
-    item = _delivery_above_baseline_split_item()
-    checked = V.validate({"auto": [item]}, V.read_ledger_rows(ledger))
-    assert checked["counts"] == {"write": 1, "skip": 0, "conflict": 0}
-
-    out = tmp_path / "交付额高于原应收_首次部分回款.xlsx"
-    A.write_plan(ledger, out, checked["write"])
-
-    assert A.verify_written(out, checked["write"]) == []
-    ws = openpyxl.load_workbook(str(out), data_only=True)["明细"]
-    assert ws.cell(2, 6).value == 100.0
-    assert ws.cell(2, 8).value == 120.0
-    assert ws.cell(2, 9).value == "是"
-    assert ws.cell(3, 6).value is None
-    assert ws.cell(3, 7).value is None
-    assert ws.cell(3, 8).value is None
-    assert ws.cell(3, 9).value == "否"
-    assert ws.cell(3, 10).value is None
-    assert ws.cell(3, 11).value is None
-    assert ws.cell(3, 13).value is None
-
-    rerun = V.validate({"auto": [item]}, V.read_ledger_rows(out))
-    assert rerun["counts"] == {"write": 0, "skip": 1, "conflict": 0}
-    comparison = A.build_order_difference(
-        checked["write"], out, hexiao_date="2026-07-22"
-    )
-    assert comparison["difference_count"] == 0
-    assert comparison["matched_count"] == 2
-
-
-def test_delivery_below_baseline_split_keeps_existing_receivable_and_blank_carry(tmp_path):
-    ledger = _ledger(tmp_path, [("SO26010001", "SOD26010001", None)])
-    workbook = openpyxl.load_workbook(str(ledger))
-    workbook["明细"].cell(2, 6).value = 150.0
-    workbook.save(str(ledger))
-    workbook.close()
-
-    item = _delivery_above_baseline_split_item(current=40.0, cumulative=40.0)
-    item["five_cols"]["回款明细"] = 40.0
-    item["row_operation"].update({
-        "source_receivable": 150.0,
-        "baseline_receivable": 150.0,
-        "source_row_receivable": 150.0,
-        "remaining_unreceived": 60.0,
-        "existing_received": 0.0,
-        "current_received": 40.0,
-        "cumulative_received": 40.0,
-        "latest_delivery": 100.0,
-    })
-
-    checked = V.validate({"auto": [item]}, V.read_ledger_rows(ledger))
-    assert checked["counts"] == {"write": 1, "skip": 0, "conflict": 0}
-
-    out = tmp_path / "交付额低于原应收_首次部分回款.xlsx"
-    A.write_plan(ledger, out, checked["write"])
-
-    assert A.verify_written(out, checked["write"]) == []
-    ws = openpyxl.load_workbook(str(out), data_only=True)["明细"]
-    assert ws.cell(2, 6).value == 150.0
-    assert ws.cell(2, 8).value == 40.0
-    assert ws.cell(3, 6).value is None
-    assert ws.cell(3, 8).value is None
-    assert ws.cell(3, 9).value == "否"
-
-    rerun = V.validate({"auto": [item]}, V.read_ledger_rows(out))
-    assert rerun["counts"] == {"write": 0, "skip": 1, "conflict": 0}
-
-
-def test_delivery_above_baseline_split_rejects_changed_nonblank_source_receivable(tmp_path):
-    ledger = _ledger(tmp_path, [("SO26010001", "SOD26010001", None)])
-    workbook = openpyxl.load_workbook(str(ledger))
-    workbook["明细"].cell(2, 6).value = 80.0
-    workbook.save(str(ledger))
-    workbook.close()
-    item = _delivery_above_baseline_split_item()
-    item["row_operation"]["source_row_receivable"] = 80.0
-
-    checked = V.validate({"auto": [item]}, V.read_ledger_rows(ledger))
-
-    assert checked["counts"] == {"write": 0, "skip": 0, "conflict": 1}
-    assert "原始应收基线" in checked["conflict"][0]["_check"]["reason"]
-
-
-def test_delivery_above_baseline_split_chain_rejects_changed_nonblank_source_receivable(tmp_path):
-    ledger = _ledger(tmp_path, [("SO_SPLIT", "SOD_SPLIT", None)])
-    workbook = openpyxl.load_workbook(str(ledger))
-    workbook["明细"].cell(2, 6).value = 80.0
-    workbook.save(str(ledger))
-    workbook.close()
-    items = _split_chain_items()
-    operation = items[0]["row_operation"]
-    operation.update({
-        "receivable_mode": "preserve_baseline_blank_carry",
-        "source_receivable": 100.0,
-        "baseline_receivable": 100.0,
-        "source_row_receivable": 80.0,
-        "opening_unreceived": 150.0,
-        "latest_delivery": 150.0,
-    })
-    operation["steps"][0].update({
-        "receivable": 80.0, "remaining_after": 110.0,
-    })
-    operation["steps"][1].update({
-        "receivable": None, "remaining_after": 50.0, "settled": False,
-    })
-    operation["steps"][1]["five_cols"]["计提"] = None
-    operation["final_unpaid"] = {
-        "receivable": None,
-        "remaining_unreceived": 50.0,
-        "five_cols": {
-            "计提": None, "回款明细": None, "是否结账": "否",
-            "收款时间": None, "收款方式": None, "实收SOD": "SOD_SPLIT",
-        },
-    }
-
-    checked = V.validate({"auto": items}, V.read_ledger_rows(ledger))
-
-    assert checked["counts"] == {"write": 0, "skip": 0, "conflict": 2}
-    assert all(
-        "特殊分笔链基线" in item["_check"]["reason"]
-        for item in checked["conflict"]
-    )
 
 
 # ---------- 写入 ----------

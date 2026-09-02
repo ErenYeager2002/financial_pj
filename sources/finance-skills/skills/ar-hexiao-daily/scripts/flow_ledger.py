@@ -3,8 +3,8 @@
 """
 到账流转表接入（R2 三键匹配）。
 
-为什么单独一个模块：流转回填要回答"这笔核销对应到账流转表的哪一行、该写什么单号"，
-该结果只服务流转计划，不参与盈亏核算判定。
+为什么单独一个模块：判定要回答"这笔核销对应到账流转表的哪一行、该写什么单号"，
+这是第 6 步的一半。此前 classify 只读 rec["flow_hits"] 而没人给它赋值 → E0/E12 是死码。
 
 设计要点
 - **按表头内容认表，不按文件名**（她各渠道分开好几张：汇款/微信/支付宝/美元户）。
@@ -16,7 +16,7 @@
      与智云客户名称比较；对照缺失或一对多不自动猜；
   3. 微信/支付宝另允许到账日期 +（净额 + 手续费）按同样名称规则匹配；
   4. 日期金额命中但四种名称组合都不成立 → **弱命中**，列入人工处理。
-- 命中 0 或多行 → 流转计划 hand；命中 1 → 给出行号与建议单号。
+- 命中 0 → E0；命中 >1 → E12；命中 1 → 给出行号与建议单号。
 - 匹配只读；**写入**见 `apply_flow.py`（日清和写前校验通过后、仅强三键唯一命中）。
 """
 
@@ -578,12 +578,12 @@ def annotate_records(
     """
     给每条记录补 flow_hits / flow_locate / flow_order_suggest（原地）。
 
-    默认不把 0 命中定性为完整数据下的流转缺失（complete=False）。她各渠道分开好几张表（汇款/微信/支付宝/美元户），
+    **默认不判 E0**（complete=False）。她各渠道分开好几张表（汇款/微信/支付宝/美元户），
     手上若只有其中一两张，其余渠道的到账当然找不到 —— 那是"没给全数据"，不是"对不到账"。
     实测：只给汇款+微信两张表跑 7-08 的夹具，28 笔会被全部误判成 E0。
 
-    只有运行时显式声明"当天所有渠道的流转表都给全了"（--flow-complete），
-    才把 0 命中明确列为流转人工项；无论哪种情况都不影响盈亏判定。
+    只有运行时显式声明"当天所有渠道的流转表都给全了"（--flow-complete）才判 E0；
+    否则找不到就标注"未在现有流转表中找到"，让记录按原通道规则继续判，不冤枉她。
     """
     if flow is None or not flow.rows:
         return records
@@ -621,7 +621,7 @@ def annotate_records(
             rec["flow_locate"] = ""
             continue
         if hit["hits"] == 0 and not complete:
-            rec["flow_hits"] = None  # 可能只是这个渠道的表没给
+            rec["flow_hits"] = None  # 不判 E0：可能只是这个渠道的表没给
             rec["flow_matched_by"] = "未在现有流转表中找到(可能缺该渠道的表)"
             rec["flow_locate"] = ""
             rec["flow_file"] = ""
@@ -681,7 +681,7 @@ def main(argv=None) -> int:
     print(f"流转表来源: {flow.sources or '（无）'}")
     print(f"可用行数: {len(flow.rows)}")
     if not flow.rows:
-        print("WARN: 没有认出任何到账流转表 → 跳过流转定位，不影响盈亏判定", file=sys.stderr)
+        print("WARN: 没有认出任何到账流转表 → 三键匹配不可用，E0/E12 无法判定", file=sys.stderr)
         return 1
     filled = sum(1 for r in flow.rows if r.get("order_cell"))
     multi = sum(1 for r in flow.rows if len(re.split(r"[\s\n]+", r["order_cell"].strip())) > 1)

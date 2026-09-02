@@ -254,7 +254,7 @@ def test_fee_does_not_block_or_rewrite_historical_cumulative_writeoff():
 
 
 def test_no_writeoff_details_use_gross_parent_waterfall():
-    """没有逐 SO 子明细时，到账金额加手续费作为父回款总额顺序核销。"""
+    """没有逐 SO 子明细时，净到账加手续费作为父回款总额顺序核销。"""
     p = _payment(
         amount=300.0,
         fee=1.0,
@@ -625,7 +625,7 @@ def test_itemized_parent_excludes_its_own_old_fallback_allocation():
     assert rec["cumulative_received_local"] == 94.6
 
 
-def test_parent_total_fallback_uses_fee_and_tax_only():
+def test_tax_and_other_explicit_fees_are_included_in_gross_parent_amount():
     p = _payment(
         amount=95.0,
         fee=1.0,
@@ -635,26 +635,9 @@ def test_parent_total_fallback_uses_fee_and_tax_only():
         sod_lines={"SO1": [{"sod": "SOD1", "deliver": 100.0}]},
     )
     rec = C.expand_payment(p, {})[0]
-    assert rec["amount_orig"] == 98.0
-    assert p["charge_amount_orig"] == 3.0
-    assert p["total_amount_orig"] == 98.0
-    assert p["_parent_total_source"] == "computed_amount_plus_fee_tax"
-
-
-def test_zhiyun_total_received_takes_precedence_over_fee_tax_formula():
-    p = _payment(
-        amount=83420.79,
-        fee=13.17,
-        tax=4992.87,
-        total_amount_orig=88440.0,
-        total_amount_local=88440.0,
-    )
-
-    C._prepare_parent_totals(p)
-
-    assert p["total_amount_orig"] == 88440.0
-    assert p["total_amount_local"] == 88440.0
-    assert p["_parent_total_source"] == "zhiyun_total_received"
+    assert rec["amount_orig"] == 100.0
+    assert p["charge_amount_orig"] == 5.0
+    assert p["total_amount_orig"] == 100.0
 
 
 def test_xlsx_patch_forces_excel_formula_recalculation(tmp_path):

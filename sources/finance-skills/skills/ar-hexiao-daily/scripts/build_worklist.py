@@ -260,17 +260,8 @@ def build_workbook(
     duplicate_audits = result.get("duplicate_writeoff_audits") or {}
     recovered_audits = [
         audit for audit in duplicate_audits.values()
-        if audit.get("status") == "recovered" or audit.get("sod_duplicate_groups")
+        if audit.get("status") == "recovered"
     ]
-    duplicate_group_count = sum(
-        len(audit.get("duplicate_groups") or [])
-        + len(audit.get("sod_duplicate_groups") or [])
-        for audit in recovered_audits
-    )
-    ignored_record_count = sum(
-        int(audit.get("ignored_record_count") or 0)
-        for audit in recovered_audits
-    )
     pending_shifted = {
         day: info for day, info in (result.get("shifted_detail_dates") or {}).items()
         if info.get("needs_rerun") and day != result.get("hexiao_date")
@@ -300,8 +291,8 @@ def build_workbook(
         [
             "系统重复纠正："
             f"父回款 {len(recovered_audits)} 笔；"
-            f"重复组 {duplicate_group_count} 个；"
-            f"忽略核销记录 {ignored_record_count} 条。"
+            f"重复组 {sum(len(a.get('duplicate_groups') or []) for a in recovered_audits)} 个；"
+            f"忽略核销记录 {sum(int(a.get('ignored_record_count') or 0) for a in recovered_audits)} 条。"
             + (
                 " 智云疑似系统重复核销，本次每组只按一次处理。"
                 if recovered_audits else ""
