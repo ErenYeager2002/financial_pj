@@ -147,7 +147,7 @@ def test_ar_hexiao_is_published_as_a_confirmed_workflow() -> None:
     registry.refresh()
     skill = registry.get("ar-hexiao-daily")
     assert skill is not None
-    assert skill.manifest.version == "1.6.14"
+    assert skill.manifest.version == "1.6.18"
     assert skill.manifest.handler.adapter == "workflow"
     assert skill.manifest.runtime.network_access is True
     assert skill.manifest.runtime.network_targets == ["https://zhiyun.synthetic.example:443"]

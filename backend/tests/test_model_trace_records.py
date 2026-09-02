@@ -4,11 +4,12 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from helpers import auth_client
+from sqlalchemy.exc import IntegrityError
+
 from app.auth_service import get_user_by_username
 from app.database import SessionLocal
 from app.models import ModelTraceRecord, RunRecord, TaskDraftRecord
-from helpers import auth_client
-from sqlalchemy.exc import IntegrityError
 
 
 def test_model_trace_allows_pre_draft_record_and_enforces_parent_scope() -> None:

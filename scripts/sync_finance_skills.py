@@ -649,7 +649,7 @@ CATALOG_ONLY: dict[str, dict[str, Any]] = {
         timeout=1800,
         network_access=True,
         network_targets=["http://192.168.10.167:18880"],
-        version="1.6.14",
+        version="1.6.18",
     ),
     "jdy-cashflow-export": manifest(
         "jdy-cashflow-export",

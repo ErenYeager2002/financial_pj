@@ -134,6 +134,27 @@ def test_backfill_uses_only_last_settled_business_row_of_split_sod():
     assert backfill["accrual"] == 100.0
 
 
+def test_backfill_is_not_generated_when_split_sod_already_has_full_accrual():
+    ledger = _synthetic({
+        2: {
+            "so": "SO1", "sod": "SOD1", "yingshou": 40.0,
+            "jiti": 100.0, "huikuan": 40.0, "jiezhang": "是",
+        },
+        3: {
+            "so": "SO1", "sod": "SOD1", "yingshou": 60.0,
+            "jiti": None, "huikuan": 60.0, "jiezhang": "是",
+        },
+        4: {"so": "SO1", "sod": "SOD2", "yingshou": 200.0, "jiezhang": "否"},
+    })
+
+    result = C.classify_records(
+        [_record("SOD2", 200.0, {"SOD1": 100.0, "SOD2": 200.0})],
+        ledger,
+    )
+
+    assert not result["auto"][0].get("so_accrual_backfills")
+
+
 def _workbook(path):
     wb = openpyxl.Workbook()
     ws = wb.active

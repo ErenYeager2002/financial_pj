@@ -336,6 +336,175 @@ def test_sod_ambiguous_waterfall_rerun_uses_itemized_cumulative_idempotence():
     assert "row_operation" not in item
 
 
+def test_sod_ambiguous_rerun_prefers_unique_receivable_amount_match():
+    """无 SOD 的逐 SO 金额已完整写在后续 SOD 时，不得再从首行重复分配。"""
+    p = _pay(
+        amount=396.60,
+        orders=[{"so": "SO1", "deliver": 7244.43}],
+        writeoffs={"SO1": 396.60},
+        writeoffs_local={"SO1": 396.60},
+        cumulative_writeoffs={"SO1": 396.60},
+        cumulative_writeoffs_local={"SO1": 396.60},
+    )
+    p["sod_lines"] = {"SO1": [
+        {"sod": "SOD_FIRST", "deliver": 74.42},
+        {"sod": "SOD_TARGET", "deliver": 2285.51},
+        {"sod": "SOD_LAST", "deliver": 4884.50},
+    ]}
+    recs = C.expand_payment(p, {})
+    ledger = _led({
+        10: {
+            "so": "SO1", "sod": "SOD_FIRST", "yingshou": 74.42,
+            "jiezhang": "否",
+        },
+        11: {
+            "so": "SO1", "sod": "SOD_TARGET", "yingshou": 396.60,
+            "huikuan": 396.60, "jiezhang": "是",
+        },
+        12: {
+            "so": "SO1", "sod": "SOD_TARGET", "yingshou": 1888.91,
+            "jiezhang": "否",
+        },
+        13: {
+            "so": "SO1", "sod": "SOD_LAST", "yingshou": 4884.50,
+            "jiezhang": "否",
+        },
+    })
+
+    result = C.classify_records(recs, ledger, {})
+
+    assert result["counts"] == {"auto": 1, "hold": 0, "exception": 0, "total": 1}
+    item = result["auto"][0]
+    assert item["sod"] == "SOD_TARGET"
+    assert item["code"] == "OK_ITEMIZED_CUMULATIVE_ALREADY_APPLIED"
+    assert item["five_cols"]["回款明细"] == 396.60
+    assert "W_AMBIGUOUS_SOD_RECEIVABLE_MATCH" in item["warning_codes"]
+    assert "row_operation" not in item
+
+
+def test_sod_ambiguous_rerun_without_source_cumulative_holds_existing_receipt():
+    """旧数据缺来源累计时，同额回款无法证明是同一笔，必须挂起。"""
+    p = _pay(
+        amount=396.60,
+        orders=[{"so": "SO1", "deliver": 7244.43}],
+        writeoffs={"SO1": 396.60},
+        writeoffs_local={"SO1": 396.60},
+    )
+    p["sod_lines"] = {"SO1": [
+        {"sod": "SOD_FIRST", "deliver": 74.42},
+        {"sod": "SOD_TARGET", "deliver": 2285.51},
+        {"sod": "SOD_LAST", "deliver": 4884.50},
+    ]}
+    recs = C.expand_payment(p, {})
+    ledger = _led({
+        10: {"so": "SO1", "sod": "SOD_FIRST", "yingshou": 74.42, "jiezhang": "否"},
+        11: {
+            "so": "SO1", "sod": "SOD_TARGET", "yingshou": 396.60,
+            "huikuan": 396.60, "jiezhang": "是",
+        },
+        12: {"so": "SO1", "sod": "SOD_TARGET", "yingshou": 1888.91, "jiezhang": "否"},
+        13: {"so": "SO1", "sod": "SOD_LAST", "yingshou": 4884.50, "jiezhang": "否"},
+    })
+
+    result = C.classify_records(recs, ledger, {})
+
+    assert result["counts"] == {"auto": 0, "hold": 1, "exception": 0, "total": 1}
+    item = result["hold"][0]
+    assert item["code"] == "E8"
+    assert "已有同额回款，但缺少权威来源累计" in item["reason"]
+
+
+def test_sod_ambiguous_unique_receivable_amount_match_writes_open_row():
+    """唯一同额应收行尚未回款时，应直接写该 SOD，不再从首行分配。"""
+    p = _pay(
+        amount=396.60,
+        orders=[{"so": "SO1", "deliver": 7244.43}],
+        writeoffs={"SO1": 396.60},
+        writeoffs_local={"SO1": 396.60},
+    )
+    p["sod_lines"] = {"SO1": [
+        {"sod": "SOD_FIRST", "deliver": 74.42},
+        {"sod": "SOD_TARGET", "deliver": 2285.51},
+        {"sod": "SOD_LAST", "deliver": 4884.50},
+    ]}
+    recs = C.expand_payment(p, {})
+    ledger = _led({
+        10: {"so": "SO1", "sod": "SOD_FIRST", "yingshou": 74.42, "jiezhang": "否"},
+        11: {"so": "SO1", "sod": "SOD_TARGET", "yingshou": 396.60, "jiezhang": "否"},
+        12: {"so": "SO1", "sod": "SOD_LAST", "yingshou": 4884.50, "jiezhang": "否"},
+    })
+
+    result = C.classify_records(recs, ledger, {})
+
+    assert result["counts"] == {"auto": 1, "hold": 0, "exception": 0, "total": 1}
+    item = result["auto"][0]
+    assert item["sod"] == "SOD_TARGET"
+    assert item["five_cols"]["回款明细"] == 396.60
+    assert "W_AMBIGUOUS_SOD_RECEIVABLE_MATCH" in item["warning_codes"]
+    assert "按同一 SO 的应收金额唯一匹配 SOD" in item["reason"]
+
+
+def test_sod_ambiguous_unique_open_receivable_match_with_prior_cumulative():
+    """存在历史累计时，唯一空白同额应收行仍应承接本次新回款。"""
+    p = _pay(
+        amount=200.0,
+        orders=[{"so": "SO1", "deliver": 1000.0}],
+        writeoffs={"SO1": 200.0},
+        writeoffs_local={"SO1": 200.0},
+        cumulative_writeoffs={"SO1": 300.0},
+        cumulative_writeoffs_local={"SO1": 300.0},
+    )
+    p["sod_lines"] = {"SO1": [
+        {"sod": "SOD_FIRST", "deliver": 100.0},
+        {"sod": "SOD_TARGET", "deliver": 500.0},
+        {"sod": "SOD_LAST", "deliver": 400.0},
+    ]}
+    recs = C.expand_payment(p, {})
+    ledger = _led({
+        10: {
+            "so": "SO1", "sod": "SOD_FIRST", "yingshou": 100.0,
+            "huikuan": 100.0, "jiezhang": "是",
+        },
+        11: {"so": "SO1", "sod": "SOD_TARGET", "yingshou": 200.0, "jiezhang": "否"},
+        12: {"so": "SO1", "sod": "SOD_LAST", "yingshou": 400.0, "jiezhang": "否"},
+    })
+
+    result = C.classify_records(recs, ledger, {})
+
+    assert result["counts"] == {"auto": 1, "hold": 0, "exception": 0, "total": 1}
+    item = result["auto"][0]
+    assert item["sod"] == "SOD_TARGET"
+    assert item["five_cols"]["回款明细"] == 200.0
+    assert "W_AMBIGUOUS_SOD_RECEIVABLE_MATCH" in item["warning_codes"]
+
+
+def test_sod_ambiguous_receivable_amount_match_must_be_unique():
+    """同一 SO 有多行应收等于核销金额时必须挂起，不能按行号猜。"""
+    p = _pay(
+        amount=396.60,
+        orders=[{"so": "SO1", "deliver": 2000.0}],
+        writeoffs={"SO1": 396.60},
+        writeoffs_local={"SO1": 396.60},
+        cumulative_writeoffs={"SO1": 396.60},
+        cumulative_writeoffs_local={"SO1": 396.60},
+    )
+    p["sod_lines"] = {"SO1": [
+        {"sod": "SOD1", "deliver": 1000.0},
+        {"sod": "SOD2", "deliver": 1000.0},
+    ]}
+    recs = C.expand_payment(p, {})
+    ledger = _led({
+        10: {"so": "SO1", "sod": "SOD1", "yingshou": 396.60, "jiezhang": "否"},
+        11: {"so": "SO1", "sod": "SOD2", "yingshou": 396.60, "jiezhang": "否"},
+    })
+
+    result = C.classify_records(recs, ledger, {})
+
+    assert result["counts"] == {"auto": 0, "hold": 1, "exception": 0, "total": 1}
+    assert result["hold"][0]["code"] == "E8"
+    assert "应收金额 396.60 命中 2 行" in result["hold"][0]["reason"]
+
+
 def test_itemized_cumulative_idempotence_revalidates_cross_month_receipt_fields():
     """金额已写过时，跨月收款日期和方式仍必须按当前规则重新计算。"""
     p = _pay(

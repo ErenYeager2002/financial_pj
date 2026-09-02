@@ -4100,7 +4100,79 @@ def _expand_ambiguous_sod_waterfall(
         and source_cumulative is not None
     )
     source_allocations: Optional[List[dict]] = None
-    if source_cumulative_authoritative:
+    exact_receivable_rows = [
+        int(row_no)
+        for row_no in ledger.so_amount_index.get(
+            (so, int(round(float(total_local) * 100))), []
+        )
+        if str((ledger.row_snapshot.get(row_no) or {}).get("sod") or "").strip()
+        in line_by_sod
+    ]
+    if len(exact_receivable_rows) > 1:
+        failed = dict(rec)
+        failed.pop("default_first_sod", None)
+        failed["forced_code"] = "E8"
+        failed["forced_reason"] = (
+            f"同 SO 多 SOD 无法唯一定位：应收金额 {float(total_local):.2f} "
+            f"命中 {len(exact_receivable_rows)} 行。"
+        )
+        return [failed]
+    if len(exact_receivable_rows) == 1:
+        exact_row = exact_receivable_rows[0]
+        exact_snap = ledger.row_snapshot.get(exact_row) or {}
+        exact_sod = str(exact_snap.get("sod") or "").strip()
+        exact_line = line_by_sod[exact_sod]
+        exact_delivery = common.to_number(exact_line.get("deliver_local"))
+        exact_row_received = common.to_number(exact_snap.get("huikuan"))
+        exact_already_applied = (
+            exact_row_received is not None
+            and abs(float(exact_row_received) - float(total_local)) <= tolerance
+        )
+        _, exact_existing_received, exact_business_rows = ledger.business_totals(
+            so, exact_sod, exact_row
+        )
+        if exact_already_applied:
+            if not source_cumulative_authoritative:
+                failed = dict(rec)
+                failed.pop("default_first_sod", None)
+                failed["forced_code"] = "E8"
+                failed["forced_reason"] = (
+                    "同 SO 的唯一同额应收行已有同额回款，但缺少权威来源累计，"
+                    "无法确认是本次核销还是另一笔同额回款。"
+                )
+                return [failed]
+            if abs(float(source_cumulative) - float(exact_existing_received)) > tolerance:
+                exact_already_applied = False
+        if (
+            exact_delivery is not None
+            and (
+                exact_row_received is None
+                or exact_already_applied
+            )
+        ):
+            source_allocations = [{
+                "row": exact_row,
+                "sod": exact_sod,
+                "line": exact_line,
+                "delivery": round(float(exact_delivery), 2),
+                "existing_received": round(float(exact_existing_received), 2),
+                "capacity": round(
+                    max(float(exact_delivery) - float(exact_existing_received), 0.0),
+                    2,
+                ),
+                "business_rows": list(exact_business_rows),
+                "allocated_local": round(float(total_local), 2),
+                "source_cumulative_local": (
+                    round(float(source_cumulative), 2)
+                    if exact_already_applied
+                    else round(
+                        float(exact_existing_received) + float(total_local),
+                        2,
+                    )
+                ),
+                "selection_rule": "ledger_unique_receivable_amount",
+            }]
+    if source_allocations is None and source_cumulative_authoritative:
         # 多 SOD 歧义时，来源累计仍是 SO 级真相。先把“本次前累计”和
         # “本次后累计”都按同一盈亏行顺序分配到 SOD，两者之差就是本次
         # 每个 SOD 的实际金额。这样重跑使用来源累计判断，不再拿表内金额
@@ -4330,6 +4402,12 @@ def _expand_ambiguous_sod_waterfall(
     expanded: List[dict] = []
     for index, item in enumerate(allocations):
         resolved = dict(rec)
+        receivable_amount_match = (
+            item.get("selection_rule") == "ledger_unique_receivable_amount"
+        )
+        resolved_cumulative_authoritative = (
+            source_cumulative_authoritative or receivable_amount_match
+        )
         for key in (
             "forced_code", "forced_reason", "default_first_sod",
             "default_amount_orig", "default_amount_local",
@@ -4338,7 +4416,11 @@ def _expand_ambiguous_sod_waterfall(
         ):
             resolved.pop(key, None)
         warnings = list(resolved.get("warning_codes") or [])
-        for warning in ("W_DEFAULT_FIRST_SOD", "W_AMBIGUOUS_SOD_WATERFALL"):
+        allocation_warning = (
+            "W_AMBIGUOUS_SOD_RECEIVABLE_MATCH"
+            if receivable_amount_match else "W_AMBIGUOUS_SOD_WATERFALL"
+        )
+        for warning in ("W_DEFAULT_FIRST_SOD", allocation_warning):
             if warning not in warnings:
                 warnings.append(warning)
         resolved.update({
@@ -4349,22 +4431,30 @@ def _expand_ambiguous_sod_waterfall(
             "currency": item["line"].get("currency") or rec.get("currency"),
             "cumulative_received_local": (
                 item.get("source_cumulative_local")
-                if source_cumulative_authoritative
+                if resolved_cumulative_authoritative
                 else round(
                     item["existing_received"] + item["allocated_local"], 2
                 )
             ),
-            "itemized_cumulative_authoritative": source_cumulative_authoritative,
+            "itemized_cumulative_authoritative": resolved_cumulative_authoritative,
             "all_sods": sorted((rec.get("sod_delivery_local") or {}).keys()),
             "so_all_lines": rec.get("default_sod_lines") or [],
             "preferred_ledger_row": item["row"],
             "warning_codes": warnings,
             "match_basis": (
                 f"{rec.get('default_match_basis') or '智云核销金额'}"
-                "/同SO未结清SOD按行顺序核销"
+                + (
+                    "/同SO应收金额唯一匹配SOD"
+                    if receivable_amount_match
+                    else "/同SO未结清SOD按行顺序核销"
+                )
             ),
             "ambiguous_sod_waterfall": {
-                "rule": "ledger_open_sod_row_order_waterfall",
+                "rule": (
+                    "ledger_unique_receivable_amount"
+                    if receivable_amount_match
+                    else "ledger_open_sod_row_order_waterfall"
+                ),
                 "cumulative_basis": (
                     "itemized_source_cumulative"
                     if source_cumulative_authoritative
@@ -4565,10 +4655,14 @@ def _apply_so_accrual_gate(
             target_row = max(settled_rows)
             snap = ledger.row_snapshot.get(target_row) or {}
             target_accrual = round(float(delivery_by_sod[sod]), 2)
-            existing_accrual = common.to_number(snap.get("jiti"))
-            if (
-                existing_accrual is not None
-                and abs(float(existing_accrual) - target_accrual) <= max(tolerance, TOL)
+            existing_business_accruals = [
+                common.to_number((ledger.row_snapshot.get(row_no) or {}).get("jiti"))
+                for row_no in business_rows
+            ]
+            if any(
+                value is not None
+                and abs(float(value) - target_accrual) <= max(tolerance, TOL)
+                for value in existing_business_accruals
             ):
                 continue
             receivables = [
@@ -4772,8 +4866,15 @@ def classify_records(
         result = classify_one(rec, ledger, rates, thr, year_now)
         audit = rec.get("ambiguous_sod_waterfall") or {}
         if audit:
+            rule = str(audit.get("rule") or "")
+            allocation_note = (
+                "已按同一 SO 的应收金额唯一匹配 SOD。"
+                if rule == "ledger_unique_receivable_amount"
+                else "已按盈亏未结清行顺序核销。"
+            )
             result["reason"] = (
-                "同一 SO 的逐单金额无法唯一落到 SOD，已按盈亏未结清行顺序核销。"
+                "同一 SO 的逐单金额无法唯一落到 SOD，"
+                + allocation_note
                 + str(result.get("reason") or "")
             )
         results.append(result)

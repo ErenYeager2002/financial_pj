@@ -6,7 +6,6 @@ from pathlib import Path
 import pytest
 import yaml
 
-
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "sync_skill_volume.py"
 SPEC = importlib.util.spec_from_file_location("sync_skill_volume", SCRIPT)
 assert SPEC and SPEC.loader

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 FOUNDATION_SKILL_IDS = frozenset({"xlsx", "docx", "pdf", "pptx"})
 SUPPORTING_SKILL_IDS = frozenset({"env-doctor", "task-clarifier"})
 BUSINESS_EXECUTION_EXPERIENCE_IDS = frozenset(

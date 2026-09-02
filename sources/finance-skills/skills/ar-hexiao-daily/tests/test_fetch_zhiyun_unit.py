@@ -3,6 +3,8 @@
 import json
 import sys
 import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -105,6 +107,89 @@ def test_read_only_post_retries_unlisted_5xx(monkeypatch):
     assert client.post("read-only-query", {}) == {"ok": True}
     assert client.session.calls == 2
     assert sleeps == [1.0]
+
+
+def test_read_only_post_obeys_shared_batch_request_limit():
+    request_limit = threading.BoundedSemaphore(2)
+    release_requests = threading.Event()
+    two_requests_started = threading.Event()
+    state_lock = threading.Lock()
+    active = 0
+    max_active = 0
+
+    class BlockingSession:
+        def post(self, *args, **kwargs):
+            nonlocal active, max_active
+            del args, kwargs
+            with state_lock:
+                active += 1
+                max_active = max(max_active, active)
+                if active >= 2:
+                    two_requests_started.set()
+            try:
+                assert release_requests.wait(timeout=3)
+                return _FakeResponse(200, {"data": {"ok": True}})
+            finally:
+                with state_lock:
+                    active -= 1
+
+    clients = []
+    for _ in range(4):
+        client = F.ZhiyunClient(
+            "http://127.0.0.1:1",
+            "redacted",
+            request_limiter=request_limit,
+        )
+        client.session = BlockingSession()
+        clients.append(client)
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        futures = [
+            executor.submit(client.post, "read-only-query", {})
+            for client in clients
+        ]
+        assert two_requests_started.wait(timeout=3)
+        time.sleep(0.05)
+        assert max_active == 2
+        release_requests.set()
+        assert [future.result() for future in futures] == [{"ok": True}] * 4
+
+    assert max_active == 2
+
+
+def test_batch_clients_share_one_thread_safe_template_cache():
+    template_cache = {}
+    template_cache_lock = threading.Lock()
+    state_lock = threading.Lock()
+    post_calls = 0
+
+    class CountingSession:
+        def post(self, *args, **kwargs):
+            nonlocal post_calls
+            del args, kwargs
+            with state_lock:
+                post_calls += 1
+            return _FakeResponse(
+                200,
+                {"data": {"template": {"controls": [{"controlId": "shared"}]}}},
+            )
+
+    clients = []
+    for _ in range(4):
+        client = F.ZhiyunClient(
+            "http://127.0.0.1:1",
+            "redacted",
+            template_cache=template_cache,
+            template_cache_lock=template_cache_lock,
+        )
+        client.session = CountingSession()
+        clients.append(client)
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        controls = list(executor.map(lambda client: client.controls("worksheet"), clients))
+
+    assert controls == [[{"controlId": "shared"}]] * 4
+    assert post_calls == 1
 
 
 def test_resolve_date_yesterday():
@@ -520,6 +605,79 @@ def test_fetch_day_preserves_zhiyun_total_received_and_tax_fields(tmp_path):
     assert float(values[headers.index("税费/原币")]) == 5006.04
 
 
+def test_fetch_day_parallelizes_payment_relations_through_batch_request_map(tmp_path):
+    payment_rows = [
+        {
+            F.F_HK["ar"]: f"AR2609{index:04d}",
+            F.F_HK["hexiao_date"]: "2026-09-01",
+            "rowid": f"row-{index}",
+        }
+        for index in range(8)
+    ]
+    first_wave = threading.Barrier(8, timeout=5)
+    state_lock = threading.Lock()
+    active = 0
+    max_active = 0
+
+    class FakeClient:
+        @staticmethod
+        def controls(worksheet_id):
+            if worksheet_id == F.WS_HUIKUAN:
+                return [{
+                    "controlId": "xiadan",
+                    "controlName": F.REL_XIADAN,
+                    "dataSource": "orders",
+                }]
+            return []
+
+        @staticmethod
+        def id_by_name(controls, name):
+            for control in controls:
+                if control.get("controlName") == name:
+                    return control.get("controlId", "")
+            return ""
+
+        @staticmethod
+        def option_maps(_controls):
+            return {}
+
+        @staticmethod
+        def datasource_of(_worksheet_id, relation):
+            return "orders" if relation == F.REL_XIADAN else ""
+
+        @staticmethod
+        def filter_rows_by_date(_worksheet_id, _date_control_id, _day):
+            return payment_rows, len(payment_rows)
+
+        @staticmethod
+        def relation_rows(_worksheet_id, _row_id, _control_id):
+            nonlocal active, max_active
+            with state_lock:
+                active += 1
+                max_active = max(max_active, active)
+            try:
+                first_wave.wait()
+                return [], []
+            finally:
+                with state_lock:
+                    active -= 1
+
+    def request_map(items, operation):
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            futures = [executor.submit(operation, FakeClient(), item) for item in items]
+            return [future.result() for future in futures]
+
+    summary = F.fetch_day(
+        FakeClient(),
+        "2026-09-01",
+        tmp_path,
+        request_map=request_map,
+    )
+
+    assert summary["回款记录笔数"] == 8
+    assert max_active == 8
+
+
 def test_historical_writeoffs_only_dedup_same_record_id_and_never_business_fields():
     names = [
         "核销记录NUM", "回款记录NUM", "订单NUM", "本次核销金额", "本次核销金额本币",
@@ -642,7 +800,7 @@ def test_date_range_fetch_logs_in_once_and_writes_every_calendar_day_separately(
         return "session-cookie", "account-id"
 
     class FakeClient:
-        def __init__(self, base_url, cookie, *, account_id=""):
+        def __init__(self, base_url, cookie, *, account_id="", **_runtime):
             client_calls.append((base_url, cookie, account_id))
 
         @staticmethod
@@ -699,15 +857,15 @@ def test_date_range_fetch_logs_in_once_and_writes_every_calendar_day_separately(
         assert (export_dir / f"取数摘要_{tag}.json").is_file()
 
 
-def test_date_range_fetches_at_most_eight_days_concurrently_with_independent_clients(
+def test_date_range_uses_one_global_request_pool_and_reuses_worker_clients(
     tmp_path, monkeypatch
 ):
     login_calls = []
     clients = []
     report_days = []
     state_lock = threading.Lock()
-    first_wave = threading.Barrier(8, timeout=3)
-    started = 0
+    first_wave = threading.Barrier(8, timeout=5)
+    request_calls = 0
     active = 0
     max_active = 0
 
@@ -716,7 +874,7 @@ def test_date_range_fetches_at_most_eight_days_concurrently_with_independent_cli
         return "session-cookie", "account-id"
 
     class FakeClient:
-        def __init__(self, _base_url, _cookie, *, account_id=""):
+        def __init__(self, _base_url, _cookie, *, account_id="", **_runtime):
             del account_id
             self.closed = False
             clients.append(self)
@@ -728,20 +886,38 @@ def test_date_range_fetches_at_most_eight_days_concurrently_with_independent_cli
         def close(self):
             self.closed = True
 
-    def fake_fetch_day(client, day, _out_dir, _ar_ids=(), _so_ids=()):
-        nonlocal started, active, max_active
-        with state_lock:
-            started += 1
-            ordinal = started
-            active += 1
-            max_active = max(max_active, active)
-        try:
-            if ordinal <= 8:
-                first_wave.wait()
-            return {"day": day, "client_id": id(client)}
-        finally:
+    def fake_fetch_day(
+        client,
+        day,
+        _out_dir,
+        _ar_ids=(),
+        _so_ids=(),
+        *,
+        request_map=None,
+    ):
+        assert callable(request_map)
+
+        def fetch_part(request_client, part):
+            nonlocal request_calls, active, max_active
             with state_lock:
-                active -= 1
+                request_calls += 1
+                ordinal = request_calls
+                active += 1
+                max_active = max(max_active, active)
+            try:
+                if ordinal <= 8:
+                    first_wave.wait()
+                return part, id(request_client)
+            finally:
+                with state_lock:
+                    active -= 1
+
+        parts = request_map(range(3), fetch_part)
+        return {
+            "day": day,
+            "client_id": id(client),
+            "request_client_ids": [client_id for _, client_id in parts],
+        }
 
     monkeypatch.delenv("MD_PSS_ID", raising=False)
     monkeypatch.setattr(F, "resolve_credentials", lambda _args: ("user", "secret"))
@@ -764,8 +940,9 @@ def test_date_range_fetches_at_most_eight_days_concurrently_with_independent_cli
 
     assert F.MAX_BATCH_FETCH_CONCURRENCY == 8
     assert len(login_calls) == 1
-    assert len(clients) == 10
-    assert len({id(client) for client in clients}) == 10
+    assert request_calls == 30
+    assert len(clients) <= F.MAX_BATCH_FETCH_CONCURRENCY * 2
+    assert len(clients) < request_calls
     assert all(client.closed for client in clients)
     assert max_active == 8
     assert report_days == [f"2026-08-{day:02d}" for day in range(1, 11)]

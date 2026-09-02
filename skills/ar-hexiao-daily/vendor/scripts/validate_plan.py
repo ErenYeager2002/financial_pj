@@ -993,6 +993,30 @@ def _check_so_accrual_backfills(item: dict, rows: Dict[int, dict]) -> dict:
     }
 
 
+def check_item_write_state(
+    item: dict,
+    rows: Dict[int, dict],
+    *,
+    primary_result: Optional[dict] = None,
+) -> dict:
+    """统一复核一个计划项的主行和历史计提补写。"""
+    result = primary_result if primary_result is not None else check_one(item, rows)
+    if not item.get("so_accrual_backfills"):
+        return result
+
+    backfill_result = _check_so_accrual_backfills(item, rows)
+    if backfill_result["verdict"] == "conflict":
+        return backfill_result
+    if backfill_result["verdict"] == "write" and result["verdict"] != "conflict":
+        return {
+            "verdict": "write",
+            "reason": (
+                f"{result.get('reason') or ''}；{backfill_result['reason']}".strip("；")
+            ),
+        }
+    return result
+
+
 def check_one(item: dict, rows: Dict[int, dict]) -> dict:
     """
     单条复核 → {verdict: write|skip|conflict, reason}
@@ -1364,15 +1388,7 @@ def validate(
                     it["_relocated_from"] = int(original_ref)
                     it["ledger_row_ref"] = int(resolved_ref)
                 res = check_one(it, rows)
-        if it.get("so_accrual_backfills"):
-            backfill_res = _check_so_accrual_backfills(it, rows)
-            if backfill_res["verdict"] == "conflict":
-                res = backfill_res
-            elif backfill_res["verdict"] == "write" and res["verdict"] != "conflict":
-                res = {
-                    "verdict": "write",
-                    "reason": f"{res.get('reason') or ''}；{backfill_res['reason']}".strip("；"),
-                }
+        res = check_item_write_state(it, rows, primary_result=res)
         ref = it.get("ledger_row_ref")
         # 合法分笔回款链允许多个父 AR 计划共享同一个源行；写入层会为每一笔创建
         # 独立业务行。没有同一链标记的重复行仍然冲突。

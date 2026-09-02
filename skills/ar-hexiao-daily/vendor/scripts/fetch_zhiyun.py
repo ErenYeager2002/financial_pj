@@ -47,11 +47,13 @@ import os
 import re
 import sys
 import tempfile
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 # ── 常量（表 ID / 字段 ID 来自 2026-07-09/22/23 勘探，非密钥）────────────────
 BASE_DEFAULT = "http://192.168.10.167:18880"
@@ -304,7 +306,17 @@ def login_with_password(
 
 
 class ZhiyunClient:
-    def __init__(self, base: str, cookie: str, account_id: str = "", page_size: int = 200):
+    def __init__(
+        self,
+        base: str,
+        cookie: str,
+        account_id: str = "",
+        page_size: int = 200,
+        *,
+        request_limiter: Optional[threading.BoundedSemaphore] = None,
+        template_cache: Optional[Dict[str, List[dict]]] = None,
+        template_cache_lock: Optional[threading.Lock] = None,
+    ):
         import requests
 
         self.base = base.rstrip("/")
@@ -317,7 +329,9 @@ class ZhiyunClient:
         }
         if account_id:
             self.headers["AccountId"] = account_id
-        self._tpl_cache: Dict[str, List[dict]] = {}
+        self._tpl_cache = template_cache if template_cache is not None else {}
+        self._tpl_cache_lock = template_cache_lock
+        self._request_limiter = request_limiter
 
     def close(self) -> None:
         self.session.close()
@@ -330,13 +344,24 @@ class ZhiyunClient:
         r = None
         for attempt in range(1, READ_REQUEST_MAX_ATTEMPTS + 1):
             try:
-                r = self.session.post(
-                    url,
-                    headers=self.headers,
-                    json=body,
-                    timeout=timeout,
-                    allow_redirects=False,
-                )
+                request_limiter = self._request_limiter
+                if request_limiter is None:
+                    r = self.session.post(
+                        url,
+                        headers=self.headers,
+                        json=body,
+                        timeout=timeout,
+                        allow_redirects=False,
+                    )
+                else:
+                    with request_limiter:
+                        r = self.session.post(
+                            url,
+                            headers=self.headers,
+                            json=body,
+                            timeout=timeout,
+                            allow_redirects=False,
+                        )
             except (requests.ConnectionError, requests.Timeout) as exc:
                 if attempt >= READ_REQUEST_MAX_ATTEMPTS:
                     raise
@@ -375,15 +400,32 @@ class ZhiyunClient:
 
     # ── 模板 / 字段 ──────────────────────────────────────────────
     def controls(self, worksheet_id: str) -> List[dict]:
-        if worksheet_id in self._tpl_cache:
-            return self._tpl_cache[worksheet_id]
-        info = self.post(
-            "worksheet/getWorksheetInfo",
-            {"worksheetId": worksheet_id, "appId": APP_ID, "getTemplate": True},
-        )
-        ctrls = (info.get("template") or {}).get("controls") or info.get("controls") or []
-        self._tpl_cache[worksheet_id] = ctrls
-        return ctrls
+        def load_controls() -> List[dict]:
+            info = self.post(
+                "worksheet/getWorksheetInfo",
+                {"worksheetId": worksheet_id, "appId": APP_ID, "getTemplate": True},
+            )
+            return (
+                (info.get("template") or {}).get("controls")
+                or info.get("controls")
+                or []
+            )
+
+        cache_lock = self._tpl_cache_lock
+        if cache_lock is None:
+            if worksheet_id in self._tpl_cache:
+                return self._tpl_cache[worksheet_id]
+            ctrls = load_controls()
+            self._tpl_cache[worksheet_id] = ctrls
+            return ctrls
+
+        # 同一批次的工作表结构固定；锁内完成首次读取，避免多个日期重复拉模板。
+        with cache_lock:
+            if worksheet_id in self._tpl_cache:
+                return self._tpl_cache[worksheet_id]
+            ctrls = load_controls()
+            self._tpl_cache[worksheet_id] = ctrls
+            return ctrls
 
     @staticmethod
     def name_map(controls: Sequence[dict]) -> Dict[str, str]:
@@ -532,6 +574,97 @@ class ZhiyunClient:
                 break
             page += 1
         return rows, controls
+
+
+RequestOperation = Callable[[ZhiyunClient, Any], Any]
+RequestMap = Callable[[Sequence[Any], RequestOperation], List[Any]]
+
+
+class _BatchFetchRuntime:
+    """批次级请求池：统一限制在途请求，并让每个线程复用自己的会话。"""
+
+    def __init__(
+        self,
+        base_url: str,
+        cookie: str,
+        account_id: str,
+        max_workers: int,
+    ) -> None:
+        self._base_url = base_url
+        self._cookie = cookie
+        self._account_id = account_id
+        self._request_limiter = threading.BoundedSemaphore(max_workers)
+        self._template_cache: Dict[str, List[dict]] = {}
+        self._template_cache_lock = threading.Lock()
+        self._client_local = threading.local()
+        self._clients: List[ZhiyunClient] = []
+        self._clients_lock = threading.Lock()
+        self._executor = ThreadPoolExecutor(
+            max_workers=max_workers,
+            thread_name_prefix="zhiyun-request",
+        )
+
+    def client(self) -> ZhiyunClient:
+        client = getattr(self._client_local, "client", None)
+        if client is not None:
+            return client
+        client = ZhiyunClient(
+            self._base_url,
+            self._cookie,
+            account_id=self._account_id,
+            request_limiter=self._request_limiter,
+            template_cache=self._template_cache,
+            template_cache_lock=self._template_cache_lock,
+        )
+        self._client_local.client = client
+        with self._clients_lock:
+            self._clients.append(client)
+        return client
+
+    def map(
+        self,
+        items: Sequence[Any],
+        operation: RequestOperation,
+    ) -> List[Any]:
+        futures = [
+            self._executor.submit(self._execute, operation, item)
+            for item in items
+        ]
+        return [future.result() for future in futures]
+
+    def _execute(
+        self,
+        operation: RequestOperation,
+        item: Any,
+    ) -> Any:
+        return operation(self.client(), item)
+
+    def close(self) -> None:
+        self._executor.shutdown(wait=True)
+        first_error: Optional[Exception] = None
+        for client in self._clients:
+            close = getattr(client, "close", None)
+            if not callable(close):
+                continue
+            try:
+                close()
+            except Exception as exc:  # noqa: BLE001 - 仍需关闭其余只读会话
+                first_error = first_error or exc
+        if first_error is not None:
+            raise first_error
+
+
+def _run_client_calls(
+    client: ZhiyunClient,
+    items: Sequence[Any],
+    operation: RequestOperation,
+    request_map: Optional[RequestMap],
+) -> List[Any]:
+    if not items:
+        return []
+    if request_map is None:
+        return [operation(client, item) for item in items]
+    return request_map(items, operation)
 
 
 def pick_named(
@@ -805,6 +938,7 @@ def historical_writeoffs_for_sos(
     worksheet_id: str,
     sos: Sequence[str],
     target_day: str,
+    request_map: Optional[RequestMap] = None,
 ) -> List[List[Any]]:
     """
     从全局“订单同币种核销明细信息”补取本批 SO 在目标日前的历史核销。
@@ -819,13 +953,22 @@ def historical_writeoffs_for_sos(
     names, opts = client.name_map(ctrls), client.option_maps(ctrls)
     out: List[List[Any]] = []
     seen_record_ids = set()
-    for wanted_so in sorted({str(x or "").strip() for x in sos if str(x or "").strip()}):
+    wanted_sos = sorted({str(x or "").strip() for x in sos if str(x or "").strip()})
+
+    def fetch_so(search_client: ZhiyunClient, wanted_so: str) -> Tuple[str, List[dict]]:
         try:
-            hits = client.search_rows(worksheet_id, wanted_so)
+            return wanted_so, search_client.search_rows(worksheet_id, wanted_so)
         except Exception as exc:
             raise FetchError(
                 f"全局核销明细检索失败 SO={wanted_so}: {type(exc).__name__}"
             ) from exc
+
+    for wanted_so, hits in _run_client_calls(
+        client,
+        wanted_sos,
+        fetch_so,
+        request_map,
+    ):
         for row in hits:
             v = pick_named(row, names, opts, MINGXI_COLS)
             so = extract_so(v.get("订单NUM") or "")
@@ -860,12 +1003,23 @@ def historical_writeoffs_for_sos(
     return out
 
 
+@dataclass(frozen=True)
+class _PaymentDetails:
+    rec: dict
+    related: List[dict]
+    settlement_recovered: bool
+    mx_rows: List[dict]
+    mx_ctrls: List[dict]
+
+
 def fetch_day(
     client: ZhiyunClient,
     day: str,
     out_dir: Path,
     supplement_ar_ids: Sequence[str] = (),
     supplement_so_ids: Sequence[str] = (),
+    *,
+    request_map: Optional[RequestMap] = None,
 ) -> dict:
     """拉一天的四张表 + 摘要 json。返回计数摘要（无客户名/金额明细）。"""
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -961,33 +1115,59 @@ def fetch_day(
     ars_without_orders: List[str] = []
     settlement_recovered_ars: List[str] = []
     settlement_rows_used = 0
-    delivery_date_cache: Dict[str, Tuple[str, str]] = {}
     xiadan_ctrls = client.controls(ws_xiadan) if ws_xiadan else []
 
-    for rec in payments:
+    def fetch_payment_details(
+        detail_client: ZhiyunClient,
+        rec: dict,
+    ) -> _PaymentDetails:
         rid = str(rec.get("rowid") or "")
         if not rid:
-            ars_without_orders.append(rec["ar"])
-            continue
+            return _PaymentDetails(rec, [], False, [], [])
 
-        xd_rows, xd_ctrls = client.relation_rows(WS_HUIKUAN, rid, cid_xiadan)
+        xd_rows, xd_ctrls = detail_client.relation_rows(WS_HUIKUAN, rid, cid_xiadan)
         related = extract_related_orders(xd_rows, xd_ctrls, REL_XIADAN)
+        settlement_recovered = False
         if not related and cid_jiesuan:
-            js_rows, js_ctrls = client.relation_rows(WS_HUIKUAN, rid, cid_jiesuan)
+            js_rows, js_ctrls = detail_client.relation_rows(
+                WS_HUIKUAN,
+                rid,
+                cid_jiesuan,
+            )
             related = extract_related_orders(js_rows, js_ctrls, REL_JIESUAN)
-            if related:
-                settlement_recovered_ars.append(rec["ar"])
-                settlement_rows_used += len(related)
+            settlement_recovered = bool(related)
+        mx_rows: List[dict] = []
+        mx_ctrls: List[dict] = []
+        if cid_mingxi:
+            mx_rows, mx_ctrls = detail_client.relation_rows(
+                WS_HUIKUAN,
+                rid,
+                cid_mingxi,
+            )
+        return _PaymentDetails(
+            rec,
+            related,
+            settlement_recovered,
+            mx_rows,
+            mx_ctrls,
+        )
+
+    payment_details = _run_client_calls(
+        client,
+        payments,
+        fetch_payment_details,
+        request_map,
+    )
+    for detail in payment_details:
+        rec = detail.rec
+        related = detail.related
+        if detail.settlement_recovered:
+            settlement_recovered_ars.append(rec["ar"])
+            settlement_rows_used += len(related)
         for v in related:
             so = v["so"]
             if so not in all_so:
                 all_so.append(so)
-            if not str(v.get("delivery_date") or "").strip():
-                if so not in delivery_date_cache:
-                    delivery_date_cache[so] = lookup_order_delivery_date(
-                        client, ws_xiadan, xiadan_ctrls, so
-                    )
-                v["delivery_date"], v["delivery_date_status"] = delivery_date_cache[so]
             xd_out.append([
                 rec["ar"], so, v.get("written_off"), v.get("written_off_local"),
                 v.get("deliver"), v.get("rate"),
@@ -997,8 +1177,8 @@ def fetch_day(
         if not related:
             ars_without_orders.append(rec["ar"])
 
-        if cid_mingxi:
-            mx_rows, mx_ctrls = client.relation_rows(WS_HUIKUAN, rid, cid_mingxi)
+        if detail.mx_rows:
+            mx_rows, mx_ctrls = detail.mx_rows, detail.mx_ctrls
             mx_names, mx_opts = client.name_map(mx_ctrls), client.option_maps(mx_ctrls)
             for r in mx_rows:
                 v = pick_named(r, mx_names, mx_opts, MINGXI_COLS)
@@ -1025,13 +1205,45 @@ def fetch_day(
                     mx_seen_record_ids.add(record_id)
                 mx_out.append(out_row)
 
+    missing_delivery_sos = list(dict.fromkeys(
+        str(row[1] or "").strip()
+        for row in xd_out
+        if str(row[1] or "").strip() and not str(row[8] or "").strip()
+    ))
+
+    def fetch_delivery_date(
+        search_client: ZhiyunClient,
+        so: str,
+    ) -> Tuple[str, Tuple[str, str]]:
+        return so, lookup_order_delivery_date(
+            search_client,
+            ws_xiadan,
+            xiadan_ctrls,
+            so,
+        )
+
+    delivery_dates = dict(_run_client_calls(
+        client,
+        missing_delivery_sos,
+        fetch_delivery_date,
+        request_map,
+    ))
+    for row in xd_out:
+        so = str(row[1] or "").strip()
+        if not str(row[8] or "").strip() and so in delivery_dates:
+            row[8], row[9] = delivery_dates[so]
+
     if all_so and not ws_mingxi:
         raise FetchError(
             "回款记录里找不到「订单同币种核销明细信息」的全局数据源，"
             "无法按 SO 补取跨父回款历史核销，停下别猜累计回款"
         )
     historical_rows = historical_writeoffs_for_sos(
-        client, ws_mingxi, all_so, day
+        client,
+        ws_mingxi,
+        all_so,
+        day,
+        request_map=request_map,
     )
     # 跨父AR历史核销也必须能按各自父到账额做超核销审计；把仅用于累计的
     # 历史父记录一并保存，但分类器不会把它当目标日任务。
@@ -1040,8 +1252,19 @@ def fetch_day(
         str(row[2] or "").strip() for row in historical_rows
         if str(row[2] or "").strip() and str(row[2] or "").strip() not in current_ars
     })
-    for historical_ar in historical_ars:
-        hits = client.search_rows(WS_HUIKUAN, historical_ar)
+
+    def fetch_historical_parent(
+        search_client: ZhiyunClient,
+        historical_ar: str,
+    ) -> Tuple[str, List[dict]]:
+        return historical_ar, search_client.search_rows(WS_HUIKUAN, historical_ar)
+
+    for historical_ar, hits in _run_client_calls(
+        client,
+        historical_ars,
+        fetch_historical_parent,
+        request_map,
+    ):
         exact = [
             row for row in hits
             if _plain(row.get(F_HK["ar"])) == historical_ar
@@ -1087,10 +1310,14 @@ def fetch_day(
     if ws_sodline and all_so:
         sl_ctrls = client.controls(ws_sodline)
         sl_names, sl_opts = client.name_map(sl_ctrls), client.option_maps(sl_ctrls)
-        for so in all_so:
+
+        def fetch_sod_rows(
+            search_client: ZhiyunClient,
+            so: str,
+        ) -> Tuple[str, List[List[Any]]]:
             # 请求失败必须终止该日取数；只有成功响应且确实为空，才能按无 SOD 处理。
-            hits = client.search_rows(ws_sodline, so)
-            n = 0
+            hits = search_client.search_rows(ws_sodline, so)
+            rows: List[List[Any]] = []
             for r in hits:
                 v = pick_named(r, sl_names, sl_opts, SODLINE_COLS)
                 # 全文检索会带出订单名里含该串的别的单 → 必须精确过滤
@@ -1099,9 +1326,23 @@ def fetch_day(
                 sod = (v.get("SOD") or "").strip()
                 if not sod:
                     continue
-                n += 1
-                sod_out.append([so, sod, v.get("交付额/原币"), v.get("币种"), v.get("项目状态")])
-            if n == 0:
+                rows.append([
+                    so,
+                    sod,
+                    v.get("交付额/原币"),
+                    v.get("币种"),
+                    v.get("项目状态"),
+                ])
+            return so, rows
+
+        for so, rows in _run_client_calls(
+            client,
+            all_so,
+            fetch_sod_rows,
+            request_map,
+        ):
+            sod_out.extend(rows)
+            if not rows:
                 so_without_sod.append(so)
     elif all_so:
         print(f"WARN: 找不到「{REL_SODLINE}」表，SOD 取不到", file=sys.stderr)
@@ -1321,7 +1562,7 @@ def fetch_days_concurrently(
     days: Sequence[str],
     out_dir: Path,
 ) -> List[Tuple[str, dict]]:
-    """同一登录凭据下并发取不同日期；每个日期使用独立 HTTP 会话。"""
+    """同一登录凭据下并发取数；全批次共享请求池与并发上限。"""
     ordered_days = list(days)
     if not ordered_days:
         return []
@@ -1330,30 +1571,38 @@ def fetch_days_concurrently(
 
     with tempfile.TemporaryDirectory(prefix=".batch-fetch-", dir=out_dir) as raw_staging:
         staging_dir = Path(raw_staging)
+        runtime = _BatchFetchRuntime(
+            base_url,
+            cookie,
+            account_id,
+            MAX_BATCH_FETCH_CONCURRENCY,
+        )
 
         def fetch_one(day: str) -> dict:
-            client = ZhiyunClient(base_url, cookie, account_id=account_id)
-            try:
-                return fetch_day(client, day, staging_dir)
-            finally:
-                close = getattr(client, "close", None)
-                if callable(close):
-                    close()
+            return fetch_day(
+                runtime.client(),
+                day,
+                staging_dir,
+                request_map=runtime.map,
+            )
 
         summaries: Dict[str, dict] = {}
         failures: Dict[str, Exception] = {}
         worker_count = min(MAX_BATCH_FETCH_CONCURRENCY, len(ordered_days))
-        with ThreadPoolExecutor(
-            max_workers=worker_count,
-            thread_name_prefix="zhiyun-date",
-        ) as executor:
-            futures = {executor.submit(fetch_one, day): day for day in ordered_days}
-            for future in as_completed(futures):
-                day = futures[future]
-                try:
-                    summaries[day] = future.result()
-                except Exception as exc:  # noqa: BLE001 - 聚合所有日期的只读取数错误
-                    failures[day] = exc
+        try:
+            with ThreadPoolExecutor(
+                max_workers=worker_count,
+                thread_name_prefix="zhiyun-date",
+            ) as executor:
+                futures = {executor.submit(fetch_one, day): day for day in ordered_days}
+                for future in as_completed(futures):
+                    day = futures[future]
+                    try:
+                        summaries[day] = future.result()
+                    except Exception as exc:  # noqa: BLE001 - 聚合所有日期的只读取数错误
+                        failures[day] = exc
+        finally:
+            runtime.close()
 
         if failures:
             failed_day = next(day for day in ordered_days if day in failures)

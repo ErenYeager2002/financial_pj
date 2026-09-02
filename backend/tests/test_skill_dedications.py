@@ -3,14 +3,15 @@ from __future__ import annotations
 import json
 import uuid
 
+from fastapi.testclient import TestClient
+from helpers import TEST_PASSWORD, auth_client
+
 from app.auth_models import User, UserSkillPermission
 from app.auth_service import create_user
 from app.database import SessionLocal, init_db
 from app.main import app
 from app.models import AuditEvent, SkillDedicatedUser
 from app.registry import registry
-from fastapi.testclient import TestClient
-from helpers import TEST_PASSWORD, auth_client
 
 
 def _skill_id() -> str:

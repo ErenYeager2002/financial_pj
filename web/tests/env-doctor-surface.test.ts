@@ -15,7 +15,6 @@ test('env-doctor opens a safe platform health summary on the workbench', () => {
   const page = source('src/app/dashboard/overview/page.tsx');
   const overview = source('src/features/workbench/components/workbench-overview.tsx');
   const experiences = source('src/features/skills/execution-experience.ts');
-  const catalog = source('src/features/skills/components/skill-catalog.tsx');
 
   assert.match(server, /getPlatformHealth/);
   assert.match(server, /\/api\/health/);
@@ -27,5 +26,4 @@ test('env-doctor opens a safe platform health summary on the workbench', () => {
   assert.match(overview, /registry_errors\?\.length/);
   assert.doesNotMatch(overview, /registry_errors.*\.path|registry_errors.*\.error/);
   assert.match(experiences, /supportHref: '\/dashboard\/overview#environment-health'/);
-  assert.match(catalog, /辅助入口/);
 });

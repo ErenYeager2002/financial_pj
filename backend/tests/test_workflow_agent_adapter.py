@@ -6,6 +6,8 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from fastapi import HTTPException
+
 from app import workflow_execution_policy, workflow_orchestrator
 from app.auth import UserContext
 from app.database import SessionLocal
@@ -16,7 +18,6 @@ from app.workflow_orchestrator import (
     workflow_agent_tools,
 )
 from app.workflow_service import apply_workflow_agent_action
-from fastapi import HTTPException
 
 
 def _actor() -> UserContext:
