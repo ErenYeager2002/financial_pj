@@ -640,6 +640,33 @@ def test_tax_and_other_explicit_fees_are_included_in_gross_parent_amount():
     assert p["total_amount_orig"] == 100.0
 
 
+def test_zhiyun_total_received_overrides_net_amount_plus_charges():
+    p = _payment(
+        amount=26732.38,
+        fee=12.90,
+        total_amount_orig=28350.0,
+        total_amount_local=28350.0,
+    )
+
+    C._prepare_parent_totals(p)
+
+    assert p["charge_amount_orig"] == 12.90
+    assert p["total_amount_orig"] == 28350.0
+    assert p["total_amount_local"] == 28350.0
+    assert p["_parent_total_source"] == "zhiyun_total_received"
+
+
+def test_computed_parent_total_is_stable_across_repeated_preparation():
+    p = _payment(amount=95.0, fee=1.0, tax=2.0, other_fee=2.0)
+
+    C._prepare_parent_totals(p)
+    C._prepare_parent_totals(p)
+
+    assert p["total_amount_orig"] == 100.0
+    assert p["total_amount_local"] == 100.0
+    assert p["_parent_total_source"] == "computed_amount_plus_fee_tax"
+
+
 def test_xlsx_patch_forces_excel_formula_recalculation(tmp_path):
     """写表后要求 Excel 重算，避免公式存在但缓存值仍是旧值。"""
     src = tmp_path / "source.xlsx"

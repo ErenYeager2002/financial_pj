@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """fetch_zhiyun 纯函数单测（不连网、不碰账密）。"""
+import json
 import sys
 from pathlib import Path
 
@@ -33,8 +34,12 @@ def test_existing_exports_require_current_schema_version(tmp_path):
     )
     assert F.already_fetched(tmp_path, day) == []
 
+    files = [f"{role}_{stamp}.xlsx" for role in ("回款记录", "订单交付", "核销明细", "订单明细")]
     (tmp_path / f"取数摘要_{stamp}.json").write_text(
-        '{"export_schema_version":"' + F.EXPORT_SCHEMA_VERSION + '"}',
+        json.dumps({
+            "export_schema_version": F.EXPORT_SCHEMA_VERSION,
+            "file_sha256": {name: F._sha256(tmp_path / name) for name in files},
+        }, ensure_ascii=False),
         encoding="utf-8",
     )
     assert len(F.already_fetched(tmp_path, day)) == 4

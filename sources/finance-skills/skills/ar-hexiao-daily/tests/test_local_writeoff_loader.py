@@ -65,3 +65,37 @@ def test_loader_keeps_current_local_and_cross_ar_cumulative_writeoffs(tmp_path):
     assert payment["cumulative_writeoffs"] == {"SO1": 4083.60}
     assert payment["cumulative_writeoffs_local"] == {"SO1": 29359.30}
     assert payment["orders"][0]["delivery_date"] == dt.date(2025, 8, 13)
+
+
+def test_loader_preserves_zhiyun_total_received_for_parent_audit(tmp_path):
+    export_dir = tmp_path / "01_智云导出"
+    _xlsx(
+        export_dir / "回款记录_20260820.xlsx",
+        [
+            "回款记录ID", "核销日期", "到账日期", "到账金额/原币", "到账金额/本币",
+            "总到账金额/原币", "总到账金额/本币", "手续费/原币", "原币币种",
+            "回款类型", "核销状态", "开票客户",
+        ],
+        [[
+            "AR1", dt.date(2026, 8, 20), dt.date(2026, 8, 20), 26732.38, 26732.38,
+            28350.0, 28350.0, 12.90, "人民币CNY", "整笔回款", "核销成功", "客户甲",
+        ]],
+    )
+    _xlsx(
+        export_dir / "订单交付_20260820.xlsx",
+        [
+            "回款记录ID", "SO", "交付额/原币", "订单已核销金额", "结算币种",
+            "订单名称", "项目交付日期", "交付日期取数状态",
+        ],
+        [[
+            "AR1", "SO1", 28350.0, 28350.0, "人民币CNY", "订单甲",
+            dt.date(2025, 8, 13), "订单详情明确值",
+        ]],
+    )
+
+    payment = C.load_exports(tmp_path, dt.date(2026, 8, 20))[0]
+
+    assert payment["amount_orig"] == 26732.38
+    assert payment["total_amount_orig"] == 28350.0
+    assert payment["total_amount_local"] == 28350.0
+    assert payment["_parent_total_source"] == "zhiyun_total_received"

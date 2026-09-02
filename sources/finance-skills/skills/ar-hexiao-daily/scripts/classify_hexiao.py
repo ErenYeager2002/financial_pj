@@ -59,6 +59,8 @@ HUIKUAN_NAMES = {
     "arrival_date": ["到账日期", "回款日期"],
     "amount_orig": ["到账金额/原币", "到账金额原币"],
     "amount_local": ["到账金额/本币", "到账金额本币"],
+    "total_amount_orig": ["总到账金额/原币", "总到账金额原币", "总到账金额"],
+    "total_amount_local": ["总到账金额/本币", "总到账金额本币"],
     "fee": ["手续费/原币", "手续费"],
     "fee_local": ["手续费/本币", "手续费本币"],
     "tax": ["税费/原币", "税费"],
@@ -81,9 +83,21 @@ class CoverageError(Exception):
 
 
 def _prepare_parent_totals(p: dict) -> dict:
-    """Compute auditable gross receipt = net arrival + explicit fee/tax components."""
+    """Prefer Zhiyun's total receipt; otherwise compute arrival plus charges."""
     amount_orig = common.to_number(p.get("amount_orig"))
     amount_local = common.to_number(p.get("amount_local"))
+    existing_total_source = p.get("_parent_total_source")
+    explicit_total_orig = (
+        None
+        if existing_total_source == "computed_amount_plus_fee_tax"
+        else common.to_number(p.get("total_amount_orig"))
+    )
+    explicit_total_local = (
+        None
+        if existing_total_source == "computed_amount_plus_fee_tax"
+        else common.to_number(p.get("total_amount_local"))
+    )
+    p.pop("_charge_error", None)
     components = []
     for name, local_name in (
         ("fee", "fee_local"),
@@ -118,14 +132,48 @@ def _prepare_parent_totals(p: dict) -> dict:
     charge_local = round(sum(local_values), 2) if len(local_values) == len(components) else None
     p["charge_amount_orig"] = charge_orig
     p["charge_amount_local"] = charge_local
-    p["total_amount_orig"] = (
-        round(float(amount_orig) + charge_orig, 2) if amount_orig is not None else None
-    )
-    p["total_amount_local"] = (
-        round(float(amount_local) + float(charge_local), 2)
-        if amount_local is not None and charge_local is not None
-        else None
-    )
+    has_explicit_total = explicit_total_orig is not None or explicit_total_local is not None
+    if has_explicit_total:
+        total_orig = explicit_total_orig
+        total_local = explicit_total_local
+        if total_orig is None and total_local is not None:
+            if common.is_cny(p.get("currency") or ""):
+                total_orig = total_local
+            elif (
+                amount_orig is not None
+                and amount_local is not None
+                and abs(float(amount_local)) > TOL
+            ):
+                total_orig = round(
+                    float(total_local) * float(amount_orig) / float(amount_local), 2
+                )
+        if total_local is None and total_orig is not None:
+            if common.is_cny(p.get("currency") or ""):
+                total_local = total_orig
+            elif (
+                amount_orig is not None
+                and amount_local is not None
+                and abs(float(amount_orig)) > TOL
+            ):
+                total_local = round(
+                    float(total_orig) * float(amount_local) / float(amount_orig), 2
+                )
+        total_source = "zhiyun_total_received"
+    else:
+        total_orig = (
+            round(float(amount_orig) + charge_orig, 2)
+            if amount_orig is not None
+            else None
+        )
+        total_local = (
+            round(float(amount_local) + float(charge_local), 2)
+            if amount_local is not None and charge_local is not None
+            else None
+        )
+        total_source = "computed_amount_plus_fee_tax"
+    p["total_amount_orig"] = total_orig
+    p["total_amount_local"] = total_local
+    p["_parent_total_source"] = total_source
     return p
 
 
@@ -560,6 +608,7 @@ def load_exports(workspace: Path, target_date: Optional[dt.date] = None) -> List
         c = _need(h, "回款记录", ["AR", "核销日期"], aliases)
         for k in [
             "到账日期", "到账金额原币", "到账金额本币",
+            "总到账金额原币", "总到账金额本币",
             "手续费", "手续费本币", "税费", "税费本币", "其他费用", "其他费用本币",
             "原币币种", "回款类型", "核销状态", "开票客户",
             "销售名称",
@@ -580,6 +629,12 @@ def load_exports(workspace: Path, target_date: Optional[dt.date] = None) -> List
                 "arrival_date": common.norm_date(_get(vals, c.get("到账日期"))),
                 "amount_orig": common.to_number(_get(vals, c.get("到账金额原币"))),
                 "amount_local": common.to_number(_get(vals, c.get("到账金额本币"))),
+                "total_amount_orig": common.to_number(
+                    _get(vals, c.get("总到账金额原币"))
+                ),
+                "total_amount_local": common.to_number(
+                    _get(vals, c.get("总到账金额本币"))
+                ),
                 "fee": common.to_number(_get(vals, c.get("手续费"))) or 0.0,
                 "fee_local": common.to_number(_get(vals, c.get("手续费本币"))),
                 "tax": common.to_number(_get(vals, c.get("税费"))) or 0.0,

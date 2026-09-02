@@ -11,11 +11,11 @@ B. 日期口径（核销日期 vs 到账日期）与跑批台账（漏天检测�
 """
 import datetime as dt
 import json
+import subprocess
 import sys
 from pathlib import Path
 
 import openpyxl
-import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -416,15 +416,10 @@ def test_stray_hexiao_date_arg_does_not_crash_chain():
     防呆：AI 常把 --hexiao-date 顺手传给链上每个脚本。用不到也得收下，
     否则 argparse 直接报错、整条链断在中间（实测断过一次）。
     """
-    import build_flow_plan, build_worklist, validate_plan
-    for mod in (build_flow_plan, build_worklist, validate_plan):
-        ap = mod.main.__globals__["argparse"].ArgumentParser()
     # 直接验证参数被接受：解析不该抛异常
-    import subprocess, sys as _s
-    from pathlib import Path as _P
-    root = _P(__file__).resolve().parents[1]
+    root = Path(__file__).resolve().parents[1]
     r = subprocess.run(
-        [_s.executable, str(root / "scripts" / "build_flow_plan.py"),
+        [sys.executable, str(root / "scripts" / "build_flow_plan.py"),
          "--hexiao-date", "2026-07-22", "--workspace", str(root / "工作区")],
         capture_output=True, text=True,
     )
@@ -440,10 +435,16 @@ def test_already_fetched_detects_full_set(tmp_path):
     import fetch_zhiyun as FZ
     d = tmp_path / "01_智云导出"
     d.mkdir(parents=True)
+    files = []
     for k in ("回款记录", "订单交付", "核销明细", "订单明细"):
-        (d / f"{k}_20260722.xlsx").write_bytes(b"x")
+        name = f"{k}_20260722.xlsx"
+        (d / name).write_bytes(b"x")
+        files.append(name)
     (d / "取数摘要_20260722.json").write_text(
-        '{"export_schema_version":"' + FZ.EXPORT_SCHEMA_VERSION + '"}',
+        json.dumps({
+            "export_schema_version": FZ.EXPORT_SCHEMA_VERSION,
+            "file_sha256": {name: FZ._sha256(d / name) for name in files},
+        }, ensure_ascii=False),
         encoding="utf-8",
     )
     assert len(FZ.already_fetched(d, "2026-07-22")) == 4
