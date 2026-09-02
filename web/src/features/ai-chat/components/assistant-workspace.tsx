@@ -19,6 +19,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
 import { parseAgentWireEvent, type AgentWireEvent } from '@/features/agent-runtime/agent-wire';
 import { draftCompletionMessage } from '@/features/ai-chat/assistant-message';
+import { AssistantResponse } from '@/features/ai-chat/assistant-response';
 import type {
   AdminAssistantProfile,
   AssistantConversation,
@@ -340,7 +341,7 @@ export function AssistantWorkspace({
           <ScrollableCollection
             ariaLabel='对话消息'
             className='min-h-0 flex-1 rounded-lg border bg-muted/20 p-4'
-            contentClassName='space-y-4'
+            contentClassName='space-y-5'
             followEnd
           >
             {messages.map((message) => (
@@ -351,11 +352,17 @@ export function AssistantWorkspace({
                 <div
                   className={
                     message.role === 'user'
-                      ? 'max-w-[85%] rounded-2xl rounded-br-sm bg-primary px-4 py-3 text-sm text-primary-foreground'
-                      : 'max-w-[85%] rounded-2xl rounded-bl-sm border bg-background px-4 py-3 text-sm'
+                      ? 'min-w-0 max-w-[82%] break-words whitespace-pre-wrap rounded-2xl rounded-br-sm bg-primary px-4 py-3 text-sm leading-6 text-primary-foreground shadow-sm'
+                      : 'min-w-0 max-w-[92%] break-words rounded-2xl rounded-bl-sm border bg-background px-5 py-4 text-sm shadow-sm'
                   }
                 >
-                  {message.content || (
+                  {message.content ? (
+                    message.role === 'assistant' ? (
+                      <AssistantResponse content={message.content} />
+                    ) : (
+                      message.content
+                    )
+                  ) : (
                     <IconLoader2 className='size-4 animate-spin' aria-label='正在生成回复' />
                   )}
                 </div>
