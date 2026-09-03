@@ -2207,12 +2207,14 @@ class LedgerIndex:
         so: str,
         sod: str = "",
         current_received: Optional[float] = None,
+        receipt_time: Optional[dt.date] = None,
+        payment_way: str = "",
     ) -> Optional[int]:
         """
         在离线对比表中定位候选行；仅供差异审计，不参与日常判定。
 
         拆行后的同一 SOD 可能有多行；优先用“本次回款明细”唯一命中当前切片，
-        其次才接受唯一 SOD / 唯一 SO。不能唯一证明就返回 None，禁止猜行。
+        再用收款时间和收款方式核对当前切片；不能唯一证明就返回 None，禁止猜行。
         """
         candidates: List[int] = []
         if sod:
@@ -2223,13 +2225,24 @@ class LedgerIndex:
             return None
         if current_received is not None:
             exact = []
+            expected_date = common.norm_date(receipt_time)
+            expected_way = str(payment_way or "").strip()
             for one_row in candidates:
-                got = common.to_number(
-                    (self.row_snapshot.get(one_row) or {}).get("huikuan")
-                )
+                snap = self.row_snapshot.get(one_row) or {}
+                got = common.to_number(snap.get("huikuan"))
                 if (
                     got is not None
                     and abs(float(got) - float(current_received)) <= TOL
+                    and (
+                        expected_date is None
+                        or common.norm_date(snap.get("shoukuan_time"))
+                        == expected_date
+                    )
+                    and (
+                        not expected_way
+                        or str(snap.get("shoukuan_way") or "").strip()
+                        == expected_way
+                    )
                 ):
                     exact.append(one_row)
             if len(exact) == 1:
@@ -2773,25 +2786,16 @@ def classify_one(
             )
         ]
         idempotent_row = ledger.comparison_row(
-            so, sod, current_received=local_f
+            so,
+            sod,
+            current_received=local_f,
+            receipt_time=r_time,
+            payment_way=way,
         )
         if idempotent_row not in materialized_rows:
-            if rec.get("itemized_cumulative_authoritative"):
-                # 逐 SO 新事件必须能按本次金额定位到已写切片，不能只因表内累计较大
-                # 就借用另一父回款的已收行判幂等；否则会静默漏掉后续不同父 AR。
-                idempotent_row = None
-            else:
-                idempotent_row = next(
-                    (
-                        one_row
-                        for one_row in reversed(materialized_rows)
-                        if common.to_number(
-                            (ledger.row_snapshot.get(one_row) or {}).get("huikuan")
-                        )
-                        is not None
-                    ),
-                    materialized_rows[-1] if materialized_rows else None,
-                )
+            # 无法同时按本次金额、收款时间和收款方式定位到已落表切片时，
+            # 即使累计金额已经较大，也不能借用另一笔父回款的行判幂等。
+            idempotent_row = None
         if idempotent_row is not None:
             idem = ledger.row_snapshot.get(idempotent_row) or {}
             result.update({
