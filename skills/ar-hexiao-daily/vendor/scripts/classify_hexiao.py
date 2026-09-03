@@ -2085,6 +2085,89 @@ class LedgerIndex:
             return None
         return settled_rows[0]
 
+    def payment_event_coverage(
+        self,
+        so: str,
+        sod: str,
+        amount_local: Optional[float],
+        receipt_time: Optional[dt.date],
+        payment_way: str,
+    ) -> dict:
+        """按本批回款的单元格证据判断它是否已经写入盈亏表。
+
+        盈亏表不保存 AR 号和核销记录 NUM，所以已写入证据只能来自同一 SO/SOD
+        行的「回款明细 + 收款时间 + 收款方式」。三项必须同时匹配且只能命中一行，
+        并且该行已经结账，才能把本批回款判为幂等；单凭「是否结账=是」不能跳过。
+        """
+        so_s = str(so or "").strip()
+        sod_s = str(sod or "").strip()
+        if sod_s:
+            rows = [
+                row_no
+                for row_no in self.sod_index.get(sod_s, [])
+                if str((self.row_snapshot.get(row_no) or {}).get("so") or "").strip()
+                == so_s
+            ]
+        else:
+            rows = list(self.so_index.get(so_s, []))
+
+        expected_date = common.norm_date(receipt_time)
+        expected_way = str(payment_way or "").strip()
+        expected_amount = common.to_number(amount_local)
+        payload = {
+            "status": "not_covered",
+            "basis": "no_unique_current_event_match",
+            "so": so_s,
+            "sod": sod_s,
+            "candidate_rows": sorted(rows),
+            "matched_rows": [],
+            "expected": {
+                "回款明细": round(float(expected_amount), 2)
+                if expected_amount is not None
+                else None,
+                "收款时间": expected_date,
+                "收款方式": expected_way,
+            },
+        }
+        settled_ref = self.settled_without_open_row(so_s, sod_s)
+        payload["all_rows_settled"] = settled_ref is not None
+        payload["settled_row_ref"] = settled_ref
+
+        if expected_amount is None or expected_date is None or not expected_way:
+            payload["basis"] = "current_event_signature_incomplete"
+            return payload
+
+        matched = []
+        for row_no in sorted(rows):
+            snap = self.row_snapshot.get(row_no) or {}
+            received = common.to_number(snap.get("huikuan"))
+            actual_date = common.norm_date(snap.get("shoukuan_time"))
+            actual_way = str(snap.get("shoukuan_way") or "").strip()
+            if (
+                received is not None
+                and abs(float(received) - float(expected_amount)) <= TOL
+                and actual_date == expected_date
+                and actual_way == expected_way
+            ):
+                matched.append({
+                    "row": int(row_no),
+                    "settled": str(snap.get("jiezhang") or "").strip() == "是",
+                    "回款明细": round(float(received), 2),
+                    "收款时间": actual_date,
+                    "收款方式": actual_way,
+                })
+        payload["matched_rows"] = matched
+        if len(matched) > 1:
+            payload["status"] = "ambiguous"
+            payload["basis"] = "current_event_matches_multiple_rows"
+        elif len(matched) == 1 and matched[0]["settled"]:
+            payload["status"] = "covered"
+            payload["basis"] = "ledger_amount_receipt_time_payment_way_and_settled"
+            payload["row"] = matched[0]["row"]
+        elif len(matched) == 1:
+            payload["basis"] = "current_event_row_exists_but_is_not_settled"
+        return payload
+
     def business_rows(self, so: str, sod: str, row: Optional[int] = None) -> List[int]:
         """
         返回同一 SOD 的全部拆分行。
@@ -2227,6 +2310,92 @@ class LedgerIndex:
 # ══════════════════════════════════════════════════════════════
 # 四、单条判定
 # ══════════════════════════════════════════════════════════════
+def _record_event_coverage(
+    rec: dict,
+    ledger: LedgerIndex,
+    rates: Dict[str, float],
+) -> dict:
+    """从智云记录生成当前回款的可核对签名，再检查盈亏表覆盖情况。"""
+    amount_orig = common.to_number(rec.get("amount_orig"))
+    if amount_orig is None:
+        return {
+            "status": "unavailable",
+            "basis": "missing_current_amount",
+            "source_ar": rec.get("ar") or "",
+        }
+
+    local = common.to_number(rec.get("amount_local"))
+    if local is None:
+        local, err = _localize_amount(
+            float(amount_orig),
+            rec,
+            rates,
+            row_rate=rec.get("rate"),
+        )
+        if err or local is None:
+            return {
+                "status": "unavailable",
+                "basis": "current_local_amount_unavailable",
+                "source_ar": rec.get("ar") or "",
+            }
+
+    shoukuan_date = common.norm_date(rec.get("shoukuan_date"))
+    hexiao_date = common.norm_date(rec.get("hexiao_date"))
+    receipt_time = common.receipt_time(shoukuan_date, hexiao_date)
+    payment_way = common.pay_way(
+        rec.get("status") or "",
+        shoukuan_date,
+        hexiao_date,
+    )
+    coverage = ledger.payment_event_coverage(
+        str(rec.get("so") or "").strip(),
+        str(rec.get("sod") or "").strip(),
+        round(float(local), 2),
+        receipt_time,
+        payment_way,
+    )
+    coverage["source_ar"] = rec.get("ar") or ""
+    coverage["source_writeoff_sequence_key"] = rec.get("writeoff_sequence_key")
+    return coverage
+
+
+def _mark_event_idempotent(
+    result: dict,
+    ledger: LedgerIndex,
+    coverage: dict,
+    code: str,
+    reason: str,
+) -> dict:
+    """把已被当前回款证据覆盖的盈亏行标成幂等跳过。"""
+    settled_ref = int(coverage["row"])
+    snap = ledger.row_snapshot.get(settled_ref) or {}
+    result.update({
+        "bucket": "auto",
+        "code": code,
+        "reason": reason,
+        "ledger_row_ref": settled_ref,
+        "so": str(snap.get("so") or result.get("so") or "").strip(),
+        "sod": str(snap.get("sod") or result.get("sod") or "").strip(),
+        "idempotence_audit": coverage,
+        "five_cols": {
+            "计提": snap.get("jiti"),
+            "回款明细": snap.get("huikuan"),
+            "是否结账": "是",
+            "收款时间": common.norm_date(snap.get("shoukuan_time")),
+            "收款方式": snap.get("shoukuan_way"),
+            "实收SOD": str(snap.get("sod") or result.get("sod") or "").strip(),
+        },
+        "current_values": {
+            "计提": snap.get("jiti"),
+            "回款明细": snap.get("huikuan"),
+            "是否结账": snap.get("jiezhang"),
+            "收款时间": snap.get("shoukuan_time"),
+            "收款方式": snap.get("shoukuan_way"),
+        },
+    })
+    return result
+
+
 def classify_one(
     rec: dict,
     ledger: Optional[LedgerIndex],
@@ -2261,6 +2430,7 @@ def classify_one(
         "locate_hint": "",
         "current_values": {},
         "candidates": [],
+        "idempotence_audit": {},
         "warning_codes": list(rec.get("warning_codes") or []),
         "duplicate_writeoff_audit": rec.get("duplicate_writeoff_audit") or {},
         "ambiguous_sod_waterfall": rec.get("ambiguous_sod_waterfall") or {},
@@ -2322,35 +2492,33 @@ def classify_one(
         result["reason"] = rec.get("forced_reason") or "父回款金额守恒检查未通过"
         return result
 
-    # 写前第一道幂等：目标订单已经结账，且没有拆分后遗留的未结账承接行。
+    # 写前幂等必须有“本批回款已写入”的证据：仅有历史结账状态不能跳过。
+    event_coverage = None
     if ledger is not None and rec.get("so"):
-        settled_ref = ledger.settled_without_open_row(rec.get("so"), rec.get("sod") or "")
-        if settled_ref is not None:
-            snap = ledger.row_snapshot.get(settled_ref) or {}
-            result.update({
-                "bucket": "auto",
-                "code": "OK_ALREADY_SETTLED",
-                "reason": "订单已写入/已结账，且不存在拆分未结账行；按幂等跳过",
-                "ledger_row_ref": settled_ref,
-                "so": str(snap.get("so") or rec.get("so") or "").strip(),
-                "sod": str(snap.get("sod") or rec.get("sod") or "").strip(),
-                "five_cols": {
-                    "计提": snap.get("jiti"),
-                    "回款明细": snap.get("huikuan"),
-                    "是否结账": "是",
-                    "收款时间": common.norm_date(snap.get("shoukuan_time")),
-                    "收款方式": snap.get("shoukuan_way"),
-                    "实收SOD": str(snap.get("sod") or rec.get("sod") or "").strip(),
-                },
-                "current_values": {
-                    "计提": snap.get("jiti"),
-                    "回款明细": snap.get("huikuan"),
-                    "是否结账": snap.get("jiezhang"),
-                    "收款时间": snap.get("shoukuan_time"),
-                    "收款方式": snap.get("shoukuan_way"),
-                },
-            })
-            return result
+        event_coverage = _record_event_coverage(rec, ledger, rates)
+        result["idempotence_audit"] = event_coverage
+        if event_coverage.get("status") == "covered":
+            if rec.get("fallback_allocation_reused"):
+                idem_code = "OK_FALLBACK_ALLOCATION_ALREADY_APPLIED"
+                idem_reason = (
+                    "同一父回款已按回款明细、收款时间和收款方式唯一对应到已结账行；"
+                    "复用既有顺序分配，按幂等跳过"
+                )
+            elif rec.get("itemized_cumulative_authoritative"):
+                idem_code = "OK_ITEMIZED_CUMULATIVE_ALREADY_APPLIED"
+                idem_reason = (
+                    "智云逐单回款已按回款明细、收款时间和收款方式唯一对应到已结账行；"
+                    "按幂等跳过，未结账行继续留给后续新回款承接"
+                )
+            else:
+                idem_code = "OK_ALREADY_SETTLED"
+                idem_reason = (
+                    "本批回款已按回款明细、收款时间和收款方式唯一对应到已结账行；"
+                    "按幂等跳过"
+                )
+            return _mark_event_idempotent(
+                result, ledger, event_coverage, idem_code, idem_reason
+            )
 
     # 展开阶段已定性的（分笔/超额/没回满/无下单…）直接落地
     forced = rec.get("forced_code")
@@ -2515,6 +2683,52 @@ def classify_one(
     )
     local_f = round(float(local), 2)
     result["split_payment_source"]["amount_local"] = local_f
+
+    if event_coverage is None:
+        event_coverage = ledger.payment_event_coverage(
+            so,
+            sod,
+            local_f,
+            r_time,
+            way,
+        )
+        result["idempotence_audit"] = event_coverage
+
+    # 所有目标行都已结账，但本批事件没有在表中留下可核对的证据时，
+    # 明确挂起，禁止把历史结账行当成本批已写入，也禁止覆盖历史金额。
+    settled_ref = ledger.settled_without_open_row(so, sod)
+    if (
+        settled_ref is not None
+        and (event_coverage or {}).get("status") != "covered"
+    ):
+        matched_rows = (event_coverage or {}).get("matched_rows") or []
+        if (event_coverage or {}).get("status") == "ambiguous":
+            detail = f"金额、收款时间和收款方式同时命中 {len(matched_rows)} 行"
+        elif matched_rows:
+            detail = "找到相同回款证据，但对应行尚未结账"
+        else:
+            detail = "按金额、收款时间和收款方式没有找到唯一对应行"
+        result.update({
+            "bucket": "hold",
+            "code": "E_SETTLED_CURRENT_EVENT_UNCOVERED",
+            "reason": (
+                f"盈亏表中 SO={so}、SOD={sod or '-'} 的目标行已全部结账，但{detail}；"
+                "不能按历史结账状态幂等跳过，也不能覆盖历史行"
+            ),
+            "ledger_row_ref": settled_ref,
+            "current_values": {
+                "计提": snap.get("jiti"),
+                "回款明细": snap.get("huikuan"),
+                "差异": snap.get("chayi"),
+                "是否结账": str(snap.get("jiezhang") or "").strip()
+                if snap.get("jiezhang") is not None
+                else "",
+                "收款时间": str(snap.get("shoukuan_time") or "")[:10],
+                "收款方式": snap.get("shoukuan_way"),
+                "实收SOD": snap.get("sod"),
+            },
+        })
+        return result
 
     # ── 结账 / 计提（2026-07-29 交付额变动会议更新）──────────────────────────
     # 【结账】= 这笔到账给这个 SOD 下发的「任务」做完没有。任务 = 智云本次核销这个单的金额。
@@ -3800,11 +4014,21 @@ def classify_records(
 
     # 同一 SO/SOD 被不同父 AR 依次核销时，通常保留每一笔父回款并建立连续拆行链。
     # 已有完整聚合结清行且小额父回款尾差合计不超过 1 元时，保留聚合行并幂等跳过。
+    # 已按本批回款证据幂等确认的记录不再参与当前批次的多父回款重组；
+    # 只把尚未覆盖的本批记录交给分笔/合并判断，避免把已写行再次算进链。
     # 不同 SO/SOD、同一父 AR、缺记录号或运行累计不守恒时继续 E8 挂起。
     by_row: Dict[int, List[dict]] = {}
     for r in results:
         ref = r.get("ledger_row_ref")
-        if r["bucket"] == "auto" and ref is not None:
+        if (
+            r["bucket"] == "auto"
+            and ref is not None
+            and r.get("code") not in {
+                "OK_ALREADY_SETTLED",
+                "OK_FALLBACK_ALLOCATION_ALREADY_APPLIED",
+                "OK_ITEMIZED_CUMULATIVE_ALREADY_APPLIED",
+            }
+        ):
             by_row.setdefault(int(ref), []).append(r)
 
     for ref, group in by_row.items():
@@ -4297,7 +4521,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "writeoff_basis": "zhiyun_current_writeoff_direct",
         "parent_fallback_allocation": "non_whole_only_delivery_amount_ascending_outstanding_waterfall",
         "parent_fallback_state": FAL.LEDGER_NAME,
-        "ledger_settled_precheck": "settled_row_exists_and_no_open_split_row",
+        "ledger_settled_precheck": (
+            "current_event_matches_ledger_amount_receipt_time_payment_way_and_settled_row"
+        ),
+        "settled_event_uncovered": (
+            "closed_order_without_current_event_evidence_is_"
+            "E_SETTLED_CURRENT_EVENT_UNCOVERED"
+        ),
         "ledger_year_routing": "zhiyun_project_delivery_date_to_matching_annual_ledger_no_number_inference",
         "missing_rate_policy": "use_writeoff_amount_directly",
         "technical_amount_tolerance": TOL,
