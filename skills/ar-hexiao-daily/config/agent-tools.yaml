@@ -1,0 +1,29 @@
+schema_version: 1
+execution_mode: pi_harness
+instructions: SKILL.md
+tools:
+  - name: prepare_workspace
+    description: 创建当前核销日的隔离工作区，并复制任务固定的财务材料版本。
+  - name: fetch_zhiyun
+    description: 按任务固定日期从智云取数，或加载任务固定的回放取数包。
+  - name: build_fetch_preview
+    description: 建立取数检查预览，并把任务中保存的完整取数汇总和过程上下文返回给 Agent。
+  - name: inspect_fetched_data
+    description: 在确认取数包前，分页读取当前核销日的完整 AR、订单、核销和异常明细；根据 total、offset、limit 继续翻页直至读完。
+  - name: read_task_file
+    description: 分页读取任务工作区中的 JSON、CSV、Markdown、YAML 或文本资料；只能读取当前任务目录内的文件。
+    required_arguments:
+      - path
+  - name: accept_fetched_data
+    description: 确认取数包完整并固定该取数包，之后才能生成核销计划。
+  - name: build_reconciliation_plan
+    description: 按 SKILL.md 的顺序执行输入检查、判定、流转预填、计划校验和核销日清生成。
+  - name: apply_reconciliation
+    description: 在日期、材料版本、计划指纹和权限全部匹配后写入工作副本并回读校验。
+    required_arguments:
+      - reconciliation_date
+      - material_set_id
+      - material_version
+      - plan_fingerprint
+  - name: finalize_batch
+    description: 仅在多日批次的所有单日核销完成后生成范围报告并结束批次。

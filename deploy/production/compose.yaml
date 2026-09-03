@@ -33,7 +33,8 @@ x-backend: &backend
     FINANCIAL_TASK_DISCOVERY_HOLIDAYS: ${FINANCIAL_TASK_DISCOVERY_HOLIDAYS:-}
     FINANCIAL_NETWORK_POLICY_MODE: ${FINANCIAL_NETWORK_POLICY_MODE:-strict}
     FINANCIAL_SESSION_COOKIE_SECURE: "true"
-    FINANCIAL_WORKER_COUNTS: python:2,http:2,workflow:2
+    FINANCIAL_WORKER_COUNTS: python:2,http:2,workflow:2,agent:1
+    FINANCIAL_PI_HARNESS_TOKEN: ${FINANCIAL_PI_HARNESS_TOKEN:-}
   volumes:
     - ${FINANCIAL_DATA_DIR}:/var/lib/financial-platform
   networks:
@@ -180,6 +181,7 @@ services:
     networks:
       - data
       - edge
+      - harness
     healthcheck:
       test:
         - CMD
@@ -212,6 +214,30 @@ services:
   worker-task-discovery:
     <<: *worker
     command: ["python", "-m", "app.task_discovery_worker"]
+
+  worker-agent:
+    image: financial-platform-agent-runtime:stage10
+    build:
+      context: ${FINANCIAL_PLATFORM_DIR:-../..}
+      dockerfile: agent-runtime/Dockerfile
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    environment:
+      NODE_ENV: production
+      FINANCIAL_PLATFORM_API_URL: http://api:8000
+      FINANCIAL_PI_HARNESS_TOKEN: ${FINANCIAL_PI_HARNESS_TOKEN:-}
+      FINANCIAL_PI_HARNESS_POLL_MS: "1000"
+    networks:
+      - harness
+    depends_on:
+      api:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
 
   next:
     image: financial-platform-next:stage10
@@ -286,4 +312,6 @@ volumes:
 networks:
   edge:
   data:
+    internal: true
+  harness:
     internal: true

@@ -24,7 +24,8 @@ x-backend-environment: &backend-environment
   FINANCIAL_AR_HEXIAO_SNAPSHOT_REPLAY_ENABLED: ${FINANCIAL_DEV_AR_HEXIAO_SNAPSHOT_REPLAY_ENABLED:-true}
   FINANCIAL_TASK_DISCOVERY_ENABLED: ${FINANCIAL_DEV_TASK_DISCOVERY_ENABLED:-false}
   FINANCIAL_TASK_DISCOVERY_HOLIDAYS: ${FINANCIAL_TASK_DISCOVERY_HOLIDAYS:-}
-  FINANCIAL_WORKER_COUNTS: python:1,http:1,workflow:1
+  FINANCIAL_WORKER_COUNTS: python:1,http:1,workflow:1,agent:1
+  FINANCIAL_PI_HARNESS_TOKEN: ${FINANCIAL_PI_HARNESS_TOKEN:-}
 
 x-backend: &backend
   image: financial-platform-backend:dev
@@ -144,6 +145,7 @@ services:
     networks:
       - data
       - edge
+      - harness
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -210,6 +212,27 @@ services:
       - /app/backend/app
       - /app/skills
 
+  worker-agent:
+    image: financial-platform-agent-runtime:dev
+    build:
+      context: ../..
+      dockerfile: agent-runtime/Dockerfile
+    profiles: ["tasks"]
+    restart: unless-stopped
+    environment:
+      FINANCIAL_PLATFORM_API_URL: http://api:8000
+      FINANCIAL_PI_HARNESS_TOKEN: ${FINANCIAL_PI_HARNESS_TOKEN:-}
+      FINANCIAL_PI_HARNESS_POLL_MS: "1000"
+    networks:
+      - harness
+    depends_on:
+      api:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
   next:
     image: docker.m.daocloud.io/library/node:22-slim
     restart: unless-stopped
@@ -257,6 +280,8 @@ services:
 
 networks:
   data:
+    internal: true
+  harness:
     internal: true
   edge:
 

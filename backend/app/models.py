@@ -1196,6 +1196,10 @@ class WorkflowBatch(Base):
 
     __table_args__ = (
         Index("ux_workflow_batches_display_id", "display_id", unique=True),
+        CheckConstraint(
+            "execution_mode IN ('workflow', 'pi_harness')",
+            name="ck_workflow_batches_execution_mode",
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -1206,6 +1210,7 @@ class WorkflowBatch(Base):
     skill_id: Mapped[str] = mapped_column(String(128), index=True)
     skill_name: Mapped[str] = mapped_column(String(255))
     skill_version: Mapped[str] = mapped_column(String(64))
+    execution_mode: Mapped[str] = mapped_column(String(32), default="workflow", index=True)
     model_connection_id: Mapped[str] = mapped_column(String(36), index=True)
     model_provider: Mapped[str] = mapped_column(String(64))
     model_name: Mapped[str] = mapped_column(String(255))
@@ -1239,6 +1244,10 @@ class WorkflowSession(Base):
             unique=True,
         ),
         Index("ux_workflow_sessions_display_id", "display_id", unique=True),
+        CheckConstraint(
+            "execution_mode IN ('workflow', 'pi_harness')",
+            name="ck_workflow_sessions_execution_mode",
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -1249,6 +1258,7 @@ class WorkflowSession(Base):
     skill_id: Mapped[str] = mapped_column(String(128), index=True)
     skill_name: Mapped[str] = mapped_column(String(255))
     skill_version: Mapped[str] = mapped_column(String(64))
+    execution_mode: Mapped[str] = mapped_column(String(32), default="workflow", index=True)
     skill_hash: Mapped[str] = mapped_column(String(64))
     skill_commit: Mapped[str] = mapped_column(String(64), default="")
     concurrency_limit: Mapped[int] = mapped_column(Integer, default=1)

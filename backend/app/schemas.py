@@ -8,6 +8,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from .contracts import PlatformFile, RunDetail
 
 
+WorkflowExecutionMode = Literal["workflow", "pi_harness"]
+
+
 class InterpretRequest(BaseModel):
     message: str = ""
     parameters: dict[str, Any] = Field(default_factory=dict)
@@ -93,12 +96,14 @@ class WorkflowCreate(BaseModel):
     skill_id: str
     model_connection_id: str
     model: str | None = None
+    execution_mode: WorkflowExecutionMode = "workflow"
 
 
 class WorkflowStart(BaseModel):
     skill_id: str
     model_connection_id: str | None = None
     model: str | None = None
+    execution_mode: WorkflowExecutionMode = "workflow"
     reconciliation_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
     files: dict[str, list[str]] = Field(default_factory=dict)
     replace_roles: list[str] = Field(default_factory=list)
@@ -116,6 +121,7 @@ class WorkflowBatchStart(BaseModel):
     skill_id: str
     model_connection_id: str | None = None
     model: str | None = None
+    execution_mode: WorkflowExecutionMode = "workflow"
     reconciliation_dates: list[str] = Field(min_length=1, max_length=31)
     files: dict[str, list[str]] = Field(default_factory=dict)
     replace_roles: list[str] = Field(default_factory=list)
@@ -214,6 +220,7 @@ class WorkflowRead(BaseModel):
     skill_id: str
     skill_name: str
     skill_version: str
+    execution_mode: WorkflowExecutionMode = "workflow"
     model_provider: str
     model_name: str
     state: str
@@ -437,6 +444,7 @@ class WorkflowBatchRead(BaseModel):
     skill_id: str
     skill_name: str
     skill_version: str
+    execution_mode: WorkflowExecutionMode = "workflow"
     model_provider: str
     model_name: str
     reconciliation_dates: list[str]

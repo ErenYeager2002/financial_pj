@@ -53,6 +53,33 @@ class HandlerSpec(BaseModel):
         return self
 
 
+class ExecutionModeSpec(BaseModel):
+    adapter: Literal["workflow", "pi_harness"]
+    worker_pool: str = Field(min_length=1, max_length=64)
+    instructions: str | None = None
+    tools: str | None = None
+
+    @model_validator(mode="after")
+    def validate_pi_harness_files(self) -> ExecutionModeSpec:
+        if self.adapter == "pi_harness" and (not self.instructions or not self.tools):
+            raise ValueError("pi_harness 执行模式必须声明 instructions 和 tools")
+        return self
+
+
+class ExecutionSpec(BaseModel):
+    default_mode: Literal["workflow", "pi_harness"] = "workflow"
+    modes: dict[Literal["workflow", "pi_harness"], ExecutionModeSpec]
+
+    @model_validator(mode="after")
+    def validate_modes(self) -> ExecutionSpec:
+        if self.default_mode not in self.modes:
+            raise ValueError("execution.default_mode 必须出现在 execution.modes 中")
+        for name, mode in self.modes.items():
+            if name != mode.adapter:
+                raise ValueError(f"执行模式 {name} 的 adapter 必须与模式名一致")
+        return self
+
+
 class RuntimeSpec(BaseModel):
     timeout_seconds: int = Field(default=300, ge=1, le=86400)
     memory_mb: int = Field(default=1024, ge=128)
@@ -188,6 +215,7 @@ class SkillManifest(BaseModel):
     input_schema: dict[str, Any] = Field(default_factory=lambda: {"type": "object"})
     output_schema: dict[str, Any] = Field(default_factory=lambda: {"type": "object"})
     handler: HandlerSpec
+    execution: ExecutionSpec | None = None
     runtime: RuntimeSpec = Field(default_factory=RuntimeSpec)
     risk: RiskSpec = Field(default_factory=RiskSpec)
     operational_profile: SkillOperationalProfileSpec = Field(
@@ -222,6 +250,9 @@ class SkillManifest(BaseModel):
             and self.handler.adapter != "workflow"
         ):
             raise ValueError("guided_workflow 必须使用 workflow handler")
+        if self.execution and "workflow" in self.execution.modes:
+            if self.handler.adapter != "workflow":
+                raise ValueError("workflow 执行模式必须保留 workflow handler")
         if (
             self.operational_profile.execution_kind == "browser_rpa"
             and self.handler.adapter != "rpa"
@@ -308,6 +339,20 @@ class RegisteredSkill(BaseModel):
                 if self.manifest.handler.adapter == "workflow"
                 else "standard"
             ),
+            "execution_modes": (
+                list(self.manifest.execution.modes)
+                if self.manifest.execution
+                else ["workflow"]
+                if self.manifest.handler.adapter == "workflow"
+                else []
+            ),
+            "default_execution_mode": (
+                self.manifest.execution.default_mode
+                if self.manifest.execution
+                else "workflow"
+                if self.manifest.handler.adapter == "workflow"
+                else None
+            ),
             "progress_stages": [
                 item.model_dump() for item in self.manifest.progress_stages
             ],
@@ -384,6 +429,15 @@ class SkillRegistry:
                     payload = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
                     validate_declared_operational_profile(payload)
                     manifest = SkillManifest.model_validate(payload)
+                    if manifest.execution:
+                        skill_dir = manifest_path.parent.resolve()
+                        for mode in manifest.execution.modes.values():
+                            for relative in (mode.instructions, mode.tools):
+                                if not relative:
+                                    continue
+                                declared = (skill_dir / relative).resolve()
+                                if not declared.is_relative_to(skill_dir) or not declared.is_file():
+                                    raise ValueError(f"执行模式引用的 Skill 文件不存在：{relative}")
                     if manifest.status == "published" and manifest.ui is None:
                         raise ValueError("published Skill 必须配置 ui")
                     if manifest.status == "published":

@@ -16,6 +16,7 @@ function parseBody(value: unknown): {
   reconciliation_date: string;
   files: Record<string, string[]>;
   replace_roles: string[];
+  execution_mode: 'workflow' | 'pi_harness';
   fetched_bundle_id?: string;
   snapshot_workflow_id?: string;
 } {
@@ -28,6 +29,10 @@ function parseBody(value: unknown): {
     typeof body.reconciliation_date === 'string' ? body.reconciliation_date.trim() : '';
   if (!ID.test(skillId) || !DATE.test(reconciliationDate)) {
     throw new PlatformApiError(400, 'Skill 标识或核销日期格式无效。');
+  }
+  const executionMode = body.execution_mode ?? 'workflow';
+  if (executionMode !== 'workflow' && executionMode !== 'pi_harness') {
+    throw new PlatformApiError(400, '任务执行方式无效。');
   }
   const fetchedBundleId =
     body.fetched_bundle_id === undefined
@@ -61,6 +66,7 @@ function parseBody(value: unknown): {
     reconciliation_date: reconciliationDate,
     files: parseWorkflowFileBindings(body.files),
     replace_roles: parseWorkflowReplaceRoles(body.replace_roles),
+    execution_mode: executionMode,
     ...(fetchedBundleId ? { fetched_bundle_id: fetchedBundleId } : {}),
     ...(legacyWorkflowId ? { snapshot_workflow_id: legacyWorkflowId } : {})
   };

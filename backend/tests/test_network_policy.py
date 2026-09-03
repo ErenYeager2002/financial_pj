@@ -153,6 +153,18 @@ def test_skill_child_environment_does_not_inherit_platform_secrets(monkeypatch) 
     assert env["FINANCIAL_NETWORK_ACCESS"] == "0"
 
 
+def test_skill_child_environment_preserves_windows_browser_locations(monkeypatch) -> None:
+    monkeypatch.setenv("PROGRAMFILES", r"C:\Program Files")
+    monkeypatch.setenv("PROGRAMFILES(X86)", r"C:\Program Files (x86)")
+    monkeypatch.setenv("PROGRAMW6432", r"C:\Program Files")
+
+    env = skill_subprocess_environment(_runtime(enabled=False, allowlist=[]))
+
+    assert env["PROGRAMFILES"] == r"C:\Program Files"
+    assert env["PROGRAMFILES(X86)"] == r"C:\Program Files (x86)"
+    assert env["PROGRAMW6432"] == r"C:\Program Files"
+
+
 def test_https_business_url_requires_exact_host_and_port_443() -> None:
     runtime = _runtime(enabled=True, allowlist=["zhiyun.finance.example.com"])
     assert (

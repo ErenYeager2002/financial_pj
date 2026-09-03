@@ -44,6 +44,19 @@ interface WorkflowLauncherProps {
   initialReusableFiles: WorkflowReusableFilesRead | null;
 }
 
+type ReconciliationExecutionMode = 'workflow' | 'pi_harness';
+
+function skillExecutionModes(skill: SkillDetail | undefined): ReconciliationExecutionMode[] {
+  const modes = skill?.execution_modes ?? [];
+  return modes.length ? modes : ['workflow'];
+}
+
+function defaultSkillExecutionMode(skill: SkillDetail | undefined): ReconciliationExecutionMode {
+  const modes = skillExecutionModes(skill);
+  const configured = skill?.default_execution_mode;
+  return configured && modes.includes(configured) ? configured : modes[0];
+}
+
 interface WorkflowDateInteraction {
   begin: (target: Date, event: React.PointerEvent<HTMLButtonElement>) => void;
   enter: (target: Date, event: React.PointerEvent<HTMLButtonElement>) => void;
@@ -131,7 +144,11 @@ export function WorkflowLauncher({
     initialSkillId && skills.some((skill) => skill.id === initialSkillId)
       ? initialSkillId
       : (skills[0]?.id ?? '');
+  const initialSkill = skills.find((skill) => skill.id === selectedInitialSkill);
   const [skillId, setSkillId] = React.useState(selectedInitialSkill);
+  const [executionMode, setExecutionMode] = React.useState<ReconciliationExecutionMode>(() =>
+    defaultSkillExecutionMode(initialSkill)
+  );
   const [selectedDates, setSelectedDates] = React.useState<Date[]>([]);
   const [dateRangeStart, setDateRangeStart] = React.useState('');
   const [dateRangeEnd, setDateRangeEnd] = React.useState('');
@@ -169,6 +186,7 @@ export function WorkflowLauncher({
   } | null>(null);
   const suppressDateClickRef = React.useRef(false);
   const selectedSkill = skills.find((skill) => skill.id === skillId);
+  const executionModes = skillExecutionModes(selectedSkill);
   const requiresZhiyunCredential = selectedSkill?.id === 'ar-hexiao-daily' && !useSnapshot;
   const supportsSnapshotReplay = selectedSkill?.id === 'ar-hexiao-daily';
   const replayableOptions = React.useMemo(
@@ -568,6 +586,7 @@ export function WorkflowLauncher({
       const body = !useBatchEndpoint
         ? {
             skill_id: skillId,
+            execution_mode: executionMode,
             reconciliation_date: dates[0],
             files,
             replace_roles,
@@ -575,6 +594,7 @@ export function WorkflowLauncher({
           }
         : {
             skill_id: skillId,
+            execution_mode: executionMode,
             reconciliation_dates: dates,
             files,
             replace_roles,
@@ -626,7 +646,11 @@ export function WorkflowLauncher({
               className='h-10 rounded-md border bg-background px-3 font-normal'
               value={skillId}
               onChange={(event) => {
-                setSkillId(event.target.value);
+                const nextSkillId = event.target.value;
+                setSkillId(nextSkillId);
+                setExecutionMode(
+                  defaultSkillExecutionMode(skills.find((skill) => skill.id === nextSkillId))
+                );
                 setRerunSuccessfulDates(false);
                 setRerunReason('');
               }}
@@ -639,6 +663,43 @@ export function WorkflowLauncher({
               ))}
             </select>
           </label>
+
+          {executionModes.length > 1 && (
+            <fieldset className='grid gap-2 rounded-lg border p-3'>
+              <legend className='px-1 text-sm font-medium'>执行方式</legend>
+              <div className='grid gap-2 sm:grid-cols-2'>
+                {executionModes.map((mode) => (
+                  <label
+                    key={mode}
+                    className={cn(
+                      'flex cursor-pointer items-start gap-2 rounded-md border p-3 text-sm',
+                      executionMode === mode && 'border-primary bg-primary/5'
+                    )}
+                  >
+                    <input
+                      type='radio'
+                      name='reconciliation-execution-mode'
+                      value={mode}
+                      checked={executionMode === mode}
+                      disabled={working}
+                      onChange={() => setExecutionMode(mode)}
+                      className='mt-0.5'
+                    />
+                    <span>
+                      <span className='block font-medium'>
+                        {mode === 'pi_harness' ? 'AI 执行' : '工作流执行'}
+                      </span>
+                      <span className='mt-0.5 block text-xs text-muted-foreground'>
+                        {mode === 'pi_harness'
+                          ? 'Pi Harness 按当前任务固定的 Skill 全程执行。'
+                          : '沿用现有固定工作流执行。'}
+                      </span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          )}
 
           {requiresZhiyunCredential && (
             <ZhiyunCredentialCard

@@ -18,6 +18,7 @@ function parseBody(value: unknown): {
   replace_roles: string[];
   rerun_successful_dates: boolean;
   rerun_reason: string;
+  execution_mode: 'workflow' | 'pi_harness';
   fetched_bundle_id?: string;
   snapshot_workflow_id?: string;
 } {
@@ -26,6 +27,10 @@ function parseBody(value: unknown): {
   }
   const body = value as Record<string, unknown>;
   const skillId = typeof body.skill_id === 'string' ? body.skill_id.trim() : '';
+  const executionMode = body.execution_mode ?? 'workflow';
+  if (executionMode !== 'workflow' && executionMode !== 'pi_harness') {
+    throw new PlatformApiError(400, '批次任务执行方式无效。');
+  }
   const rawDates = body.reconciliation_dates;
   if (
     !ID.test(skillId) ||
@@ -89,6 +94,7 @@ function parseBody(value: unknown): {
     replace_roles: parseWorkflowReplaceRoles(body.replace_roles),
     rerun_successful_dates: rerunSuccessfulDates,
     rerun_reason: rerunReason,
+    execution_mode: executionMode,
     ...(fetchedBundleId ? { fetched_bundle_id: fetchedBundleId } : {}),
     ...(legacyWorkflowId ? { snapshot_workflow_id: legacyWorkflowId } : {})
   };

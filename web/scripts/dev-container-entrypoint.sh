@@ -21,10 +21,12 @@ ensure_dependencies() {
   directory="$1"
   expected_binary="$2"
   install_mode="$3"
+  required_file="${4:-}"
   stamp="$directory/node_modules/.financial-platform-dependencies.sha256"
   installed_lock="$directory/node_modules/.pnpm/lock.yaml"
   fingerprint="$(dependency_fingerprint "$directory")"
   install_required=false
+  force_install=false
 
   if [ ! -x "$expected_binary" ]; then
     install_required=true
@@ -35,18 +37,34 @@ ensure_dependencies() {
   elif [ ! -f "$installed_lock" ] || ! cmp -s "$directory/pnpm-lock.yaml" "$installed_lock"; then
     install_required=true
   fi
+  if [ -n "$required_file" ] && [ ! -f "$required_file" ]; then
+    install_required=true
+    force_install=true
+  fi
 
   if [ "$install_required" = true ]; then
     echo "Dependencies changed in $directory; installing..."
     if [ "$install_mode" = "ignore-scripts" ]; then
-      (cd "$directory" && pnpm install --frozen-lockfile --ignore-scripts)
+      if [ "$force_install" = true ]; then
+        (cd "$directory" && pnpm install --force --frozen-lockfile --ignore-scripts)
+      else
+        (cd "$directory" && pnpm install --frozen-lockfile --ignore-scripts)
+      fi
     else
-      (cd "$directory" && pnpm install --frozen-lockfile)
+      if [ "$force_install" = true ]; then
+        (cd "$directory" && pnpm install --force --frozen-lockfile)
+      else
+        (cd "$directory" && pnpm install --frozen-lockfile)
+      fi
     fi
   else
     echo "Dependencies unchanged in $directory; skipping install."
   fi
 
+  if [ -n "$required_file" ] && [ ! -f "$required_file" ]; then
+    echo "Required dependency output is missing: $required_file" >&2
+    exit 1
+  fi
   printf '%s\n' "$fingerprint" > "$stamp"
 }
 
@@ -54,13 +72,14 @@ ensure_dependencies \
   /workspace/agent-runtime \
   /workspace/agent-runtime/node_modules/.bin/tsc \
   ignore-scripts
-ensure_dependencies \
-  /workspace/web \
-  /workspace/web/node_modules/.bin/next \
-  standard
 
 cd /workspace/agent-runtime
 pnpm run build
+ensure_dependencies \
+  /workspace/web \
+  /workspace/web/node_modules/.bin/next \
+  standard \
+  /workspace/web/node_modules/@financial-platform/agent-runtime/dist/index.js
 pnpm exec tsc -p tsconfig.json --watch &
 runtime_watch_pid=$!
 

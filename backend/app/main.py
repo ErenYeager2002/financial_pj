@@ -67,6 +67,7 @@ from .routers import assistant as assistant_router
 from .routers import audit as audit_router
 from .routers import auth as auth_router
 from .routers import profile as profile_router
+from .routers import pi_harness as pi_harness_router
 from .routers import task_reminders as task_reminders_router
 from .run_approval_service import list_run_approvals
 from .run_service import (
@@ -215,6 +216,7 @@ def platform_openapi() -> dict[str, object]:
 app.openapi = platform_openapi
 app.include_router(auth_router.router)
 app.include_router(profile_router.router)
+app.include_router(pi_harness_router.router)
 app.include_router(admin_approvals_router.router)
 app.include_router(admin_feature_controls_router.router)
 app.include_router(admin_observability_router.router)

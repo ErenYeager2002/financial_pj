@@ -25,8 +25,10 @@ from .approval_service import (
     load_workflow_manifest,
     revoke_workflow_approvals,
 )
+from .assistant_profile_service import resolve_assistant_config
 from .audit_service import record_audit
 from .auth import UserContext
+from .auth_models import User
 from .authorization import assert_skill_permission
 from .fetched_bundle_service import (
     FetchedBundleError,
@@ -78,6 +80,7 @@ from .network_policy import (
     subprocess_base_environment,
 )
 from .redaction import sanitize_text
+from .reconciliation_runner import PI_HARNESS_ACTION, reconciliation_runner
 from .registry import RegisteredSkill, registry
 from .resource_policy import assert_owner, owner_list_filter, workflow_root
 from .scheduler import (
@@ -170,12 +173,34 @@ RETRYABLE_PREWRITE_ACTIONS = {
     "build_reconciliation_plan",
 }
 LEGACY_FILE_PAYLOAD_ACTIONS = {"prepare_worklist", "apply_confirmed"}
+PI_HARNESS_TOOL_ACTIONS = {
+    "prepare_workspace": "prepare_workspace",
+    "fetch_zhiyun": "fetch_data",
+    "build_fetch_preview": "build_fetch_preview",
+    "build_reconciliation_plan": "build_reconciliation_plan",
+    "apply_reconciliation": "apply_material_update",
+    "finalize_batch": "finalize_batch",
+}
 PLATFORM_TIMEZONE = ZoneInfo("Asia/Shanghai")
 
 
 def _platform_today() -> date:
     """Use the business calendar instead of the container's UTC calendar."""
     return datetime.now(PLATFORM_TIMEZONE).date()
+
+
+def _assert_execution_mode_available(
+    skill: RegisteredSkill,
+    execution_mode: Literal["workflow", "pi_harness"],
+) -> None:
+    execution = skill.manifest.execution
+    available = (
+        execution is not None and execution_mode in execution.modes
+    ) or (execution is None and execution_mode == "workflow")
+    if not available:
+        raise HTTPException(status_code=422, detail="该 Skill 不支持所选执行方式。")
+    if execution_mode == "pi_harness" and len(settings.pi_harness_token) < 32:
+        raise HTTPException(status_code=503, detail="Pi Harness Worker 尚未配置。")
 
 
 FILE_ROLES = {
@@ -584,6 +609,7 @@ def serialize_workflow(workflow: WorkflowSession) -> WorkflowRead:
         skill_id=workflow.skill_id,
         skill_name=workflow.skill_name,
         skill_version=workflow.skill_version,
+        execution_mode=workflow.execution_mode,
         model_provider=workflow.model_provider,
         model_name=workflow.model_name,
         state=workflow.state,
@@ -1505,7 +1531,14 @@ def confirm_fetched_data_review(
     db: Session,
     workflow: WorkflowSession,
     actor: UserContext,
+    *,
+    queue_plan: bool = True,
 ) -> WorkflowSession:
+    if workflow.execution_mode == "pi_harness" and queue_plan:
+        raise HTTPException(
+            status_code=409,
+            detail="该任务由 Pi Harness 全程执行，人工入口不能接管取数确认。",
+        )
     db.execute(
         select(WorkflowSession.id).where(WorkflowSession.id == workflow.id).with_for_update()
     ).scalar_one()
@@ -1552,7 +1585,8 @@ def confirm_fetched_data_review(
     context["current_step"] = "inspect_inputs"
     context["current_step_label"] = "取数数据已确认，等待检查输入文件"
     workflow.context_json = _json(context)
-    _queue_action(db, workflow, "build_reconciliation_plan")
+    if queue_plan:
+        _queue_action(db, workflow, "build_reconciliation_plan")
     workflow.stage = "preparing"
     workflow.state = "running"
     workflow.progress = 20
@@ -1562,7 +1596,11 @@ def confirm_fetched_data_review(
         db,
         workflow,
         "assistant",
-        "工作人员已确认本次智云取数完整，后台将继续检查输入文件并生成核销日清。",
+        (
+            "工作人员已确认本次智云取数完整，后台将继续检查输入文件并生成核销日清。"
+            if queue_plan
+            else "Pi Harness 已确认本次智云取数完整，等待执行核销判定。"
+        ),
         {"kind": "fetched_data_review_confirmed"},
     )
     db.commit()
@@ -1754,6 +1792,7 @@ def serialize_workflow_batch(
         skill_id=batch.skill_id,
         skill_name=batch.skill_name,
         skill_version=batch.skill_version,
+        execution_mode=batch.execution_mode,
         model_provider=batch.model_provider,
         model_name=batch.model_name,
         reconciliation_dates=_load(batch.reconciliation_dates_json, []),
@@ -2431,9 +2470,12 @@ def _workflow_model_snapshot(
     user: UserContext,
     connection_id: str | None,
     requested_model: str | None,
+    execution_mode: Literal["workflow", "pi_harness"] = "workflow",
 ) -> tuple[str, str, str]:
     """Return an audit snapshot without making background Skill runs depend on an LLM."""
     llm = resolve_runtime_config(db, user, connection_id, requested_model)
+    if execution_mode == "pi_harness" and llm is None:
+        llm = resolve_assistant_config(db, user)
     if llm:
         return llm.connection_id, llm.provider, llm.model
     return (
@@ -2532,6 +2574,7 @@ def create_workflow(
     skill = registry.get(request.skill_id)
     if not skill or skill.manifest.handler.adapter != "workflow":
         raise HTTPException(status_code=404, detail="对话式 Skill 不存在或尚未发布。")
+    _assert_execution_mode_available(skill, request.execution_mode)
     assert_workflow_skill_execution_enabled(request.skill_id)
     assert_skill_permission(db, user, request.skill_id)
     acquire_claim_lock(db)
@@ -2554,6 +2597,7 @@ def create_workflow(
         skill_id=skill.manifest.id,
         skill_name=skill.manifest.name,
         skill_version=skill.manifest.version,
+        execution_mode=request.execution_mode,
         skill_hash=skill.skill_hash,
         skill_commit=skill.commit_sha,
         concurrency_limit=skill.manifest.runtime.concurrency_limit,
@@ -2610,6 +2654,7 @@ def start_workflow(
     skill = registry.get(request.skill_id)
     if not skill or skill.manifest.handler.adapter != "workflow":
         raise HTTPException(status_code=404, detail="对话式 Skill 不存在或尚未发布。")
+    _assert_execution_mode_available(skill, request.execution_mode)
     has_replay_reference = bool(
         str(request.fetched_bundle_id or "").strip()
         or str(request.snapshot_workflow_id or "").strip()
@@ -2637,6 +2682,7 @@ def start_workflow(
         user,
         request.model_connection_id,
         request.model,
+        request.execution_mode,
     )
     if not replay_source_bundle_id and not has_service_credential(
         db, user.user_id, user.department_id, "zhiyun"
@@ -2656,6 +2702,7 @@ def start_workflow(
         skill_id=skill.manifest.id,
         skill_name=skill.manifest.name,
         skill_version=skill.manifest.version,
+        execution_mode=request.execution_mode,
         skill_hash=skill.skill_hash,
         skill_commit=skill.commit_sha,
         concurrency_limit=skill.manifest.runtime.concurrency_limit,
@@ -2713,7 +2760,7 @@ def start_workflow(
     )
     if hasattr(workflow, "context_json"):
         workflow.context_json = _json(context)
-    _queue_action(db, workflow, "prepare_workspace")
+    _queue_initial_execution(db, workflow)
     associate_reminder_with_workflow(db, workflow)
     _message(
         db,
@@ -2737,6 +2784,7 @@ def start_workflow_batch(
     skill = registry.get(request.skill_id)
     if not skill or skill.manifest.handler.adapter != "workflow":
         raise HTTPException(status_code=404, detail="对话式 Skill 不存在或尚未发布。")
+    _assert_execution_mode_available(skill, request.execution_mode)
     has_replay_reference = bool(
         str(request.fetched_bundle_id or "").strip()
         or str(request.snapshot_workflow_id or "").strip()
@@ -2789,6 +2837,7 @@ def start_workflow_batch(
         user,
         request.model_connection_id,
         request.model,
+        request.execution_mode,
     )
     if not replay_source_bundle_id and not has_service_credential(
         db, user.user_id, user.department_id, "zhiyun"
@@ -2867,6 +2916,7 @@ def start_workflow_batch(
         skill_id=skill.manifest.id,
         skill_name=skill.manifest.name,
         skill_version=skill.manifest.version,
+        execution_mode=request.execution_mode,
         model_connection_id=model_connection_id,
         model_provider=model_provider,
         model_name=model_name,
@@ -2927,6 +2977,7 @@ def start_workflow_batch(
                 skill_id=skill.manifest.id,
                 skill_name=skill.manifest.name,
                 skill_version=skill.manifest.version,
+                execution_mode=request.execution_mode,
                 skill_hash=skill.skill_hash,
                 skill_commit=skill.commit_sha,
                 concurrency_limit=skill.manifest.runtime.concurrency_limit,
@@ -2954,7 +3005,7 @@ def start_workflow_batch(
             db.flush()
             associate_reminder_with_workflow(db, workflow)
             if is_first:
-                _queue_action(db, workflow, "prepare_workspace")
+                _queue_initial_execution(db, workflow)
             _message(
                 db,
                 workflow,
@@ -3120,7 +3171,7 @@ def _cancel_workflow_immediately(db: Session, workflow: WorkflowSession) -> None
     workflow.error_message = ""
 
 
-def _finalize_requested_batch_cancellation(db: Session, batch_id: str | None) -> None:
+def finalize_requested_batch_cancellation(db: Session, batch_id: str | None) -> None:
     if not batch_id:
         return
     batch = db.get(WorkflowBatch, batch_id)
@@ -3481,6 +3532,7 @@ def _queue_action(
     pending = db.scalar(
         select(WorkflowAction.id).where(
             WorkflowAction.workflow_id == workflow.id,
+            WorkflowAction.name != PI_HARNESS_ACTION,
             WorkflowAction.state.in_(("queued", "running")),
         )
     )
@@ -3510,6 +3562,302 @@ def _new_action(
     )
     db.add(action)
     return action
+
+
+def _queue_initial_execution(db: Session, workflow: WorkflowSession) -> WorkflowAction:
+    return _new_action(db, workflow, reconciliation_runner(workflow.execution_mode).initial_action())
+
+
+def workflow_owner_context(db: Session, workflow: WorkflowSession) -> UserContext:
+    owner = db.get(User, workflow.owner_id)
+    if owner is None or owner.status != "active":
+        raise HTTPException(status_code=403, detail="任务所属账号已停用或不存在。")
+    if owner.department_id != workflow.department_id:
+        raise HTTPException(status_code=403, detail="任务所属账号的部门已经变化，拒绝继续执行。")
+    return UserContext(
+        user_id=owner.id,
+        display_name=owner.display_name,
+        role=owner.role,
+        department_id=owner.department_id,
+        username=owner.username,
+    )
+
+
+PI_HARNESS_SECRET_KEYS = frozenset(
+    {
+        "api_key",
+        "authorization",
+        "cookie",
+        "credential",
+        "credentials",
+        "password",
+        "refresh_token",
+        "secret",
+        "session_cookie",
+        "token",
+    }
+)
+PI_HARNESS_INLINE_SECRET = re.compile(
+    r"(?i)\b(password|passwd|secret|token|authorization|cookie|api[_-]?key)"
+    r"\s*[:=]\s*[^\s,;]+|\bbearer\s+[A-Za-z0-9._~+/=-]+"
+)
+
+
+def pi_harness_visible_value(value: Any) -> Any:
+    """Preserve task data while removing authentication material at any depth."""
+    if isinstance(value, dict):
+        visible: dict[str, Any] = {}
+        for key, item in value.items():
+            normalized = str(key).strip().casefold().replace("-", "_")
+            secret_key = normalized in PI_HARNESS_SECRET_KEYS or normalized.endswith(
+                ("_api_key", "_cookie", "_credential", "_password", "_secret", "_token")
+            )
+            visible[str(key)] = (
+                "[认证信息已过滤]"
+                if secret_key
+                else pi_harness_visible_value(item)
+            )
+        return visible
+    if isinstance(value, list):
+        return [pi_harness_visible_value(item) for item in value]
+    if isinstance(value, tuple):
+        return [pi_harness_visible_value(item) for item in value]
+    if isinstance(value, str):
+        return PI_HARNESS_INLINE_SECRET.sub("[认证信息已过滤]", value)
+    return value
+
+
+def pi_harness_task_context(workflow: WorkflowSession) -> dict[str, Any]:
+    """Return the complete stored task state, excluding authentication material."""
+    context = _load(workflow.context_json, {})
+    context = context if isinstance(context, dict) else {}
+    actions = sorted(workflow.actions, key=lambda item: item.queued_at)
+    messages = sorted(workflow.messages, key=lambda item: item.id)
+    batch = workflow.batch
+    return {
+        "workflow_id": workflow.id,
+        "display_id": workflow.display_id or workflow.id,
+        "execution_mode": workflow.execution_mode,
+        "state": workflow.state,
+        "stage": workflow.stage,
+        "reconciliation_date": workflow.reconciliation_date,
+        "batch_id": workflow.batch_id,
+        "batch_sequence": workflow.batch_sequence,
+        "progress": workflow.progress,
+        "progress_message": workflow.progress_message,
+        "error_message": sanitize_text(workflow.error_message, error=True),
+        "skill": {
+            "id": workflow.skill_id,
+            "name": workflow.skill_name,
+            "version": workflow.skill_version,
+            "hash": workflow.skill_hash,
+            "commit": workflow.skill_commit,
+        },
+        "model": {
+            "provider": workflow.model_provider,
+            "name": workflow.model_name,
+        },
+        "material": {
+            "material_set_id": workflow.material_set_id,
+            "version": workflow.material_set.version if workflow.material_set else None,
+            "source_workflow_id": (
+                workflow.material_set.source_workflow_id if workflow.material_set else ""
+            ),
+        },
+        "files": pi_harness_visible_value(_load(workflow.files_json, {})),
+        "artifacts": pi_harness_visible_value(_load(workflow.artifacts_json, [])),
+        "context": pi_harness_visible_value(context),
+        "messages": [
+            {
+                "id": item.id,
+                "role": item.role,
+                "content": pi_harness_visible_value(item.content),
+                "data": pi_harness_visible_value(_load(item.data_json, {})),
+                "created_at": item.created_at.isoformat(),
+            }
+            for item in messages
+        ],
+        "actions": [
+            {
+                "id": item.id,
+                "name": item.name,
+                "state": item.state,
+                "attempt_count": item.attempt_count,
+                "input": pi_harness_visible_value(_load(item.input_json, {})),
+                "result": pi_harness_visible_value(_load(item.result_json, {})),
+                "error_message": sanitize_text(item.error_message, error=True),
+                "queued_at": item.queued_at.isoformat(),
+                "started_at": item.started_at.isoformat() if item.started_at else None,
+                "finished_at": item.finished_at.isoformat() if item.finished_at else None,
+            }
+            for item in actions
+        ],
+        "batch": (
+            {
+                "id": batch.id,
+                "display_id": batch.display_id or batch.id,
+                "state": batch.state,
+                "progress": batch.progress,
+                "progress_message": batch.progress_message,
+                "error_message": sanitize_text(batch.error_message, error=True),
+                "reconciliation_dates": _load(batch.reconciliation_dates_json, []),
+                "workflows": [
+                    {
+                        "workflow_id": item.id,
+                        "display_id": item.display_id or item.id,
+                        "reconciliation_date": item.reconciliation_date,
+                        "sequence": item.batch_sequence,
+                        "state": item.state,
+                        "stage": item.stage,
+                        "progress": item.progress,
+                        "progress_message": item.progress_message,
+                        "error_message": sanitize_text(item.error_message, error=True),
+                    }
+                    for item in sorted(batch.workflows, key=lambda child: child.batch_sequence)
+                ],
+            }
+            if batch is not None
+            else None
+        ),
+    }
+
+
+def queue_pi_harness_tool(
+    db: Session,
+    workflow: WorkflowSession,
+    tool_name: str,
+    arguments: dict[str, Any],
+) -> WorkflowAction | None:
+    """Validate and queue one Skill-owned Pi tool against the pinned task state."""
+    if workflow.execution_mode != "pi_harness":
+        raise HTTPException(status_code=409, detail="当前任务没有使用 Pi Harness 执行模式。")
+    if workflow.state in TERMINAL_WORKFLOW_STATES:
+        raise HTTPException(status_code=409, detail="当前任务已经结束。")
+    if workflow.state == "cancelling":
+        raise HTTPException(status_code=409, detail="任务正在取消，Pi Harness 不会继续调用工具。")
+    actor = workflow_owner_context(db, workflow)
+    assert_skill_permission(db, actor, workflow.skill_id)
+    harness_started_at = db.scalar(
+        select(WorkflowAction.queued_at)
+        .where(
+            WorkflowAction.workflow_id == workflow.id,
+            WorkflowAction.name == PI_HARNESS_ACTION,
+            WorkflowAction.state == "running",
+        )
+        .order_by(WorkflowAction.queued_at.desc())
+    )
+    if harness_started_at is None:
+        raise HTTPException(status_code=409, detail="Pi Harness 执行租约不存在。")
+    if tool_name == "accept_fetched_data":
+        confirm_fetched_data_review(db, workflow, actor, queue_plan=False)
+        record_audit(
+            db,
+            actor=actor,
+            action="workflow.pi_harness.tool.requested",
+            resource_type="workflow",
+            resource_id=workflow.id,
+            details={"skill_id": workflow.skill_id, "tool": tool_name},
+        )
+        db.commit()
+        return None
+    action_name = PI_HARNESS_TOOL_ACTIONS.get(tool_name)
+    if not action_name:
+        raise HTTPException(status_code=422, detail="Pi Harness 请求了未声明的工具。")
+
+    completed = db.scalar(
+        select(WorkflowAction)
+        .where(
+            WorkflowAction.workflow_id == workflow.id,
+            WorkflowAction.name == action_name,
+            WorkflowAction.queued_at >= harness_started_at,
+            WorkflowAction.state == "succeeded",
+        )
+        .order_by(WorkflowAction.queued_at.desc())
+    )
+    if completed is not None:
+        return completed
+    failed = db.scalar(
+        select(WorkflowAction.id).where(
+            WorkflowAction.workflow_id == workflow.id,
+            WorkflowAction.name == action_name,
+            WorkflowAction.queued_at >= harness_started_at,
+            WorkflowAction.state == "failed",
+        )
+    )
+    if failed:
+        raise HTTPException(status_code=409, detail="该工具此前执行失败，任务不会自动重试。")
+
+    context = _load(workflow.context_json, {})
+    context = context if isinstance(context, dict) else {}
+    fetched_data = context.get("fetched_data", {})
+    fetched_data = fetched_data if isinstance(fetched_data, dict) else {}
+    if tool_name == "prepare_workspace" and context.get("workspace"):
+        raise HTTPException(status_code=409, detail="任务工作区已经准备完成。")
+    if tool_name == "fetch_zhiyun" and not context.get("workspace"):
+        raise HTTPException(status_code=409, detail="必须先准备任务工作区。")
+    if tool_name == "build_fetch_preview" and not fetched_data.get("available"):
+        raise HTTPException(status_code=409, detail="必须先完成智云取数。")
+    if tool_name == "build_reconciliation_plan" and fetched_data.get("review_status") != "confirmed":
+        raise HTTPException(status_code=409, detail="必须先确认本次取数包。")
+    if tool_name == "finalize_batch" and workflow.stage != "finalizing":
+        raise HTTPException(status_code=409, detail="当前批次尚未进入范围报告阶段。")
+    if tool_name == "apply_reconciliation":
+        expected = context.get("pi_harness_write_guard", {})
+        expected = expected if isinstance(expected, dict) else {}
+        supplied = {
+            "reconciliation_date": str(arguments.get("reconciliation_date") or ""),
+            "material_set_id": str(arguments.get("material_set_id") or ""),
+            "material_version": arguments.get("material_version"),
+            "plan_fingerprint": str(arguments.get("plan_fingerprint") or ""),
+        }
+        if supplied != expected or not all(supplied.values()):
+            raise HTTPException(status_code=409, detail="写入参数与任务固定版本不一致。")
+        material_set = current_material_set(
+            db,
+            workflow.owner_id,
+            workflow.department_id,
+            workflow.skill_id,
+        )
+        if (
+            material_set is None
+            or material_set.id != supplied["material_set_id"]
+            or material_set.version != supplied["material_version"]
+        ):
+            raise HTTPException(status_code=409, detail="业务材料版本已经变化，拒绝写入。")
+        checked_plan = Path(str(context.get("checked_plan") or "")).resolve()
+        if (
+            not checked_plan.is_file()
+            or not checked_plan.is_relative_to(_workflow_storage_root(db, workflow))
+            or sha256_file(checked_plan) != supplied["plan_fingerprint"]
+            or workflow.reconciliation_date != supplied["reconciliation_date"]
+        ):
+            raise HTTPException(status_code=409, detail="核销日期或计划指纹已经变化，拒绝写入。")
+
+    queued = _queue_action(db, workflow, action_name, {"pi_harness_tool": tool_name})
+    workflow.state = "running"
+    if tool_name == "apply_reconciliation":
+        workflow.stage = "applying"
+        workflow.progress_message = "Pi Harness 已通过写入条件校验，等待 Worker 写入"
+    elif tool_name == "finalize_batch":
+        workflow.stage = "finalizing"
+        workflow.progress_message = "Pi Harness 已请求生成批次范围报告"
+    else:
+        workflow.stage = {
+            "fetch_zhiyun": "fetching_data",
+            "build_fetch_preview": "building_fetch_preview",
+        }.get(tool_name, "preparing")
+        workflow.progress_message = f"Pi Harness 已请求执行 {tool_name}"
+    record_audit(
+        db,
+        actor=actor,
+        action="workflow.pi_harness.tool.requested",
+        resource_type="workflow",
+        resource_id=workflow.id,
+        details={"skill_id": workflow.skill_id, "tool": tool_name},
+    )
+    db.commit()
+    db.refresh(queued)
+    return queued
 
 
 def _status_reply(workflow: WorkflowSession) -> str:
@@ -3658,7 +4006,7 @@ def _apply_decision(
                 _canonicalize_file_bindings(_load(workflow.files_json, {})),
             )
             workflow.files_json = _json(normalized)
-        _queue_action(db, workflow, "prepare_workspace")
+        _queue_initial_execution(db, workflow)
         workflow.stage = "preparing"
         workflow.state = "running"
         workflow.progress = 5
@@ -3713,7 +4061,7 @@ def _apply_decision(
             _message(db, workflow, "assistant", _status_reply(workflow), source)
             return
         revoke_workflow_approvals(db, workflow, actor, "发起人重新生成变更预览。")
-        _queue_action(db, workflow, "prepare_workspace")
+        _queue_initial_execution(db, workflow)
         workflow.context_json = "{}"
         workflow.artifacts_json = "[]"
         workflow.stage = "preparing"
@@ -3751,6 +4099,21 @@ def apply_workflow_agent_action(
     actor: UserContext,
 ) -> WorkflowAgentActionResult:
     """Apply one Pi-requested workflow action without exposing execution internals."""
+    harness_started = (
+        workflow.execution_mode == "pi_harness"
+        and db.scalar(
+            select(WorkflowAction.id).where(
+                WorkflowAction.workflow_id == workflow.id,
+                WorkflowAction.name == PI_HARNESS_ACTION,
+            )
+        )
+        is not None
+    )
+    if harness_started:
+        raise HTTPException(
+            status_code=409,
+            detail="该任务正在由后台 Pi Harness 全程执行，交互式 Agent 不能接管。",
+        )
     assert_workflow_execution_enabled(workflow)
     assert_workflow_agent_action_enabled(workflow.skill_id, action)
     decision = validate_workflow_agent_request(workflow.stage, action, arguments)
@@ -3800,6 +4163,21 @@ def send_workflow_message(
     content: str,
     user: UserContext,
 ) -> WorkflowSession:
+    harness_started = (
+        workflow.execution_mode == "pi_harness"
+        and db.scalar(
+            select(WorkflowAction.id).where(
+                WorkflowAction.workflow_id == workflow.id,
+                WorkflowAction.name == PI_HARNESS_ACTION,
+            )
+        )
+        is not None
+    )
+    if harness_started:
+        raise HTTPException(
+            status_code=409,
+            detail="该任务正在由后台 Pi Harness 全程执行；可查看进度或取消任务。",
+        )
     assert_workflow_execution_enabled(workflow)
     _message(db, workflow, "user", content)
     db.flush()
@@ -3870,6 +4248,7 @@ def claim_next_workflow_action(
             .outerjoin(WorkflowBatch, WorkflowBatch.id == WorkflowSession.batch_id)
             .where(
                 WorkflowAction.state == "queued",
+                WorkflowAction.name != PI_HARNESS_ACTION,
                 or_(
                     and_(
                         WorkflowSession.state.in_(("active", "running")),
@@ -4093,6 +4472,8 @@ def _run_shifted_details_audit(
 def _batch_report_arguments(
     workspace: Path,
     batch_dates: list[str],
+    *,
+    empty_dates: list[str] | None = None,
 ) -> list[str]:
     return [
         "--workspace",
@@ -4102,6 +4483,7 @@ def _batch_report_arguments(
         "--date-to",
         batch_dates[-1],
         *[part for item in batch_dates for part in ("--date", item)],
+        *[part for item in (empty_dates or []) for part in ("--empty-date", item)],
     ]
 
 
@@ -4109,13 +4491,21 @@ def _run_batch_report_builder(
     script_dir: Path,
     workspace: Path,
     batch_dates: list[str],
+    *,
+    empty_dates: list[str] | None = None,
 ) -> None:
     script_path = script_dir / "build_task_reports.py"
-    if _script_declares_argument(script_path, "--date"):
+    supports_selected_dates = _script_declares_argument(script_path, "--date")
+    supports_empty_dates = _script_declares_argument(script_path, "--empty-date")
+    if supports_selected_dates and (not empty_dates or supports_empty_dates):
         _run_script(
             script_dir,
             script_path.name,
-            _batch_report_arguments(workspace, batch_dates),
+            _batch_report_arguments(
+                workspace,
+                batch_dates,
+                empty_dates=empty_dates,
+            ),
         )
         return
 
@@ -4129,6 +4519,7 @@ def _run_batch_report_builder(
             "--workspace",
             str(workspace),
             *[part for item in batch_dates for part in ("--date", item)],
+            *[part for item in (empty_dates or []) for part in ("--empty-date", item)],
         ],
         sensitive_values=(str(script_path), str(workspace)),
     )
@@ -5610,7 +6001,44 @@ def _finalize_batch_reports(
     batch.state = "finalizing"
     batch.progress = 99
     batch.progress_message = "每日核销已完成，正在生成范围报告"
-    _run_batch_report_builder(script_dir, workspace, dates)
+    empty_dates = []
+    for child in batch.workflows:
+        child_context = _load(child.context_json, {})
+        if not child_context.get("empty_day_skipped") or not child.fetched_bundle_id:
+            continue
+        bundle = db.scalar(
+            select(FetchedBundle).where(
+                FetchedBundle.id == child.fetched_bundle_id,
+                FetchedBundle.owner_id == child.owner_id,
+                FetchedBundle.skill_id == child.skill_id,
+                FetchedBundle.state.in_(("confirmed", "consumed")),
+            )
+        )
+        if bundle is None:
+            continue
+        preview = db.scalar(
+            select(WorkflowFetchedDataPreview)
+            .where(
+                WorkflowFetchedDataPreview.bundle_id == bundle.id,
+                WorkflowFetchedDataPreview.reconciliation_date
+                == child.reconciliation_date,
+            )
+            .order_by(
+                WorkflowFetchedDataPreview.created_at.desc(),
+                WorkflowFetchedDataPreview.id.desc(),
+            )
+        )
+        if preview is not None and _is_confirmed_empty_reconciliation_date(
+            {"summary": _load(preview.summary_json, {})},
+            child.reconciliation_date,
+        ):
+            empty_dates.append(child.reconciliation_date)
+    _run_batch_report_builder(
+        script_dir,
+        workspace,
+        dates,
+        empty_dates=empty_dates,
+    )
     report_name = _batch_integrated_report_name(dates)
     reports = (
         [workspace / "04_产出" / report_name]
@@ -5618,7 +6046,7 @@ def _finalize_batch_reports(
         else []
     )
     if len(reports) != 1:
-        raise RuntimeError("多日批次整合核销日清未生成，批次不能结束。")
+        raise RuntimeError("批次整合核销日清未生成，批次不能结束。")
     stored_artifacts = _load(workflow.artifacts_json, [])
     for report in reports:
         artifact = _register_artifact(db, workflow, report, action.id)
@@ -5674,11 +6102,12 @@ def _advance_batch(
         batch.progress = 99
         batch.progress_message = "每日核销已完成，等待生成范围报告"
         batch.updated_at = datetime.now(UTC)
-        _new_action(
-            db,
-            workflow,
-            "finalize_batch",
-        )
+        if reconciliation_runner(workflow.execution_mode).worker_finalizes_batch():
+            _new_action(
+                db,
+                workflow,
+                "finalize_batch",
+            )
         return
 
     next_files = (
@@ -5715,7 +6144,7 @@ def _advance_batch(
         f"前一天已完成，正在执行第 {next_workflow.batch_sequence}/{total} 天核销"
     )
     next_workflow.error_message = ""
-    _new_action(db, next_workflow, "prepare_workspace")
+    _queue_initial_execution(db, next_workflow)
     _message(
         db,
         next_workflow,
@@ -5894,11 +6323,7 @@ def retry_workflow_batch(
     failed.progress = 5
     failed.progress_message = f"正在重新执行 {failed.reconciliation_date}"
     failed.error_message = ""
-    _queue_action(
-        db,
-        failed,
-        "prepare_workspace",
-    )
+    _queue_initial_execution(db, failed)
     _message(
         db,
         failed,
@@ -5964,6 +6389,32 @@ def _transition_reconciliation_plan_result(
     if result.get("empty_day_skipped"):
         _complete_empty_reconciliation_date(db, workflow, context, announce=False)
         _advance_batch(db, workflow, result, action)
+        return
+    if workflow.execution_mode == "pi_harness":
+        checked_plan = Path(str(result.get("checked_plan") or "")).resolve()
+        storage_root = _workflow_storage_root(db, workflow)
+        if not checked_plan.is_file() or not checked_plan.is_relative_to(storage_root):
+            raise RuntimeError("校验后计划不存在或超出任务目录。")
+        material_set = (
+            db.get(WorkflowMaterialSet, workflow.material_set_id)
+            if workflow.material_set_id
+            else None
+        )
+        if material_set is None:
+            raise MaterialVersionConflict("任务固定的业务材料版本不存在。")
+        context["pi_harness_write_guard"] = {
+            "reconciliation_date": workflow.reconciliation_date,
+            "material_set_id": material_set.id,
+            "material_version": material_set.version,
+            "plan_fingerprint": sha256_file(checked_plan),
+        }
+        context["current_step"] = "agent_write_guard"
+        context["current_step_label"] = "日清与写前校验已通过，等待 Pi Harness 请求受控写入"
+        workflow.stage = "applying"
+        workflow.state = "running"
+        workflow.progress = max(workflow.progress, 82)
+        workflow.progress_message = "Pi Harness 正在核对写入条件"
+        workflow.context_json = _json(context)
         return
     auto_apply = bool(context.get("started_from_form")) and (
         workflow.skill_id == "ar-hexiao-daily"
@@ -6059,7 +6510,8 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
                 workflow.state = "running"
                 workflow.progress = max(workflow.progress, 10)
                 workflow.progress_message = context["current_step_label"]
-                _new_action(db, workflow, next_action)
+                if reconciliation_runner(workflow.execution_mode).worker_chains_next_action():
+                    _new_action(db, workflow, next_action)
         elif action.name == "fetch_data":
             result = _fetch_data_action(db, action, workflow)
             db.commit()
@@ -6081,7 +6533,8 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
                 workflow.state = "running"
                 workflow.progress = max(workflow.progress, 15)
                 workflow.progress_message = "智云取数完成，正在建立检查预览"
-                _new_action(db, workflow, "build_fetch_preview")
+                if reconciliation_runner(workflow.execution_mode).worker_chains_next_action():
+                    _new_action(db, workflow, "build_fetch_preview")
             workflow.context_json = _json(context)
         elif action.name == "build_fetch_preview":
             result = _build_fetch_preview_action(db, action, workflow)
@@ -6360,7 +6813,7 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
         action.finished_at = datetime.now(UTC)
         workflow.error_message = ""
         if workflow.state == "cancelled":
-            _finalize_requested_batch_cancellation(db, workflow.batch_id)
+            finalize_requested_batch_cancellation(db, workflow.batch_id)
         if preview_dates_to_prime:
             _prime_fetched_data_previews(db, workflow, preview_dates_to_prime)
     except subprocess.TimeoutExpired:

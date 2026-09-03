@@ -170,9 +170,12 @@ def validate_production_values(values: dict[str, str]) -> None:
         "POSTGRES_PASSWORD",
         "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
         "CLERK_SECRET_KEY",
+        "FINANCIAL_PI_HARNESS_TOKEN",
         "FINANCIAL_CLERK_ISSUER",
     ):
         require(values, key, OUTPUT)
+    if len(values["FINANCIAL_PI_HARNESS_TOKEN"]) < 32:
+        raise RuntimeError("FINANCIAL_PI_HARNESS_TOKEN 至少需要 32 个字符。")
 
 
 def restrict_acl(path: Path) -> None:
@@ -276,6 +279,8 @@ def build_values(args: argparse.Namespace) -> dict[str, str]:
         "NEXT_APP_DIR": NEXT_ROOT.resolve().as_posix(),
         "FINANCIAL_DATA_DIR": (PROJECT_ROOT / "data").resolve().as_posix(),
         "POSTGRES_PASSWORD": existing.get("POSTGRES_PASSWORD") or secrets.token_urlsafe(36),
+        "FINANCIAL_PI_HARNESS_TOKEN": existing.get("FINANCIAL_PI_HARNESS_TOKEN")
+        or secrets.token_urlsafe(48),
         "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY": require(
             next_env, "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY", next_env_path
         ),

@@ -4236,6 +4236,16 @@ def test_current_range_report_snapshot_keeps_explicit_selected_dates(
     ]
 
 
+def test_current_range_report_receives_platform_confirmed_empty_dates(tmp_path: Path) -> None:
+    arguments = workflow_service._batch_report_arguments(
+        tmp_path / "report-workspace",
+        ["2026-08-17", "2026-08-18"],
+        empty_dates=["2026-08-17"],
+    )
+
+    assert arguments[-2:] == ["--empty-date", "2026-08-17"]
+
+
 def test_batch_prepare_accepts_declared_business_result_return_codes(
     monkeypatch,
     tmp_path: Path,

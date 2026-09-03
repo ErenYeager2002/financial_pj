@@ -14,6 +14,7 @@ export interface WorkflowCreateInput {
   skill_id: string;
   model_connection_id: string;
   model?: string;
+  execution_mode?: 'workflow' | 'pi_harness';
 }
 
 export interface WorkflowStartInput {
@@ -21,6 +22,7 @@ export interface WorkflowStartInput {
   reconciliation_date: string;
   files?: Record<string, string[]>;
   replace_roles?: string[];
+  execution_mode?: 'workflow' | 'pi_harness';
 }
 
 export interface WorkflowBatchStartInput {
@@ -30,6 +32,7 @@ export interface WorkflowBatchStartInput {
   replace_roles?: string[];
   rerun_successful_dates?: boolean;
   rerun_reason?: string;
+  execution_mode?: 'workflow' | 'pi_harness';
 }
 
 export function listWorkflowSessions(): Promise<WorkflowRead[]> {

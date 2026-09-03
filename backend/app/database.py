@@ -42,9 +42,13 @@ SQLITE_RUNTIME_COLUMNS = {
     },
     "workflow_sessions": {
         "concurrency_limit": "INTEGER NOT NULL DEFAULT 1",
+        "execution_mode": "VARCHAR(32) NOT NULL DEFAULT 'workflow'",
         "batch_id": "VARCHAR(36)",
         "batch_sequence": "INTEGER NOT NULL DEFAULT 0",
         "previous_workflow_id": "VARCHAR(36) NOT NULL DEFAULT ''",
+    },
+    "workflow_batches": {
+        "execution_mode": "VARCHAR(32) NOT NULL DEFAULT 'workflow'",
     },
     "workflow_actions": {
         "worker_id": "VARCHAR(128) NOT NULL DEFAULT ''",

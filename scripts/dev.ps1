@@ -24,7 +24,13 @@ $HostFrontendScript = Join-Path $ProjectRoot "scripts\dev-frontend-host.ps1"
 $HostFrontendStatePath = Join-Path $DevDataDir "frontend-host.json"
 $HostFrontendOutputLog = Join-Path $DevDataDir "frontend-host.log"
 $HostFrontendErrorLog = Join-Path $DevDataDir "frontend-host-error.log"
-$WorkerServices = @("worker-python", "worker-http", "worker-workflow", "worker-task-discovery")
+$WorkerServices = @(
+    "worker-python",
+    "worker-http",
+    "worker-workflow",
+    "worker-task-discovery",
+    "worker-agent"
+)
 $FrontendCacheVolume = "financial-platform-dev_next-cache"
 
 function Get-PythonCommand {
@@ -103,6 +109,26 @@ function Assert-DevelopmentCredentials {
             }
         }
     }
+}
+
+function Ensure-DevelopmentPiHarnessToken {
+    $Values = Read-EnvValues $DevEnvFile
+    if (
+        $Values.ContainsKey("FINANCIAL_PI_HARNESS_TOKEN") -and
+        -not [string]::IsNullOrWhiteSpace($Values["FINANCIAL_PI_HARNESS_TOKEN"])
+    ) {
+        return
+    }
+    $Bytes = New-Object byte[] 48
+    $Generator = [Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+        $Generator.GetBytes($Bytes)
+    } finally {
+        $Generator.Dispose()
+    }
+    $Token = [Convert]::ToBase64String($Bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_')
+    Add-Content -LiteralPath $DevEnvFile -Value "FINANCIAL_PI_HARNESS_TOKEN=$Token" -Encoding utf8
+    Write-Host "已为本机 Pi Harness Worker 生成独立内部令牌（未输出令牌值）。"
 }
 
 function Resolve-LanAddress([string]$InterfaceAlias) {
@@ -306,6 +332,7 @@ if ($ValidateOnly) {
 }
 
 Initialize-DevelopmentEnv
+Ensure-DevelopmentPiHarnessToken
 Assert-DevelopmentCredentials
 $LanAddress = ""
 if ($Lan) {
@@ -370,7 +397,7 @@ if ($RestartWorkers) {
 }
 
 if ($Build) {
-    & docker @ComposeArgs build api
+    & docker @ComposeArgs build api worker-agent
     if ($LASTEXITCODE -ne 0) {
         throw "开发后端基础镜像构建失败。"
     }

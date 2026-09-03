@@ -13,3 +13,7 @@ Use the repository's configured five triage labels: `needs-triage`, `needs-info`
 ### Domain docs
 
 This is a single-context repository. Read `CONTEXT.md` and relevant decisions under `docs/adr/` before exploring the codebase. See `docs/agents/domain.md`.
+
+### Verification
+
+After modifying files in this repository, do not run any tests. Review the diff only, and state that tests were not run.

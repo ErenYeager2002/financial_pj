@@ -119,6 +119,26 @@ def validate() -> None:
         raise AssertionError("Docker frontend fallback must use Webpack")
     if "pnpm exec tsc -p tsconfig.json --watch" not in docker_frontend_script:
         raise AssertionError("agent runtime must rebuild incrementally while development is running")
+    runtime_dependency_index = docker_frontend_script.find(
+        "ensure_dependencies \\\n  /workspace/agent-runtime"
+    )
+    runtime_build_index = docker_frontend_script.find("pnpm run build")
+    web_dependency_index = docker_frontend_script.find(
+        "ensure_dependencies \\\n  /workspace/web"
+    )
+    if min(runtime_dependency_index, runtime_build_index, web_dependency_index) < 0 or not (
+        runtime_dependency_index < runtime_build_index < web_dependency_index
+    ):
+        raise AssertionError(
+            "Docker frontend must build Agent Runtime before installing the web file dependency"
+        )
+    if (
+        "/workspace/web/node_modules/@financial-platform/agent-runtime/dist/index.js"
+        not in docker_frontend_script
+    ):
+        raise AssertionError(
+            "Docker frontend must repair a web dependency volume missing Agent Runtime output"
+        )
 
     backend_environment = compose.get("x-backend-environment", {})
     if str(backend_environment.get("FINANCIAL_ENV")) != "development":

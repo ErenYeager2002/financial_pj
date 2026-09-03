@@ -102,6 +102,17 @@
             "title": "Description",
             "type": "string"
           },
+          "execution": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExecutionSpec"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
           "file_inputs": {
             "items": {
               "$ref": "#/components/schemas/FileInputSpec"
@@ -1131,6 +1142,71 @@
           "access"
         ],
         "title": "ExternalDataSourceSpec",
+        "type": "object"
+      },
+      "ExecutionModeSpec": {
+        "properties": {
+          "adapter": {
+            "enum": [
+              "workflow",
+              "pi_harness"
+            ],
+            "title": "Adapter",
+            "type": "string"
+          },
+          "instructions": {
+            "anyOf": [
+              {"type": "string"},
+              {"type": "null"}
+            ],
+            "default": null,
+            "title": "Instructions"
+          },
+          "tools": {
+            "anyOf": [
+              {"type": "string"},
+              {"type": "null"}
+            ],
+            "default": null,
+            "title": "Tools"
+          },
+          "worker_pool": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Worker Pool",
+            "type": "string"
+          }
+        },
+        "required": [
+          "adapter",
+          "worker_pool"
+        ],
+        "title": "ExecutionModeSpec",
+        "type": "object"
+      },
+      "ExecutionSpec": {
+        "properties": {
+          "default_mode": {
+            "default": "workflow",
+            "enum": [
+              "workflow",
+              "pi_harness"
+            ],
+            "title": "Default Mode",
+            "type": "string"
+          },
+          "modes": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ExecutionModeSpec"
+            },
+            "title": "Modes",
+            "type": "object"
+          }
+        },
+        "required": [
+          "modes"
+        ],
+        "title": "ExecutionSpec",
         "type": "object"
       },
       "FeatureControlRead": {
@@ -3295,6 +3371,33 @@
             "title": "Execution Mode",
             "type": "string"
           },
+          "execution_modes": {
+            "items": {
+              "enum": [
+                "workflow",
+                "pi_harness"
+              ],
+              "type": "string"
+            },
+            "title": "Execution Modes",
+            "type": "array"
+          },
+          "default_execution_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "workflow",
+                  "pi_harness"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Default Execution Mode"
+          },
           "file_inputs": {
             "items": {
               "$ref": "#/components/schemas/FileInputSpec"
@@ -4303,6 +4406,33 @@
             ],
             "title": "Execution Mode",
             "type": "string"
+          },
+          "execution_modes": {
+            "items": {
+              "enum": [
+                "workflow",
+                "pi_harness"
+              ],
+              "type": "string"
+            },
+            "title": "Execution Modes",
+            "type": "array"
+          },
+          "default_execution_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "workflow",
+                  "pi_harness"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Default Execution Mode"
           },
           "id": {
             "title": "Id",
@@ -5801,6 +5931,15 @@
             "title": "Error Message",
             "type": "string"
           },
+          "execution_mode": {
+            "default": "workflow",
+            "enum": [
+              "workflow",
+              "pi_harness"
+            ],
+            "title": "Execution Mode",
+            "type": "string"
+          },
           "fetched_data_available": {
             "default": false,
             "title": "Fetched Data Available",
@@ -5940,6 +6079,15 @@
       },
       "WorkflowBatchStart": {
         "properties": {
+          "execution_mode": {
+            "default": "workflow",
+            "enum": [
+              "workflow",
+              "pi_harness"
+            ],
+            "title": "Execution Mode",
+            "type": "string"
+          },
           "fetched_bundle_id": {
             "anyOf": [
               {
@@ -6038,6 +6186,15 @@
       },
       "WorkflowCreate": {
         "properties": {
+          "execution_mode": {
+            "default": "workflow",
+            "enum": [
+              "workflow",
+              "pi_harness"
+            ],
+            "title": "Execution Mode",
+            "type": "string"
+          },
           "model": {
             "anyOf": [
               {
@@ -6994,6 +7151,15 @@
             "title": "Error Message",
             "type": "string"
           },
+          "execution_mode": {
+            "default": "workflow",
+            "enum": [
+              "workflow",
+              "pi_harness"
+            ],
+            "title": "Execution Mode",
+            "type": "string"
+          },
           "fetched_bundle": {
             "anyOf": [
               {
@@ -7253,6 +7419,15 @@
       },
       "WorkflowStart": {
         "properties": {
+          "execution_mode": {
+            "default": "workflow",
+            "enum": [
+              "workflow",
+              "pi_harness"
+            ],
+            "title": "Execution Mode",
+            "type": "string"
+          },
           "fetched_bundle_id": {
             "anyOf": [
               {

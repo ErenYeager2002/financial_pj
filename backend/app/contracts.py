@@ -6,6 +6,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from .registry import (
+    ExecutionSpec,
     FileInputSpec,
     HandlerSpec,
     PermissionSpec,
@@ -18,7 +19,7 @@ from .registry import (
     SkillUiSpec,
 )
 
-CONTRACT_VERSION = "2026-08-31-operational-profile"
+CONTRACT_VERSION = "2026-09-03-dual-execution"
 
 
 class PlatformUser(BaseModel):
@@ -53,6 +54,8 @@ class SkillSummary(BaseModel):
     action_label: str
     popular: bool = False
     execution_mode: Literal["standard", "guided_workflow"] = "standard"
+    execution_modes: list[Literal["workflow", "pi_harness"]] = Field(default_factory=list)
+    default_execution_mode: Literal["workflow", "pi_harness"] | None = None
     risk: SkillRiskSummary
 
 
@@ -71,6 +74,7 @@ class AdminSkillDetail(SkillManifest):
     schema_version: int = 1
     file_inputs: list[FileInputSpec] = Field(default_factory=list)
     handler: HandlerSpec
+    execution: ExecutionSpec | None = None
     runtime: RuntimeSpec = Field(default_factory=RuntimeSpec)
     risk: RiskSpec = Field(default_factory=RiskSpec)
     permissions: PermissionSpec = Field(default_factory=PermissionSpec)

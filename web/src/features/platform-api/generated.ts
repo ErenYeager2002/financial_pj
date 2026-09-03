@@ -1856,6 +1856,8 @@ export interface components {
             commit_sha: string;
             /** Description */
             description: string;
+            /** @default null */
+            execution: components["schemas"]["ExecutionSpec"] | null;
             /** File Inputs */
             file_inputs?: components["schemas"]["FileInputSpec"][];
             handler: components["schemas"]["HandlerSpec"];
@@ -2266,6 +2268,26 @@ export interface components {
             required: boolean;
             /** System */
             system: string;
+        };
+        /** ExecutionModeSpec */
+        ExecutionModeSpec: {
+            /** @enum {string} */
+            adapter: "workflow" | "pi_harness";
+            /** @default null */
+            instructions: string | null;
+            /** @default null */
+            tools: string | null;
+            /** Worker Pool */
+            worker_pool: string;
+        };
+        /** ExecutionSpec */
+        ExecutionSpec: {
+            /** @default workflow */
+            default_mode: "workflow" | "pi_harness";
+            /** Modes */
+            modes: {
+                [key: string]: components["schemas"]["ExecutionModeSpec"];
+            };
         };
         /** FeatureControlRead */
         FeatureControlRead: {
@@ -3241,6 +3263,10 @@ export interface components {
              * @enum {string}
              */
             execution_mode: "standard" | "guided_workflow";
+            /** Supported task execution modes */
+            execution_modes?: ("workflow" | "pi_harness")[];
+            /** Default task execution mode */
+            default_execution_mode?: ("workflow" | "pi_harness") | null;
             /** File Inputs */
             file_inputs?: components["schemas"]["FileInputSpec"][];
             /** Id */
@@ -3664,6 +3690,10 @@ export interface components {
              * @enum {string}
              */
             execution_mode: "standard" | "guided_workflow";
+            /** Supported task execution modes */
+            execution_modes?: ("workflow" | "pi_harness")[];
+            /** Default task execution mode */
+            default_execution_mode?: ("workflow" | "pi_harness") | null;
             /** Id */
             id: string;
             /** Name */
@@ -4347,6 +4377,8 @@ export interface components {
             display_id: string;
             /** Error Message */
             error_message: string;
+            /** Execution Mode */
+            execution_mode?: "workflow" | "pi_harness";
             /**
              * Fetched Data Available
              * @default false
@@ -4416,6 +4448,8 @@ export interface components {
         };
         /** WorkflowBatchStart */
         WorkflowBatchStart: {
+            /** Execution Mode */
+            execution_mode?: "workflow" | "pi_harness";
             /** Fetched Bundle Id */
             fetched_bundle_id?: string | null;
             /** Files */
@@ -4450,6 +4484,8 @@ export interface components {
         };
         /** WorkflowCreate */
         WorkflowCreate: {
+            /** Execution Mode */
+            execution_mode?: "workflow" | "pi_harness";
             /** Model */
             model?: string | null;
             /** Model Connection Id */
@@ -4867,6 +4903,8 @@ export interface components {
             display_id: string;
             /** Error Message */
             error_message: string;
+            /** Execution Mode */
+            execution_mode?: "workflow" | "pi_harness";
             fetched_bundle?: components["schemas"]["FetchedBundleRead"] | null;
             /**
              * Fetched Data Available
@@ -4977,6 +5015,8 @@ export interface components {
         };
         /** WorkflowStart */
         WorkflowStart: {
+            /** Execution Mode */
+            execution_mode?: "workflow" | "pi_harness";
             /** Fetched Bundle Id */
             fetched_bundle_id?: string | null;
             /** Files */
@@ -5028,6 +5068,8 @@ export type BodyUploadAvatarApiProfileAvatarPost = components['schemas']['Body_u
 export type BodyUploadFileApiFilesPost = components['schemas']['Body_upload_file_api_files_post'];
 export type ChangePasswordRequest = components['schemas']['ChangePasswordRequest'];
 export type ExternalDataSourceSpec = components['schemas']['ExternalDataSourceSpec'];
+export type ExecutionModeSpec = components['schemas']['ExecutionModeSpec'];
+export type ExecutionSpec = components['schemas']['ExecutionSpec'];
 export type FeatureControlRead = components['schemas']['FeatureControlRead'];
 export type FeatureControlUpdateRequest = components['schemas']['FeatureControlUpdateRequest'];
 export type FetchedBundleRead = components['schemas']['FetchedBundleRead'];

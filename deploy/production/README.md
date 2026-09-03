@@ -1,6 +1,6 @@
 # 阶段十本机容器部署
 
-该拓扑把 Next.js、FastAPI、PostgreSQL、6 个 Worker、精确目标出站代理和 HTTPS 网关放入独立 Compose 项目：
+该拓扑把 Next.js、FastAPI、PostgreSQL、Python Worker、Pi Harness Agent Worker、精确目标出站代理和 HTTPS 网关放入独立 Compose 项目：
 
 - 唯一主机入口是 `https://localhost:8443`；
 - PostgreSQL、FastAPI、Next.js 和 Worker 均不映射主机端口；
@@ -8,7 +8,7 @@
 - Worker 只加入 `internal` 数据网络，不能直接访问公网；需要联网的 Skill 子进程只能通过出站代理；
 - 出站代理的 `strict` 模式只接受 HTTPS CONNECT，并按精确 FQDN 和 443 端口放行；`internal` 模式只允许显式配置的 RFC1918 IPv4、HTTP 协议和端口；空目标列表默认拒绝全部目标；
 - FastAPI 和 Next.js 可访问外部 Clerk，浏览器只访问同一 HTTPS 入口；
-- `ar-hexiao-daily` 通过平台 Workflow Worker 执行，不进入普通 Pi Skill 目录；启用后可在平台工作流中执行真实取数和受控写入。
+- `ar-hexiao-daily` 可按任务选择 Workflow 或 Pi Harness；两种方式都只通过平台受控 Worker 执行真实取数和工作副本写入。
 
 AI 助手生产默认使用服务端 Pi Agent Runtime（`AGENT_RUNTIME=pi`）。如需灰度旧实现，才设置
 `AGENT_RUNTIME=legacy`；在该模式下把测试账号的 Clerk User ID 填入 `AGENT_RUNTIME_PI_USERS`

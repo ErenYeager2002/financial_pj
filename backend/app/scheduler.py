@@ -16,6 +16,7 @@ from .models import (
     WorkflowMessage,
     WorkflowSession,
 )
+from .reconciliation_runner import PI_HARNESS_ACTION
 from .settings import settings
 from .step_runtime_service import finish_run_execution_step, queue_run_execution_step
 from .task_reminder_workflow_service import sync_reminder_from_workflow
@@ -163,6 +164,7 @@ def active_workflow_count(db: Session, skill_id: str, now: datetime) -> int:
             .where(
                 WorkflowSession.skill_id == skill_id,
                 WorkflowAction.state == "running",
+                WorkflowAction.name != PI_HARNESS_ACTION,
                 or_(
                     WorkflowAction.lease_expires_at.is_(None),
                     WorkflowAction.lease_expires_at >= now,

@@ -29,6 +29,12 @@ _SAFE_CHILD_ENVIRONMENT = (
     "PATH",
     "PATHEXT",
     "PLAYWRIGHT_BROWSERS_PATH",
+    # Playwright uses these Windows shell locations to resolve the installed
+    # Edge channel. They contain no credentials and are required by browser
+    # based Skills after the environment is reduced to this allowlist.
+    "PROGRAMFILES",
+    "PROGRAMFILES(X86)",
+    "PROGRAMW6432",
     "SYSTEMROOT",
     "TEMP",
     "TMP",

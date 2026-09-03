@@ -81,6 +81,7 @@ class Settings:
     llm_api_key: str = os.getenv("FINANCIAL_LLM_API_KEY", "")
     llm_model: str = os.getenv("FINANCIAL_LLM_MODEL", "")
     llm_provider: str = os.getenv("FINANCIAL_LLM_PROVIDER", "")
+    pi_harness_token: str = os.getenv("FINANCIAL_PI_HARNESS_TOKEN", "").strip()
     zhiyun_base_url: str = os.getenv("FINANCIAL_ZHIYUN_BASE_URL", "").rstrip("/")
     # Read-only reminder discovery is independently gated from reconciliation.
     task_discovery_enabled: bool = _env_bool(

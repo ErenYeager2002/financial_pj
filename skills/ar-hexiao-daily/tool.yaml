@@ -74,6 +74,17 @@ output_schema:
 handler:
   adapter: workflow
   worker_pool: workflow
+execution:
+  default_mode: pi_harness
+  modes:
+    workflow:
+      adapter: workflow
+      worker_pool: workflow
+    pi_harness:
+      adapter: pi_harness
+      worker_pool: agent
+      instructions: SKILL.md
+      tools: config/agent-tools.yaml
 runtime:
   timeout_seconds: 1800
   memory_mb: 2048
