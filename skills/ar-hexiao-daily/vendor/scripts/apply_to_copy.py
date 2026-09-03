@@ -10,7 +10,7 @@
 
 安全设计：
   输入 = 她给的盈亏副本（只读打开）+ 校验后的计划
-  平台交付 = 写入后的盈亏核算表；变更清单和订单写入差异表仅保留在工作区内部审计，且不生成便携副本
+  输出 = 04_产出/盈亏核算表_已回填_日期.xlsx（新文件）+ 变更清单 + 订单写入差异表
   用 OOXML 补丁只改明细格，避免 openpyxl 毁图/透视
 
 写完立刻回读逐格比对；对不上非 0 退出。
@@ -410,7 +410,7 @@ def _finalize_output(
     *,
     baseline: Path,
 ):
-    """补齐计算链；本 Skill 不生成便携副本。"""
+    """补齐计算链；有历史外链时再派生独立便携副本。"""
     import workbook_finalize
     import xlsx_patch
 
@@ -421,7 +421,11 @@ def _finalize_output(
     lost = xlsx_patch.parts_diff(baseline, path)
     if lost:
         raise ValueError(f"计算链处理后工作簿部件缺失：{lost[:5]}")
-    return finalized, None
+    portable = None
+    if workbook_finalize.external_link_count(path):
+        audit = workbook_finalize.create_portable_copy(path, portable_out)
+        portable = (portable_out, audit)
+    return finalized, portable
 
 
 def precheck_before_write(plan: dict, items: List[dict], src: Path) -> List[str]:

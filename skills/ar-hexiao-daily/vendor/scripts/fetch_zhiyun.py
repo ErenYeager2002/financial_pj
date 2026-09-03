@@ -24,15 +24,16 @@
   3. 它是独立筛的第二张表，与回款记录可能不同步；关联读法天然同步。
 
 红线：只读（GetFilterRows / getRowRelationRows / getWorksheetInfo，无任何写接口）；
-      账号密码每次运行时提供，绝不写进代码 / config / git。
+  账号密码只从本机 Windows 凭据库或环境变量读取，绝不写进代码 / config / git；
+  自动任务不会在取数过程中弹出账号密码询问。
 
 用法：
   export ZHIYUN_USER='你的智云账号'
   export ZHIYUN_PASS   # 在 shell 里 export，勿写进任何文件；用完 unset
   python3 scripts/fetch_zhiyun.py --date 2026-07-22 --workspace 工作区/
 
-  或交互（推荐，密码不回显、不落盘）：
-  python3 scripts/fetch_zhiyun.py --date yesterday --workspace 工作区/
+  或预先配置 MD_PSS_ID 后运行：
+    python3 scripts/fetch_zhiyun.py --date yesterday --workspace 工作区/
 
 依赖：playwright（登录）+ requests（取数）+ openpyxl（写出 xlsx）
   pip install playwright requests openpyxl && playwright install chromium
@@ -40,7 +41,6 @@
 from __future__ import annotations
 
 import argparse
-import getpass
 import hashlib
 import json
 import os
@@ -191,7 +191,7 @@ def resolve_date(s: str) -> str:
     明妹口径：两者没有固定隔天关系，天然可能差好几天。
 
     另外：`yesterday` 是相对**运行那一刻**算的，她晚上跑和第二天早上跑不是同一天。
-    所以调用方（SKILL / main）必须把解析结果**复述给她确认**，别让相对说法飘着。
+    主流程在接到核销指令后立即把它解析成绝对日期，并在本批内部固定使用，不再二次询问。
     """
     s = (s or "").strip().lower()
     if s in ("yesterday", "t-1", "昨天"):
@@ -1179,18 +1179,14 @@ def resolve_credentials(args) -> Tuple[str, str]:
         user = saved_user
     if not pwd and user == saved_user:
         pwd = saved_pwd
-    try:
-        if not user:
-            user = input("智云账号（邮箱/手机）: ").strip()
-        if not pwd:
-            pwd = getpass.getpass("智云密码（不回显）: ")
-    except (EOFError, KeyboardInterrupt):
-        raise SystemExit(
-            "ERROR: 没有可用的智云登录凭据。请先把测试账号保存到 Windows 凭据库，"
-            "或在交互终端输入一次。"
-        )
+    # 核销指令后的主流程必须无人值守；不在中途弹出账号/密码问题，
+    # 也不把凭据写进命令行或文件。认证只能来自 MD_PSS_ID、环境变量或
+    # 本机 Windows 凭据库；缺失时明确停止，由编排层一次性报告阻塞原因。
     if not user or not pwd:
-        raise SystemExit("ERROR: 需要账号和密码（或改用 --cookie-only + MD_PSS_ID）")
+        raise SystemExit(
+            "ERROR: 没有可用的智云登录凭据。自动任务不会在取数中途询问账号密码；"
+            "请先配置本机 Windows 凭据库/环境变量，或提供 MD_PSS_ID 后重新执行。"
+        )
     return user, pwd
 
 
@@ -1223,7 +1219,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--user", default="", help="账号；也可用环境变量 ZHIYUN_USER")
     ap.add_argument(
         "--password", default="",
-        help="密码（不推荐写在命令行历史）；优先用 ZHIYUN_PASS 或交互 getpass",
+        help="密码（不推荐写在命令行历史）；优先用 ZHIYUN_PASS 或本机凭据库，任务中不交互询问",
     )
     ap.add_argument("--cookie-only", action="store_true", help="不登录，只用 MD_PSS_ID")
     ap.add_argument("--account-id", default=os.environ.get("ZHIYUN_ACCOUNT_ID", ""))
@@ -1250,7 +1246,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     else:
         out_dir = Path(__file__).resolve().parent.parent / "工作区" / "01_智云导出"
 
-    # ① 把"跑哪天"说死了再登录取数（相对说法解析成具体日期，供 agent 复述给她确认）
+    # ① 把"跑哪天"固定下来；相对说法只在任务入口解析一次，不再中途询问。
     print(f"★ 本次取的是**核销日期 = {day}** 的到账（销售在这一天核销的；不是到账日期）")
 
     # ② 漏天检查：`--date yesterday` 只看昨天，她请假/周末/系统故障跳过的那几天

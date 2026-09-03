@@ -125,6 +125,92 @@ def test_whole_parent_without_order_written_off_uses_delivery_fallback():
     assert info["effective_detail_count"] == 1
 
 
+def test_whole_parent_delivery_surplus_is_left_unallocated():
+    parent = payment(amount=150, huikuan_type="整笔回款")
+    parent["orders"][0]["deliver"] = 100
+
+    logical, info = audit(parent, [])
+
+    assert len(logical) == 1
+    assert logical[0]["amount"] == 100
+    assert info["status"] == "delivery_fallback"
+    assert info["delta"] == 50
+    assert info["unallocated_parent_amount"] == 50
+    assert info["error_code"] == ""
+
+
+def test_whole_parent_surplus_is_reused_when_later_order_is_linked():
+    first = payment(amount=150, huikuan_type="整笔回款")
+    first["orders"][0]["deliver"] = 100
+    first_logical, first_info = audit(first, [])
+
+    later = payment(amount=150, huikuan_type="整笔回款")
+    later["orders"] = [
+        {"so": "SO1", "deliver": 100, "currency": "CNY"},
+        {"so": "SO2", "deliver": 50, "currency": "CNY"},
+    ]
+    later_logical, later_info = audit(later, [])
+
+    assert [(item["so"], item["amount"]) for item in first_logical] == [("SO1", 100)]
+    assert first_info["unallocated_parent_amount"] == 50
+    assert [(item["so"], item["amount"]) for item in later_logical] == [
+        ("SO1", 100),
+        ("SO2", 50),
+    ]
+    assert later_info["unallocated_parent_amount"] == 0
+
+
+def test_validate_accepts_whole_parent_delivery_surplus():
+    parent = payment(amount=150, huikuan_type="整笔回款")
+    parent["orders"][0]["deliver"] = 100
+    _, parent_audit = audit(parent, [])
+    audits = {"AR1": parent_audit}
+    plan = {
+        "duplicate_writeoff_audits": audits,
+        "duplicate_writeoff_audit_sha256": W.audit_fingerprint(audits),
+        "auto": [{
+            "ar": "AR1", "so": "SO1", "sod": "SOD1", "ledger_row_ref": 2,
+            "five_cols": {"计提": 100, "回款明细": 100, "是否结账": "是",
+                          "收款时间": "2026-07-31", "收款方式": "汇"},
+            "warning_codes": [],
+            "duplicate_writeoff_audit": parent_audit,
+        }],
+    }
+    rows = {2: {"SO": "SO1", "SOD": "SOD1", "计提": None, "回款明细": None,
+                "是否结账": "否", "收款时间": None, "收款方式": None,
+                "差异": None, "_差异列存在": True, "应收金额": 100}}
+
+    checked = V.validate(plan, rows)
+
+    assert checked["counts"] == {"write": 1, "skip": 0, "conflict": 0}
+
+
+def test_whole_parent_uses_explicit_total_original_despite_currency_label_mismatch():
+    parent = payment(
+        amount=30,
+        local=30,
+        currency="人民币CNY",
+        huikuan_type="整笔回款",
+    )
+    parent["total_amount_orig"] = 30
+    parent["total_amount_local"] = 30
+    parent["_parent_total_source"] = "zhiyun_total_received"
+    parent["orders"] = [
+        {"so": "SO1", "deliver": 10, "currency": "美元USD", "rate": 7},
+        {"so": "SO2", "deliver": 20, "currency": "美元USD", "rate": 7},
+    ]
+
+    logical, info = audit(parent, [])
+
+    assert len(logical) == 2
+    assert [item["amount"] for item in logical] == [10, 20]
+    assert [item["amount_local"] for item in logical] == [None, None]
+    assert info["status"] == "delivery_fallback"
+    assert info["comparison_basis"] == "delivery_fallback_original"
+    assert info["order_amount_total"] == 30
+    assert info["effective_order_amount_count"] == 2
+
+
 def test_whole_parent_without_written_off_or_complete_delivery_is_unresolved():
     parent = payment(huikuan_type="整笔回款")
     parent["orders"][0]["deliver"] = None
@@ -144,13 +230,19 @@ def test_whole_parent_order_written_off_delta_boundary_uses_one_yuan_tolerance()
         assert len(logical) == 1
         assert info["status"] == "order_written_off_authoritative"
 
-    for order_amount in (98.99, 101.01):
-        parent = payment(amount=100, huikuan_type="整笔回款")
-        parent["orders"][0]["written_off"] = order_amount
-        logical, info = audit(parent, [])
-        assert len(logical) == 1
-        assert info["status"] == "unresolved"
-        assert info["error_code"] == "E_PARENT_WRITEOFF_MISMATCH"
+    parent = payment(amount=100, huikuan_type="整笔回款")
+    parent["orders"][0]["written_off"] = 98.99
+    logical, info = audit(parent, [])
+    assert len(logical) == 1
+    assert info["status"] == "order_written_off_authoritative"
+    assert info["unallocated_parent_amount"] == 1.01
+
+    parent = payment(amount=100, huikuan_type="整笔回款")
+    parent["orders"][0]["written_off"] = 101.01
+    logical, info = audit(parent, [])
+    assert len(logical) == 1
+    assert info["status"] == "unresolved"
+    assert info["error_code"] == "E_PARENT_WRITEOFF_MISMATCH"
 
 
 def test_whole_parent_order_written_off_three_cent_difference_passes():
@@ -179,7 +271,8 @@ def test_zero_order_written_off_is_present_not_missing():
     assert len(logical) == 1
     assert info["comparison_basis"] == "order_written_off_original"
     assert info["order_amount_total"] == 0
-    assert info["status"] == "unresolved"
+    assert info["status"] == "order_written_off_authoritative"
+    assert info["unallocated_parent_amount"] == 100
 
 
 def test_whole_parent_partial_written_off_never_mixes_with_delivery():
@@ -208,7 +301,8 @@ def test_whole_parent_written_off_mismatch_does_not_fall_back_to_matching_delive
     assert len(logical) == 2
     assert info["comparison_basis"] == "order_written_off_original"
     assert info["order_amount_total"] == 280
-    assert info["status"] == "unresolved"
+    assert info["status"] == "order_written_off_authoritative"
+    assert info["unallocated_parent_amount"] == 20
 
 
 def test_non_whole_parent_unexplained_overage_is_unresolved():
@@ -443,8 +537,8 @@ def test_legacy_unresolved_parent_is_rejected_if_hand_edited_into_auto():
 
 
 def test_validate_recomputes_whole_parent_gate_after_status_and_hash_tamper():
-    parent = payment(amount=100, huikuan_type="整笔回款")
-    parent["orders"][0]["written_off"] = 90
+    parent = payment(amount=90, huikuan_type="整笔回款")
+    parent["orders"][0]["written_off"] = 100
     _, unresolved = audit(parent, [])
     tampered = {
         **unresolved,
@@ -471,7 +565,7 @@ def test_validate_recomputes_whole_parent_gate_after_status_and_hash_tamper():
     checked = V.validate(plan, rows)
 
     assert checked["counts"]["conflict"] == 1
-    assert "差额超过" in checked["conflict"][0]["_check"]["reason"]
+    assert "低于" in checked["conflict"][0]["_check"]["reason"]
 
 
 def test_fetch_contract_exposes_record_identity_and_new_version():

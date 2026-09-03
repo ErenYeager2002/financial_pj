@@ -87,8 +87,8 @@ def _whole_parent_gate_error(audit: dict) -> str:
             return "整笔回款审计中的父总到账、订单金额合计与差额不守恒"
         if basis.startswith("delivery_fallback") and not audit.get("fallback_used"):
             return "整笔回款使用交付额兜底但缺少兜底审计标记"
-    if abs(float(delta)) > threshold:
-        return f"整笔回款的父总到账与订单金额合计差额超过{threshold:g}元"
+    if float(delta) < -threshold:
+        return f"整笔回款的父总到账低于订单金额合计超过{threshold:g}元"
     return ""
 
 

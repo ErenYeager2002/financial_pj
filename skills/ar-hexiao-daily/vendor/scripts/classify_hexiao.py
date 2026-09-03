@@ -59,6 +59,8 @@ HUIKUAN_NAMES = {
     "arrival_date": ["到账日期", "回款日期"],
     "amount_orig": ["到账金额/原币", "到账金额原币"],
     "amount_local": ["到账金额/本币", "到账金额本币"],
+    "total_amount_orig": ["总到账金额/原币", "总到账金额原币", "总到账金额"],
+    "total_amount_local": ["总到账金额/本币", "总到账金额本币"],
     "fee": ["手续费/原币", "手续费"],
     "fee_local": ["手续费/本币", "手续费本币"],
     "tax": ["税费/原币", "税费"],
@@ -81,9 +83,21 @@ class CoverageError(Exception):
 
 
 def _prepare_parent_totals(p: dict) -> dict:
-    """Compute auditable gross receipt = net arrival + explicit fee/tax components."""
+    """Prefer Zhiyun's total receipt; otherwise compute arrival plus charges."""
     amount_orig = common.to_number(p.get("amount_orig"))
     amount_local = common.to_number(p.get("amount_local"))
+    existing_total_source = p.get("_parent_total_source")
+    explicit_total_orig = (
+        None
+        if existing_total_source == "computed_amount_plus_fee_tax"
+        else common.to_number(p.get("total_amount_orig"))
+    )
+    explicit_total_local = (
+        None
+        if existing_total_source == "computed_amount_plus_fee_tax"
+        else common.to_number(p.get("total_amount_local"))
+    )
+    p.pop("_charge_error", None)
     components = []
     for name, local_name in (
         ("fee", "fee_local"),
@@ -118,14 +132,48 @@ def _prepare_parent_totals(p: dict) -> dict:
     charge_local = round(sum(local_values), 2) if len(local_values) == len(components) else None
     p["charge_amount_orig"] = charge_orig
     p["charge_amount_local"] = charge_local
-    p["total_amount_orig"] = (
-        round(float(amount_orig) + charge_orig, 2) if amount_orig is not None else None
-    )
-    p["total_amount_local"] = (
-        round(float(amount_local) + float(charge_local), 2)
-        if amount_local is not None and charge_local is not None
-        else None
-    )
+    has_explicit_total = explicit_total_orig is not None or explicit_total_local is not None
+    if has_explicit_total:
+        total_orig = explicit_total_orig
+        total_local = explicit_total_local
+        if total_orig is None and total_local is not None:
+            if common.is_cny(p.get("currency") or ""):
+                total_orig = total_local
+            elif (
+                amount_orig is not None
+                and amount_local is not None
+                and abs(float(amount_local)) > TOL
+            ):
+                total_orig = round(
+                    float(total_local) * float(amount_orig) / float(amount_local), 2
+                )
+        if total_local is None and total_orig is not None:
+            if common.is_cny(p.get("currency") or ""):
+                total_local = total_orig
+            elif (
+                amount_orig is not None
+                and amount_local is not None
+                and abs(float(amount_orig)) > TOL
+            ):
+                total_local = round(
+                    float(total_orig) * float(amount_local) / float(amount_orig), 2
+                )
+        total_source = "zhiyun_total_received"
+    else:
+        total_orig = (
+            round(float(amount_orig) + charge_orig, 2)
+            if amount_orig is not None
+            else None
+        )
+        total_local = (
+            round(float(amount_local) + float(charge_local), 2)
+            if amount_local is not None and charge_local is not None
+            else None
+        )
+        total_source = "computed_amount_plus_fee_tax"
+    p["total_amount_orig"] = total_orig
+    p["total_amount_local"] = total_local
+    p["_parent_total_source"] = total_source
     return p
 
 
@@ -560,6 +608,7 @@ def load_exports(workspace: Path, target_date: Optional[dt.date] = None) -> List
         c = _need(h, "回款记录", ["AR", "核销日期"], aliases)
         for k in [
             "到账日期", "到账金额原币", "到账金额本币",
+            "总到账金额原币", "总到账金额本币",
             "手续费", "手续费本币", "税费", "税费本币", "其他费用", "其他费用本币",
             "原币币种", "回款类型", "核销状态", "开票客户",
             "销售名称",
@@ -580,6 +629,12 @@ def load_exports(workspace: Path, target_date: Optional[dt.date] = None) -> List
                 "arrival_date": common.norm_date(_get(vals, c.get("到账日期"))),
                 "amount_orig": common.to_number(_get(vals, c.get("到账金额原币"))),
                 "amount_local": common.to_number(_get(vals, c.get("到账金额本币"))),
+                "total_amount_orig": common.to_number(
+                    _get(vals, c.get("总到账金额原币"))
+                ),
+                "total_amount_local": common.to_number(
+                    _get(vals, c.get("总到账金额本币"))
+                ),
                 "fee": common.to_number(_get(vals, c.get("手续费"))) or 0.0,
                 "fee_local": common.to_number(_get(vals, c.get("手续费本币"))),
                 "tax": common.to_number(_get(vals, c.get("税费"))) or 0.0,
@@ -4105,12 +4160,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--out", default="", help="判定结果 json 路径")
     ap.add_argument("--flow", default="", help="到账流转表副本（只读）；不给则扫 02_我的表副本/")
     ap.add_argument(
+        "--name-map", action="append", default=[],
+        help="名称对照表路径（表头为到账名称/系统客户名称），可重复；默认按表头自动识别",
+    )
+    ap.add_argument(
         "--flow-complete", action="store_true",
         help="声明当天所有渠道的流转表都已给全；只有这时才判 E0（对不到账）",
     )
     ap.add_argument(
         "--hexiao-date", default="",
-        help="声明这批是哪个**核销日期**（她确认过的那天）。给了就跟数据核对，对不上直接退出",
+        help="声明这批是哪个**核销日期**（由任务指令确定）。给了就跟数据核对，对不上直接退出",
     )
     ap.add_argument(
         "--allow-mixed-dates", action="store_true",
@@ -4168,14 +4227,25 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     import flow_ledger as FL
 
+    name_map_paths = [Path(p) for p in args.name_map] if args.name_map else None
     flow = (
-        FL.FlowLedger.from_paths([Path(args.flow)])
+        FL.FlowLedger.from_paths([Path(args.flow)], name_map_paths=name_map_paths)
         if args.flow
-        else FL.FlowLedger.from_workspace(ws)
+        else FL.FlowLedger.from_workspace(ws, name_map_paths=name_map_paths)
     )
     if flow.rows:
         FL.annotate_records(records, flow, complete=args.flow_complete)
         print(f"流转表已接入：{len(flow.rows)} 行，来源 {flow.sources}")
+        if flow.name_map_sources:
+            print(
+                f"名称对照已接入：{len(flow.name_map)} 个有效名称，来源 {flow.name_map_sources}"
+            )
+        if flow.name_map_issues:
+            print(
+                f"WARN: 名称对照表有 {len(flow.name_map_issues)} 个空值/格式问题，"
+                "相关订单不自动猜测",
+                file=sys.stderr,
+            )
     else:
         print(
             "WARN: 未认出到账流转表（02_我的表副本/）→ 本轮不做三键匹配，"
@@ -4199,11 +4269,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     hexiao_date = batch_dates[0] if batch_dates else None
     if requested_date:
         if hexiao_date is not None and requested_date != hexiao_date:
-            # 她确认的是这天、数据却是那天 → 多半取数取错了日子，绝不能闷头往下判
+            # 任务指定的是这天、数据却是那天 → 多半取数取错了日子，绝不能闷头往下判
             print(
-                f"ERROR: 你确认要跑的是 {common.date_cn(requested_date)}，"
+                f"ERROR: 任务指定要跑的是 {common.date_cn(requested_date)}，"
                 f"但 01_智云导出/ 里的数据是 {common.date_cn(hexiao_date)} 的。\n"
-                "  先确认这次到底要跑哪天，再重新取数。",
+                "  按任务指定日期重新取数。",
                 file=sys.stderr,
             )
             return 2
@@ -4221,8 +4291,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     result["duplicate_writeoff_audit_sha256"] = WDA.audit_fingerprint(duplicate_audits)
     result["flow_sources"] = flow.sources
     result["business_rules"] = {
-        "parent_receipt_basis": "net_arrival_plus_explicit_fees_taxes",
-        "whole_parent_conservation_gate": "effective_details_required_and_abs_delta_lte_1",
+        "parent_receipt_basis": "zhiyun_total_received_without_fee_tax_deduction",
+        "whole_parent_conservation_gate": "effective_details_required_and_parent_shortfall_lte_1",
         "itemized_fee_policy": "whole_parent_conservation_then_no_double_allocation",
         "writeoff_basis": "zhiyun_current_writeoff_direct",
         "parent_fallback_allocation": "non_whole_only_delivery_amount_ascending_outstanding_waterfall",

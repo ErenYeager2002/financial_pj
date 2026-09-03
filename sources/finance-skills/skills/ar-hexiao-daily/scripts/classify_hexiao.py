@@ -4291,8 +4291,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     result["duplicate_writeoff_audit_sha256"] = WDA.audit_fingerprint(duplicate_audits)
     result["flow_sources"] = flow.sources
     result["business_rules"] = {
-        "parent_receipt_basis": "net_arrival_plus_explicit_fees_taxes",
-        "whole_parent_conservation_gate": "effective_details_required_and_abs_delta_lte_1",
+        "parent_receipt_basis": "zhiyun_total_received_without_fee_tax_deduction",
+        "whole_parent_conservation_gate": "effective_details_required_and_parent_shortfall_lte_1",
         "itemized_fee_policy": "whole_parent_conservation_then_no_double_allocation",
         "writeoff_basis": "zhiyun_current_writeoff_direct",
         "parent_fallback_allocation": "non_whole_only_delivery_amount_ascending_outstanding_waterfall",

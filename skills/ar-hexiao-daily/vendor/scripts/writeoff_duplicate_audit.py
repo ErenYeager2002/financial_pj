@@ -166,13 +166,28 @@ def _audit_whole_payment_orders(
         else payment.get("amount_orig")
     )
     parent_currency = _currency(payment.get("currency"))
-    original_comparable = (
-        original_complete
-        and parent_orig is not None
-        and bool(parent_currency)
+    currencies_match = (
+        bool(parent_currency)
         and all(
             _currency(order.get("currency") or parent_currency) == parent_currency
             for order in orders
+        )
+    )
+    order_currencies = [_currency(order.get("currency")) for order in orders]
+    explicit_total_original = (
+        payment.get("_parent_total_source") == "zhiyun_total_received"
+        and payment.get("total_amount_orig") is not None
+    )
+    original_comparable = (
+        original_complete
+        and parent_orig is not None
+        and (
+            currencies_match
+            or (
+                explicit_total_original
+                and all(order_currencies)
+                and len(set(order_currencies)) == 1
+            )
         )
     )
 
@@ -234,13 +249,20 @@ def _audit_whole_payment_orders(
     audit["delta_raw"] = _money(delta)
     audit["delta_dedup"] = _money(delta)
     audit["delta"] = _money(delta)
-    if abs(delta) > tolerance_cents:
+    audit["unallocated_parent_amount"] = _money(max(delta, 0))
+    if delta < -tolerance_cents:
         audit["status"] = "unresolved"
         audit["error_code"] = "E_PARENT_WRITEOFF_MISMATCH"
         audit["reason"] = (
-            "整笔回款的父总到账与订单已核销金额合计差额超过1元"
+            "整笔回款的父总到账低于订单已核销金额合计超过1元"
             if source == "order_written_off"
-            else "整笔回款的父总到账与订单交付额兜底合计差额超过1元"
+            else "整笔回款的父总到账低于订单交付额兜底合计超过1元"
+        )
+    elif delta > tolerance_cents:
+        audit["reason"] = (
+            "整笔回款父总到账高于订单已核销金额合计，超出部分保留为父回款未分配金额"
+            if source == "order_written_off"
+            else "整笔回款父总到账高于订单交付额兜底合计，超出部分保留为父回款未分配金额"
         )
     return logical, audit
 

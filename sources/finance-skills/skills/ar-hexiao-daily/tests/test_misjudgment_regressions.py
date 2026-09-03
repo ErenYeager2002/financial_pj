@@ -644,13 +644,15 @@ def test_zhiyun_total_received_overrides_net_amount_plus_charges():
     p = _payment(
         amount=26732.38,
         fee=12.90,
+        tax=25.0,
+        other_fee=30.0,
         total_amount_orig=28350.0,
         total_amount_local=28350.0,
     )
 
     C._prepare_parent_totals(p)
 
-    assert p["charge_amount_orig"] == 12.90
+    assert p["charge_amount_orig"] == 67.90
     assert p["total_amount_orig"] == 28350.0
     assert p["total_amount_local"] == 28350.0
     assert p["_parent_total_source"] == "zhiyun_total_received"

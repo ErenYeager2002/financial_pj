@@ -99,3 +99,45 @@ def test_loader_preserves_zhiyun_total_received_for_parent_audit(tmp_path):
     assert payment["total_amount_orig"] == 28350.0
     assert payment["total_amount_local"] == 28350.0
     assert payment["_parent_total_source"] == "zhiyun_total_received"
+
+
+def test_loader_audits_explicit_total_against_order_original_amounts(tmp_path):
+    export_dir = tmp_path / "01_智云导出"
+    _xlsx(
+        export_dir / "回款记录_20260820.xlsx",
+        [
+            "回款记录ID", "核销日期", "到账日期", "到账金额/原币", "到账金额/本币",
+            "总到账金额/原币", "总到账金额/本币", "手续费/原币", "原币币种",
+            "回款类型", "核销状态", "开票客户",
+        ],
+        [[
+            "AR1", dt.date(2026, 8, 20), dt.date(2026, 8, 20), 30.0, 30.0,
+            30.0, 30.0, 0, "人民币CNY", "整笔回款", "核销成功", "客户甲",
+        ]],
+    )
+    _xlsx(
+        export_dir / "订单交付_20260820.xlsx",
+        [
+            "回款记录ID", "SO", "交付额/原币", "汇率", "结算币种",
+            "订单名称", "项目交付日期", "交付日期取数状态",
+        ],
+        [
+            [
+                "AR1", "SO1", 10.0, 7.0, "美元USD", "订单甲",
+                dt.date(2025, 8, 13), "订单详情明确值",
+            ],
+            [
+                "AR1", "SO2", 20.0, 7.0, "美元USD", "订单乙",
+                dt.date(2025, 8, 14), "订单详情明确值",
+            ],
+        ],
+    )
+
+    payment = C.load_exports(tmp_path, dt.date(2026, 8, 20))[0]
+    audit = payment["duplicate_writeoff_audit"]
+
+    assert audit["status"] == "delivery_fallback"
+    assert audit["comparison_basis"] == "delivery_fallback_original"
+    assert audit["effective_order_amount_count"] == 2
+    assert payment["writeoffs"] == {"SO1": 10.0, "SO2": 20.0}
+    assert payment["writeoffs_local"] == {}
