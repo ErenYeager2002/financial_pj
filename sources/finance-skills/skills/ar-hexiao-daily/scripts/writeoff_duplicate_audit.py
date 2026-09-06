@@ -191,7 +191,15 @@ def _audit_whole_payment_orders(
         )
     )
 
-    if local_complete and parent_local is not None:
+    prefer_explicit_original = (
+        payment.get("_parent_total_orig_explicit") is True
+        and payment.get("_parent_total_local_explicit") is False
+    )
+    if prefer_explicit_original and original_comparable:
+        basis = f"{source}_original"
+        chosen = original_cents
+        parent_cents = parent_orig
+    elif local_complete and parent_local is not None:
         basis = f"{source}_local"
         chosen = local_cents
         parent_cents = parent_local

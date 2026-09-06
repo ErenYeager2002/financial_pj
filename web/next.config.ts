@@ -10,9 +10,11 @@ const allowedDevOrigins =
 // Define the base Next.js configuration
 const baseConfig: NextConfig = {
   allowedDevOrigins,
+  distDir: process.env.NEXT_DIST_DIR || '.next',
   output: process.env.BUILD_STANDALONE === 'true' ? 'standalone' : undefined,
   experimental: {
-    optimizePackageImports: ['@tabler/icons-react']
+    optimizePackageImports: ['@tabler/icons-react'],
+    webpackMemoryOptimizations: true
   },
   images: {
     remotePatterns: [

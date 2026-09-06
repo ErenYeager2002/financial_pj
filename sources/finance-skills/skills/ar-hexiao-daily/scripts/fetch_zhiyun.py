@@ -69,7 +69,7 @@ def _assert_platform_network_url(url: str) -> None:
     if os.environ.get("FINANCIAL_NETWORK_ACCESS") != "1" or host not in allowed:
         raise RuntimeError("网络目标不在平台批准的精确域名白名单中。")
 APP_ID = "6ff4fb2e-e68c-4ee9-83a0-836de8f72c11"
-EXPORT_SCHEMA_VERSION = "2026-08-31-total-received-v7"
+EXPORT_SCHEMA_VERSION = "2026-09-03-delivery-local-v8"
 CREDENTIAL_SERVICE = "codex.ar-hexiao-daily.zhiyun"
 
 WS_HUIKUAN = "6555d2b1f9460e517040ba6c"  # 回款记录（唯一入口）
@@ -99,7 +99,7 @@ REL_SODLINE = "订单明细"  # 只借它的 dataSource 定位「订单明细」
 XIADAN_COLS = [
     "SO", "订单NUM", "订单号", "新智云单号",
     "订单已核销金额", "订单已核销金额/本币",
-    "交付额/原币", "汇率", "结算币种", "订单名称", "项目交付日期",
+    "交付额/原币", "交付额/本币", "汇率", "结算币种", "订单名称", "项目交付日期",
 ]
 # ⚠「同币种核销明细信息」表里**没有**叫 SO 的字段，SO 藏在关联字段「订单NUM」的 name 里
 #   （2026-07-23 实调：该表字段 = 核销记录NUM/回款记录NUM/订单NUM/本次核销金额/…）。
@@ -533,6 +533,7 @@ def extract_related_orders(
             "written_off": values.get("订单已核销金额"),
             "written_off_local": values.get("订单已核销金额/本币"),
             "deliver": values.get("交付额/原币"),
+            "deliver_local": values.get("交付额/本币"),
             "rate": values.get("汇率"),
             "currency": values.get("结算币种"),
             "name": values.get("订单名称"),
@@ -934,7 +935,7 @@ def fetch_day(
                 v["delivery_date"], v["delivery_date_status"] = delivery_date_cache[so]
             xd_out.append([
                 rec["ar"], so, v.get("written_off"), v.get("written_off_local"),
-                v.get("deliver"), v.get("rate"),
+                v.get("deliver"), v.get("deliver_local"), v.get("rate"),
                 v.get("currency"), v.get("name"), v.get("delivery_date"),
                 v.get("delivery_date_status"), v.get("source"),
             ])
@@ -1070,7 +1071,7 @@ def fetch_day(
         "订单明细SOD行数": len(sod_out),
         "缺项目交付日期的SO": sorted({
             str(row[1] or "").strip() for row in xd_out
-            if str(row[1] or "").strip() and not str(row[8] or "").strip()
+            if str(row[1] or "").strip() and not str(row[9] or "").strip()
         }),
         "回款类型分布": type_counts,
         "无下单行的AR": ars_without_orders,
@@ -1091,7 +1092,7 @@ def fetch_day(
             (
                 f"订单交付_{day_tag}.xlsx",
                 ["回款记录ID", "SO", "订单已核销金额", "订单已核销金额/本币",
-                 "交付额/原币", "汇率", "结算币种", "订单名称", "项目交付日期",
+                 "交付额/原币", "交付额/本币", "汇率", "结算币种", "订单名称", "项目交付日期",
                  "交付日期取数状态", "单号来源"],
                 xd_out,
             ),

@@ -5,6 +5,15 @@ import { PlatformApiError, platformErrorMessage } from './errors';
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
+function timingPath(path: string): string {
+  const pathname = path.split(/[?#]/, 1)[0];
+  return pathname.replace(/\/(workflows|workflow-batches)\/[^/]+/g, '/$1/{id}');
+}
+
+function shouldLogTiming(): boolean {
+  return process.env.NODE_ENV !== 'production' && process.env.FINANCIAL_PLATFORM_API_TIMING !== '0';
+}
+
 interface PlatformRequestOptions {
   timeoutMs?: number | null;
 }
@@ -54,34 +63,45 @@ export async function platformServerResponse(
   init: RequestInit = {},
   options: PlatformRequestOptions = {}
 ): Promise<Response> {
+  const startedAt = shouldLogTiming() ? performance.now() : 0;
   const headers = new Headers(init.headers);
-  const credential = await platformCredential();
-  for (const [name, value] of Object.entries(credentialHeaders(credential))) {
-    headers.set(name, String(value));
+  try {
+    const credential = await platformCredential();
+    for (const [name, value] of Object.entries(credentialHeaders(credential))) {
+      headers.set(name, String(value));
+    }
+    if (init.body && !(init.body instanceof FormData) && !headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json');
+    }
+    const configuredTimeout = Number(process.env.FINANCIAL_PLATFORM_REQUEST_TIMEOUT_MS);
+    const defaultTimeout =
+      Number.isFinite(configuredTimeout) && configuredTimeout > 0
+        ? configuredTimeout
+        : DEFAULT_TIMEOUT_MS;
+    const timeoutMs = options.timeoutMs === undefined ? defaultTimeout : options.timeoutMs;
+    const response = await fetch(`${platformServerBaseUrl()}${platformPath(path)}`, {
+      ...init,
+      headers,
+      cache: 'no-store',
+      signal: init.signal ?? (timeoutMs === null ? undefined : AbortSignal.timeout(timeoutMs))
+    });
+    if (!response.ok) {
+      const body = await responseBody(response);
+      throw new PlatformApiError(
+        response.status,
+        platformErrorMessage(body, `财务平台请求失败（${response.status}）。`)
+      );
+    }
+    return response;
+  } finally {
+    if (startedAt) {
+      console.info(
+        `[platform-api-timing] ${init.method ?? 'GET'} ${timingPath(path)} ${Math.round(
+          performance.now() - startedAt
+        )}ms`
+      );
+    }
   }
-  if (init.body && !(init.body instanceof FormData) && !headers.has('Content-Type')) {
-    headers.set('Content-Type', 'application/json');
-  }
-  const configuredTimeout = Number(process.env.FINANCIAL_PLATFORM_REQUEST_TIMEOUT_MS);
-  const defaultTimeout =
-    Number.isFinite(configuredTimeout) && configuredTimeout > 0
-      ? configuredTimeout
-      : DEFAULT_TIMEOUT_MS;
-  const timeoutMs = options.timeoutMs === undefined ? defaultTimeout : options.timeoutMs;
-  const response = await fetch(`${platformServerBaseUrl()}${platformPath(path)}`, {
-    ...init,
-    headers,
-    cache: 'no-store',
-    signal: init.signal ?? (timeoutMs === null ? undefined : AbortSignal.timeout(timeoutMs))
-  });
-  if (!response.ok) {
-    const body = await responseBody(response);
-    throw new PlatformApiError(
-      response.status,
-      platformErrorMessage(body, `财务平台请求失败（${response.status}）。`)
-    );
-  }
-  return response;
 }
 
 export async function platformServerRequest<T>(path: string, init: RequestInit = {}): Promise<T> {

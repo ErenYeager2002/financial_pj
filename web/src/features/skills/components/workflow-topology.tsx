@@ -1,5 +1,5 @@
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PaginatedCollection } from '@/components/ui/collection-pagination';
 import type { WorkflowDefinition } from '@/features/platform-api/types';
 import { stepTypeLabel } from '@/features/workflows/step-display';
@@ -21,7 +21,6 @@ export function WorkflowTopology({ definitions }: WorkflowTopologyProps): React.
     <Card>
       <CardHeader>
         <CardTitle>受控执行流程</CardTitle>
-        <CardDescription>节点配置和执行参数不会公开。</CardDescription>
       </CardHeader>
       <CardContent>
         {definitions.length ? (

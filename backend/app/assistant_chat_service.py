@@ -6,11 +6,12 @@ import uuid
 
 from fastapi import HTTPException
 from sqlalchemy import desc, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from .auth import UserContext
-from .contracts import AssistantConversationRead, AssistantMessageRead
+from .contracts import AssistantConversationRead, AssistantConversationSummary, AssistantMessageRead
 from .models import AssistantMessage, utcnow
+from .model_visible_data import visible_value
 
 SESSION_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 MAX_HISTORY_MESSAGES = 200
@@ -30,12 +31,13 @@ def _serialize(message: AssistantMessage) -> AssistantMessageRead:
         data = {}
     if not isinstance(data, dict):
         data = {}
+    safe_data = visible_value(data)
     return AssistantMessageRead(
         id=message.id,
         session_id=message.session_id,
         role=message.role,
-        content=message.content,
-        data=data,
+        content=str(visible_value(message.content)),
+        data=safe_data if isinstance(safe_data, dict) else {},
         created_at=message.created_at,
     )
 
@@ -85,6 +87,50 @@ def get_latest_conversation(
     if not session_id:
         return None
     return get_conversation(db, user, session_id, missing_is_empty=True)
+
+
+def list_conversations(
+    db: Session,
+    user: UserContext,
+    *,
+    limit: int = 50,
+) -> list[AssistantConversationSummary]:
+    latest = aliased(AssistantMessage)
+    latest_content = (
+        select(latest.content)
+        .where(
+            latest.session_id == AssistantMessage.session_id,
+            latest.owner_id == user.user_id,
+            latest.department_id == user.department_id,
+        )
+        .order_by(desc(latest.created_at), desc(latest.id))
+        .limit(1)
+        .scalar_subquery()
+    )
+    rows = db.execute(
+        select(
+            AssistantMessage.session_id,
+            func.count(AssistantMessage.id),
+            func.max(AssistantMessage.created_at),
+            latest_content,
+        )
+        .where(
+            AssistantMessage.owner_id == user.user_id,
+            AssistantMessage.department_id == user.department_id,
+        )
+        .group_by(AssistantMessage.session_id)
+        .order_by(func.max(AssistantMessage.created_at).desc())
+        .limit(max(1, min(limit, 100)))
+    ).all()
+    return [
+        AssistantConversationSummary(
+            session_id=session_id,
+            message_count=int(message_count),
+            updated_at=updated_at,
+            preview=str(visible_value(str(preview or "")))[:160],
+        )
+        for session_id, message_count, updated_at, preview in rows
+    ]
 
 
 def append_message(

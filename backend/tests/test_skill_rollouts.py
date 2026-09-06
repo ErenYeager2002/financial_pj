@@ -25,7 +25,7 @@ ROLLOUT_SKILLS = {
     "compliance-spot-check",
     "dept-expense-alloc",
     "labor-invoice-check",
-    "split-by-sales",
+    "receivables-merge-and-split",
 }
 
 
@@ -130,7 +130,7 @@ def test_rollout_disables_activates_verifies_and_enables() -> None:
 
 
 def test_rollout_waits_for_active_work_then_continues() -> None:
-    skill_id = "split-by-sales"
+    skill_id = "receivables-merge-and-split"
     run_id = str(uuid.uuid4())
     with _preserve_skill(skill_id):
         with auth_client(role="skill_admin") as admin:

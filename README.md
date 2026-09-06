@@ -1,6 +1,15 @@
-# 财务 Skill 运行平台
+# 财务 Skill 平台
 
 面向财务部门的内部工具平台：员工选择 Skill、上传文件、描述要求，平台完成参数解析、校验、排队、确定性执行、实时进度、结果下载和审计留痕。
+
+当前维护的界面位于 `web/`，使用 Next.js、Clerk 和服务端 BFF；FastAPI 位于 `backend/`，
+负责本地平台用户、部门隔离、Skill 权限、任务状态、文件引用、审计和 Worker 协调。生产由
+Next.js 容器提供页面，FastAPI 的静态页面回退仅用于兼容场景。本轮源码改动尚未部署。
+
+Workflow 与 Pi Harness 在任务创建时固定执行方式、Skill 快照、业务日期和材料版本。应收核销
+多日期按日期升序串行处理，写入前经过校验并使用隔离副本，回读或租约异常后不自动重试；模型
+只通过统一的结构化、脱敏和分页接口读取任务资料。员工界面显示真实存在的确认阶段，Worker、
+Pi Harness 和哈希等实现信息保留在管理或详情视图。
 
 当前 Registry 共接入 19 个 Skill，实际发布状态以管理后台和健康检查为准。
 已发布工具覆盖应收合并与拆分、劳务发票核对、合规抽查、申报表重命名、
@@ -59,6 +68,24 @@ Set-Location D:\BESTEASY\financial_pj
 `http://localhost:8000/api/health`。普通源码修改会自动更新；只有修改
 `backend/pyproject.toml`、Dockerfile 或系统依赖后才需要再次使用 `-Build`。
 
+日常使用平台时，先在终端一构建并启动生产前端；需要调试热更新时，再在终端二使用 3001 端口：
+
+```powershell
+corepack pnpm --dir web build:webpack
+.\scripts\start-frontend-prod.ps1
+```
+
+终端二：
+
+```powershell
+.\scripts\dev-frontend-hot.ps1
+```
+
+停止热更新服务：`.\scripts\dev-frontend-hot.ps1 -Stop`。
+
+生产前端使用 3000 端口，热更新调试使用 3001 端口，并使用独立的 `.next-hot` 构建目录；两者不要同时占用同一个端口。
+启动生产前端前先停止 `dev.ps1` 启动的 3000 端口本机前端。
+
 需要让同一局域网内的电脑临时访问开发平台时，使用显式的局域网模式。下面的示例以
 `WLAN` 网卡为例，平台会根据该网卡的 IPv4 地址生成访问地址：
 
@@ -78,7 +105,7 @@ Set-Location D:\BESTEASY\financial_pj
 .\scripts\dev.ps1 -Mode Tasks
 ```
 
-只想启动或刷新开发 Worker 时运行：
+任务 Worker 不随源码或 Skill 文件保存自动重启，避免中断核销和文件处理。需要加载 Worker 修改时，先确认没有正在执行或排队的任务，再运行：
 
 ```powershell
 .\scripts\dev.ps1 -RestartWorkers
@@ -129,7 +156,7 @@ API Key 使用服务端密钥加密保存，接口只返回脱敏后的末四位
 
 在开发环境无法连接公司内网时，可以在应收核销创建页的“取数来源”中选择“使用已有取数快照”。
 平台只会列出当前账号自己保存、校验通过的 v5 四件套；选择快照和日期后，仍按原流程检查取数、
-执行核销、审批并写入隔离工作副本。快照模式不会读取智云凭据，也不允许按编号补取智云数据。
+执行核销和写前校验，符合条件后自动写入隔离工作副本。快照模式不会读取智云凭据，也不允许按编号补取智云数据。
 开发 Compose 默认开启快照回放；生产环境保持关闭。
 
 ## 目录
@@ -192,7 +219,7 @@ Register-ScheduledTask -TaskName "Finance Skill Gitee Sync" `
 
 Skill 可以存放在私有 GitHub 仓库，但平台运行的是经过批准的 tag/commit 和任务快照，不应在任务开始时直接执行远程 `main` 分支。可通过 `FINANCIAL_EXTERNAL_SKILL_DIR` 指向已经同步和审查的本地工作树。
 
-## 当前验证
+## 历史验证命令
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest backend

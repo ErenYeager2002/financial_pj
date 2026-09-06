@@ -5,6 +5,7 @@ import { platformServerRequest } from '@/features/platform-api/server-client';
 import type {
   AdminAssistantProfile,
   AssistantConversation,
+  AssistantConversationSummary,
   AssistantMessage,
   AssistantStatus,
   ModelConnection,
@@ -41,6 +42,10 @@ export function getAssistantStatus(): Promise<AssistantStatus> {
 
 export function getLatestAssistantConversation(): Promise<AssistantConversation | null> {
   return platformServerRequest<AssistantConversation | null>('/api/assistant/conversations/latest');
+}
+
+export function listAssistantConversations(): Promise<AssistantConversationSummary[]> {
+  return platformServerRequest<AssistantConversationSummary[]>('/api/assistant/conversations');
 }
 
 export function getAssistantConversation(sessionId: string): Promise<AssistantConversation> {

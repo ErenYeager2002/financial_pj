@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PaginatedCollection } from '@/components/ui/collection-pagination';
 import { Input } from '@/components/ui/input';
 import { Icons } from '@/components/icons';
@@ -197,9 +197,6 @@ export function ModelConnectionManagement({
           <CardTitle className='flex items-center gap-2'>
             <Icons.lock className='size-5' /> 新增模型连接
           </CardTitle>
-          <CardDescription>
-            平台会立即验证连接和 Tool Calling 能力。API Key 加密保存，之后只显示脱敏提示。
-          </CardDescription>
         </CardHeader>
         <CardContent>
           <form

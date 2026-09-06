@@ -5,6 +5,7 @@ import { platformServerRequest } from '@/features/platform-api/server-client';
 import type {
   AdminUser,
   AuditEvent,
+  AuditEventPage,
   FeatureControl,
   PlatformSession,
   SkillPermission
@@ -143,6 +144,43 @@ export async function listAdminAuditEvents(
   if (action) params.set('action', action);
   if (actorId) params.set('actor_id', actorId);
   return platformServerRequest<AuditEvent[]>(`/api/admin/audit-events?${params}`);
+}
+
+export interface AdminAuditEventPageOptions {
+  action?: string;
+  actorId?: string;
+  resourceType?: string;
+  resourceId?: string;
+  createdFrom?: string;
+  createdTo?: string;
+  limit?: number;
+  beforeId?: number;
+}
+
+export async function listAdminAuditEventPage({
+  action = '',
+  actorId = '',
+  resourceType = '',
+  resourceId = '',
+  createdFrom = '',
+  createdTo = '',
+  limit = 20,
+  beforeId
+}: AdminAuditEventPageOptions = {}): Promise<AuditEventPage> {
+  await requirePlatformAdmin();
+  const params = new URLSearchParams({
+    limit: String(Math.min(Math.max(Math.trunc(limit), 1), 100))
+  });
+  if (action) params.set('action', action.slice(0, 128));
+  if (actorId) params.set('actor_id', actorId.slice(0, 128));
+  if (resourceType) params.set('resource_type', resourceType.slice(0, 64));
+  if (resourceId) params.set('resource_id', resourceId.slice(0, 128));
+  if (createdFrom) params.set('created_from', createdFrom);
+  if (createdTo) params.set('created_to', createdTo);
+  if (beforeId && Number.isSafeInteger(beforeId) && beforeId > 0) {
+    params.set('before_id', String(beforeId));
+  }
+  return platformServerRequest<AuditEventPage>(`/api/admin/audit-events/page?${params}`);
 }
 
 export async function listFeatureControls(): Promise<FeatureControl[]> {

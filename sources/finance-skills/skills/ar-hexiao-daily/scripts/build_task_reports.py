@@ -17,7 +17,7 @@ from copy import copy
 from pathlib import Path
 
 import openpyxl
-from openpyxl.styles import Font, PatternFill
+from openpyxl.styles import Alignment, Font, PatternFill
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -27,9 +27,8 @@ import workbook_finalize  # noqa: E402
 
 CLEANUP_REPORT_PREFIXES = ("核销日清", "变更清单", "订单写入差异")
 AGGREGATED_SHEETS = {
-    "今日清单": "核销明细",
-    "跨月计提补填": "跨月计提补填",
-    "流转表怎么填": "流转表怎么填",
+    "核销明细": ("核销明细", "回款明细", "今日清单"),
+    "流转表怎么填": ("流转表怎么填",),
 }
 
 
@@ -93,6 +92,29 @@ def _copy_sheet(source, target) -> None:
 
 def _daily_counts(out_dir: Path, day: dt.date) -> dict:
     token = day.strftime("%Y%m%d")
+    final_path = out_dir / f"最终核销结果_{token}.json"
+    if final_path.is_file():
+        final = json.loads(final_path.read_text(encoding="utf-8"))
+        if final.get("schema_version") != "ar-final-result-v1" or final.get("reconciliation_date") != day.isoformat():
+            raise ValueError("最终核销结果的版本或日期无效")
+        counts = final.get("counts") or {}
+        flow = final.get("flow") or {}
+        phases = flow.get("phases") or {}
+        result = {"到账笔数": len({row.get("ar") for row in final.get("records", []) if row.get("ar")}),
+                "订单行数": counts.get("total", 0),
+                "自动": counts.get("completed", 0) + counts.get("skipped", 0),
+                "挂账": counts.get("hold", 0), "异常": counts.get("exception", 0),
+                "冲突": counts.get("conflict", 0), "实际写入记录数": final.get("write_count", 0),
+                "写入 SO 数": counts.get("written_orders", 0), "最终跳过记录数": counts.get("skipped", 0),
+                "统计口径": "最终处置；按首次判定记录计数", "首次校验跳过记录数": final.get("skip_count", ""),
+                "流转人工填写数": _flow_count(flow.get("manual_count"), failed=True),
+                "流转未完成日期数": int(any((phases.get(name) or {}).get("state") != "verified" for name in ("prefill", "status")))}
+        for phase_name, label in (("prefill", "登记"), ("status", "状态")):
+            phase = phases.get(phase_name) or {}
+            for key, suffix in (("changed_count", "保留改动数"), ("unchanged_count", "无需改动数")):
+                value = phase.get(key)
+                result[f"流转{label}{suffix}"] = _flow_count(value, failed=phase.get("state") == "failed")
+        return result
     result_path = out_dir / f"判定结果_{token}.json"
     if not result_path.is_file():
         return {}
@@ -104,7 +126,14 @@ def _daily_counts(out_dir: Path, day: dt.date) -> dict:
         "自动": counts.get("auto", ""),
         "挂账": counts.get("hold", ""),
         "异常": counts.get("exception", ""),
+        "统计口径": "旧版首次分类；未提供最终业务复核",
     }
+
+
+def _flow_count(value, *, failed: bool) -> int | str:
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return value
+    return "读取失败" if failed else "未记录"
 
 
 def _daily_report_files(out_dir: Path, prefix: str, day: dt.date) -> list[Path]:
@@ -129,36 +158,34 @@ def _append_aggregated_sheet(
     if not rows:
         return header_written
     source_header = rows[0]
+    headings = [str(cell.value or "") for cell in source_header]
     if not header_written:
-        target.append(["核销日期", *(cell.value for cell in source_header)])
-        for column, cell in enumerate(source_header, start=2):
-            output = target.cell(row=1, column=column)
-            if cell.has_style:
-                output._style = copy(cell._style)
-            output.number_format = cell.number_format
-            output.alignment = copy(cell.alignment)
-            output.protection = copy(cell.protection)
-        target.cell(row=1, column=1).font = Font(bold=True)
-        target.cell(row=1, column=1).fill = PatternFill("solid", fgColor="D9EAF7")
-        target.cell(row=1, column=1).alignment = copy(source_header[0].alignment)
-        header_written = True
+        target.append(["核销日期", *headings])
+    else:
+        existing = [cell.value for cell in target[1]]
+        for heading in headings:
+            if heading not in existing:
+                existing.append(heading)
+                target.cell(row=1, column=len(existing), value=heading)
+    columns = {cell.value: cell.column for cell in target[1]}
+    for cell in target[1]:
+        cell.font = Font(bold=True)
+        cell.fill = PatternFill("solid", fgColor="D9EAF7")
     for source_row in rows[1:]:
-        values = [cell.value for cell in source_row]
-        if not any(value not in (None, "") for value in values):
+        if not any(cell.value not in (None, "") for cell in source_row):
             continue
-        target.append([day.isoformat(), *values])
-        output_row = target.max_row
-        target.cell(row=output_row, column=1).alignment = copy(source_header[0].alignment)
-        for column, cell in enumerate(source_row, start=2):
-            output = target.cell(row=output_row, column=column)
-            if isinstance(cell.value, str) and cell.value.startswith("="):
+        output_row = target.max_row + 1
+        target.cell(row=output_row, column=1, value=day.isoformat())
+        for heading, cell in zip(headings, source_row):
+            output = target.cell(row=output_row, column=columns[heading], value=cell.value)
+            if isinstance(cell.value, str) and cell.value.startswith(("=", "+", "-", "@")):
                 output.data_type = "s"
             if cell.has_style:
                 output._style = copy(cell._style)
             output.number_format = cell.number_format
             output.alignment = copy(cell.alignment)
             output.protection = copy(cell.protection)
-    return header_written
+    return True
 
 
 def build(
@@ -184,12 +211,20 @@ def build(
     summary = wb.active
     summary.title = "任务范围"
     headers = ["核销日期", "日报状态", "到账笔数", "订单行数", "自动", "挂账", "异常"]
+    execution_columns = ["统计口径", "冲突", "实际写入记录数", "写入 SO 数", "首次校验跳过记录数", "最终跳过记录数",
+                         "流转登记保留改动数", "流转登记无需改动数", "流转状态保留改动数", "流转状态无需改动数",
+                         "流转人工填写数", "流转未完成日期数"] if empty_days or any(
+        (out_dir / f"最终核销结果_{day.strftime('%Y%m%d')}.json").is_file() for day in days
+    ) else []
+    headers.extend(execution_columns)
     summary.append(headers)
     for cell in summary[1]:
         cell.font = Font(bold=True)
         cell.fill = PatternFill("solid", fgColor="D9EAF7")
+        cell.alignment = Alignment(vertical="center", wrap_text=True)
+    summary.row_dimensions[1].height = 42
 
-    aggregated: dict[str, object] = {}
+    aggregated = {title: wb.create_sheet(title) for title in AGGREGATED_SHEETS}
     header_written: set[str] = set()
     for day in days:
         token = day.strftime("%Y%m%d")
@@ -197,6 +232,9 @@ def build(
         for prefix in CLEANUP_REPORT_PREFIXES:
             daily_sources.update(_daily_report_files(out_dir, prefix, day))
         counts = _daily_counts(out_dir, day)
+        if day in empty_days:
+            counts = {column: 0 for column in [*headers[2:], *execution_columns]}
+            counts["统计口径"] = "取数确认无记录；未执行核销写入"
         status = (
             "已纳入"
             if daily.is_file()
@@ -208,25 +246,19 @@ def build(
             day.isoformat(), status,
             counts.get("到账笔数", ""), counts.get("订单行数", ""),
             counts.get("自动", ""), counts.get("挂账", ""), counts.get("异常", ""),
+            *(counts.get(column, "") for column in execution_columns),
         ])
         if not daily.is_file():
             if day not in empty_days:
                 raise FileNotFoundError(f"缺少日期级核销日清：{daily}")
             continue
         source_wb = openpyxl.load_workbook(daily, data_only=False, read_only=False)
-        for source_title, target_title in AGGREGATED_SHEETS.items():
-            if source_title not in source_wb.sheetnames:
+        for target_title, aliases in AGGREGATED_SHEETS.items():
+            source_title = next((name for name in aliases if name in source_wb.sheetnames), None)
+            if source_title is None:
                 continue
-            target = aggregated.get(target_title)
-            if target is None:
-                target = wb.create_sheet(target_title)
-                aggregated[target_title] = target
-            if _append_aggregated_sheet(
-                target,
-                source_wb[source_title],
-                day,
-                target_title in header_written,
-            ):
+            target = aggregated[target_title]
+            if _append_aggregated_sheet(target, source_wb[source_title], day, target_title in header_written):
                 header_written.add(target_title)
         source_wb.close()
 
@@ -234,7 +266,11 @@ def build(
     summary.auto_filter.ref = summary.dimensions
     for col, width in zip("ABCDEFG", (14, 16, 12, 12, 10, 10, 10)):
         summary.column_dimensions[col].width = width
-    for sheet in aggregated.values():
+    for index, column in enumerate(execution_columns, start=8):
+        summary.column_dimensions[openpyxl.utils.get_column_letter(index)].width = 38 if column == "统计口径" else 18
+    for title, sheet in aggregated.items():
+        if title not in header_written:
+            sheet.append(["核销日期", "单号" if title == "核销明细" else "到账号(AR)", "状态"])
         sheet.freeze_panes = "B2"
         sheet.auto_filter.ref = sheet.dimensions
         sheet.column_dimensions["A"].width = 14

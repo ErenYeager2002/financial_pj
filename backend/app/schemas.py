@@ -5,7 +5,11 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .contracts import PlatformFile, RunDetail
+from .contracts import (
+    PlatformFile,
+    RunDetail,
+    WorkflowResultMetric,
+)
 
 
 WorkflowExecutionMode = Literal["workflow", "pi_harness"]
@@ -239,7 +243,7 @@ class WorkflowRead(BaseModel):
     current_step: str = ""
     current_step_label: str = ""
     step_error: str = ""
-    step_error_detail: dict[str, str] = Field(default_factory=dict)
+    step_error_detail: dict[str, Any] = Field(default_factory=dict)
     fetched_data_available: bool = False
     # Optional for compatibility with task rows created before source tracking.
     fetched_data_source: Literal["live", "replay"] | None = None
@@ -247,6 +251,9 @@ class WorkflowRead(BaseModel):
     fetched_data_review_status: str = ""
     fetched_data_supplement_history: list[dict[str, Any]] = Field(default_factory=list)
     result_summary: dict[str, Any] = Field(default_factory=dict)
+    result_metrics: dict[str, WorkflowResultMetric] = Field(default_factory=dict)
+    result_scope: Literal["day", "batch", "unknown"] = "unknown"
+    business_items_pending: bool | None = None
     files: dict[str, Any]
     artifacts: list[dict[str, Any]]
     messages: list[WorkflowMessageRead]
@@ -304,6 +311,7 @@ class WorkflowFetchedDelivery(BaseModel):
     written_off_original: float | None = None
     written_off_local: float | None = None
     delivery_amount_original: float | None = None
+    delivery_amount_local: float | None = None
     exchange_rate: float | None = None
     currency: str = ""
     order_name: str = ""
@@ -462,6 +470,10 @@ class WorkflowBatchRead(BaseModel):
     fetched_data_review_status: str = ""
     fetched_data_summary_by_date: dict[str, dict[str, Any]] = Field(default_factory=dict)
     fetched_data_supplement_history: list[dict[str, Any]] = Field(default_factory=list)
+    result_summary: dict[str, Any] = Field(default_factory=dict)
+    result_metrics: dict[str, WorkflowResultMetric] = Field(default_factory=dict)
+    result_scope: Literal["day", "batch", "unknown"] = "unknown"
+    business_items_pending: bool | None = None
     workflows: list[WorkflowRead]
     created_at: datetime
     updated_at: datetime

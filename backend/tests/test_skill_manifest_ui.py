@@ -168,7 +168,7 @@ def test_first_manifest_batch_has_expected_employee_metadata() -> None:
     expected = {
         "reconcile-bank",
         "labor-invoice-check",
-        "receivables-merge",
+        "receivables-merge-and-split",
         "dept-expense-alloc",
         "withholding-report-rename",
         "ar-hexiao-daily",

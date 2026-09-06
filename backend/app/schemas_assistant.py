@@ -4,6 +4,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+MAX_ASSISTANT_FILE_IDS = 20
+
 
 class AdminAssistantProfileWrite(BaseModel):
     connection_id: str = Field(min_length=1, max_length=36)
@@ -12,7 +14,7 @@ class AdminAssistantProfileWrite(BaseModel):
 
 class AssistantPrepareRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
-    file_ids: list[str] = Field(default_factory=list, max_length=20)
+    file_ids: list[str] = Field(default_factory=list, max_length=MAX_ASSISTANT_FILE_IDS)
 
 
 class AssistantMessageWrite(BaseModel):
@@ -59,5 +61,5 @@ class AgentModelRequest(BaseModel):
 
 class AgentPrepareRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
-    file_ids: list[str] = Field(default_factory=list, max_length=20)
+    file_ids: list[str] = Field(default_factory=list, max_length=MAX_ASSISTANT_FILE_IDS)
     recommendation: AssistantRecommendation

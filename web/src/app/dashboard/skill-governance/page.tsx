@@ -58,7 +58,6 @@ export default async function SkillGovernancePage(): Promise<React.JSX.Element> 
   return (
     <PageContainer
       pageTitle='Skill 发布与维护'
-      pageDescription='禁用 Skill 后从 Gitee 拉取最新代码，更新成功后自动重新启用'
     >
       <div className='space-y-6'>
         <SkillDedicatedUserManagement

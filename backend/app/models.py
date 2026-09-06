@@ -19,6 +19,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.ext.hybrid import hybrid_property
 
 from .auth_models import User, UserSession, UserSkillPermission  # noqa: F401
 from .database import Base
@@ -80,6 +81,16 @@ class FileRecord(Base):
             "owner_id",
             "department_id",
             unique=True,
+        ),
+        Index(
+            "ix_files_latest_lookup",
+            "owner_id",
+            "department_id",
+            "kind",
+            "skill_id",
+            "original_name",
+            "created_at",
+            "id",
         ),
     )
 
@@ -1387,7 +1398,42 @@ class WorkflowAction(Base):
         String(36), ForeignKey("workflow_sessions.id"), index=True
     )
     name: Mapped[str] = mapped_column(String(64), index=True)
-    state: Mapped[str] = mapped_column(String(32), default="queued", index=True)
+    _stored_state: Mapped[str] = mapped_column("state", String(32), default="queued", index=True)
+
+    @hybrid_property
+    def state(self) -> str:
+        from .workflow_action_state import logical_action_state
+
+        return logical_action_state(self._stored_state)
+
+    @state.setter
+    def state(self, value: str) -> None:
+        from .workflow_action_state import AR_ACTION_PREFIX, isolated_action_state
+
+        if value.startswith(AR_ACTION_PREFIX):
+            value = isolated_action_state(value.removeprefix(AR_ACTION_PREFIX))
+        elif self.is_contract_isolated:
+            value = isolated_action_state(value)
+        self._stored_state = value
+
+    @state.expression
+    def state(cls):
+        from .workflow_action_state import logical_state_expression
+
+        return logical_state_expression(cls._stored_state)
+
+    @state.update_expression
+    def state(cls, value):
+        from .workflow_action_state import state_update_expression
+
+        return [(cls._stored_state, state_update_expression(cls._stored_state, value))]
+
+    @property
+    def is_contract_isolated(self) -> bool:
+        from .workflow_action_state import AR_ACTION_PREFIX
+
+        return bool(self._stored_state and self._stored_state.startswith(AR_ACTION_PREFIX))
+
     worker_id: Mapped[str] = mapped_column(String(128), default="", index=True)
     attempt_count: Mapped[int] = mapped_column(Integer, default=0)
     heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

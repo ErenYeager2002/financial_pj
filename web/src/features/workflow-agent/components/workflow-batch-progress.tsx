@@ -8,8 +8,12 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PaginatedCollection } from '@/components/ui/collection-pagination';
 import { Progress } from '@/components/ui/progress';
+import { Heading } from '@/components/ui/heading';
 import { WorkflowProgressCard } from '@/features/workflow-agent/components/workflow-progress-card';
 import { WorkflowFetchedDataDialog } from '@/features/workflow-agent/components/workflow-fetched-data-dialog';
+import { WorkflowResultSummary } from '@/features/workflow-agent/components/workflow-result-summary';
+import { WorkflowRecoveryActions } from '@/features/workflow-agent/components/workflow-execution-results';
+import { useWorkflowPolling } from '@/features/workflow-agent/hooks/use-workflow-polling';
 import type { WorkflowBatchRead } from '@/features/platform-api/types';
 import {
   batchFailureGuidance,
@@ -54,11 +58,6 @@ function statusClass(status: string): string {
   return 'border-border bg-muted/50 text-muted-foreground';
 }
 
-function resultSummaryValue(summary: Record<string, unknown>, key: string): string {
-  const value = summary[key];
-  return value === undefined || value === null || value === '' ? '未提供' : String(value);
-}
-
 interface BatchOutputFile {
   fileId: string;
   name: string;
@@ -84,25 +83,22 @@ function BatchOutputCard({ batch }: { batch: WorkflowBatchRead }): React.JSX.Ele
   return (
     <Card>
       <CardHeader>
-        <CardTitle className='text-base'>批次产出</CardTitle>
-        <CardDescription>
-          批次完成后提供整合核销日清，以及最终的年度盈亏核算表和到账流转表。
-        </CardDescription>
+        <CardTitle className='text-base'><h2>批次产出</h2></CardTitle>
       </CardHeader>
       <CardContent>
         {outputs.length ? (
-          <PaginatedCollection ariaLabel='批次产出' contentClassName='space-y-2'>
+          <PaginatedCollection ariaLabel='批次产出' contentClassName='platform-list'>
               {outputs.map((output) => (
                 <div
                   key={output.fileId}
-                  className='flex min-h-10 items-center justify-between gap-3 rounded-md border px-3 py-2'
+                  className='platform-row'
                 >
                   <div className='min-w-0'>
-                    <p className='truncate text-sm font-medium'>{output.name}</p>
+                    <p className='text-sm font-medium break-words'>{output.name}</p>
                   </div>
                   <a
                     href={`/api/platform/files/${encodeURIComponent(output.fileId)}/download`}
-                    className='shrink-0 text-sm text-primary underline-offset-4 hover:underline'
+                    className='platform-action shrink-0 text-sm text-primary underline-offset-4 hover:underline'
                   >
                     下载
                   </a>
@@ -172,11 +168,17 @@ export function WorkflowBatchProgress({
     [batch.id]
   );
 
-  React.useEffect(() => {
-    if (batchIsTerminal) return;
-    const timer = window.setInterval(() => void refresh(true), 2500);
-    return () => window.clearInterval(timer);
-  }, [batchIsTerminal, refresh]);
+  useWorkflowPolling({
+    enabled: !batchIsTerminal,
+    fast:
+      batch.state === 'running' ||
+      batch.workflows.some((workflow) =>
+        ['preparing', 'fetching_data', 'building_fetch_preview', 'applying', 'finalizing'].includes(
+          workflow.stage
+        )
+      ),
+    refresh: () => refresh(true)
+  });
 
   const writeInProgress = batch.workflows.some((workflow) => workflow.stage === 'applying');
 
@@ -234,15 +236,34 @@ export function WorkflowBatchProgress({
     : -1;
   const selectedStatus = selectedWorkflow ? workflowStatusLabel(selectedWorkflow) : '';
   return (
-    <div className='space-y-4'>
+    <div className='space-y-6'>
+      <div className='flex flex-wrap items-start justify-between gap-4'>
+        <Heading title='应收核销批次详情' description='' level={1} compact />
+        <div className='flex flex-wrap gap-2'>
+          <Button
+            type='button'
+            variant='outline'
+            onClick={() => void refresh()}
+            disabled={refreshing}
+          >
+            {refreshing ? '刷新中…' : '刷新状态'}
+          </Button>
+          <Button
+            nativeButton={false}
+            variant='outline'
+            render={<Link href='/dashboard/runs' aria-label='返回任务列表' />}
+          >
+            返回任务列表
+          </Button>
+        </div>
+      </div>
       <Card>
         <CardHeader>
           <div className='flex flex-wrap items-start justify-between gap-3'>
             <div>
-              <CardTitle>{batch.skill_name}</CardTitle>
+              <CardTitle><h2>{batch.skill_name}</h2></CardTitle>
               <CardDescription className='mt-1'>
-                {batch.display_id} · 已选择 {batch.reconciliation_dates.length}{' '}
-                个核销日，按日期顺序处理
+                {batch.display_id} · {batch.reconciliation_dates.length} 个核销日
               </CardDescription>
             </div>
             <div className='flex flex-wrap items-center justify-end gap-2'>
@@ -250,6 +271,22 @@ export function WorkflowBatchProgress({
                 {batchStatusLabel(batch)}
               </Badge>
               <Badge variant='secondary'>{batch.progress}%</Badge>
+              {batch.fetched_data_available && (
+                <Button
+                  type='button'
+                  variant='default'
+                  className={
+                    batch.fetched_data_review_status === 'confirmed'
+                      ? 'bg-primary text-primary-foreground shadow-sm hover:bg-primary/90'
+                      : 'bg-amber-600 text-white shadow-sm hover:bg-amber-700'
+                  }
+                  onClick={() => setFetchedDataOpen(true)}
+                >
+                  {batch.fetched_data_review_status === 'confirmed'
+                    ? '查看批次取数数据'
+                    : '检查批次取数数据'}
+                </Button>
+              )}
               {!terminal(batch) && (
                 <Button
                   type='button'
@@ -276,42 +313,15 @@ export function WorkflowBatchProgress({
         </CardHeader>
       </Card>
 
-      {batch.fetched_data_available && (
-        <Card>
-          <CardHeader>
-            <CardTitle className='text-base'>本批次智云取数</CardTitle>
-            <CardDescription>
-              取数范围：{batch.reconciliation_dates[0]} 至 {batch.reconciliation_dates.at(-1)}；
-              仅处理已选：{batch.reconciliation_dates.join('、')}
-              。取数和检查一次，各已选日期按顺序处理。
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button
-              type='button'
-              variant='default'
-              className={
-                batch.fetched_data_review_status === 'confirmed'
-                  ? 'bg-primary text-primary-foreground shadow-sm hover:bg-primary/90'
-                  : 'bg-amber-600 text-white shadow-sm hover:bg-amber-700'
-              }
-              onClick={() => setFetchedDataOpen(true)}
-            >
-              {batch.fetched_data_review_status === 'confirmed'
-                ? '查看批次取数数据'
-                : '检查批次取数数据'}
-            </Button>
-          </CardContent>
-        </Card>
-      )}
-
       {failureGuidance && (
         <Alert variant='destructive'>
           <AlertTitle>
             {failureGuidance.failedDate} 在“{failureGuidance.failedStep}”未完成
           </AlertTitle>
           <AlertDescription className='space-y-3'>
-            <p>{failureGuidance.laterDatesMessage}</p>
+            {failureGuidance.laterDatesMessage !== '没有后续未处理日期。' && (
+              <p>{failureGuidance.laterDatesMessage}</p>
+            )}
             <div className='flex flex-wrap items-center justify-between gap-3'>
               <span>{failureGuidance.nextAction}</span>
               {batch.can_retry && (
@@ -333,167 +343,157 @@ export function WorkflowBatchProgress({
         </Alert>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className='text-base'>日期任务</CardTitle>
-        </CardHeader>
-        <CardContent className='space-y-2'>
-          <PaginatedCollection ariaLabel='批次日期任务列表' contentClassName='space-y-2'>
-              {batch.workflows.map((workflow) => {
-                const status = workflowStatusInBatch(batch.state, batch.workflows, workflow);
-                const selected = selectedWorkflow?.id === workflow.id;
-                const currentTask = current?.id === workflow.id;
-                const hint = workflowAttentionHint(workflow);
-                return (
-                  <div
-                    key={workflow.id}
-                    role='listitem'
-                    data-workflow-selected={selected}
-                    className={`rounded-lg border border-l-4 p-3 transition-colors ${
-                      selected
-                        ? 'border-l-primary bg-primary/10 shadow-sm dark:bg-primary/15'
-                        : currentTask
-                          ? 'border-l-primary/60 bg-primary/5'
-                          : 'border-l-transparent'
-                    }`}
-                  >
-                    <button
-                      type='button'
-                      className='w-full text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
-                      aria-pressed={selected}
-                      onClick={() => {
-                        setSelectedWorkflowId(workflow.id);
-                        setManualSelection(true);
-                      }}
+      <div className='platform-batch-grid'>
+        <Card>
+          <CardHeader>
+            <CardTitle className='text-base'><h2>日期任务</h2></CardTitle>
+          </CardHeader>
+          <CardContent className='space-y-2'>
+            <PaginatedCollection ariaLabel='批次日期任务列表' contentClassName='space-y-2'>
+                {batch.workflows.map((workflow) => {
+                  const status = workflowStatusInBatch(batch.state, batch.workflows, workflow);
+                  const selected = selectedWorkflow?.id === workflow.id;
+                  const currentTask = current?.id === workflow.id;
+                  const hint = workflowAttentionHint(workflow);
+                  return (
+                    <div
+                      key={workflow.id}
+                      role='listitem'
+                      data-workflow-selected={selected}
+                      className={`rounded-lg border border-l-4 p-3 transition-colors ${
+                        selected
+                          ? 'border-l-primary bg-primary/10 shadow-sm dark:bg-primary/15'
+                          : currentTask
+                            ? 'border-l-primary/60 bg-primary/5'
+                            : 'border-l-transparent'
+                      }`}
                     >
-                      <div className='flex flex-wrap items-center gap-x-3 gap-y-2'>
-                        <span className='font-medium'>第 {workflow.batch_sequence} 天</span>
-                        <span className='text-sm'>{workflow.reconciliation_date}</span>
-                        <Badge variant='outline' className={statusClass(status)}>
-                          {status}
-                        </Badge>
-                        <span className='min-w-36 text-sm text-muted-foreground'>
-                          {workflowStepLabel(workflow)}
-                        </span>
-                        <span className='ml-auto text-sm font-medium tabular-nums'>
-                          {workflow.progress}%
-                        </span>
-                      </div>
-                      <div className='mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground'>
-                        {currentTask && <span className='font-medium text-primary'>当前执行</span>}
-                        {selected && <span className='font-medium text-foreground'>当前查看</span>}
-                        {hint && (
-                          <span
-                            className={
-                              status === '失败'
-                                ? 'text-destructive'
-                                : 'text-amber-700 dark:text-amber-300'
-                            }
-                            title={hint}
-                          >
-                            {hint}
+                      <button
+                        type='button'
+                        className='min-h-11 w-full text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
+                        aria-pressed={selected}
+                        onClick={() => {
+                          setSelectedWorkflowId(workflow.id);
+                          setManualSelection(true);
+                        }}
+                      >
+                        <div className='flex flex-wrap items-center gap-x-3 gap-y-2'>
+                          <span className='font-medium'>第 {workflow.batch_sequence} 天</span>
+                          <span className='text-sm'>{workflow.reconciliation_date}</span>
+                          <Badge variant='outline' className={statusClass(status)}>
+                            {status}
+                          </Badge>
+                          <span className='text-sm text-muted-foreground'>
+                            {workflowStepLabel(workflow)}
                           </span>
-                        )}
-                        <span className='truncate'>任务号：{workflow.display_id}</span>
-                      </div>
-                    </button>
-                  </div>
-                );
-              })}
-          </PaginatedCollection>
-        </CardContent>
-      </Card>
+                          <span className='ml-auto text-sm font-medium tabular-nums'>
+                            {workflow.progress}%
+                          </span>
+                        </div>
+                        <div className='mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground'>
+                          {currentTask && <span className='font-medium text-primary'>当前执行</span>}
+                          {selected && <span className='font-medium text-foreground'>当前查看</span>}
+                          {hint && (
+                            <span
+                              className={
+                                status === '失败'
+                                  ? 'text-destructive'
+                                  : 'text-amber-700 dark:text-amber-300'
+                              }
+                              title={hint}
+                            >
+                              {hint}
+                            </span>
+                          )}
+                          <span className='break-all'>任务号：{workflow.display_id}</span>
+                        </div>
+                      </button>
+                    </div>
+                  );
+                })}
+            </PaginatedCollection>
+          </CardContent>
+        </Card>
 
-      {selectedWorkflow && (
-        <div data-testid='selected-workflow-detail' className='space-y-3'>
-          <div className='flex flex-wrap items-center justify-between gap-3'>
-            <div>
-              <p className='font-medium'>
-                当前查看：{selectedWorkflow.reconciliation_date}（第 {selectedIndex + 1}/
-                {batch.workflows.length} 天）
-              </p>
-              <p className='text-sm text-muted-foreground'>状态：{selectedStatus}</p>
+        {selectedWorkflow && (
+          <div data-testid='selected-workflow-detail' className='space-y-3'>
+            <div className='flex flex-wrap items-center justify-between gap-3'>
+              <div>
+                <h2 className='font-medium'>
+                  当前查看：{selectedWorkflow.reconciliation_date}（第 {selectedIndex + 1}/
+                  {batch.workflows.length} 天）
+                </h2>
+                <p className='text-sm text-muted-foreground'>状态：{selectedStatus}</p>
+              </div>
+              {preferred && selectedWorkflow.id !== preferred.id && (
+                <Button
+                  type='button'
+                  variant='outline'
+                  size='sm'
+                  onClick={() => {
+                    setSelectedWorkflowId(preferred.id);
+                    setManualSelection(false);
+                  }}
+                >
+                  {batch.state === 'failed'
+                    ? '返回失败日期'
+                    : batchIsTerminal
+                      ? '返回默认日期'
+                      : '返回当前任务'}
+                </Button>
+              )}
             </div>
-            {preferred && selectedWorkflow.id !== preferred.id && (
-              <Button
-                type='button'
-                variant='outline'
-                size='sm'
-                onClick={() => {
-                  setSelectedWorkflowId(preferred.id);
-                  setManualSelection(false);
-                }}
-              >
-                {batch.state === 'failed'
-                  ? '返回失败日期'
-                  : batchIsTerminal
-                    ? '返回默认日期'
-                    : '返回当前任务'}
-              </Button>
+
+            {batchIsTerminal && !isTerminalWorkflow(selectedWorkflow) ? (
+              <Card>
+                <CardContent className='py-6'>
+                  <p className='font-medium'>
+                    {batch.state === 'failed'
+                      ? '批次已在前一失败日期停止，这一天尚未开始。'
+                      : batch.state === 'cancelled'
+                        ? '批次已取消，这一天不会继续执行。'
+                        : '批次已经完成，这一天不再继续执行。'}
+                  </p>
+                </CardContent>
+              </Card>
+            ) : isWaitingWorkflow(selectedWorkflow) ? (
+              <Card>
+                <CardContent className='py-6'>
+                  <p className='font-medium'>这一天正在等待前置日期完成。</p>
+                </CardContent>
+              </Card>
+            ) : (
+              <>
+                <WorkflowProgressCard
+                  compact
+                  workflow={selectedWorkflow}
+                  onOpenFetchedData={() => setFetchedDataOpen(true)}
+                />
+                {selectedWorkflow.state === 'failed' && (
+                  <WorkflowRecoveryActions key={selectedWorkflow.id} workflow={selectedWorkflow} onRecovered={() => refresh()} />
+                )}
+                {batch.workflows.length > 1 && (
+                  <details className='rounded-lg border px-4 py-3'>
+                    <summary className='cursor-pointer text-sm'>
+                      查看 {selectedWorkflow.reconciliation_date} 结果
+                    </summary>
+                    <div className='mt-3'>
+                      <WorkflowResultSummary source={selectedWorkflow} title='当日核销结果' />
+                    </div>
+                  </details>
+                )}
+              </>
             )}
           </div>
+        )}
 
-          {batchIsTerminal && !isTerminalWorkflow(selectedWorkflow) ? (
-            <Card>
-              <CardContent className='py-6'>
-                <p className='font-medium'>
-                  {batch.state === 'failed'
-                    ? '批次已在前一失败日期停止，这一天尚未开始。'
-                    : batch.state === 'cancelled'
-                      ? '批次已取消，这一天不会继续执行。'
-                      : '批次已经完成，这一天不再继续执行。'}
-                </p>
-              </CardContent>
-            </Card>
-          ) : isWaitingWorkflow(selectedWorkflow) ? (
-            <Card>
-              <CardContent className='py-6'>
-                <p className='font-medium'>这一天正在等待前置日期完成。</p>
-              </CardContent>
-            </Card>
-          ) : (
-            <>
-              <WorkflowProgressCard
-                workflow={selectedWorkflow}
-                onOpenFetchedData={() => setFetchedDataOpen(true)}
-              />
-              {(selectedWorkflow.state === 'succeeded' ||
-                selectedWorkflow.stage === 'completed') && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className='text-base'>本日期核销结果</CardTitle>
-                    <CardDescription>
-                      {selectedWorkflow.reconciliation_date} · 写入状态：已完成
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <PaginatedCollection
-                      ariaLabel='本日期核销结果'
-                      contentClassName='grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4'
-                    >
-                      {[
-                      ['本日写入', '今天要填'],
-                      ['已填过·跳过', '已填过·跳过'],
-                      ['挂账待办', '挂账待办'],
-                      ['冲突·需人工处理', '冲突·需你定'],
-                      ['流转确认后自动写', '流转确认后自动写'],
-                      ['流转须手填', '流转须手填'],
-                      ['异常', '异常']
-                      ].map(([label, key]) => (
-                        <div key={key} className='rounded-md border bg-muted/20 p-3'>
-                          <p className='text-muted-foreground'>{label}</p>
-                          <p className='mt-1 font-medium'>
-                            {resultSummaryValue(selectedWorkflow.result_summary ?? {}, key)}
-                          </p>
-                        </div>
-                      ))}
-                    </PaginatedCollection>
-                  </CardContent>
-                </Card>
-              )}
-            </>
-          )}
-        </div>
+      </div>
+
+      {(batch.state === 'succeeded' || batch.result_scope === 'batch') && (
+        <WorkflowResultSummary
+          source={batch}
+          title='本批次核销结果'
+        />
       )}
 
       <BatchOutputCard batch={batch} />
@@ -506,24 +506,6 @@ export function WorkflowBatchProgress({
       <p className='sr-only' aria-live='polite'>
         {batch.state === 'running' && batch.progress_message}
       </p>
-      <div className='flex flex-wrap gap-2'>
-        <Button
-          type='button'
-          variant='outline'
-          onClick={() => void refresh()}
-          disabled={refreshing}
-        >
-          {refreshing ? '刷新中…' : '刷新状态'}
-        </Button>
-        <Button
-          nativeButton={false}
-          variant='default'
-          className='shadow-sm'
-          render={<Link href='/dashboard/runs' aria-label='返回任务列表' />}
-        >
-          返回任务列表
-        </Button>
-      </div>
       <WorkflowFetchedDataDialog
         batch={batch}
         open={fetchedDataOpen}

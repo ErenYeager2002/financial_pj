@@ -46,8 +46,11 @@ class TaskDiscoveryFailureRead(BaseModel):
     owner_name: str
     business_dates: list[str] = Field(default_factory=list)
     error_message: str
+    error_code: str = "TASK_DISCOVERY_FAILED"
+    error_category: str = "unknown"
     attempt_count: int
     last_checked_at: datetime
+    audit_href: str | None = None
 
 
 class TaskReminderBoard(BaseModel):

@@ -19,6 +19,7 @@ from ..assistant_chat_service import (
     append_message,
     get_conversation,
     get_latest_conversation,
+    list_conversations,
 )
 from ..assistant_profile_service import (
     admin_profile,
@@ -31,6 +32,7 @@ from ..auth import UserContext, get_current_user, require_admin
 from ..contracts import (
     AdminAssistantProfile,
     AssistantConversationRead,
+    AssistantConversationSummary,
     AssistantMessageRead,
     AssistantStatus,
     RunDetail,
@@ -57,6 +59,17 @@ from ..schemas_assistant import (
 )
 
 router = APIRouter(tags=["assistant"])
+
+
+@router.get(
+    "/api/assistant/conversations",
+    response_model=list[AssistantConversationSummary],
+)
+def assistant_conversations(
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> list[AssistantConversationSummary]:
+    return list_conversations(db, user)
 
 
 @router.get(

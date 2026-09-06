@@ -18,6 +18,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import common  # noqa: E402
+import validate_plan  # noqa: E402
 import apply_to_copy  # noqa: E402
 import apply_flow  # noqa: E402
 import build_flow_plan  # noqa: E402
@@ -146,6 +147,7 @@ def main(argv=None) -> int:
     ap.add_argument("--in-place", action="store_true", help="盈亏就地写")
     ap.add_argument("--flow-in-place", action="store_true", help="流转就地写")
     ap.add_argument("--force", action="store_true", help="盈亏跳过冲突只写可写")
+    ap.add_argument("--ledger-only", action="store_true", help="平台分阶段执行：仅写盈亏并回读，不写流转或登记正式收工台账")
     args = ap.parse_args(argv)
 
     checked_path = Path(args.checked)
@@ -211,6 +213,24 @@ def main(argv=None) -> int:
         year: _year_subplan(plan, year, ledger_paths[year])
         for year in grouped
     }
+    # 整单跳过也将影响流转完成状态；即使该年度没有 write，仍须复核当前表。
+    so_skips = [it for it in (plan.get("skip") or []) if it.get("code") == "OK_SO_ALREADY_SETTLED"]
+    if any(it.get("ledger_year") is None for it in so_skips):
+        print("ERROR: 整单跳过项缺少交付年度，请重新判定；未执行盈亏或流转写入。", file=sys.stderr)
+        return 2
+    for year in sorted({int(it["ledger_year"]) for it in so_skips}):
+        path = ledger_paths.get(year)
+        if path is None or not path.is_file():
+            print(f"ERROR: 缺少 {year} 年盈亏表，无法复核整单跳过；未执行写入。", file=sys.stderr)
+            return 2
+        try:
+            problems = validate_plan.recheck_so_skips(_year_subplan(plan, year, path), path)
+        except (OSError, ValueError) as exc:
+            problems = [f"无法读取当前年度盈亏表（{type(exc).__name__}）"]
+        if problems:
+            print("ERROR: 整单跳过的执行前复核失败：" + "；".join(problems), file=sys.stderr)
+            return 2
+
     # 所有年度表先统一做写前复核，任一失败都不开始写。
     for year, subplan in subplans.items():
         try:
@@ -262,7 +282,10 @@ def main(argv=None) -> int:
             no_write_ledger = ledger_paths.get(preferred_year)
             if no_write_ledger is None:
                 no_write_ledger = ledger_paths[sorted(ledger_paths)[0]]
-            ledger_args = ["--checked", str(checked_path), "--ledger", str(no_write_ledger)]
+            no_write_year = next(year for year, path in ledger_paths.items() if path == no_write_ledger)
+            empty_path = Path(temp_dir) / "checked_no_write.json"
+            empty_path.write_text(json.dumps(_year_subplan(plan, no_write_year, no_write_ledger), ensure_ascii=False, indent=2), encoding="utf-8")
+            ledger_args = ["--checked", str(empty_path), "--ledger", str(no_write_ledger)]
             if args.in_place:
                 ledger_args.append("--in-place")
             if args.force:
@@ -275,6 +298,8 @@ def main(argv=None) -> int:
             sub_path = Path(temp_dir) / f"checked_{year}.json"
             sub_path.write_text(json.dumps(subplan, ensure_ascii=False, indent=2), encoding="utf-8")
             ledger_args = ["--checked", str(sub_path), "--ledger", str(ledger_paths[year])]
+            if args.ledger_only:
+                ledger_args.extend(["--execution-receipt", str(ws / "04_产出" / f"盈亏执行_{date_tag}_{year}.json")])
             if len(subplans) > 1:
                 change_report = ws / "04_产出" / f"变更清单_{date_tag}_{year}.xlsx"
                 diff_report = ws / "04_产出" / f"订单写入差异_{date_tag}_{year}.xlsx"
@@ -311,6 +336,13 @@ def main(argv=None) -> int:
             "订单写入差异",
         )
     apply_to_copy._mark_review_applied(checked_path)
+
+    if args.ledger_only:
+        print("AR_WRITE_RESULT " + json.dumps({
+            "ledger_written": bool(writable), "flow_written": False,
+            "ledger_verified": True, "publication_pending": True,
+        }))
+        return 0
 
     # 3) 盈亏全部写入并回读成功后，再按真实结果回填流转状态。
     if flow_plan_data is None:

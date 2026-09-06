@@ -89,6 +89,29 @@ def test_catalog_skill_dto_is_employee_safe_for_admin() -> None:
         assert forbidden.isdisjoint(detail.json())
 
 
+def test_catalog_skill_summaries_are_lightweight_and_employee_safe() -> None:
+    forbidden = {
+        "file_inputs",
+        "input_schema",
+        "progress_stages",
+        "result_presentation",
+        "handler",
+        "runtime",
+        "permissions",
+        "output_schema",
+        "skill_hash",
+        "commit_sha",
+        "source",
+        "safety_constraints",
+    }
+    with auth_client(role="skill_admin") as admin:
+        response = admin.get("/api/catalog/skill-summaries")
+        assert response.status_code == 200
+        summaries = response.json()
+        assert summaries
+        assert all(forbidden.isdisjoint(summary) for summary in summaries)
+
+
 def test_catalog_exposes_supporting_entries_without_making_them_runnable() -> None:
     with auth_client(username="supporting-catalog-user", grant_skills=False) as client:
         response = client.get("/api/catalog/skills")
@@ -96,6 +119,10 @@ def test_catalog_exposes_supporting_entries_without_making_them_runnable() -> No
         support = {item["id"]: item for item in response.json()}
         assert set(support) == set(SUPPORTING_SKILL_IDS)
         assert all(item["status"] == "disabled" for item in support.values())
+
+        summary_response = client.get("/api/catalog/skill-summaries")
+        assert summary_response.status_code == 200
+        assert {item["id"] for item in summary_response.json()} == set(SUPPORTING_SKILL_IDS)
 
         for skill_id in SUPPORTING_SKILL_IDS:
             detail = client.get(f"/api/catalog/skills/{skill_id}")

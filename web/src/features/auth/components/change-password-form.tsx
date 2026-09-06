@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { useRouter } from 'next/navigation';
 import { FormEvent, useState } from 'react';
 
-export default function ChangePasswordForm() {
+export default function ChangePasswordForm({ mustChangePassword = false }: { mustChangePassword?: boolean }) {
   const router = useRouter();
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -46,8 +46,10 @@ export default function ChangePasswordForm() {
   return (
     <div className='w-full max-w-md rounded-xl border bg-card p-6 shadow-sm'>
       <div className='mb-6 space-y-1'>
-        <h1 className='text-2xl font-semibold'>修改初始密码</h1>
-        <p className='text-sm text-muted-foreground'>完成修改后才能访问平台业务页面。</p>
+        <h1 className='text-2xl font-semibold'>{mustChangePassword ? '修改初始密码' : '修改密码'}</h1>
+        <p className='text-sm text-muted-foreground'>
+          {mustChangePassword ? '完成修改后才能访问平台业务页面。' : '输入当前密码和新密码，保存后生效。'}
+        </p>
       </div>
       {error && (
         <Alert variant='destructive' className='mb-4'>

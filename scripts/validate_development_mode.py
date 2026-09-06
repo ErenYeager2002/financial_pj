@@ -98,20 +98,15 @@ def validate() -> None:
         if services[worker_name].get("profiles") != ["tasks"]:
             raise AssertionError(f"{worker_name} must be opt-in through the tasks profile")
         worker_command = _command_text(services[worker_name])
-        if "watchfiles" not in worker_command:
-            raise AssertionError(f"{worker_name} must restart after source changes")
-        if "--filter all" not in worker_command:
-            raise AssertionError(f"{worker_name} must watch Python and Skill metadata changes")
-        for watched_path in ("/app/backend/app", "/app/skills"):
-            if watched_path not in worker_command:
-                raise AssertionError(f"{worker_name} must watch {watched_path}")
+        if "watchfiles" in worker_command or "--reload" in worker_command:
+            raise AssertionError(f"{worker_name} must not interrupt active tasks on source changes")
         expected_module = (
             "python -m app.task_discovery_worker"
             if worker_name == "worker-task-discovery"
             else "python -m app.worker"
         )
-        if expected_module not in worker_command:
-            raise AssertionError(f"{worker_name} must run the platform Worker through watchfiles")
+        if not worker_command.startswith(expected_module):
+            raise AssertionError(f"{worker_name} must run the platform Worker directly")
     if services["egress-proxy"].get("profiles") != ["tasks"]:
         raise AssertionError("egress-proxy must be opt-in through the tasks profile")
     docker_frontend_script = DOCKER_FRONTEND_SCRIPT_PATH.read_text(encoding="utf-8")

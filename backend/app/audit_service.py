@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import or_, select
@@ -66,6 +67,10 @@ def query_audit_events(
     limit: int = 100,
     offset: int = 0,
     before_id: int | None = None,
+    resource_type: str = "",
+    resource_id: str = "",
+    created_from: datetime | None = None,
+    created_to: datetime | None = None,
 ) -> list[AuditEvent]:
     query = select(AuditEvent).where(
         or_(
@@ -77,6 +82,14 @@ def query_audit_events(
         query = query.where(AuditEvent.action == action)
     if actor_id:
         query = query.where(AuditEvent.actor_id == actor_id)
+    if resource_type:
+        query = query.where(AuditEvent.resource_type == resource_type)
+    if resource_id:
+        query = query.where(AuditEvent.resource_id == resource_id)
+    if created_from:
+        query = query.where(AuditEvent.created_at >= created_from)
+    if created_to:
+        query = query.where(AuditEvent.created_at <= created_to)
     if before_id is not None:
         query = query.where(AuditEvent.id < before_id)
     return list(
@@ -86,3 +99,33 @@ def query_audit_events(
             .limit(min(max(limit, 1), 500))
         ).all()
     )
+
+
+def query_audit_events_page(
+    db: Session,
+    user: UserContext,
+    *,
+    action: str = "",
+    actor_id: str = "",
+    resource_type: str = "",
+    resource_id: str = "",
+    created_from: datetime | None = None,
+    created_to: datetime | None = None,
+    limit: int = 20,
+    before_id: int | None = None,
+) -> tuple[list[AuditEvent], int | None, bool]:
+    rows = query_audit_events(
+        db,
+        user,
+        action=action,
+        actor_id=actor_id,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        created_from=created_from,
+        created_to=created_to,
+        limit=min(max(limit, 1), 100) + 1,
+        before_id=before_id,
+    )
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+    return rows, rows[-1].id if has_more and rows else None, has_more

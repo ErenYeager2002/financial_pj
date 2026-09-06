@@ -1,8 +1,6 @@
 import Link from 'next/link';
-import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
-import { PaginatedCollection } from '@/components/ui/collection-pagination';
 import {
   Pagination,
   PaginationContent,
@@ -10,7 +8,7 @@ import {
   PaginationNext,
   PaginationPrevious
 } from '@/components/ui/pagination';
-import { Progress, ProgressLabel } from '@/components/ui/progress';
+import { Progress } from '@/components/ui/progress';
 import type { TaskCenterItem, TaskCenterPage } from '@/features/platform-api/types';
 import {
   taskCenterActionLabel,
@@ -22,13 +20,6 @@ import { taskCenterHref, type TaskCenterQuery } from '@/features/task-center/que
 import { formatDate } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
-function stateVariant(state: string): 'secondary' | 'destructive' | 'outline' | 'default' {
-  if (state === 'failed') return 'destructive';
-  if (state === 'succeeded') return 'default';
-  if (state === 'cancelled') return 'outline';
-  return 'secondary';
-}
-
 function businessDateLabel(item: TaskCenterItem): string {
   if (!item.business_date_start) return '未指定业务日期';
   if (item.business_date_count > 1) {
@@ -39,48 +30,43 @@ function businessDateLabel(item: TaskCenterItem): string {
 
 function TaskCenterRow({ item }: { item: TaskCenterItem }) {
   return (
-    <article className='grid gap-4 rounded-xl border p-4 md:grid-cols-[minmax(0,1fr)_minmax(12rem,0.7fr)_auto] md:items-center'>
-      <div className='min-w-0 space-y-2'>
-        <div className='flex flex-wrap items-center gap-2'>
-          <Badge variant='outline'>{taskCenterTypeLabel(item.reference_type, item.skill_id)}</Badge>
-          <Badge variant={stateVariant(item.view_state)}>
-            {taskCenterStateLabel(item.view_state)}
-          </Badge>
-        </div>
-        <div>
-          <h3 className='truncate font-medium'>{item.skill_name}</h3>
-          {item.business_task_id ? (
-            <p className='text-sm text-muted-foreground'>任务号：{item.business_task_id}</p>
-          ) : null}
-          <p className='text-sm text-muted-foreground'>业务日期：{businessDateLabel(item)}</p>
-        </div>
+    <article className='simple-task-row'>
+      <div className='min-w-0'>
+        <h3 className='font-medium leading-6'>
+          <Link href={item.detail_href} className='simple-title-link'>{item.skill_name}</Link>
+        </h3>
+        <p className='text-xs text-muted-foreground leading-5 break-all'>
+          {item.business_task_id || taskCenterTypeLabel(item.reference_type, item.skill_id)}
+        </p>
         {item.error_summary ? (
-          <p className='text-sm text-destructive'>{item.error_summary}</p>
+          <details className='simple-task-error'>
+            <summary>失败原因</summary>
+            <p className='pt-1 text-sm'>{item.error_summary}</p>
+            {item.progress_message && item.progress_message !== item.error_summary ? <p className='pt-1 text-xs'>{item.progress_message}</p> : null}
+          </details>
         ) : null}
       </div>
-      <div className='space-y-2'>
-        <Progress value={item.progress} aria-label={`${item.skill_name}进度 ${item.progress}%`}>
-          <ProgressLabel className='max-w-48 truncate text-xs'>
-            {item.progress_message || '等待状态更新'}
-          </ProgressLabel>
-          <span className='ml-auto text-xs text-muted-foreground tabular-nums'>
-            {item.progress}%
-          </span>
-        </Progress>
-        <p className='text-xs text-muted-foreground'>
-          更新于{' '}
-          {formatDate(item.updated_at, {
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit'
-          })}
-        </p>
+      <div className='text-sm tabular-nums'>
+        <span className='simple-mobile-label'>业务日期</span>
+        {item.business_date_start ? businessDateLabel(item) : '—'}
       </div>
-      <Link
-        href={item.detail_href}
-        className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'w-full md:w-auto')}
-      >
+      <div className='min-w-0 space-y-1.5'>
+        <span className='simple-task-state' data-state={item.view_state}>
+          <span aria-hidden='true' />{taskCenterStateLabel(item.view_state)}
+          {item.view_state === 'running' || item.view_state === 'failed' ? ` · ${item.progress}%` : ''}
+        </span>
+        {item.view_state === 'running' ? (
+          <Progress value={item.progress} aria-label={`${item.skill_name}进度 ${item.progress}%`} className='max-w-36' />
+        ) : null}
+        {item.progress_message && (item.view_state === 'running' || item.view_state === 'pending') ? (
+          <p className='text-xs leading-5 text-muted-foreground'>{item.progress_message}</p>
+        ) : null}
+      </div>
+      <div className='text-sm text-muted-foreground tabular-nums'>
+        <span className='simple-mobile-label'>更新于</span>
+        {formatDate(item.updated_at, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+      </div>
+      <Link href={item.detail_href} className='simple-text-action'>
         {taskCenterActionLabel(item.view_state)}
       </Link>
     </article>
@@ -97,39 +83,72 @@ export function TaskCenterList({
   hasAnyTasks: boolean;
 }) {
   const counts = [
-    ['待处理', data.state_counts.pending, 'border-amber-500/50 bg-amber-500/5'],
-    ['执行中', data.state_counts.running, ''],
-    ['失败', data.state_counts.failed, 'border-destructive/50 bg-destructive/5'],
-    ['已完成', data.state_counts.succeeded, '']
+    ['全部', '', null],
+    ['待处理', 'pending', data.state_counts.pending],
+    ['执行中', 'running', data.state_counts.running],
+    ['失败', 'failed', data.state_counts.failed],
+    ['已完成', 'succeeded', data.state_counts.succeeded],
+    ['已取消', 'cancelled', null]
   ] as const;
   const items = data.items ?? [];
+  const hasFilters = Boolean(
+    query.query ||
+      query.skillId ||
+      query.viewState ||
+      query.businessDateFrom ||
+      query.businessDateTo
+  );
 
   return (
     <div className='space-y-4'>
-      <PaginatedCollection
-        ariaLabel='任务状态统计'
-        contentClassName='grid grid-cols-2 gap-3 lg:grid-cols-4'
-      >
-        {counts.map(([label, value, className]) => (
-          <div key={label} className={cn('rounded-xl border p-4', className)}>
-            <p className='text-sm text-muted-foreground'>{label}</p>
-            <p className='mt-1 text-2xl font-semibold tabular-nums'>{value}</p>
-          </div>
+      <nav className='simple-state-tabs' aria-label='任务状态筛选'>
+        {counts.map(([label, state, value]) => (
+          <Link key={label} href={taskCenterHref(query, 1, { viewState: state })}
+            aria-current={query.viewState === state ? 'page' : undefined}>
+            {label}{value !== null ? <span className='tabular-nums'>{value}</span> : null}
+          </Link>
         ))}
-      </PaginatedCollection>
+      </nav>
+      <form method='get' className='simple-task-filters'>
+        <input type='hidden' name='view_state' value={query.viewState} />
+        {query.skillId ? <input type='hidden' name='skill_id' value={query.skillId} /> : null}
+        <label className='simple-search'>
+          <span className='sr-only'>任务号、名称或 Skill</span>
+          <input name='query' defaultValue={query.query} maxLength={128}
+            placeholder='搜索任务名称或任务号' />
+        </label>
+        <button type='submit' className={cn(buttonVariants({ variant: 'outline' }), 'platform-action')}>查询</button>
+        <details className='simple-filter-more' open={Boolean(query.businessDateFrom || query.businessDateTo)}>
+          <summary>日期与条数{query.businessDateFrom || query.businessDateTo ? ' · 已筛选' : ''}</summary>
+          <div className='simple-extra-filters'>
+            <label>业务日期起<input type='date' name='business_date_from' defaultValue={query.businessDateFrom} /></label>
+            <label>业务日期止<input type='date' name='business_date_to' defaultValue={query.businessDateTo} /></label>
+            <label>每页<select name='page_size' defaultValue={String(query.pageSize)}>
+              {[10, 25, 50, 100].includes(query.pageSize) ? null : <option value={query.pageSize}>{query.pageSize} 条</option>}
+              <option value='10'>10 条</option><option value='25'>25 条</option>
+              <option value='50'>50 条</option><option value='100'>100 条</option>
+            </select></label>
+          </div>
+        </details>
+        {hasFilters ? <Link href='/dashboard/runs' className='simple-text-action'>清除筛选</Link> : null}
+      </form>
+
       {items.length ? (
-        <Card>
-          <CardHeader>
-            <h2 className='text-base leading-snug font-medium'>正式任务</h2>
-            <CardDescription>共 {data.total} 条，按最近更新时间排序。</CardDescription>
-          </CardHeader>
-          <CardContent className='space-y-3'>
+        <section className='simple-task-results' aria-label='任务列表'>
+          <div className='mb-3 flex flex-wrap items-start justify-between gap-3 text-xs text-muted-foreground'>
+            <span>共 {data.total} 条</span>
+            {data.scope ? <details className='max-w-md text-right'><summary className='cursor-pointer'>统计范围</summary><p className='py-2'>{data.scope}</p></details> : null}
+          </div>
+          <div className='space-y-3'>
+            <div className='simple-task-head' aria-hidden='true'>
+              <span>任务</span><span>业务日期</span><span>状态</span><span>更新时间</span><span>操作</span>
+            </div>
             <div
               role='region'
-              aria-label='正式任务当前页，每页最多 5 项'
-              className='max-h-[36rem] overflow-y-auto overscroll-contain rounded-lg pr-2 [scrollbar-gutter:stable]'
+              aria-label={`正式任务当前页，每页 ${data.page_size} 项`}
+              className='min-w-0'
             >
-              <div className='space-y-3'>
+              <div className='simple-task-list'>
                 {items.map((item) => (
                   <TaskCenterRow key={`${item.reference_type}:${item.reference_id}`} item={item} />
                 ))}
@@ -160,22 +179,26 @@ export function TaskCenterList({
                 </PaginationItem>
               </PaginationContent>
             </Pagination>
-          </CardContent>
-        </Card>
+          </div>
+        </section>
       ) : (
         <Card>
           <CardHeader>
             <h2 className='text-base leading-snug font-medium'>
-              {taskCenterEmptyState(hasAnyTasks).title}
+              {hasFilters ? '当前筛选没有任务' : taskCenterEmptyState(hasAnyTasks).title}
             </h2>
-            <CardDescription>{taskCenterEmptyState(hasAnyTasks).description}</CardDescription>
+            <CardDescription>
+              {hasFilters
+                ? '请调整任务号、Skill、状态或业务日期条件。'
+                : taskCenterEmptyState(hasAnyTasks).description}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <Link
-              href={hasAnyTasks ? '/dashboard/runs' : '/dashboard/skills'}
+              href={hasFilters ? '/dashboard/runs' : hasAnyTasks ? '/dashboard/runs' : '/dashboard/skills'}
               className={cn(buttonVariants())}
             >
-              {taskCenterEmptyState(hasAnyTasks).action}
+              {hasFilters ? '清除筛选' : taskCenterEmptyState(hasAnyTasks).action}
             </Link>
           </CardContent>
         </Card>

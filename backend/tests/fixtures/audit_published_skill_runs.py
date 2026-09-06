@@ -20,15 +20,14 @@ EXPECTED_COUNTS = {
     "labor-invoice-check": (2, 1),
     "order-daily-summary": (1, 1),
     "project-detail-to-ledger": (2, 2),
-    "receivables-merge": (1, 1),
+    "receivables-merge-and-split": (1, 3),
     "reconcile-bank": (2, 1),
-    "split-by-sales": (1, 1),
 }
 
 EXPECTED_SHEETS = {
     "dept-expense-alloc": {"部门科目余额表", "利润表"},
     "project-detail-to-ledger": {"明细"},
-    "receivables-merge": {"主表", "认列告警", "运行报告"},
+    "receivables-merge-and-split": {"主表", "认列告警", "运行报告"},
     "reconcile-bank": {"匹配明细", "银行未匹配", "总账未匹配"},
 }
 

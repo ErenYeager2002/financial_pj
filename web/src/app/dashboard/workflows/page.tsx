@@ -16,6 +16,7 @@ type PageProps = {
 };
 
 export default async function Page({ searchParams }: PageProps): Promise<React.JSX.Element> {
+  const startedAt = performance.now();
   const params = await searchParams;
   const initialSkillId = typeof params.skill === 'string' ? params.skill : '';
   const initialDates = Array.isArray(params.date) ? params.date : params.date ? [params.date] : [];
@@ -24,6 +25,9 @@ export default async function Page({ searchParams }: PageProps): Promise<React.J
     listWorkflowSessions(),
     listWorkflowBatches()
   ]);
+  console.info(
+    `[dashboard-workflows-timing] catalog+recent ${Math.round(performance.now() - startedAt)}ms`
+  );
   const selectedSkillId =
     initialSkillId && skills.some((skill) => skill.id === initialSkillId)
       ? initialSkillId
@@ -31,6 +35,9 @@ export default async function Page({ searchParams }: PageProps): Promise<React.J
   const initialReusableFiles = selectedSkillId
     ? await listWorkflowReusableFiles(selectedSkillId)
     : null;
+  console.info(
+    `[dashboard-workflows-timing] reusable-files ${Math.round(performance.now() - startedAt)}ms`
+  );
   return (
     <PageContainer pageTitle='创建应收核销任务'>
       <WorkflowLauncher

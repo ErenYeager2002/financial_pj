@@ -452,4 +452,4 @@ if ($Mode -eq "Tasks") {
 } else {
     Write-Host "当前为 Core 模式；执行任务时使用 .\scripts\dev.ps1 -Mode Tasks。"
 }
-Write-Host "API、前端和任务 Worker 会在源码修改后自动更新；依赖或 Dockerfile 修改后运行 .\scripts\dev.ps1 -Build。"
+Write-Host "API 和前端保留热更新；任务 Worker 不随源码保存重启。确认无活动任务后，使用 .\scripts\dev.ps1 -RestartWorkers 加载 Worker 修改；依赖或 Dockerfile 修改后运行 .\scripts\dev.ps1 -Build。"

@@ -221,6 +221,22 @@ class SkillAvailabilityTransitionRequest(BaseModel):
     reason: str = Field(min_length=2, max_length=500)
 
 
+class SkillActiveWorkRead(BaseModel):
+    reference_type: Literal["run", "workflow", "workflow_batch"]
+    reference_id: str
+    display_id: str = ""
+    state: Literal["queued", "running", "waiting_material", "waiting_confirmation", "unknown"]
+    original_state: str
+    stage: str = ""
+    progress: int = 0
+    progress_message: str = ""
+    queued_at: datetime | None = None
+    started_at: datetime | None = None
+    updated_at: datetime
+    waiting_reason: str = ""
+    blocks_disable: bool = True
+
+
 class SkillAvailabilityRead(BaseModel):
     skill_id: str
     state: Literal["enabled", "draining", "disabled", "failed_disabled"]
@@ -229,6 +245,10 @@ class SkillAvailabilityRead(BaseModel):
     changed_by: str
     changed_at: datetime | None
     active_work_count: int
+    active_work: list[SkillActiveWorkRead] = Field(default_factory=list)
+    active_work_truncated: bool = False
+    current_version: str = ""
+    current_skill_hash: str = ""
 
 
 class SkillDedicationWrite(BaseModel):
@@ -309,6 +329,7 @@ class RunSummary(BaseModel):
     attempt_count: int = 0
     can_retry: bool = False
     retry_block_reason: str = ""
+    failure_detail: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     queued_at: datetime | None
     started_at: datetime | None
@@ -371,6 +392,44 @@ class TaskCenterPage(BaseModel):
     page_size: int
     pages: int
     state_counts: TaskCenterStateCounts
+    scope: str = ""
+
+
+ResultMetricState = Literal["value", "not_applicable", "not_recorded", "read_failed"]
+
+
+class WorkflowResultMetric(BaseModel):
+    value: int | None = None
+    state: ResultMetricState
+    meaning: str = ""
+
+
+class WorkflowResultSummary(BaseModel):
+    scope: Literal["day", "batch", "unknown"] = "unknown"
+    metrics: dict[str, WorkflowResultMetric] = Field(default_factory=dict)
+    business_items_pending: bool | None = None
+
+
+class WorkerHealth(BaseModel):
+    pool: str
+    state: Literal["online", "expired", "unknown"]
+    configured_capacity: int = 0
+    online_capacity: int = 0
+    queued_count: int = 0
+    running_count: int = 0
+    last_heartbeat_at: datetime | None = None
+
+
+class RuntimeHealth(BaseModel):
+    liveness: Literal["alive"] = "alive"
+    readiness: Literal["ready", "not_ready", "unknown"] = "unknown"
+    dependency_status: Literal["available", "unavailable", "not_checked", "unknown"] = "unknown"
+    checked_at: datetime | None = None
+    configured_workers: dict[str, int] = Field(default_factory=dict)
+    online_workers: dict[str, int] = Field(default_factory=dict)
+    queue_depth: dict[str, int] = Field(default_factory=dict)
+    workers: list[WorkerHealth] = Field(default_factory=list)
+    scope: str = ""
 
 
 class RunEventRead(BaseModel):
@@ -471,6 +530,9 @@ class ObservabilitySummary(BaseModel):
     retry_count: int
     approval_count: int
     manual_intervention_count: int
+    task_count: int = 0
+    failed_task_count: int = 0
+    task_scope: str = ""
     step_metrics: list[StepMetricRead] = Field(default_factory=list)
     model_usage: list[ModelUsageRead] = Field(default_factory=list)
 
@@ -488,6 +550,12 @@ class PlatformFile(BaseModel):
     workflow_id: str | None = None
     content_type: str = "application/octet-stream"
     run_id: str | None = None
+    source_task_id: str = ""
+    source_task_type: Literal["run", "workflow", "workflow_batch", ""] = ""
+    business_date: str = ""
+    material_set_id: str | None = None
+    material_version: int | None = None
+    same_content_count: int = 1
     created_at: datetime | None = None
     expires_at: datetime | None = None
     can_delete: bool = False
@@ -498,10 +566,48 @@ class PlatformFile(BaseModel):
 class PlatformFileDetail(PlatformFile):
     referenced_run_ids: list[str] = Field(default_factory=list)
     referenced_workflow_ids: list[str] = Field(default_factory=list)
+    audit_href: str = ""
 
 
 class PlatformFilePage(BaseModel):
     items: list[PlatformFile] = Field(default_factory=list)
+    total: int
+    page: int
+    page_size: int
+    pages: int
+
+
+class PlatformFileGroupSummary(BaseModel):
+    skill_id: str = ""
+    skill_name: str
+    unassigned: bool = False
+    file_count: int
+    latest_created_at: datetime | None = None
+
+
+class PlatformFileGroupSummaryPage(BaseModel):
+    items: list[PlatformFileGroupSummary] = Field(default_factory=list)
+    total_files: int
+    total_groups: int
+
+
+class PlatformFileOption(BaseModel):
+    id: str
+    name: str
+    kind: Literal["input"]
+    size_bytes: int
+    skill_id: str = ""
+    skill_name: str = ""
+    created_at: datetime | None = None
+    source_task_id: str = ""
+    source_task_type: Literal["run", "workflow", "workflow_batch", ""] = ""
+    business_date: str = ""
+    skill_version: str = ""
+    same_content_count: int = 1
+
+
+class PlatformFileOptionPage(BaseModel):
+    items: list[PlatformFileOption] = Field(default_factory=list)
     total: int
     page: int
     page_size: int
@@ -537,6 +643,10 @@ class Workbench(BaseModel):
     pending_runs: list[RunSummary] = Field(default_factory=list)
     recent_results: list[RunSummary] = Field(default_factory=list)
     recent_files: list[PlatformFile] = Field(default_factory=list)
+    pending_tasks: list[TaskCenterItem] = Field(default_factory=list)
+    recent_tasks: list[TaskCenterItem] = Field(default_factory=list)
+    task_scope: str = ""
+    runtime: RuntimeHealth = Field(default_factory=RuntimeHealth)
 
 
 class AuditEventRead(BaseModel):
@@ -549,6 +659,20 @@ class AuditEventRead(BaseModel):
     outcome: str
     details: dict[str, object] = Field(default_factory=dict)
     created_at: datetime
+
+
+class AuditEventPage(BaseModel):
+    items: list[AuditEventRead] = Field(default_factory=list)
+    limit: int
+    next_before_id: int | None = None
+    has_more: bool = False
+
+
+class AssistantConversationSummary(BaseModel):
+    session_id: str
+    message_count: int
+    updated_at: datetime | None = None
+    preview: str = ""
 
 
 class TaskDraft(BaseModel):
@@ -579,6 +703,7 @@ class TaskDraft(BaseModel):
 
 class AssistantStatus(BaseModel):
     configured: bool
+    model: str = ""
 
 
 class AssistantMessageRead(BaseModel):
@@ -645,6 +770,14 @@ class PlatformHealth(BaseModel):
     registry_errors: list[RegistryError] = Field(default_factory=list)
     configured_workers: dict[str, int]
     configured_execution_capacity: int
+    liveness: Literal["alive"] = "alive"
+    readiness: Literal["ready", "not_ready", "unknown"] = "unknown"
+    dependency_status: Literal["available", "unavailable", "not_checked", "unknown"] = "unknown"
+    checked_at: datetime | None = None
+    online_workers: dict[str, int] = Field(default_factory=dict)
+    queue_depth: dict[str, int] = Field(default_factory=dict)
+    workers: list[WorkerHealth] = Field(default_factory=list)
+    scope: str = "存活探针未执行数据库或外部依赖检查。"
 
 
 class RegistryReloadResponse(BaseModel):
@@ -669,6 +802,10 @@ DOMAIN_CONTRACT_MODELS: tuple[type[BaseModel], ...] = (
     PlatformFile,
     PlatformFileDetail,
     PlatformFilePage,
+    PlatformFileGroupSummary,
+    PlatformFileGroupSummaryPage,
+    PlatformFileOption,
+    PlatformFileOptionPage,
     WorkbenchCounts,
     WorkbenchSkillUsage,
     Workbench,

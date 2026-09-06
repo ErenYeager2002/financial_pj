@@ -113,11 +113,14 @@ def main() -> int:
     except (KeyError, TypeError, ValueError, json.JSONDecodeError):
         print("ERROR: 任务检查输入无效。", file=sys.stderr)
         return 2
-    except Exception as exc:  # noqa: BLE001 - process boundary returns a generic error only
-        print(
-            f"ERROR: 智云只读任务检查失败（{type(exc).__name__}）。",
-            file=sys.stderr,
-        )
+    except Exception as exc:  # noqa: BLE001 - only allowlisted diagnostics cross the boundary
+        from secure_zhiyun_fetch import LOGIN_FAILURE_MESSAGES
+
+        phase = getattr(exc, "login_phase", "")
+        reason = LOGIN_FAILURE_MESSAGES.get(phase)
+        if not reason and isinstance(exc, ImportError):
+            reason = "智云只读检查缺少运行依赖，请检查 Worker 的浏览器和 Python 环境。"
+        print(f"ERROR: {reason or '智云只读任务检查失败，请检查取数服务及运行环境。'}", file=sys.stderr)
         return 1
     finally:
         if client is not None:

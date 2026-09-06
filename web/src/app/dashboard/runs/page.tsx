@@ -30,7 +30,25 @@ export default async function Page({ searchParams }: PageProps) {
   const [formalTasks, reminders] = await Promise.all([
     settleRegionLoad(async () => {
       const page = await getTaskCenterPage(query);
-      return { page, hasAnyTasks: page.total > 0 };
+      const hasFilters = Boolean(
+        query.query ||
+          query.skillId ||
+          query.viewState ||
+          query.businessDateFrom ||
+          query.businessDateTo
+      );
+      const basePage = hasFilters
+        ? await getTaskCenterPage({
+            ...query,
+            page: 1,
+            query: '',
+            skillId: '',
+            viewState: '',
+            businessDateFrom: '',
+            businessDateTo: ''
+          })
+        : page;
+      return { page, hasAnyTasks: basePage.total > 0 };
     }),
     settleRegionLoad(getTaskReminderBoard)
   ]);
@@ -40,10 +58,22 @@ export default async function Page({ searchParams }: PageProps) {
   }
 
   return (
-    <PageContainer pageTitle='我的任务' headingLevel={1}>
-      <div className='space-y-6'>
-        <TaskReminderRegion initial={reminders} />
-        <FormalTaskRegion initial={formalTasks} query={query} />
+    <PageContainer pageTitle='我的任务' headingLevel={1} compact>
+      <div className='space-y-5'>
+        <details className='simple-reminders' open={reminders.state !== 'ready'}>
+          <summary>
+            任务提醒与补查
+            {reminders.state === 'ready'
+              ? ` · ${reminders.data.reminders?.length ?? 0} 条提醒 · ${reminders.data.check_failures?.length ?? 0} 项检查失败`
+              : ' · 加载失败'}
+          </summary>
+          <aside className='min-w-0 space-y-4 pt-3' aria-label='任务提醒区域'>
+            <TaskReminderRegion initial={reminders} />
+          </aside>
+        </details>
+        <section className='platform-task-main' aria-label='正式任务区域'>
+          <FormalTaskRegion initial={formalTasks} query={query} />
+        </section>
       </div>
     </PageContainer>
   );

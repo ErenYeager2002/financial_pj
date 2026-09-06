@@ -313,7 +313,7 @@ export function platformInformationPath(
       return pagedPath('/api/task-center', query);
     case 'files': {
       const path = pagedPath('/api/files', query);
-      return `${path}&latest_only=true`;
+      return `${path}&latest_only=true&include_delete_status=false`;
     }
     case 'file_detail':
       return `/api/files/${checkedId(query.id)}`;

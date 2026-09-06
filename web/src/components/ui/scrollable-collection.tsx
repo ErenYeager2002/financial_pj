@@ -10,6 +10,7 @@ interface ScrollableCollectionProps {
   className?: string;
   contentClassName?: string;
   followEnd?: boolean;
+  resetScrollKey?: string;
 }
 
 export function ScrollableCollection({
@@ -17,7 +18,8 @@ export function ScrollableCollection({
   children,
   className,
   contentClassName,
-  followEnd = false
+  followEnd = false,
+  resetScrollKey
 }: ScrollableCollectionProps): React.JSX.Element {
   const viewportRef = React.useRef<HTMLDivElement>(null);
 
@@ -26,6 +28,11 @@ export function ScrollableCollection({
     const viewport = viewportRef.current;
     if (viewport) viewport.scrollTop = viewport.scrollHeight;
   }, [children, followEnd]);
+
+  React.useEffect(() => {
+    const viewport = viewportRef.current;
+    if (viewport) viewport.scrollTop = 0;
+  }, [resetScrollKey]);
 
   return (
     <div

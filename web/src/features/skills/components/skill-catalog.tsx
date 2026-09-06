@@ -1,24 +1,37 @@
-import Link from 'next/link';
-import { Badge } from '@/components/ui/badge';
-import { buttonVariants } from '@/components/ui/button';
+'use client';
+
+import { useMemo, useState } from 'react';
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import type { SkillDedication, SkillSummary } from '@/features/platform-api/types';
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle
-} from '@/components/ui/card';
-import { ScrollableCollection } from '@/components/ui/scrollable-collection';
-import type { SkillDedication, SkillDetail } from '@/features/platform-api/types';
-import { cn } from '@/lib/utils';
+  clearSkillCatalogFilters,
+  DEFAULT_SKILL_CATALOG_FILTERS,
+  filterAndSortSkillCatalog,
+  hasSkillCatalogFilters,
+  skillCatalogCategories,
+  skillCatalogDedicationOptions,
+  type SkillCatalogFilters
+} from '../skill-catalog-state';
+import { SkillCatalogCard } from './skill-catalog-card';
+import { SkillCatalogToolbar } from './skill-catalog-toolbar';
 
 interface SkillCatalogProps {
-  skills: SkillDetail[];
+  skills: SkillSummary[];
   adminDedications?: Record<string, SkillDedication>;
 }
 
 export function SkillCatalog({ skills, adminDedications }: SkillCatalogProps) {
+  const [filters, setFilters] = useState<SkillCatalogFilters>(DEFAULT_SKILL_CATALOG_FILTERS);
+  const categories = useMemo(() => skillCatalogCategories(skills), [skills]);
+  const dedicationOptions = useMemo(
+    () => skillCatalogDedicationOptions(adminDedications),
+    [adminDedications]
+  );
+  const visibleSkills = useMemo(
+    () => filterAndSortSkillCatalog(skills, filters, adminDedications),
+    [adminDedications, filters, skills]
+  );
+
   if (skills.length === 0) {
     return (
       <Card>
@@ -30,51 +43,52 @@ export function SkillCatalog({ skills, adminDedications }: SkillCatalogProps) {
     );
   }
 
+  function clearFilters() {
+    setFilters(clearSkillCatalogFilters());
+  }
+
   return (
-    <ScrollableCollection
-      ariaLabel='Skill 目录'
-      contentClassName='grid gap-4 md:grid-cols-2 xl:grid-cols-3'
-    >
-      {skills.map((skill) => (
-        <Card key={skill.id} className='h-full'>
-          <CardHeader>
-            {adminDedications?.[skill.id] && (
-              <div className='mb-2 flex flex-wrap gap-2'>
-                <Badge
-                  variant={
-                    adminDedications[skill.id].user_status === 'disabled'
-                      ? 'destructive'
-                      : 'outline'
-                  }
-                >
-                  专属：{adminDedications[skill.id].user_display_name}
-                  {adminDedications[skill.id].user_status === 'disabled' ? '（已停用）' : ''}
-                </Badge>
-              </div>
-            )}
-            <CardTitle>{skill.name}</CardTitle>
-            <CardDescription className='line-clamp-3'>{skill.description}</CardDescription>
-          </CardHeader>
-          <CardContent className='mt-auto space-y-2 text-sm'>
-            <p>
-              <span className='text-muted-foreground'>预计耗时：</span>
-              {skill.estimated_minutes} 分钟
-            </p>
-            <p>
-              <span className='text-muted-foreground'>输出结果：</span>
-              {skill.output_summary}
-            </p>
-          </CardContent>
-          <CardFooter className='justify-end'>
-            <Link
-              href={`/dashboard/skills/${skill.id}`}
-              className={cn(buttonVariants({ variant: 'outline' }))}
+    <section className='space-y-4' aria-labelledby='skill-catalog-title'>
+      <h2 id='skill-catalog-title' className='sr-only'>
+        Skill 目录
+      </h2>
+      <SkillCatalogToolbar
+        filters={filters}
+        categories={categories}
+        dedicationOptions={dedicationOptions}
+        onFiltersChange={setFilters}
+        onClear={clearFilters}
+      />
+
+      <div className='flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground'>
+        <span>共 {skills.length} 个 Skill</span>
+        <span aria-live='polite'>当前显示 {visibleSkills.length} 个</span>
+      </div>
+
+      {visibleSkills.length === 0 ? (
+        <div className='rounded-xl border border-dashed p-8 text-center'>
+          <p className='text-sm text-muted-foreground'>没有符合条件的 Skill</p>
+          {hasSkillCatalogFilters(filters) && (
+            <button
+              type='button'
+              className='platform-action mt-3 text-sm text-primary underline-offset-4 hover:underline'
+              onClick={clearFilters}
             >
-              查看详情
-            </Link>
-          </CardFooter>
-        </Card>
-      ))}
-    </ScrollableCollection>
+              清除筛选
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className='platform-skill-grid'>
+          {visibleSkills.map((skill) => (
+            <SkillCatalogCard
+              key={skill.id}
+              skill={skill}
+              dedication={adminDedications?.[skill.id]}
+            />
+          ))}
+        </div>
+      )}
+    </section>
   );
 }

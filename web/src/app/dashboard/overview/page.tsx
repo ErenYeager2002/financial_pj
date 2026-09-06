@@ -5,7 +5,7 @@ import { WorkbenchOverview } from '@/features/workbench/components/workbench-ove
 export default async function OverviewPage() {
   const [workbench, health] = await Promise.all([getWorkbench(), getPlatformHealth()]);
   return (
-    <PageContainer>
+    <PageContainer compact>
       <WorkbenchOverview data={workbench} health={health} />
     </PageContainer>
   );

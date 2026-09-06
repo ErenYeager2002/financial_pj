@@ -33,10 +33,10 @@ DISPLAY_METADATA: dict[str, dict[str, Any]] = {
         "estimated_minutes": 2,
         "popular": True,
     },
-    "receivables-merge": {
-        "output_summary": "合并后的应收台账",
-        "action_label": "开始合并",
-        "estimated_minutes": 3,
+    "receivables-merge-and-split": {
+        "output_summary": "应收 all、领导部分版和销售拆分结果",
+        "action_label": "开始处理",
+        "estimated_minutes": 5,
         "popular": True,
     },
     "dept-expense-alloc": {
@@ -139,20 +139,15 @@ OPERATIONAL_PROFILES: dict[str, dict[str, Any]] = {
         "external_sources": [],
         "employee_labels": ["上传两份工作簿", "本地补录", "输出新副本"],
     },
-    "receivables-merge": {
+    "receivables-merge-and-split": {
         "execution_kind": "offline_file",
         "external_sources": [],
-        "employee_labels": ["上传应收台账", "本地合并", "输出新副本"],
+        "employee_labels": ["上传应收材料", "选择处理模式", "输出结果文件"],
     },
     "reconcile-bank": {
         "execution_kind": "offline_file",
         "external_sources": [],
         "employee_labels": ["上传两份账表", "本地对账", "输出差异清单"],
-    },
-    "split-by-sales": {
-        "execution_kind": "offline_file",
-        "external_sources": [],
-        "employee_labels": ["上传应收台账", "本地拆分", "输出ZIP"],
     },
     "task-clarifier": {
         "execution_kind": "agent_guidance",
@@ -329,80 +324,83 @@ EXECUTABLES: dict[str, dict[str, Any]] = {
             "success_message": "项目明细已经映射追加，结果表和校验报告已生成。",
         },
     },
-    "receivables-merge": {
+    "receivables-merge-and-split": {
         "manifest": manifest(
-            "receivables-merge",
-            "应收账款合并",
+            "receivables-merge-and-split",
+            "应收账款合并与销售拆分",
             "应收管理",
-            "合并应收源台账并按上一版台账回填，生成新的应收 all 工作簿。",
-            ["Excel", "应收", "合并", "离线"],
+            "一次上传应收材料，按选择的模式完成应收台账合并、销售归属和按销售人员拆分。",
+            ["Excel", "应收", "合并", "销售拆分", "离线"],
             [
-                file_spec("source", "本期应收源台账", ["xlsx", "xls"]),
-                file_spec("reference", "上一版应收 all", ["xlsx", "xls"], required=False),
+                file_spec(
+                    "primary",
+                    "源台账或已有应收 all（按模式选择）",
+                    ["xlsx", "xlsm"],
+                    description="仅合并或合并并拆分时上传本期源台账；直接拆分时上传已有应收 all。",
+                ),
+                file_spec(
+                    "reference",
+                    "上一版应收 all（合并模式填写）",
+                    ["xlsx", "xlsm"],
+                    description="合并模式下用于回填销售标注和结转老坏账；首次建表可留空。",
+                    required=False,
+                ),
             ],
             {
                 "type": "object",
+                "required": ["mode"],
                 "additionalProperties": False,
                 "properties": {
+                    "mode": {
+                        "type": "string",
+                        "title": "处理模式",
+                        "description": "日常使用默认选择合并并按销售拆分。",
+                        "enum": [
+                            "仅合并",
+                            "合并并按销售拆分",
+                            "已有应收 all 直接拆分",
+                        ],
+                        "default": "合并并按销售拆分",
+                    },
                     "base_month": {
                         "type": "string",
                         "title": "账龄基准月",
-                        "description": "可留空自动识别；补历史月份时填写 YYYYMM。",
+                        "description": "合并模式可留空自动识别；补历史月份时填写 YYYYMM。",
                         "pattern": "^$|^\\d{6}$",
                         "default": "",
-                    }
-                },
-            },
-        ),
-        "bridge": {
-            "name": "应收账款合并",
-            "command": "vendor/scripts/merge.py",
-            "arguments": [
-                {"kind": "file", "role": "source", "flag": "--source"},
-                {"kind": "file", "role": "reference", "flag": "--ref"},
-                {"kind": "parameter", "name": "base_month", "flag": "--base-month"},
-            ],
-            "output": {"type": "file", "flag": "--out", "path": "应收账款合并结果.xlsx"},
-            "success_message": "应收 all 工作簿已经生成。",
-        },
-    },
-    "split-by-sales": {
-        "manifest": manifest(
-            "split-by-sales",
-            "应收按销售人员拆分",
-            "应收管理",
-            "按照维护规则将应收 all 拆分成销售人员独立工作簿。",
-            ["Excel", "应收", "销售拆分", "离线"],
-            [file_spec("receivables", "应收 all", ["xlsx", "xls"])],
-            {
-                "type": "object",
-                "additionalProperties": False,
-                "properties": {
+                    },
                     "date_label": {
                         "type": "string",
-                        "title": "文件日期标签",
-                        "description": "可留空自动识别；手工填写时使用 MMDD。",
+                        "title": "拆分结果日期标签",
+                        "description": "拆分模式可留空自动从文件名识别；手工填写 MMDD。",
                         "pattern": "^$|^\\d{4}$",
                         "default": "",
-                    }
+                    },
                 },
             },
+            timeout=900,
+            version="1.1.0",
         ),
         "bridge": {
-            "name": "应收按销售人员拆分",
-            "command": "vendor/scripts/split.py",
+            "name": "应收账款合并与销售拆分",
+            "command": "vendor/scripts/merge_and_split.py",
             "arguments": [
-                {"kind": "file", "role": "receivables", "flag": "--input"},
+                {"kind": "parameter", "name": "mode", "flag": "--mode"},
+                {"kind": "file", "role": "primary", "flag": "--primary"},
+                {"kind": "file", "role": "reference", "flag": "--reference"},
+                {"kind": "parameter", "name": "base_month", "flag": "--base-month"},
                 {"kind": "parameter", "name": "date_label", "flag": "--date"},
             ],
             "output": {
-                "type": "directory",
-                "flag": "--out-dir",
-                "path": "拆分结果",
-                "archive": True,
-                "archive_name": "应收按销售拆分结果.zip",
+                "type": "file",
+                "flag": "--out",
+                "path": "应收账款合并结果.xlsx",
+                "additional_globs": [
+                    "应收账款合并结果（部分）.xlsx",
+                    "应收按销售拆分结果.zip",
+                ],
             },
-            "success_message": "销售人员拆分文件已经打包。",
+            "success_message": "应收账款处理完成，合并结果和销售拆分结果已经生成。",
         },
     },
     "labor-invoice-check": {

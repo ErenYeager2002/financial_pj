@@ -16,6 +16,7 @@ from .models import (
     StepDefinition,
     StepRun,
 )
+from .task_center_service import task_center_overview, task_center_scope
 
 
 def _seconds(start: datetime | None, end: datetime | None) -> float | None:
@@ -36,6 +37,7 @@ def observability_summary(
     db: Session, user: UserContext, hours: int
 ) -> ObservabilitySummary:
     since = datetime.now(UTC) - timedelta(hours=hours)
+    task_overview = task_center_overview(db, user, limit=1, since=since)
     runs = list(
         db.scalars(
             select(RunRecord).where(
@@ -76,7 +78,17 @@ def observability_summary(
             db.scalars(select(RunModelAudit).where(RunModelAudit.run_id.in_(run_ids))).all()
         )
 
-    failed_run_count = sum(item.state in {"failed", "timed_out"} for item in runs)
+    task_count = sum(
+        (
+            task_overview.state_counts.pending,
+            task_overview.state_counts.running,
+            task_overview.state_counts.failed,
+            task_overview.state_counts.succeeded,
+            task_overview.state_counts.cancelled,
+        )
+    )
+    failed_task_count = task_overview.state_counts.failed
+    failed_run_count = failed_task_count
     queue_seconds = [
         value
         for item in runs
@@ -125,14 +137,17 @@ def observability_summary(
             model_counts[(audit.provider, audit.model)] += 1
     return ObservabilitySummary(
         window_hours=hours,
-        run_count=len(runs),
+        run_count=task_count,
         failed_run_count=failed_run_count,
-        failure_rate=round(failed_run_count / len(runs), 4) if runs else 0.0,
+        failure_rate=round(failed_run_count / task_count, 4) if task_count else 0.0,
         average_queue_seconds=_average(queue_seconds),
         average_run_seconds=_average(run_seconds),
         retry_count=retry_count,
         approval_count=len(approvals),
         manual_intervention_count=len(approvals) + manual_step_count,
+        task_count=task_count,
+        failed_task_count=failed_task_count,
+        task_scope=task_center_scope(user, f"最近 {hours} 小时内创建"),
         step_metrics=[
             StepMetricRead(
                 step_type=step_type,

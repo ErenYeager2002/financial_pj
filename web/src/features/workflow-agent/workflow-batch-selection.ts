@@ -54,8 +54,11 @@ export function workflowStatusLabel(workflow: WorkflowRead): string {
   if (workflow.state === 'failed' || workflow.stage === 'failed') return '失败';
   if (workflow.state === 'cancelled' || workflow.stage === 'cancelled') return '已取消';
   if (workflow.stage === 'awaiting_fetched_data_confirmation') return '待检查取数';
-  if (workflow.stage === 'awaiting_apply_confirmation' || workflow.stage === 'waiting_approval') {
+  if (workflow.stage === 'awaiting_apply_confirmation') {
     return '待确认写入';
+  }
+  if (workflow.state === 'waiting_approval' || workflow.stage === 'waiting_approval') {
+    return '等待管理员审批';
   }
   if (workflow.state === 'waiting_confirmation') return '待确认写入';
   if (workflow.state === 'running' || workflow.state === 'cancelling') return '处理中';
@@ -68,8 +71,11 @@ export function workflowStepLabel(workflow: WorkflowRead): string {
     return workflow.batch_sequence > 1 ? '等待前一天完成' : '等待开始';
   }
   if (workflow.stage === 'awaiting_fetched_data_confirmation') return '检查智云取数';
-  if (workflow.stage === 'awaiting_apply_confirmation' || workflow.stage === 'waiting_approval') {
+  if (workflow.stage === 'awaiting_apply_confirmation') {
     return '等待确认写入';
+  }
+  if (workflow.state === 'waiting_approval' || workflow.stage === 'waiting_approval') {
+    return '等待管理员审批';
   }
   if (workflow.stage === 'completed') return '已完成';
   if (workflow.stage === 'failed') return '查看失败步骤';
@@ -81,8 +87,11 @@ export function workflowAttentionHint(workflow: WorkflowRead): string {
     return '该日期未完成，请查看失败步骤';
   }
   if (workflow.stage === 'awaiting_fetched_data_confirmation') return '等待检查取数数据';
-  if (workflow.stage === 'awaiting_apply_confirmation' || workflow.stage === 'waiting_approval') {
+  if (workflow.stage === 'awaiting_apply_confirmation') {
     return '等待确认写入';
+  }
+  if (workflow.state === 'waiting_approval' || workflow.stage === 'waiting_approval') {
+    return '等待管理员审批';
   }
   if (isWaitingWorkflow(workflow) && workflow.batch_sequence > 1) return '等待前一天完成';
   return '';
@@ -161,7 +170,7 @@ export function batchFailureGuidance(
       failedStep: '失败步骤待确认',
       laterDatesMessage: '批次已经停止，后续日期不会继续处理。',
       nextAction: batch.can_retry
-        ? '可以安全重试；已成功日期不会重复执行。'
+        ? '可以从失败日期继续；已成功日期不会重复执行。'
         : batch.retry_block_reason || batch.retry_message || '当前失败阶段不支持自动重试。'
     };
   }
@@ -173,12 +182,12 @@ export function batchFailureGuidance(
   ).length;
   return {
     failedDate: failed.reconciliation_date || '失败日期待确认',
-    failedStep: failed.current_step_label || failed.step_error_detail?.step || '失败步骤待确认',
+    failedStep: failed.current_step_label || (typeof failed.step_error_detail?.step === 'string' ? failed.step_error_detail.step : '') || '失败步骤待确认',
     laterDatesMessage: laterCount
       ? `${laterCount} 个后续日期已经暂停，尚未开始。`
       : '没有后续未处理日期。',
     nextAction: batch.can_retry
-      ? `${batch.retry_message || '可以从失败日期继续。'} 已成功日期不会重复执行。`
+      ? batch.retry_message || '可从失败日期继续，已成功日期不重复执行。'
       : batch.retry_block_reason || batch.retry_message || '当前失败阶段不支持自动重试。'
   };
 }

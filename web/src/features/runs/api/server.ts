@@ -1,12 +1,12 @@
 import 'server-only';
 
+import { getFile } from '@/features/files/api/server';
 import { PlatformApiError } from '@/features/platform-api/errors';
 import {
   platformServerRequest,
   platformServerResponse
 } from '@/features/platform-api/server-client';
 import type { RunApproval, RunDetail, RunPage, RunStep } from '@/features/platform-api/types';
-import { parseRunOutputFiles } from '@/features/runs/run-output-files';
 import { getSkillCatalogItem } from '@/features/skills/api/server';
 import type { PlatformRunDetail, RunOutputFile, RunMetricSpec } from './types';
 
@@ -79,9 +79,19 @@ export async function downloadRunOutput(
 ): Promise<{ response: Response; file: RunOutputFile }> {
   const checkedRunId = checkedUuid(runId, '任务标识');
   const checkedFileId = checkedUuid(fileId, '文件标识');
-  const run = await getRun(checkedRunId);
-  const file = parseRunOutputFiles(run).find((item) => item.fileId === checkedFileId);
-  if (!file) throw new PlatformApiError(404, '该文件不属于当前任务结果。');
+  const fileRecord = await getFile(checkedFileId);
+  if (
+    fileRecord.run_id !== checkedRunId &&
+    !(fileRecord.referenced_run_ids ?? []).includes(checkedRunId)
+  ) {
+    throw new PlatformApiError(404, '该文件不属于当前任务结果。');
+  }
+  const file: RunOutputFile = {
+    fileId: fileRecord.id,
+    name: fileRecord.name,
+    sizeBytes: fileRecord.size_bytes,
+    sha256: fileRecord.sha256
+  };
   const response = await platformServerResponse(
     `/api/files/${checkedFileId}/download`,
     { signal },

@@ -7,7 +7,7 @@ description: >-
 
 # PDF 处理（pdf）
 
-> **研发说明** · 甲骨易财务部自研通用技能（研发维护：李明昊，2026-06）。补业务类 skill 管不到的日常 PDF 需求，与 receivables-merge 等同属 `finance-skills` 包，供 opencode 财务同事说人话触发。**纯本地**：pypdf/pdfplumber + `scripts/` 配套工具，数据不出本机、无联网/API 依赖。
+> **研发说明** · 甲骨易财务部自研通用技能（研发维护：李明昊，2026-06）。补业务类 skill 管不到的日常 PDF 需求，与 receivables-merge-and-split 等同属 `finance-skills` 包，供 opencode 财务同事说人话触发。**纯本地**：pypdf/pdfplumber + `scripts/` 配套工具，数据不出本机、无联网/API 依赖。
 
 # PDF Processing Guide
 

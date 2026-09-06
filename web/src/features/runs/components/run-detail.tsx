@@ -15,7 +15,10 @@ import { Separator } from '@/components/ui/separator';
 import { runKeys, runQueryOptions, runStepsQueryOptions } from '@/features/runs/api/queries';
 import { retryRun } from '@/features/runs/api/service';
 import type { PlatformRunDetail, PlatformRunEvent } from '@/features/runs/api/types';
-import { parseRunOutputFiles } from '@/features/runs/run-output-files';
+import {
+  parseRunOutputFiles,
+  runOutputFileDownloadHref
+} from '@/features/runs/run-output-files';
 import { confirmRun } from '@/features/run-setup/api/service';
 import { executionExperienceForSkill } from '@/features/skills/execution-experience';
 import {
@@ -26,7 +29,7 @@ import {
 } from '@/features/runs/run-display';
 import { formatDate } from '@/lib/format';
 import { cn, formatBytes } from '@/lib/utils';
-import { stepTypeLabel } from '@/features/workflows/step-display';
+import { stepTypeLabel, taskErrorCategoryLabel } from '@/features/workflows/step-display';
 
 type ConnectionState = 'connecting' | 'connected' | 'reconnecting' | 'complete';
 
@@ -67,7 +70,7 @@ function stepStateLabel(state: string): string {
     queued: '排队中',
     running: '执行中',
     pending: '尚未开始',
-    waiting_approval: '继续执行',
+    waiting_approval: '等待管理员审批',
     waiting_confirmation: '等待确认',
     succeeded: '已完成',
     failed: '失败',
@@ -76,6 +79,14 @@ function stepStateLabel(state: string): string {
     skipped: '已跳过'
   };
   return labels[state] ?? state;
+}
+
+function writeStatusLabel(value: unknown): string {
+  if (value === 'not_applicable') return '不涉及业务写入';
+  if (value === 'not_started') return '尚未开始写入';
+  if (value === 'verification_pending') return '写入后校验未完成，发布状态待核实';
+  if (value === 'published') return '已有发布记录';
+  return '待核实';
 }
 
 interface RunDetailViewProps {
@@ -245,11 +256,59 @@ export function RunDetailView({ runId }: RunDetailViewProps): React.JSX.Element 
               </p>
             </div>
           </div>
-          {run.error_message && (
+          {(run.state === 'failed' || run.state === 'timed_out' || run.error_message) && (
             <Alert variant='destructive'>
               <Icons.warning />
               <AlertTitle>任务执行失败</AlertTitle>
-              <AlertDescription>{run.error_message}</AlertDescription>
+              <AlertDescription className='space-y-2'>
+                <p>{run.error_message || '失败信息待核实。'}</p>
+                {run.failure_detail && Object.keys(run.failure_detail).length > 0 && (
+                  <dl className='grid gap-x-4 gap-y-1 text-sm sm:grid-cols-2'>
+                    <div>
+                      <dt className='text-muted-foreground'>错误分类</dt>
+                      <dd>{taskErrorCategoryLabel(run.failure_detail.category)}</dd>
+                    </div>
+                    <div>
+                      <dt className='text-muted-foreground'>错误码</dt>
+                      <dd>{String(run.failure_detail.error_code || '待核实')}</dd>
+                    </div>
+                    <div>
+                      <dt className='text-muted-foreground'>失败阶段</dt>
+                      <dd>{String(run.failure_detail.failed_stage || '待核实')}</dd>
+                    </div>
+                    <div>
+                      <dt className='text-muted-foreground'>发生时间</dt>
+                      <dd>
+                        {run.failure_detail.failed_at
+                          ? `${formatDate(String(run.failure_detail.failed_at), {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              second: '2-digit'
+                            })}（北京时间）`
+                          : '待核实'}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className='text-muted-foreground'>写入或发布状态</dt>
+                      <dd>{writeStatusLabel(run.failure_detail.write_status)}</dd>
+                    </div>
+                    <div>
+                      <dt className='text-muted-foreground'>已发布材料版本</dt>
+                      <dd>{String(run.failure_detail.published_material_version || '待核实')}</dd>
+                    </div>
+                    <div>
+                      <dt className='text-muted-foreground'>恢复条件</dt>
+                      <dd>{run.can_retry ? '可以创建新任务' : '当前不允许直接重试'}</dd>
+                    </div>
+                  </dl>
+                )}
+                <a
+                  className='inline-block text-sm underline underline-offset-2'
+                  href={`/dashboard/users?tab=audit&audit_resource_type=run&audit_resource_id=${encodeURIComponent(run.id)}`}
+                >
+                  管理员审计查询
+                </a>
+              </AlertDescription>
             </Alert>
           )}
           {run.state === 'waiting_confirmation' && (
@@ -364,7 +423,7 @@ export function RunDetailView({ runId }: RunDetailViewProps): React.JSX.Element 
                       <p className='mt-2 text-sm text-destructive'>{step.error_message}</p>
                     )}
                     {step.can_retry && step.state === 'failed' && (
-                      <p className='mt-1 text-xs text-muted-foreground'>此步骤满足安全重试条件。</p>
+                      <p className='mt-1 text-xs text-muted-foreground'>此步骤符合当前重试条件。</p>
                     )}
                     {!step.can_retry && step.retry_block_reason && step.state === 'failed' && (
                       <p className='mt-1 text-xs text-muted-foreground'>
@@ -513,7 +572,7 @@ export function RunDetailView({ runId }: RunDetailViewProps): React.JSX.Element 
                       </p>
                     </div>
                     <a
-                      href={`/api/platform/runs/${encodeURIComponent(run.id)}/files/${encodeURIComponent(file.fileId)}`}
+                      href={runOutputFileDownloadHref(file.fileId)}
                       className={cn(buttonVariants({ variant: 'outline' }))}
                     >
                       <Icons.page />

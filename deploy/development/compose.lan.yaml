@@ -1,8 +1,8 @@
 services:
   api:
     environment:
-      FINANCIAL_TRUSTED_ORIGINS: "http://localhost:3000,http://127.0.0.1:3000,${FINANCIAL_LAN_ORIGIN:?请通过 scripts/dev.ps1 -Lan 启动}"
-      FINANCIAL_CLERK_AUTHORIZED_PARTIES: "http://localhost:3000,http://127.0.0.1:3000,${FINANCIAL_LAN_ORIGIN:?请通过 scripts/dev.ps1 -Lan 启动}"
+      FINANCIAL_TRUSTED_ORIGINS: "http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001,${FINANCIAL_LAN_ORIGIN:?请通过 scripts/dev.ps1 -Lan 启动}"
+      FINANCIAL_CLERK_AUTHORIZED_PARTIES: "http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001,${FINANCIAL_LAN_ORIGIN:?请通过 scripts/dev.ps1 -Lan 启动}"
     ports: !override
       - "0.0.0.0:8000:8000"
 

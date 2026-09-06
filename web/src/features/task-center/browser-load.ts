@@ -21,9 +21,30 @@ export async function loadFormalTaskRegion(
   request: RegionRequest = fetch
 ): Promise<{ page: TaskCenterPage; hasAnyTasks: boolean; canonicalHref: string | null }> {
   const page = await readJson<TaskCenterPage>(request, taskCenterBrowserPath(query));
+  const hasFilters = Boolean(
+    query.query ||
+      query.skillId ||
+      query.viewState ||
+      query.businessDateFrom ||
+      query.businessDateTo
+  );
+  const basePage = hasFilters
+    ? await readJson<TaskCenterPage>(
+        request,
+        taskCenterBrowserPath({
+          ...query,
+          page: 1,
+          query: '',
+          skillId: '',
+          viewState: '',
+          businessDateFrom: '',
+          businessDateTo: ''
+        })
+      )
+    : page;
   return {
     page,
-    hasAnyTasks: page.total > 0,
+    hasAnyTasks: basePage.total > 0,
     canonicalHref: taskCenterPageRedirect(query, page.pages)
   };
 }

@@ -97,7 +97,8 @@ def test_workflow_agent_date_commands_use_platform_calendar(monkeypatch) -> None
     assert workflow_orchestrator._extract_date("8月29日") == "2026-08-29"
 
 
-def test_apply_workflow_agent_action_only_updates_state_and_requests_confirmation() -> None:
+def test_apply_workflow_agent_action_only_updates_state_and_requests_confirmation(monkeypatch) -> None:
+    monkeypatch.setattr("app.workflow_service.workflow_owner_context", lambda *_args: _actor())
     class FakeDb:
         def __init__(self) -> None:
             self.added: list[object] = []
@@ -116,6 +117,7 @@ def test_apply_workflow_agent_action_only_updates_state_and_requests_confirmatio
 
     workflow = SimpleNamespace(
         id="synthetic-workflow",
+        execution_mode="workflow",
         owner_id="workflow-agent-user",
         department_id="finance",
         skill_id="synthetic-readonly-workflow",
@@ -146,6 +148,7 @@ def test_apply_workflow_agent_action_only_updates_state_and_requests_confirmatio
 
 
 def test_ar_hexiao_agent_execution_actions_follow_the_deployment_gate(monkeypatch) -> None:
+    monkeypatch.setattr("app.workflow_service.workflow_owner_context", lambda *_args: _actor())
     monkeypatch.setattr(
         workflow_execution_policy,
         "settings",
@@ -161,6 +164,7 @@ def test_ar_hexiao_agent_execution_actions_follow_the_deployment_gate(monkeypatc
     ):
         workflow = SimpleNamespace(
             id="ar-synthetic-workflow",
+            execution_mode="workflow",
             owner_id="workflow-agent-user",
             department_id="finance",
             skill_id="ar-hexiao-daily",

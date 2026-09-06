@@ -1,6 +1,6 @@
 # pptx · PPT 演示文稿处理技能
 
-**甲骨易财务部自研**通用文档技能（研发维护：李明昊，2026-06）。服务于财务同事在 opencode 上的日常演示文稿需求，与 receivables-merge 等业务技能同属 `finance-skills` 技能包。
+**甲骨易财务部自研**通用文档技能（研发维护：李明昊，2026-06）。服务于财务同事在 opencode 上的日常演示文稿需求，与 receivables-merge-and-split 等业务技能同属 `finance-skills` 技能包。
 
 ## 能干什么
 

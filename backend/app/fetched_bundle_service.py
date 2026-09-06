@@ -944,6 +944,14 @@ def purge_fetched_bundle(
     now: datetime | None = None,
 ) -> bool:
     """Purge one due bundle without changing the source workflow's outcome."""
+    from .ar_retention_policy import bundle_retention_hold
+    from .audit_service import record_audit
+    from .scheduler import acquire_claim_lock
+
+    # Release a caller's completed transaction before fencing lifecycle changes
+    # with the same lock as task creation, recovery, claims and cancellation.
+    db.commit()
+    acquire_claim_lock(db)
     current_time = now or datetime.now(UTC)
     bundle = db.scalar(
         select(FetchedBundle)
@@ -972,6 +980,19 @@ def purge_fetched_bundle(
     elif bundle.retention_until is None or _utc(bundle.retention_until) > _utc(current_time):
         return False
     if bundle.purge_retry_at is not None and _utc(bundle.purge_retry_at) > _utc(current_time):
+        return False
+    hold = bundle_retention_hold(db, bundle)
+    if hold:
+        # Deferring deletion never extends replay authorization or changes an
+        # invalid bundle back into a consumable one. Recheck this hold later.
+        message = f"保留原始取数包：{hold['message']}"
+        if bundle.last_error != message:
+            record_audit(db, actor_role="system", department_id=bundle.department_id,
+                         action="workflow.fetched_bundle.retained", resource_type="fetched_bundle",
+                         resource_id=bundle.id, details={"reason_code": hold["code"], "reason": hold["message"]})
+        bundle.last_error = message
+        bundle.purge_retry_at = current_time + timedelta(hours=1)
+        db.commit()
         return False
     if _bundle_has_active_reference(db, bundle.id):
         return False
@@ -1034,6 +1055,11 @@ def purge_fetched_bundle(
     purged.purged_at = current_time
     purged.purge_retry_at = None
     purged.last_error = ""
+    record_audit(db, actor_role="system", department_id=purged.department_id,
+                 action="workflow.fetched_bundle.purged", resource_type="fetched_bundle",
+                 resource_id=purged.id,
+                 details={"reason_code": "retention_due_no_hold", "purge_attempt": purge_attempt,
+                          "reason": "取数包已到清理期限，未发现活跃引用或未完成核销的留存要求；原始文件已清理，任务记录保留。"})
     db.commit()
     return True
 

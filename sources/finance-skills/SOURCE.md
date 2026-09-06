@@ -50,8 +50,8 @@
 目录里每个官方 skill 一个夹（如 `labor-invoice-check`、`ar-hexiao-daily`）。  
 **更新只动财务包白名单夹**；同事自己装的其他 skill 不许删、不许改、不许挪。
 
-**财务包白名单（15）**  
-`receivables-merge` · `split-by-sales` · `labor-invoice-check` · `withholding-report-rename` · `compliance-spot-check` · `dreame-ar-progress-diff` · `dept-expense-alloc` · `ar-hexiao-daily` · `order-daily-summary` · `task-clarifier` · `xlsx` · `docx` · `pptx` · `pdf` · `env-doctor`
+**财务包白名单（14）**
+`receivables-merge-and-split` · `labor-invoice-check` · `withholding-report-rename` · `compliance-spot-check` · `dreame-ar-progress-diff` · `dept-expense-alloc` · `ar-hexiao-daily` · `order-daily-summary` · `task-clarifier` · `xlsx` · `docx` · `pptx` · `pdf` · `env-doctor`
 
 另：根下说明文件 `财务技能包_来源与更新.md` 一并覆盖更新（方便下次还能找到本说明）。
 
@@ -100,7 +100,7 @@
 - 禁止清空整个 skills 目录；禁止「只保留这 15 个」；禁止重命名白名单外的夹。
 
 【财务包白名单】
-receivables-merge、split-by-sales、labor-invoice-check、withholding-report-rename、compliance-spot-check、dreame-ar-progress-diff、dept-expense-alloc、ar-hexiao-daily、order-daily-summary、task-clarifier、xlsx、docx、pptx、pdf、env-doctor
+receivables-merge-and-split、labor-invoice-check、withholding-report-rename、compliance-spot-check、dreame-ar-progress-diff、dept-expense-alloc、ar-hexiao-daily、order-daily-summary、task-clarifier、xlsx、docx、pptx、pdf、env-doctor
 （另：把「财务技能包_来源与更新.md」放到 skills 目录根。）
 
 【装到哪】

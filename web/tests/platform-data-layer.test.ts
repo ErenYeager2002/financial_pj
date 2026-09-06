@@ -94,3 +94,13 @@ test('工作台、Skill 中心和 AI 草稿共用 Skill 任务向导', () => {
   assert.match(skillPage, /getTaskDraft/);
   assert.match(wizard, /confirmTaskDraftMutation/);
 });
+
+test('参数下拉框先读取值再更新状态，避免事件 currentTarget 释放后为空', () => {
+  const wizard = source('src/features/run-setup/components/skill-run-setup.tsx');
+
+  assert.match(
+    wizard,
+    /onChange=\{\(event\) => \{\s*const value = event\.currentTarget\.value;\s*setParameters\(\(current\) => \(\{\s*\.\.\.current,\s*\[name\]: value/
+  );
+  assert.doesNotMatch(wizard, /\[name\]: event\.currentTarget\.value/);
+});

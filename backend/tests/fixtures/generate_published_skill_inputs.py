@@ -267,7 +267,7 @@ def project_inputs(root: Path) -> dict[str, list[str]]:
 
 
 def receivables_inputs(root: Path) -> dict[str, list[str]]:
-    directory = root / "receivables-merge"
+    directory = root / "receivables-merge-and-split"
     directory.mkdir()
     source = directory / "合成本期应收源台账.xlsx"
     workbook = Workbook()
@@ -304,7 +304,7 @@ def receivables_inputs(root: Path) -> dict[str, list[str]]:
     batch.append(["测试销售丙", "测试客户丙", "TEST-GM-1", "测试项目", "2026-08-20", 500])
     workbook.save(source)
     workbook.close()
-    return {"source": [str(source)]}
+    return {"primary": [str(source)]}
 
 
 def reconciliation_inputs(root: Path) -> dict[str, list[str]]:
@@ -335,39 +335,6 @@ def reconciliation_inputs(root: Path) -> dict[str, list[str]]:
     return {"bank_file": [str(bank)], "ledger_file": [str(ledger)]}
 
 
-def split_inputs(root: Path) -> dict[str, list[str]]:
-    directory = root / "split-by-sales"
-    directory.mkdir()
-    receivables = directory / "2026.8.27合成应收all.xlsx"
-    headers = [
-        "年度",
-        "销售人员",
-        "客户名称",
-        "新智云单号",
-        "文件名",
-        "应收金额",
-        "交付月份",
-        "账龄(月份)",
-        "结算阶段",
-        "预计回款日期",
-        "销售解释说明",
-        "有无合同",
-        "合同分类",
-        "框架合同是否存在PO单",
-        "应收金额是否有客户正式确认",
-        "客户结算周期",
-        "是否按月给客户发结算单",
-    ]
-    data = [
-        ["2026", "测试销售甲", "测试客户甲", "TEST-SO-201", "测试项目1", 100, "202603", 2],
-        ["2026", "测试销售甲", "测试客户乙", "TEST-SO-202", "测试项目2", 200, "202512", 8],
-        ["2026", "测试销售乙", "测试客户丙", "TEST-SO-203", "测试项目3", 300, "202603", 2],
-        ["2026", "", "待分配客户", "TEST-SO-204", "测试项目4", 700, "202603", 2],
-    ]
-    save_rows(receivables, "2026.8.27", [headers] + [row + [""] * 9 for row in data])
-    return {"receivables": [str(receivables)]}
-
-
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path)
@@ -381,9 +348,8 @@ def main() -> None:
         "labor-invoice-check": labor_inputs(root),
         "order-daily-summary": order_inputs(root),
         "project-detail-to-ledger": project_inputs(root),
-        "receivables-merge": receivables_inputs(root),
+        "receivables-merge-and-split": receivables_inputs(root),
         "reconcile-bank": reconciliation_inputs(root),
-        "split-by-sales": split_inputs(root),
     }
     manifest_path = root / "manifest.json"
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")

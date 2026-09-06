@@ -232,7 +232,7 @@ def test_release_lifecycle_publish_without_rollback() -> None:
 
 
 def test_release_publish_is_blocked_by_active_run() -> None:
-    skill_id = "split-by-sales"
+    skill_id = "receivables-merge-and-split"
     with auth_client(role="skill_admin") as admin:
         release = _import_and_review(admin, skill_id, "9.9.2")
         run_id = str(uuid.uuid4())
@@ -288,7 +288,7 @@ def test_release_publish_rechecks_stored_content_hash() -> None:
 
 
 def test_release_staging_failure_preserves_current_skill(monkeypatch) -> None:
-    skill_id = "split-by-sales"
+    skill_id = "receivables-merge-and-split"
     target = settings.skill_dir / skill_id
     original_manifest = (target / "tool.yaml").read_bytes()
 

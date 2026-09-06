@@ -1,6 +1,6 @@
 # 财务 Skill 接入目录
 
-平台共登记 19 个 Skill，其中 11 个 `published`、1 个 `draft`、7 个 `disabled`。
+平台共登记 18 个 Skill，其中 10 个 `published`、1 个 `draft`、7 个 `disabled`。
 `published` 仍需经过平台用户权限授权后才能选择运行；
 `draft` 已完成目录接入但仍缺少安全执行条件；`disabled` 保留说明和来源，
 修复阻断项前不会出现在普通用户的工具目录中。
@@ -10,8 +10,7 @@
 | Skill | 用途 | 执行方式 |
 | --- | --- | --- |
 | `reconcile-bank` | 银行流水与财务总账匹配 | Python |
-| `receivables-merge` | 合并本期应收台账并回填上一版 | Python 桥接 |
-| `split-by-sales` | 应收 all 按销售人员拆分 | Python 桥接 |
+| `receivables-merge-and-split` | 按模式合并应收台账并按销售人员拆分 | Python 桥接 |
 | `labor-invoice-check` | 劳务清单与发票台账核对 | Python 桥接 |
 | `withholding-report-rename` | 申报表 PDF 规范命名副本 | Python 桥接 |
 | `compliance-spot-check` | 生成本周合规抽查建议 | Python 桥接 |

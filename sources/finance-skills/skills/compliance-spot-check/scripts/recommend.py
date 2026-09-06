@@ -41,7 +41,7 @@ except ImportError:
     print("✗ 缺 openpyxl → pip install openpyxl")
     sys.exit(1)
 
-# 认 sheet 用（与 split-by-sales 对齐）；真正缺列只检查 REQUIRED_KEYS
+# 认 sheet 用（与 receivables-merge-and-split 对齐）；真正缺列只检查 REQUIRED_KEYS
 HEADER_KEYS = [
     "年度", "销售人员", "客户名称", "新智云单号", "文件名", "应收金额",
     "交付月份", "账龄", "结算阶段", "回款日期", "销售解释", "有无合同",

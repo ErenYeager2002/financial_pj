@@ -174,6 +174,7 @@ export function PaginatedCollection({
         ref={viewportRef}
         role='region'
         aria-label={`${ariaLabel}，每页最多 ${current.pageSize} 项`}
+        data-collection-viewport=''
         className='max-h-[36rem] overflow-y-auto overscroll-contain rounded-lg pr-2 [scrollbar-gutter:stable] outline-none focus-visible:ring-3 focus-visible:ring-ring/50'
       >
         <div className={cn('min-w-0', contentClassName)}>{current.items}</div>

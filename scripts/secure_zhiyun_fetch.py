@@ -8,6 +8,16 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 
+LOGIN_FAILURE_MESSAGES = {
+    "network_policy": "智云登录地址未通过平台网络策略检查。",
+    "browser_start": "智云登录浏览器未能启动，请检查浏览器安装及运行依赖。",
+    "navigation": "智云登录页未能打开，请检查公司网络、代理及服务可用性。",
+    "login_form": "智云登录页已打开，但未找到可用登录表单，请检查页面结构或访问限制。",
+    "submit": "智云登录表单未能完成提交，请检查页面结构。",
+    "session": "智云登录提交后未取得有效会话，请核对凭据、验证码或其他登录限制。",
+}
+
+
 def _normalized_origin(url: str) -> str:
     parsed = urlsplit(url)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
@@ -47,8 +57,10 @@ def _edge_login(
     import fetch_zhiyun
     from playwright.sync_api import sync_playwright
 
+    phase = "network_policy"
     try:
         _assert_allowed_url(base_url)
+        phase = "browser_start"
         with sync_playwright() as playwright:
             launch_options: dict[str, object] = {"headless": headless}
             if sys.platform == "win32":
@@ -66,10 +78,13 @@ def _edge_login(
                     else route.abort(),
                 )
                 page = context.new_page()
+                phase = "navigation"
                 page.goto(base_url, wait_until="domcontentloaded", timeout=60_000)
+                phase = "login_form"
                 page.locator("#txtMobilePhone").wait_for(state="visible", timeout=60_000)
                 page.fill("#txtMobilePhone", username)
                 page.fill("input[type=password]", password)
+                phase = "submit"
                 clicked = False
                 for selector in (".btnForLogin", "text=登 录", "text=登录", ".loginBtn"):
                     try:
@@ -81,6 +96,7 @@ def _edge_login(
                 if not clicked:
                     page.keyboard.press("Enter")
                 token = None
+                phase = "session"
                 for _ in range(60):
                     token = next(
                         (
@@ -95,8 +111,7 @@ def _edge_login(
                     page.wait_for_timeout(500)
                 if not token:
                     raise fetch_zhiyun.LoginError(
-                        f"登录后未拿到会话凭据（url={page.url}）。"
-                        "请检查账号密码、内网连接或登录页结构。"
+                        LOGIN_FAILURE_MESSAGES[phase]
                     )
                 account_id = None
                 try:
@@ -109,12 +124,13 @@ def _edge_login(
                 return token, account_id
             finally:
                 browser.close()
-    except fetch_zhiyun.LoginError:
+    except fetch_zhiyun.LoginError as exc:
+        exc.login_phase = phase
         raise
     except Exception as exc:
-        raise fetch_zhiyun.LoginError(
-            f"登录异常 {type(exc).__name__}，请检查网络和浏览器运行环境。"
-        ) from exc
+        failure = fetch_zhiyun.LoginError(LOGIN_FAILURE_MESSAGES[phase])
+        failure.login_phase = phase
+        raise failure from exc
 
 
 def main() -> int:

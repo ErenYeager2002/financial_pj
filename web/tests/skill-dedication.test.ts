@@ -59,6 +59,8 @@ test('管理员 Skill 展示专属员工，员工目录不读取管理员标记'
   assert.match(detail, /专属：/);
   assert.match(skillsPage, /platformServerRequest<PlatformSession>\('\/api\/session'\)/);
   assert.match(skillsPage, /session\.role === 'skill_admin' \? listSkillDedications\(\)/);
+  assert.match(skillsPage, /listSkillSummaries\(\)/);
+  assert.doesNotMatch(skillsPage, /listSkillCatalog\(\)/);
   assert.match(detailPage, /platformServerRequest<PlatformSession>\('\/api\/session'\)/);
   assert.match(detailPage, /session\.role === 'skill_admin' \? listSkillDedications\(\)/);
   assert.match(skillsPage, /adminDedications={adminDedications}/);

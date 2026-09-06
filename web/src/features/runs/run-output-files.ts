@@ -19,3 +19,7 @@ export function parseRunOutputFiles(run: PlatformRunDetail): RunOutputFile[] {
     return [{ fileId, name, sizeBytes, sha256 }];
   });
 }
+
+export function runOutputFileDownloadHref(fileId: string): string {
+  return `/api/platform/files/${encodeURIComponent(fileId)}/download`;
+}

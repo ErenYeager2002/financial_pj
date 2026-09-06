@@ -67,7 +67,7 @@ def test_draining_blocks_new_run_and_enabled_restores_entry() -> None:
 
 
 def test_draining_cannot_become_disabled_while_active_work_exists() -> None:
-    skill_id = "split-by-sales"
+    skill_id = "receivables-merge-and-split"
     run_id = str(uuid.uuid4())
     with auth_client(role="skill_admin") as admin:
         with SessionLocal() as db:

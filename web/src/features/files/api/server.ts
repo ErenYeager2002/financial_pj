@@ -8,6 +8,9 @@ import {
 import type {
   PlatformFile,
   PlatformFileDetail,
+  PlatformFileGroupSummaryPage,
+  PlatformFileOption,
+  PlatformFileOptionPage,
   PlatformFilePage
 } from '@/features/platform-api/types';
 
@@ -18,30 +21,95 @@ function checkedUuid(value: string): string {
   return value;
 }
 
-export function listFiles(
+export interface ListFilesOptions {
+  page?: number;
+  pageSize?: number;
+  kind?: string;
+  query?: string;
+  includeDeleteStatus?: boolean;
+  skillId?: string;
+  unassigned?: boolean;
+}
+
+export function listFiles({
   page = 1,
-  pageSize = 5,
+  pageSize = 25,
   kind = '',
-  query = ''
-): Promise<PlatformFilePage> {
+  query = '',
+  includeDeleteStatus = true,
+  skillId = '',
+  unassigned = false
+}: ListFilesOptions = {}): Promise<PlatformFilePage> {
   const params = new URLSearchParams({
     page: String(Math.max(Math.trunc(page), 1)),
     page_size: String(Math.min(Math.max(Math.trunc(pageSize), 1), 100))
   });
   if (kind) params.set('kind', kind);
-  if (query) params.set('query', query.slice(0, 100));
+  const checkedQuery = query.trim().slice(0, 100);
+  if (checkedQuery) params.set('query', checkedQuery);
   params.set('latest_only', 'true');
+  if (!includeDeleteStatus) params.set('include_delete_status', 'false');
+  const checkedSkillId = skillId.trim().slice(0, 128);
+  if (checkedSkillId) params.set('skill_id', checkedSkillId);
+  if (unassigned) params.set('unassigned', 'true');
   return platformServerRequest<PlatformFilePage>(`/api/files?${params}`);
 }
 
-export async function listAllFiles(kind = '', query = ''): Promise<PlatformFile[]> {
-  const first = await listFiles(1, 100, kind, query);
-  const files = [...(first.items ?? [])];
-  for (let page = 2; page <= first.pages; page += 1) {
-    const result = await listFiles(page, 100, kind, query);
-    files.push(...(result.items ?? []));
-  }
-  return Array.from(new Map(files.map((file) => [file.id, file])).values());
+export interface ListFileGroupsOptions {
+  kind?: string;
+  query?: string;
+  latestOnly?: boolean;
+}
+
+export function listFileGroups({
+  kind = '',
+  query = '',
+  latestOnly = true
+}: ListFileGroupsOptions = {}): Promise<PlatformFileGroupSummaryPage> {
+  const params = new URLSearchParams();
+  if (kind) params.set('kind', kind);
+  const checkedQuery = query.trim().slice(0, 100);
+  if (checkedQuery) params.set('query', checkedQuery);
+  params.set('latest_only', String(latestOnly));
+  return platformServerRequest<PlatformFileGroupSummaryPage>(`/api/files/groups?${params}`);
+}
+
+function selectableInputFileParams(
+  page: number,
+  pageSize: number,
+  query = '',
+  fileIds: string[] = []
+): URLSearchParams {
+  const params = new URLSearchParams({
+    page: String(Math.max(Math.trunc(page), 1)),
+    page_size: String(Math.min(Math.max(Math.trunc(pageSize), 1), 100))
+  });
+  if (query) params.set('query', query.slice(0, 100));
+  if (fileIds.length) params.set('ids', fileIds.map(checkedUuid).join(','));
+  return params;
+}
+
+export function listSelectableInputFilesPage(
+  page = 1,
+  pageSize = 25,
+  query = ''
+): Promise<PlatformFileOptionPage> {
+  const params = selectableInputFileParams(page, pageSize, query);
+  return platformServerRequest<PlatformFileOptionPage>(
+    `/api/files/selectable-inputs?${params}`
+  );
+}
+
+export async function listSelectableInputFilesByIds(
+  fileIds: string[]
+): Promise<PlatformFileOption[]> {
+  if (!fileIds.length) return [];
+  const checkedFileIds = fileIds.map(checkedUuid);
+  const params = selectableInputFileParams(1, checkedFileIds.length, '', checkedFileIds);
+  const result = await platformServerRequest<PlatformFileOptionPage>(
+    `/api/files/selectable-inputs?${params}`
+  );
+  return result.items ?? [];
 }
 
 export function getFile(fileId: string): Promise<PlatformFileDetail> {

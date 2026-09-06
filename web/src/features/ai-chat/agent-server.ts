@@ -11,6 +11,7 @@ import { Type } from 'typebox';
 import { PlatformApiError } from '@/features/platform-api/errors';
 import { safeCatalog, type SafeSkill } from '@/features/ai-chat/safe-catalog';
 import { createPlatformInformationTool } from '@/features/ai-chat/platform-information-tool';
+import { listSelectableInputFilesByIds } from '@/features/files/api/server';
 import {
   resolveAgentRuntime,
   runtimeSelectorId,
@@ -21,7 +22,7 @@ import {
   platformServerRequest
 } from '@/features/platform-api/server-client';
 import type {
-  PlatformFile,
+  PlatformFileOption,
   PlatformSession,
   AssistantConversation,
   RunDetail,
@@ -32,6 +33,7 @@ import type {
 } from '@/features/platform-api/types';
 
 const MAX_SESSION_ENTRIES = 100;
+const MAX_SELECTED_FILES = 20;
 const SESSION_ID = /^[A-Za-z0-9_-]{1,128}$/;
 
 interface AssistantTurnInput {
@@ -103,7 +105,6 @@ async function* legacyTurn(input: AssistantTurnInput): AsyncIterable<AgentEvent>
 
 const sessions = new Map<string, RuntimeEntry>();
 const skillCache = new Map<string, CacheEntry<SkillDetail[]>>();
-const fileCache = new Map<string, CacheEntry<PlatformFile[]>>();
 const taskCache = new Map<string, CacheEntry<RunningTask[]>>();
 
 async function cached<T>(
@@ -137,13 +138,16 @@ function checkedInput(input: AssistantTurnInput): AssistantTurnInput {
   if (!message || message.length > 4000) {
     throw new PlatformApiError(400, '任务描述必须为 1 到 4000 个字符。');
   }
-  if (input.fileIds.length > 20 || input.fileIds.some((item) => typeof item !== 'string')) {
+  if (
+    input.fileIds.length > MAX_SELECTED_FILES ||
+    input.fileIds.some((item) => typeof item !== 'string')
+  ) {
     throw new PlatformApiError(400, '所选文件标识无效。');
   }
   return { ...input, message };
 }
 
-function fileCatalog(files: PlatformFile[], selectedIds: string[]) {
+function fileCatalog(files: PlatformFileOption[], selectedIds: string[]) {
   const byId = new Map(files.map((file) => [file.id, file]));
   return selectedIds.flatMap((fileId, index) => {
     const file = byId.get(fileId);
@@ -261,7 +265,6 @@ function textResult(text: string, details: Record<string, unknown> = {}) {
 
 function createTools(
   skills: SafeSkill[],
-  files: PlatformFile[],
   input: AssistantTurnInput,
   role: PlatformSession['role']
 ): AgentTool[] {
@@ -493,16 +496,15 @@ export async function createAssistantTurn(input: AssistantTurnInput): Promise<As
   async function* events(): AsyncIterable<AgentEvent> {
     // 先把可见状态告诉前端，避免上下文查询期间页面看起来像卡死。
     yield { type: 'tool_start', toolCallId: 'assistant-context', toolName: 'prepare_context' };
+    const selectedFileIds = [...checked.fileIds].sort();
+    const availableFilesPromise = selectedFileIds.length
+      ? listSelectableInputFilesByIds(selectedFileIds)
+      : Promise.resolve<PlatformFileOption[]>([]);
     const [skills, availableFiles, runningTasks, history] = await Promise.all([
       cached(skillCache, session.user_id, 30_000, () =>
         platformServerRequest<SkillDetail[]>('/api/assistant/skills')
       ),
-      cached(fileCache, session.user_id, 10_000, async () => {
-        const result = await platformServerRequest<{ items: PlatformFile[] }>(
-          '/api/files?kind=input&page=1&page_size=100'
-        );
-        return result.items ?? [];
-      }),
+      availableFilesPromise,
       cached(taskCache, session.user_id, 5_000, listRunningTasks),
       created
         ? platformServerRequest<AssistantConversation>(
@@ -530,7 +532,7 @@ export async function createAssistantTurn(input: AssistantTurnInput): Promise<As
         runningTasks,
         history
       ),
-      tools: createTools(safeSkills, availableFiles, checked, session.role)
+      tools: createTools(safeSkills, checked, session.role)
     });
     yield* withLegacyFallback(turn, () => legacyTurn(checked));
   }

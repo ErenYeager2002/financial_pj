@@ -153,20 +153,31 @@ const experiences: SkillExecutionExperience[] = [
     fileRoleLabels: { project_detail: '项目明细表', ledger: '盈亏核算表' }
   },
   {
-    key: 'receivables-consolidation',
-    skillId: 'receivables-merge',
+    key: 'receivables-consolidation-and-sales-split',
+    skillId: 'receivables-merge-and-split',
     classification: 'business',
     family: 'workbook',
-    creationTitle: '合并本期应收账款',
-    purpose: '合并年度数据、计算账龄、回填历史标注并生成完整和权限隔离结果。',
-    inputHeading: '本期台账与上一版应收 all',
-    inputHint: '非首次建表应提供上一版应收 all，用于标注回填和老坏账结转。',
-    reviewTitle: '合并口径',
-    reviewItems: ['确认本周销售归属是否变化', '确认账龄基准月', '确认本期源台账和上一版文件角色'],
-    workerChecks: ['年度 Sheet 和关键列', '销售归属及名称变体', '未匹配、离职残留和年度一致性'],
-    resultHighlights: ['完整版应收 all', '领导部分版', '归属与未匹配复核'],
-    fileRoleLabels: { source: '本期应收源台账', reference: '上一版应收 all' },
-    parameterLabels: { base_month: '账龄基准月' }
+    creationTitle: '合并并拆分应收账款',
+    purpose: '按选择的模式合并应收台账、处理销售归属，并生成销售人员工作簿。',
+    inputHeading: '源台账或已有应收 all',
+    inputHint: '只需上传一次材料；选择合并模式时可同时上传上一版应收 all。',
+    reviewTitle: '处理模式与口径',
+    reviewItems: [
+      '确认处理模式：仅合并、合并并按销售拆分、已有应收 all 直接拆分',
+      '合并模式确认销售归属和账龄基准月',
+      '确认源台账或已有应收 all 的文件角色'
+    ],
+    workerChecks: ['年度 Sheet 和关键列', '销售归属及名称变体', '拆分数量与输入行数对账'],
+    resultHighlights: ['应收 all', '领导部分版', '销售人员工作簿 ZIP'],
+    fileRoleLabels: {
+      primary: '源台账或已有应收 all',
+      reference: '上一版应收 all（合并模式）'
+    },
+    parameterLabels: {
+      mode: '处理模式',
+      base_month: '账龄基准月',
+      date_label: '拆分结果日期'
+    }
   },
   {
     key: 'department-expense-allocation',
@@ -182,26 +193,6 @@ const experiences: SkillExecutionExperience[] = [
     workerChecks: ['材料角色和主体识别', '人员映射与未匹配统计', '主体合计和部门合计核对'],
     resultHighlights: ['部门科目余额表', '利润表', '运行报告'],
     fileRoleLabels: { materials: '费用分摊材料' }
-  },
-  {
-    key: 'receivables-sales-split',
-    skillId: 'split-by-sales',
-    classification: 'business',
-    family: 'batch',
-    creationTitle: '按销售人员拆分应收 all',
-    purpose: '按销售人员和接手规则生成独立工作簿，并打包为一个 ZIP。',
-    inputHeading: '应收 all 与文件日期',
-    inputHint: '日期会用于结果文件命名。无法从文件名识别时，请明确填写月日。',
-    reviewTitle: '拆分规则',
-    reviewItems: [
-      '确认数据 Sheet 和日期标签',
-      '空销售记录会单独生成待人工文件',
-      '拆分后会核对输入行数与分出行数'
-    ],
-    workerChecks: ['目标列和销售人员识别', '忽略桶和接手规则', '拆分数量对账'],
-    resultHighlights: ['销售人员工作簿 ZIP', '空销售待人工文件', '拆分对账统计'],
-    fileRoleLabels: { receivables: '应收 all' },
-    parameterLabels: { date_label: '结果文件日期' }
   },
   {
     key: 'withholding-report-batch-rename',

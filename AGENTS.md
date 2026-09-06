@@ -1,19 +1,28 @@
-# Agent instructions
+# 项目开发约束
 
-## Agent skills
+## 上下文与任务记录
 
-### Issue tracker
+本仓库采用单一领域上下文。
 
-Issues and specifications for this repository live as Markdown files under `.scratch/`. See `docs/agents/issue-tracker.md`.
+- 探索代码前读取 `CONTEXT.md`、`PROJECT_CONTEXT.md` 中与任务相关的当前记录，以及 `docs/adr/` 中的相关决策。历史记录不作为当前部署状态或持续授权的依据。领域文档规则见 `docs/agents/domain.md`。
+- Issue 和规格以 Markdown 保存在 `.scratch/`，使用方式见 `docs/agents/issue-tracker.md`。
+- Triage 标签保持为 `needs-triage`、`needs-info`、`ready-for-agent`、`ready-for-human`、`wontfix`，含义见 `docs/agents/triage-labels.md`。
+- 本机 Codex 的 Skill 入口和允许名单由 `.codex/config.toml` 管理，维护说明见 `.codex/README.md`；它不控制平台业务 Skill 的发布或启停。
 
-### Triage labels
+## 授权与自主执行
 
-Use the repository's configured five triage labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, and `wontfix`. See `docs/agents/triage-labels.md`.
+在已授权的对象、范围和条件内，主动完成必要的检查、准备、修改和适用验证；已有明确答案或授权不重复询问。可从当前文件和工具查明的信息先自行核实，只有缺失信息影响正确性、目标对象或授权范围时才澄清，并继续不依赖答案的工作。
 
-### Domain docs
+保留适用流程中的明确审批点，审批前完成允许完成的准备并提供具体可审阅的结果。选择 Skill 或整理配置不构成提交、推送、部署、重启、真实核销或财务写入的授权；已有明确授权只对原定对象、范围和条件有效。财务写入仍须遵守对应业务流程的写前校验、副本、回读及日期先后规则，不自动重试失败的财务写入。
 
-This is a single-context repository. Read `CONTEXT.md` and relevant decisions under `docs/adr/` before exploring the codebase. See `docs/agents/domain.md`.
+## 隐私与文件维护
 
-### Verification
+保护项目数据、个人信息和凭据，输出仅包含任务必要的信息。修改前检查当前文件及已有差异，保留与本任务无关的修改。财务原件、工作副本和交付文件按对应业务规则处理，不因代码维护扩大财务文件写入范围。
 
-After modifying files in this repository, do not run any tests. Review the diff only, and state that tests were not run.
+维护同名本地 Skill 时，遵守既有源目录与同步副本约定：先比较本次目标文件，保留并合并独立修改，只同步授权文件并核对哈希。平台内置副本、任务固定快照和远程发布各自处理，本地同步不自动发布。
+
+## 验证与交付
+
+默认仅审查 diff，不运行测试、类型检查、编译或构建，并在交付时说明未运行的验证。用户明确要求验证时，按其授权范围执行并报告实际结果；不把未授权的验证设为完成前提。
+
+ask-matt 下游 Skill 中的 TDD、测试、提交和发布步骤同样服从本项目验证约定及用户实际授权。分别报告源码修改、静态审查、运行验证和部署状态，不将未执行的检查或未部署的改动宣称为已通过或已生效。有阻塞时说明已完成部分、未完成部分和原因。

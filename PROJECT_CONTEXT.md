@@ -1,6 +1,35 @@
 # 项目上下文
 
-## 2026-08-31 · 本机 Codex 开发 Skill 配置
+## 2026-09-05 · 应收核销主流程测试与本机启用
+
+- 用户明确授权先测试并启用主流程，高级关联恢复后做。本轮测试授权覆盖默认禁测约定，不修改 AGENTS.md；其他后续任务继续遵守原约定。
+- 本机开发平台已启用 `ar-execution-v2`，Skill 仍为 1.6.21，新任务默认 Workflow，Pi Harness 保留可选；旧任务保持固定快照。14 个阶段包括首次分类、逐单依据、写前日清、盈亏/流转写入、写后复核、挂账重扫、最终报告、发布及正式台账登记。
+- 两种模式分别以 9 月 3 日真实快照在独立库和副本上完成 14 阶段验收。Pi 使用模拟 Agent 请求，未调用真实模型；原件均未改变。后端 58、业务回归 70、前端相关测试 26、Agent 测试 7 项通过，类型检查、前端构建及新镜像能力检查通过。
+- 开发 API、全部相关 Worker、代理和本机前端已更新；真实环境回读到新契约、默认方式及快照。当前材料 9 份 SHA 不变，无活动核销动作；暂存自动维护配置为 0。未连接智云或执行真实财务任务，未提交或推送。
+- 真实模型容量/耗时、浏览器可视化端到端、多日/空日新版全流程及高级恢复尚未验收。详见 `.scratch/ar-agent-execution-redesign-20260905/mainflow-acceptance.md`；下方旧记录中的未部署、未测试说明属于此前切片。
+
+## 2026-09-05 · 架构审查修复后的当前源码说明（未部署）
+
+- 当前前端唯一维护位置是 `web/` 下的 Next.js 应用，使用 Clerk 与服务端 BFF；`frontend/`
+  只出现在早期迁移记录，不是当前源码目录。FastAPI 继续位于 `backend/`，生产页面由 Next.js
+  容器提供。
+- 平台认证按显式 `session`、`hybrid` 或 `clerk` 模式执行；Clerk 只提供外部身份，平台本地
+  用户记录承载角色、部门和 Skill 权限。Workflow 和 Pi Harness 在真正执行前都会重新核验
+  任务所属用户的账号、部门和 Skill 权限；普通任务继续沿用标准任务自身的创建、领取和执行规则。
+- 应收核销取数使用版本化 Fetched Bundle 契约；任务创建时固定执行方式、Skill 快照、业务日期
+  和材料版本。模型可见的任务上下文、取数预览、文件页和工具结果共用结构解析、脱敏和分页边界。
+- Workflow 与 Pi Harness 都由后端状态机和确定性 Worker 执行财务计算及工作簿修改。多日期任务按
+  日期升序串行处理，前一天写入并回读成功后才允许下一天使用新材料版本；隔离副本、写前校验、
+  回读和发布规则保留，写入失败或租约中断不自动重试。
+- 工作台、任务中心和运行观测按普通任务、独立核销日期任务及核销批次统一计数，批次子任务不重复
+  计算；响应会标明时间范围和用户或部门范围。任务、文件和审计查询使用服务端筛选与分页，历史
+  文件引用缺失时按保守规则保护删除。
+- 本轮只修改源码和必要文档，未执行测试、真实财务任务、智云取数、财务写入、权限修改、数据库
+  迁移、部署、重启或 Git 发布。
+
+## 2026-08-31 · 本机 Codex 开发 Skill 配置（历史记录）
+
+以下十个 Skill 的名单及验证结果仅记录当时配置，已被后续固定的 26 项名单替代。当前规则以 `.codex/config.toml` 为准，文件职责及维护方式见 `.codex/README.md`；本段不作为当前启用名单或验证结果。
 
 - 本机项目配置位于 `.codex/config.toml`，用法见 `.codex/README.md`。仅为财务平台项目启用 ask-matt、code-review、diagnosing-bugs、browser:control-in-app-browser、codebase-design、tdd、ui-ux-pro-max、domain-modeling、chrome:control-chrome、design-taste-frontend 十个 Skill。
 - 默认先读取 ask-matt 判断流程，再按任务需要选择其余九个；不要求用户每次输入 `$ask-matt`，不每轮运行全部十个，不自动启用 ask-matt 引用的名单外 Skill。此设置不改变平台网页中的业务 Skill 或其运行权限。
@@ -21,7 +50,7 @@
 ## 技术结构
 
 - `backend/`：FastAPI、SQLAlchemy、SQLite、Registry、Orchestrator、Worker 与适配器。
-- `frontend/`：React + TypeScript + Vite。
+- `web/`：Next.js、React、TypeScript、shadcn/ui 与 Clerk 用户界面；通过服务端 BFF 调用平台 API。
 - `skills/`：平台托管 Skill；当前 Registry 共登记 19 个，其中 10 个 published、
   1 个 draft、8 个 disabled。状态和用途明细见 `docs/FINANCE_SKILLS_CATALOG.md`。
 - `data/`：上传、运行快照、输出、日志和数据库，不进入 Git。
@@ -64,14 +93,14 @@
 ```powershell
 .\.venv\Scripts\python.exe -m pytest backend
 .\.venv\Scripts\python.exe -m ruff check backend skills --config backend\pyproject.toml
-Set-Location frontend
-npm run typecheck
-npm run build
+Set-Location web
+corepack pnpm typecheck
+corepack pnpm build
 ```
 
 ## 当前边界
 
-新代码已受控部署到 `127.0.0.1:8001`，使用 Clerk/服务端会话混合认证、用户级资源隔离、统一审计和受控 Skill 版本发布；SQLite 适合当前单部门受限验证。进一步扩大使用范围前仍需要公司 SSO、PostgreSQL、独立隔离 Worker、病毒扫描、日志脱敏和完整备份策略。
+本轮源码改动尚未部署。当前代码目标运行形态使用 Clerk/服务端会话混合认证、用户级资源隔离、统一审计和受控 Skill 版本发布；SQLite 适合当前单部门受限验证。进一步扩大使用范围前仍需要公司 SSO、PostgreSQL、独立隔离 Worker、病毒扫描、日志脱敏和完整备份策略。
 
 ## 2026-08-13 · 员工权限与用户级资源隔离
 
@@ -1332,3 +1361,10 @@ npm run build
 - 用户确认整笔和分笔回款的父总到账都可以高于订单交付额或核销合计。整笔回款继续按订单已核销金额优先、完整交付额兜底；父额不足订单金额合计超过 1 元时挂账，父额超出时允许处理并把余额留在父回款审计，不分摊进 SO/SOD。
 - 修改源 Skill 的父额审计、写前校验、业务规则说明和回归测试；整笔/分笔超出金额统一记录 `unallocated_parent_amount` 或顺序分配审计。源 Skill 测试 466 passed、5 skipped；Ruff 检查仍有既有历史告警，未扩大范围处理。
 - 源 Skill 与平台内置副本同步到版本 1.6.12。开发 API 重载注册表后健康检查为 development/ok、19 个 Skill、0 个注册表错误；API 和各 Worker 容器均回读到新脚本。未运行真实核销、未写入财务工作簿、未提交或推送代码。
+
+## 2026-09-04 · 应收合并透视汇总兼容性修复
+
+- 定位下载结果表打开时被 Excel 删除透视表的原因：透视字段中的空白项缺少对应 shared item 的 `x` 索引，且旧版透视缓存使用 `OFFSET` 动态名称作为数据源，当前 Excel 组合下无法稳定装载。
+- 源 Skill 与平台内置副本改为 Excel 可识别的空白项编码，并将数据源改为 `主表!A1:Q1048576`，保留追加新行后手动刷新透视表的能力；同步后仅重启开发 API，生产环境未触碰。
+- 使用不含真实业务数据的临时工作簿验证 Excel 打开、原生透视表存在及追加新行后刷新；另生成下载目录的修复副本，原损坏文件未覆盖。开发 API `/api/health` 返回 `status=ok`，无注册表错误。
+- 未运行仓库测试；未执行真实财务任务，未提交或推送代码。

@@ -14,14 +14,15 @@ x-backend-environment: &backend-environment
   FINANCIAL_AUTH_MODE: ${FINANCIAL_AUTH_MODE:-clerk}
   FINANCIAL_SESSION_COOKIE: ${FINANCIAL_SESSION_COOKIE:-financial_session}
   FINANCIAL_CLERK_ISSUER: ${FINANCIAL_CLERK_ISSUER}
-  FINANCIAL_CLERK_AUTHORIZED_PARTIES: http://localhost:3000,http://127.0.0.1:3000
+  FINANCIAL_CLERK_AUTHORIZED_PARTIES: http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001
   FINANCIAL_DEV_CLERK_AUTO_PROVISION_ADMIN: ${FINANCIAL_DEV_CLERK_AUTO_PROVISION_ADMIN:-false}
-  FINANCIAL_TRUSTED_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
+  FINANCIAL_TRUSTED_ORIGINS: http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001
   FINANCIAL_SESSION_COOKIE_SECURE: "false"
   FINANCIAL_NETWORK_POLICY_MODE: ${FINANCIAL_NETWORK_POLICY_MODE:-strict}
   FINANCIAL_ZHIYUN_BASE_URL: ${FINANCIAL_ZHIYUN_BASE_URL:-}
   FINANCIAL_AR_HEXIAO_EXECUTION_ENABLED: ${FINANCIAL_DEV_AR_HEXIAO_EXECUTION_ENABLED:-false}
   FINANCIAL_AR_HEXIAO_SNAPSHOT_REPLAY_ENABLED: ${FINANCIAL_DEV_AR_HEXIAO_SNAPSHOT_REPLAY_ENABLED:-true}
+  FINANCIAL_AR_STAGING_RETENTION_DAYS: "${FINANCIAL_AR_STAGING_RETENTION_DAYS:-0}"
   FINANCIAL_TASK_DISCOVERY_ENABLED: ${FINANCIAL_DEV_TASK_DISCOVERY_ENABLED:-false}
   FINANCIAL_TASK_DISCOVERY_HOLIDAYS: ${FINANCIAL_TASK_DISCOVERY_HOLIDAYS:-}
   FINANCIAL_WORKER_COUNTS: python:1,http:1,workflow:1,agent:1
@@ -163,54 +164,24 @@ services:
   worker-python:
     <<: *worker
     profiles: ["tasks"]
-    command:
-      - watchfiles
-      - --filter
-      - all
-      - --grace-period
-      - "1"
-      - python -m app.worker --pools python --worker-id dev-python-1
-      - /app/backend/app
-      - /app/skills
+    # Financial tasks must finish under their current process. Source edits
+    # must not trigger watchfiles' timed SIGKILL while a lease is active.
+    command: ["python", "-m", "app.worker", "--pools", "python", "--worker-id", "dev-python-1"]
 
   worker-http:
     <<: *worker
     profiles: ["tasks"]
-    command:
-      - watchfiles
-      - --filter
-      - all
-      - --grace-period
-      - "1"
-      - python -m app.worker --pools http --worker-id dev-http-1
-      - /app/backend/app
-      - /app/skills
+    command: ["python", "-m", "app.worker", "--pools", "http", "--worker-id", "dev-http-1"]
 
   worker-workflow:
     <<: *worker
     profiles: ["tasks"]
-    command:
-      - watchfiles
-      - --filter
-      - all
-      - --grace-period
-      - "1"
-      - python -m app.worker --pools workflow --worker-id dev-workflow-1
-      - /app/backend/app
-      - /app/skills
+    command: ["python", "-m", "app.worker", "--pools", "workflow", "--worker-id", "dev-workflow-1"]
 
   worker-task-discovery:
     <<: *worker
     profiles: ["tasks"]
-    command:
-      - watchfiles
-      - --filter
-      - all
-      - --grace-period
-      - "1"
-      - python -m app.task_discovery_worker
-      - /app/backend/app
-      - /app/skills
+    command: ["python", "-m", "app.task_discovery_worker"]
 
   worker-agent:
     image: financial-platform-agent-runtime:dev

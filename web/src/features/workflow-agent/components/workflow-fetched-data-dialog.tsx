@@ -368,7 +368,6 @@ export function WorkflowFetchedDataDialog({
           <DialogTitle>智云取数数据</DialogTitle>
           <DialogDescription>
             核销日期：{reconciliationDate}
-            。请检查本次已拉取的数据；只有明确确认后才会继续核销判定。
           </DialogDescription>
           {batch && batch.reconciliation_dates.length > 1 && (
             <label className='mt-2 flex items-center gap-2 text-sm'>
@@ -399,10 +398,9 @@ export function WorkflowFetchedDataDialog({
           className='min-h-0 flex-1 overflow-y-auto px-5 py-4'
         >
           {preview && (
-            <PaginatedCollection
-              ariaLabel='取数业务摘要'
-              className='mb-4 rounded-lg border bg-muted/30 p-3'
-              contentClassName='grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4'
+            <section
+              aria-label='取数业务摘要'
+              className='mb-4 grid gap-3 rounded-lg border bg-muted/30 p-3 text-sm sm:grid-cols-2 lg:grid-cols-4'
             >
               {businessSummary.map((item) => (
                 <div key={item.label} className='min-w-0'>
@@ -414,7 +412,7 @@ export function WorkflowFetchedDataDialog({
                   </p>
                 </div>
               ))}
-            </PaginatedCollection>
+            </section>
           )}
 
           {preview && isEmptyFetchedSummary(summary) && (

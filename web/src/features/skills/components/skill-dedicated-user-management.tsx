@@ -4,7 +4,7 @@ import { type FormEvent, useMemo, useState } from 'react';
 import { IconPlus, IconTrash, IconUserEdit, IconUsers } from '@tabler/icons-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   CollectionPaginationControls,
   useCollectionPagination
@@ -163,9 +163,6 @@ export function SkillDedicatedUserManagement({
             <IconUsers className='size-5' />
             Skill 专属员工
           </CardTitle>
-          <CardDescription>
-            每个部门的每个 Skill 只能设置一名专属员工；该标记不改变员工已有的 Skill 权限。
-          </CardDescription>
         </CardHeader>
         <CardContent className='space-y-4'>
           <Input

@@ -43,6 +43,7 @@ interface HarnessClaim {
     hash: string;
     instructions: string;
     tools: DeclaredTool[];
+    execution_contract?: string;
   };
   model: string;
 }
@@ -119,6 +120,19 @@ async function waitForTool(
 }
 
 function toolParameters(tool: DeclaredTool) {
+  if (tool.name === 'inspect_order_evidence') {
+    return Type.Object(
+      {
+        offset: Type.Optional(Type.Integer({ minimum: 0 })),
+        limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 50 })),
+        query: Type.Optional(Type.String({ maxLength: 100 })),
+        record_id: Type.Optional(Type.String({ maxLength: 128 })),
+        detail_offset: Type.Optional(Type.Integer({ minimum: 0 })),
+        fingerprint: Type.Optional(Type.String({ maxLength: 64 }))
+      },
+      { additionalProperties: false }
+    );
+  }
   if (tool.name === 'read_task_file') {
     return Type.Object(
       {
@@ -138,7 +152,11 @@ function toolParameters(tool: DeclaredTool) {
       { additionalProperties: false }
     );
   }
-  if (tool.name !== 'apply_reconciliation') return Type.Object({});
+  const writeGuard = ['reconciliation_date', 'material_set_id', 'material_version', 'plan_fingerprint'];
+  if (tool.required_arguments.length === 0) return Type.Object({}, { additionalProperties: false });
+  if (JSON.stringify(tool.required_arguments) !== JSON.stringify(writeGuard)) {
+    throw new Error(`当前 Agent Worker 不支持工具 ${tool.name} 的参数契约。`);
+  }
   return Type.Object(
     {
       reconciliation_date: Type.String({ pattern: '^\\d{4}-\\d{2}-\\d{2}$' }),
@@ -168,7 +186,8 @@ function createHarnessTools(claim: HarnessClaim): AgentTool[] {
           method: 'POST',
           body: JSON.stringify({
             arguments: argumentsPayload,
-            worker_id: workerId
+            worker_id: workerId,
+            harness_action_id: claim.action_id
           })
         }
       );
@@ -187,16 +206,20 @@ function createHarnessTools(claim: HarnessClaim): AgentTool[] {
 }
 
 function systemPrompt(claim: HarnessClaim): string {
+  const phased = claim.skill.execution_contract === 'ar-execution-v2';
   return [
     '你是财务平台后台运行的 Pi Harness。你负责把当前核销日从准备材料执行到最终完成。',
     '下面的 SKILL.md 来自任务创建时固定的 Skill 快照，必须完整遵守。',
     '任务完整上下文也来自平台当前任务记录。你可以读取其中的输入材料元数据、业务上下文、过程消息、动作输入输出、产物和批次状态。',
     '完成取数预览后、确认取数包前，调用 inspect_fetched_data，并根据 total、offset、limit 翻页读完当前核销日的全部记录。',
     '需要核对任务中的 JSON、CSV、Markdown、YAML 或文本产物时，调用 read_task_file；使用返回的 next_offset 继续读取，直到达到 total_bytes。',
+    '若工具清单包含 inspect_order_evidence，先用 offset/next_offset 获取判定列表；列表只是摘要。对每个 record_id 从 detail_offset=0 读取明细，后续请求携带 detail.fingerprint 并使用 detail.next_offset，直到 detail.next_offset 达到 detail.total。各项明细的 path 是原字段位置，长文本用 char_offset/char_total 连接。仅完整读取明细的记录计入检查覆盖；版本变化时从该记录明细首页重新读取。',
     '只能调用本会话提供的受控工具。每次读取工具结果后再决定下一步。',
-    '不得要求用户在执行过程中补充确认。发现数据或工具错误时立即停止。',
+    '不得要求用户在执行过程中补充确认。工具执行失败或材料完整性错误时停止派发；正常业务挂账、异常与跳过按固定规则保留并解释，继续完成允许处理的项目。',
     '写入失败后不得重试。多日批次由平台按日期从早到晚逐日创建本会话。',
-    '调用 apply_reconciliation 时，必须逐字复制最近工具结果中 context.pi_harness_write_guard 的四个字段。',
+    phased
+      ? '取数确认后调用 initialize_reconciliation，然后严格按 context.ar_execution.next_tool 请求阶段。写入条件逐字复制 context.pi_harness_write_guard；最终报告生成后重新完整读取逐单明细，review_final_report 通过后才发布。'
+      : '调用 apply_reconciliation 时，必须逐字复制最近工具结果中 context.pi_harness_write_guard 的四个字段。',
     '只有 workflow.state 已变为 succeeded 或 cancelled 才能结束；多日最后一天还要调用 finalize_batch。',
     '',
     `固定 Skill：${claim.skill.id} ${claim.skill.version}`,
@@ -272,7 +295,7 @@ async function main(): Promise<void> {
   while (!stopping) {
     const claim = await apiRequest<HarnessClaim | null>('/api/internal/pi-harness/claim', {
       method: 'POST',
-      body: JSON.stringify({ worker_id: workerId })
+      body: JSON.stringify({ worker_id: workerId, execution_contracts: ['ar-execution-v2'] })
     });
     if (claim) await executeClaim(claim);
     else await delay(pollMilliseconds);

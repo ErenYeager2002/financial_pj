@@ -84,6 +84,9 @@ export function arTaskStatus(task: ArTaskState): ArTaskStatusView {
   if (task.state === 'succeeded' || task.stage === 'completed') {
     return { label: '已完成', variant: 'secondary' };
   }
+  if (task.state === 'waiting_approval' || task.stage === 'waiting_approval') {
+    return { label: '等待审批', variant: 'default' };
+  }
   if (WAITING_STAGES.has(task.stage ?? '')) {
     return { label: '待确认', variant: 'default' };
   }

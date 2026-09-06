@@ -88,6 +88,66 @@ def test_foreign_full_writeoff_without_detail_uses_order_rate_as_cny():
     assert rec["deliver_local"] == 17979.75
 
 
+def test_whole_foreign_delivery_fallback_without_local_or_order_rate_holds():
+    p = _payment(
+        amount=8844.0,
+        amount_local=63526.05,
+        currency="美元USD",
+        huikuan_type="整笔回款",
+        orders=[{
+            "so": "SO1", "deliver": 8844.0, "deliver_local": None,
+            "rate": None, "currency": "美元USD",
+        }],
+        writeoffs={"SO1": 8844.0},
+        sod_lines={"SO1": [{"sod": "SOD1", "deliver": 8844.0}]},
+        duplicate_writeoff_audit={
+            "status": "delivery_fallback",
+            "comparison_basis": "delivery_fallback_original",
+            "fallback_used": True,
+        },
+    )
+
+    rec = C.expand_payment(p, {})[0]
+    assert rec["amount_local"] is None
+    assert rec["deliver_local"] is None
+
+    result = C.classify_one(
+        rec,
+        _ledger({1: {"so": "SO1", "sod": "SOD1", "yingshou": 63605.16}}),
+        {},
+        0.0,
+        2026,
+    )
+    assert result["bucket"] == "hold"
+    assert result["code"] == "E6"
+
+
+def test_whole_foreign_delivery_fallback_uses_order_rate_when_local_is_blank():
+    p = _payment(
+        amount=8844.0,
+        amount_local=63526.05,
+        currency="美元USD",
+        huikuan_type="整笔回款",
+        orders=[{
+            "so": "SO1", "deliver": 8844.0, "deliver_local": None,
+            "rate": 7.1919, "currency": "美元USD",
+        }],
+        writeoffs={"SO1": 8844.0},
+        sod_lines={"SO1": [{"sod": "SOD1", "deliver": 8844.0}]},
+        duplicate_writeoff_audit={
+            "status": "delivery_fallback",
+            "comparison_basis": "delivery_fallback_original",
+            "fallback_used": True,
+        },
+    )
+
+    rec = C.expand_payment(p, {})[0]
+
+    assert rec["amount_local"] == 63605.16
+    assert rec["deliver_local"] == 63605.16
+    assert rec["local_amount_basis"] == "order_exchange_rate"
+
+
 def test_unique_sod_uses_cumulative_writeoff_to_recognize_final_settlement():
     """SO26050128 类：本次只回尾款，但历史+本次已达到交付额，应结清而非再拆行。"""
     p = _payment(
@@ -453,7 +513,8 @@ def test_itemized_cumulative_rerun_skips_materialized_partial_slice():
         21: {
             "so": "SO1", "sod": "SOD1", "yingshou": 40.0,
             "jiti": None, "huikuan": 50.0, "jiezhang": "是",
-            "shoukuan_time": dt.date(2026, 7, 31), "shoukuan_way": "汇",
+            # R5: 跨月到账按核销日和冲预收登记。
+            "shoukuan_time": dt.date(2026, 8, 2), "shoukuan_way": "冲预收",
         },
         22: {
             "so": "SO1", "sod": "SOD1", "yingshou": 60.0,
@@ -468,6 +529,10 @@ def test_itemized_cumulative_rerun_skips_materialized_partial_slice():
     assert result["ledger_row_ref"] == 21
     assert "row_operation" not in result
     assert result["five_cols"]["回款明细"] == 50.0
+
+    ledger.row_snapshot[21]["shoukuan_time"] = dt.date(2026, 7, 31)
+    mismatched = C.classify_one(rec, ledger, {}, 0.0, 2026)
+    assert mismatched["code"] != "OK_ITEMIZED_CUMULATIVE_ALREADY_APPLIED"
 
 
 def test_fallback_history_is_added_when_later_parent_has_itemized_writeoff():

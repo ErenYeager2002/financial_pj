@@ -26,6 +26,9 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import common  # noqa: E402
 import amount_policy  # noqa: E402
+import settlement_status  # noqa: E402
+import baseline_receipts as BR  # noqa: E402
+import fallback_allocation_ledger as FAL  # noqa: E402
 import writeoff_duplicate_audit as WDA  # noqa: E402
 
 try:
@@ -92,6 +95,25 @@ def _whole_parent_gate_error(audit: dict) -> str:
     return ""
 
 
+def _delivery_fallback_local_error(audit: dict, item: dict) -> str:
+    """外币交付额兜底只能凭智云本币交付额或订单汇率进入写入。"""
+    if item.get("code") == settlement_status.SO_ALREADY_SETTLED:
+        return ""  # 整单跳过没有本币写入；父 AR 守恒及禁止携带写入指令另行复核。
+    if not str(audit.get("comparison_basis") or "").startswith("delivery_fallback"):
+        return ""
+    evidence = item.get("write_currency_audit") or item
+    if common.is_cny(evidence.get("currency") or ""):
+        return ""
+    amount_local = common.to_number(evidence.get("amount_local"))
+    deliver_local = common.to_number(evidence.get("deliver_local"))
+    basis = str(evidence.get("local_amount_basis") or "")
+    if basis not in {"zhiyun_delivery_local", "order_exchange_rate"}:
+        return "外币交付额兜底缺少本币金额来源，禁止写入原币金额"
+    if amount_local is None or deliver_local is None:
+        return "外币交付额兜底缺少本币回款额或本币交付额，禁止写入"
+    return ""
+
+
 def duplicate_audit_error(plan: dict, item: Optional[dict] = None) -> str:
     """防止父 AR 审计或逻辑记录在判定、校验和写入之间被手工改坏。"""
     if "duplicate_writeoff_audits" not in plan:
@@ -116,6 +138,9 @@ def duplicate_audit_error(plan: dict, item: Optional[dict] = None) -> str:
         gate_error = _whole_parent_gate_error(audit)
         if gate_error:
             return f"父回款 {ar} 未通过父AR金额守恒检查：{gate_error}"
+        local_error = _delivery_fallback_local_error(audit, current)
+        if local_error:
+            return f"父回款 {ar} 未通过写入币种检查：{local_error}"
         if status == "recovered":
             if "W_SYSTEM_DUPLICATE_WRITEOFF_COLLAPSED" not in warnings:
                 return f"父回款 {ar} 已做系统重复纠正，但auto缺少警告码"
@@ -810,6 +835,11 @@ def check_one(item: dict, rows: Dict[int, dict]) -> dict:
     - skip     ：已经填过且与计划一致 → 幂等跳过（重复跑不重复写）
     - conflict ：行号对不上 / 已填但不一致 / 值不合法 → 不写，交给人看
     """
+    scope_error = BR.check_scope(item, rows)
+    if scope_error:
+        return scope_error
+    if item.get("baseline_receipt_audit"):
+        return BR.check(item, rows)
     ref = item.get("ledger_row_ref")
     five = item.get("five_cols") or {}
     derived = item.get("derived_cols") or {}
@@ -1023,10 +1053,53 @@ def check_one(item: dict, rows: Dict[int, dict]) -> dict:
     raise AssertionError("不可达")
 
 
+def parent_allocation_history_errors(plan: dict, rows: Dict[int, dict]) -> Dict[str, str]:
+    """Independently reject fresh parent allocations that erase paid workbook history."""
+    received_by_so: Dict[str, float] = {}
+    for row in rows.values():
+        so = str(row.get("SO") or "").strip()
+        amount = common.to_number(row.get("回款明细"))
+        if so and amount is not None:
+            received_by_so[so] = round(received_by_so.get(so, 0.0) + float(amount), 2)
+    errors = {}
+    active_parents = {
+        item.get("ar") for item in plan.get("auto") or []
+        if item.get("code") != settlement_status.SO_ALREADY_SETTLED
+    }
+    for ar, audit in (plan.get("parent_fallback_allocations") or {}).items():
+        if ar not in active_parents:
+            continue
+        reused = bool(audit.get("reused_successful_allocation"))
+        if reused and "applied_sos" not in audit:
+            continue
+        allocations = audit.get("allocations") or []
+        if not any(float(row.get("allocated") or 0.0) > float(amount_policy.TECHNICAL_EPSILON) for row in allocations):
+            continue
+        for allocation in allocations:
+            so = str(allocation.get("so") or "").strip()
+            if reused and so in audit["applied_sos"]:
+                continue
+            current_applied = sum(
+                case["amount_local"] for case in (audit.get("applied_cases") or {}).values()
+                if case["so"] == so
+            )
+            error = FAL.unexplained_receipts(
+                ar, so, received_by_so.get(so, 0.0),
+                float(allocation.get("historical_received_local") or 0.0) + current_applied,
+                reused_allocation=reused, current_applied=current_applied,
+            )
+            if error:
+                errors[ar] = error
+                break
+    return errors
+
+
 def validate(
     plan: dict,
     rows: Dict[int, dict],
     ledger_path: Optional[Path] = None,
+    *,
+    allocation_errors: Optional[Dict[str, str]] = None,
 ) -> dict:
     items = [dict(it) for it in (plan.get("auto") or [])]
     by_case_id = {
@@ -1035,8 +1108,11 @@ def validate(
     }
     checked: List[dict] = []
     seen_rows: Dict[int, str] = {}
+    if allocation_errors is None:
+        allocation_errors = parent_allocation_history_errors(plan, rows)
     for it in items:
-        audit_error = duplicate_audit_error(plan, it)
+        audit_error = duplicate_audit_error(plan, it) or allocation_errors.get(it.get("ar"))
+        scope_error = BR.check_scope(it, rows)
         original_ref = it.get("ledger_row_ref")
         operation_type = (it.get("row_operation") or {}).get("type")
         is_split_chain = operation_type == "split_payment_chain"
@@ -1052,6 +1128,23 @@ def validate(
         settled_ref = None if (is_split_chain or is_guarded_aggregate) else settled_without_open_row(it, rows)
         if audit_error:
             res = {"verdict": "conflict", "reason": audit_error}
+        elif scope_error:
+            res = scope_error
+        elif it.get("baseline_receipt_audit"):
+            res = check_one(it, rows)
+        elif it.get("code") == settlement_status.SO_ALREADY_SETTLED:
+            settlement = settlement_status.inspect_so(it.get("so"), (
+                {"row": row_no, "so": row.get("SO"), "sod": row.get("SOD"), "settled": row.get("是否结账")}
+                for row_no, row in rows.items()
+            ))
+            if not settlement["all_settled"]:
+                res = {"verdict": "conflict", "reason": "整单跳过的写前复核失败：" + settlement["reason"] + "请重新判定。"}
+            elif any(it.get(key) for key in ("five_cols", "derived_cols", "row_operation", "so_accrual_backfills")):
+                res = {"verdict": "conflict", "reason": "整 SO 已结账跳过项含写入或计提补填指令；拒绝执行，请重新生成计划。"}
+            else:
+                it["ledger_row_ref"] = settlement["rows"][0]["row"]
+                it["so_settlement_audit"] = settlement
+                res = {"verdict": "skip", "reason": settlement["reason"]}
         elif multi_sod_marker:
             target = by_case_id.get(str(multi_sod_marker.get("target_case_id") or ""))
             marker_error = _absorbed_multi_sod_error(it, target)
@@ -1080,7 +1173,7 @@ def validate(
             it["ledger_row_ref"] = int(settled_ref)
             res = {
                 "verdict": "skip",
-                "reason": "订单已写入/已结账，且不存在拆分未结账行（幂等跳过）",
+                "reason": f"SO={it.get('so')}、SOD={it.get('sod') or '全部'} 的目标业务行全部已结账，无未结账拆分行；写前按现有结账状态跳过，保留历史值。",
             }
         else:
             if is_split_chain:
@@ -1151,6 +1244,22 @@ def validate(
     return out
 
 
+
+def recheck_so_skips(plan: dict, ledger_path: Path) -> List[str]:
+    """执行前复核本年度整单跳过；即使没有财务 write 也要检查。"""
+    items = [it for it in (plan.get("skip") or [])
+             if it.get("code") == settlement_status.SO_ALREADY_SETTLED]
+    if not items:
+        return []
+    expected = plan.get("ledger_sha256")
+    if not expected or common.sha256_file(ledger_path) != expected:
+        return [f"{ledger_path.name} 整单跳过计划缺少指纹或当前指纹已变化；请重新校验全部 SO 业务行。"]
+    if plan.get("ledger_path") and Path(plan["ledger_path"]).resolve() != ledger_path.resolve():
+        return ["整单跳过计划的盈亏表路径与当前表不同；请重新校验。"]
+    checked = validate({**plan, "auto": items}, read_ledger_rows(ledger_path))
+    return [f"{it.get('case_id')}: {it['_check']['reason']}" for it in checked["conflict"]]
+
+
 def validate_by_year(
     plan: dict,
     rows_by_year: Dict[int, Dict[int, dict]],
@@ -1176,6 +1285,11 @@ def validate_by_year(
         },
     } for item in missing_year_items)
     checks = {}
+    # A parent's orders may span years. A conflict in one year blocks the same
+    # parent in every year, without mixing row numbers or unrelated orders.
+    allocation_errors: Dict[str, str] = {}
+    for year_rows in rows_by_year.values():
+        allocation_errors.update(parent_allocation_history_errors(plan, year_rows))
     for year, items in grouped.items():
         if year not in rows_by_year:
             merged["conflict"].extend({
@@ -1188,7 +1302,7 @@ def validate_by_year(
             continue
         subplan = {**plan, "auto": items}
         path = ledger_paths.get(year)
-        checked = validate(subplan, rows_by_year[year], ledger_path=path)
+        checked = validate(subplan, rows_by_year[year], ledger_path=path, allocation_errors=allocation_errors)
         for bucket in merged:
             merged[bucket].extend(checked.get(bucket) or [])
         if path is not None:
@@ -1283,7 +1397,7 @@ def main(argv=None) -> int:
         rows_by_year = {
             year: read_ledger_rows(path)
             for year, path in ledger_paths.items()
-            if year in needed_years
+            if year in needed_years or plan.get("parent_fallback_allocations")
         }
     except ValueError as e:
         print(f"ERROR: {e}", file=sys.stderr)

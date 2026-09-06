@@ -6,6 +6,7 @@ import type { TaskCenterPage } from '@/features/platform-api/types';
 const ALLOWED_PARAMS = new Set([
   'page',
   'page_size',
+  'query',
   'view_state',
   'item_type',
   'skill_id',

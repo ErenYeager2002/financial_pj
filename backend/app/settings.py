@@ -43,7 +43,7 @@ def _env_bool(name: str, default: bool = False) -> bool:
 
 @dataclass(frozen=True)
 class Settings:
-    app_name: str = os.getenv("FINANCIAL_APP_NAME", "财务 Skill 运行平台")
+    app_name: str = os.getenv("FINANCIAL_APP_NAME", "财务 Skill 平台")
     environment: str = os.getenv("FINANCIAL_ENV", "development")
     project_root: Path = PROJECT_ROOT
     data_dir: Path = _env_path("FINANCIAL_DATA_DIR", PROJECT_ROOT / "data")
@@ -59,6 +59,7 @@ class Settings:
     )
     max_upload_mb: int = int(os.getenv("FINANCIAL_MAX_UPLOAD_MB", "100"))
     file_retention_days: int = max(1, int(os.getenv("FINANCIAL_FILE_RETENTION_DAYS", "90")))
+    ar_staging_retention_days: int = max(0, int(os.getenv("FINANCIAL_AR_STAGING_RETENTION_DAYS", "90")))
     fetch_bundle_retention_days: int = max(
         0,
         int(os.getenv("FINANCIAL_FETCH_BUNDLE_RETENTION_DAYS", "0")),
@@ -177,7 +178,10 @@ class Settings:
 
     @property
     def frontend_dist(self) -> Path:
-        return self.project_root / "frontend" / "dist"
+        # Kept for the optional static fallback. The maintained UI is the
+        # Next.js application under web/; production normally serves it from
+        # its own container rather than through FastAPI.
+        return self.project_root / "web" / "dist"
 
     def ensure_directories(self) -> None:
         for path in (

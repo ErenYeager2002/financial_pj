@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import math
+import re
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
@@ -17,6 +20,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .audit_service import record_audit
+from .ar_execution_service import ArEvidencePage, ArExecutionRead, read_evidence_page, read_execution
+from .ar_execution_recovery import ArRecoveryRequest, recover_execution
 from .auth import UserContext, get_current_user, get_sse_user, require_admin
 from .auth_service import bootstrap_admin
 from .authorization import allowed_skill_ids, assert_skill_permission, get_skill_permission
@@ -24,15 +29,19 @@ from .contracts import (
     AdminSkillDetail,
     PlatformFile,
     PlatformFileDetail,
+    PlatformFileGroupSummaryPage,
+    PlatformFileOptionPage,
     PlatformFilePage,
     PlatformHealth,
     PlatformUser,
+    RuntimeHealth,
     RegistryReloadResponse,
     RunApprovalRead,
     RunDetail,
     RunEventRead,
     RunPage,
     SkillDetail,
+    SkillSummary,
     StepRunRead,
     TaskCenterPage,
     TaskCenterReferenceType,
@@ -41,7 +50,13 @@ from .contracts import (
     domain_contract_schemas,
 )
 from .database import SessionLocal, get_db, init_db
-from .file_service import get_file_detail, list_files_page, serialize_file
+from .file_service import (
+    get_file_detail,
+    list_file_groups,
+    list_files_page,
+    list_selectable_input_files_page,
+    serialize_file,
+)
 from .model_providers import list_public_providers
 from .model_service import (
     connect_api_key,
@@ -54,8 +69,9 @@ from .model_service import (
 from .models import FileRecord, RunEvent, RunRecord
 from .orchestrator import interpret_parameters
 from .redaction import sanitize_text, sanitize_value
-from .registry import registry
+from .registry import RegisteredSkill, registry
 from .resource_policy import assert_owner
+from .runtime_health_service import runtime_health
 from .routers import admin_approvals as admin_approvals_router
 from .routers import admin_feature_controls as admin_feature_controls_router
 from .routers import admin_observability as admin_observability_router
@@ -110,6 +126,7 @@ from .schemas import (
     WorkflowReusableFilesRead,
     WorkflowStart,
 )
+from .schemas_assistant import MAX_ASSISTANT_FILE_IDS
 from .security import origin_guard
 from .service_credential_service import (
     get_service_credential_status,
@@ -145,6 +162,7 @@ from .workflow_service import (
     read_workflow_fetched_data,
     request_batch_fetched_data_supplement,
     request_fetched_data_supplement,
+    rebuild_failed_workflow,
     reset_workflow,
     retry_workflow_batch,
     reusable_workflow_files,
@@ -240,6 +258,39 @@ app.add_middleware(
 )
 app.middleware("http")(origin_guard)
 
+_workflow_timing_logger = logging.getLogger("financial.workflow_timing")
+
+
+def _workflow_timing_path(path: str) -> str:
+    return re.sub(r"/(workflows|workflow-batches)/[^/]+", r"/\1/{id}", path)
+
+
+@app.middleware("http")
+async def workflow_api_timing(request, call_next):
+    if settings.environment != "development" or not request.url.path.startswith(
+        ("/api/workflows", "/api/workflow-batches")
+    ):
+        return await call_next(request)
+    started_at = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        _workflow_timing_logger.info(
+            "path=%s method=%s status=error duration_ms=%d",
+            _workflow_timing_path(request.url.path),
+            request.method,
+            round((time.perf_counter() - started_at) * 1000),
+        )
+        raise
+    _workflow_timing_logger.info(
+        "path=%s method=%s status=%d duration_ms=%d",
+        _workflow_timing_path(request.url.path),
+        request.method,
+        response.status_code,
+        round((time.perf_counter() - started_at) * 1000),
+    )
+    return response
+
 
 @app.get("/api/health", response_model=PlatformHealth)
 def health() -> PlatformHealth:
@@ -252,6 +303,15 @@ def health() -> PlatformHealth:
         configured_workers=dict(settings.worker_counts),
         configured_execution_capacity=sum(count for _, count in settings.worker_counts),
     )
+
+
+@app.get("/api/health/readiness", response_model=RuntimeHealth)
+def health_readiness(
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> RuntimeHealth:
+    """Return measured local queue and Worker state for the management UI."""
+    return runtime_health(db, user)
 
 
 @app.get("/api/session", response_model=PlatformUser)
@@ -309,13 +369,8 @@ def get_skill(
     )
 
 
-@app.get("/api/catalog/skills", response_model=list[SkillDetail])
-def list_catalog_skills(
-    db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
-) -> list[SkillDetail]:
-    """返回员工安全视图；管理员访问时也不暴露执行入口和来源路径。"""
-
+def _catalog_skills_for_user(db: Session, user: UserContext) -> list[RegisteredSkill]:
+    """返回目录可见的已发布和辅助 Skill，复用统一的权限规则。"""
     skills = registry.list(include_disabled=False)
     if not user.is_admin:
         allowed = allowed_skill_ids(db, user)
@@ -330,7 +385,31 @@ def list_catalog_skills(
         ):
             skills.append(supporting)
     skills.sort(key=lambda item: (item.manifest.category, item.manifest.name))
+    return skills
+
+
+@app.get("/api/catalog/skills", response_model=list[SkillDetail])
+def list_catalog_skills(
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> list[SkillDetail]:
+    """返回员工安全视图；管理员访问时也不暴露执行入口和来源路径。"""
+
+    skills = _catalog_skills_for_user(db, user)
     return [SkillDetail.model_validate(item.employee_dict(include_schema=True)) for item in skills]
+
+
+@app.get("/api/catalog/skill-summaries", response_model=list[SkillSummary])
+def list_catalog_skill_summaries(
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> list[SkillSummary]:
+    """返回 Skill 中心使用的轻量员工安全目录。"""
+
+    skills = _catalog_skills_for_user(db, user)
+    return [
+        SkillSummary.model_validate(item.employee_dict(include_schema=False)) for item in skills
+    ]
 
 
 @app.get("/api/catalog/skills/{skill_id}", response_model=SkillDetail)
@@ -514,30 +593,105 @@ async def upload_file(
     )
 
 
+def _file_list_parameters(page: int, page_size: int, query: str) -> tuple[int, int, str]:
+    return max(page, 1), min(max(page_size, 1), 100), query.strip()[:100]
+
+
 @app.get("/api/files", response_model=PlatformFilePage)
 def list_files(
     page: int = 1,
-    page_size: int = 20,
+    page_size: int = 25,
     kind: str = "",
     query: str = "",
     latest_only: bool = False,
+    include_delete_status: bool = True,
+    skill_id: str = "",
+    unassigned: bool = False,
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ) -> PlatformFilePage:
-    checked_page = max(page, 1)
-    checked_page_size = min(max(page_size, 1), 100)
+    checked_page, checked_page_size, checked_query = _file_list_parameters(
+        page, page_size, query
+    )
     if kind not in {"", "input", "output"}:
         raise HTTPException(status_code=422, detail="文件类型只能是 input 或 output。")
+    checked_skill_id = skill_id.strip()[:128]
+    if checked_skill_id and unassigned:
+        raise HTTPException(status_code=422, detail="skill_id 和 unassigned 不能同时使用。")
     items, total = list_files_page(
         db,
         user,
         page=checked_page,
         page_size=checked_page_size,
         kind=kind,
-        query=query.strip()[:100],
+        query=checked_query,
         latest_only=latest_only,
+        include_delete_status=include_delete_status,
+        skill_id=checked_skill_id,
+        unassigned=unassigned,
     )
     return PlatformFilePage(
+        items=items,
+        total=total,
+        page=checked_page,
+        page_size=checked_page_size,
+        pages=math.ceil(total / checked_page_size) if total else 0,
+    )
+
+
+@app.get("/api/files/groups", response_model=PlatformFileGroupSummaryPage)
+def list_file_group_summaries(
+    kind: str = "",
+    query: str = "",
+    latest_only: bool = True,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> PlatformFileGroupSummaryPage:
+    _, _, checked_query = _file_list_parameters(1, 25, query)
+    if kind not in {"", "input", "output"}:
+        raise HTTPException(status_code=422, detail="文件类型只能是 input 或 output。")
+    items, total_files, total_groups = list_file_groups(
+        db,
+        user,
+        kind=kind,
+        query=checked_query,
+        latest_only=latest_only,
+    )
+    return PlatformFileGroupSummaryPage(
+        items=items,
+        total_files=total_files,
+        total_groups=total_groups,
+    )
+
+
+@app.get("/api/files/selectable-inputs", response_model=PlatformFileOptionPage)
+def list_selectable_input_files(
+    page: int = 1,
+    page_size: int = 25,
+    query: str = "",
+    ids: str = "",
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> PlatformFileOptionPage:
+    checked_page, checked_page_size, checked_query = _file_list_parameters(
+        page, page_size, query
+    )
+    requested_ids = [item.strip() for item in ids.split(",") if item.strip()]
+    if (
+        len(requested_ids) > MAX_ASSISTANT_FILE_IDS
+        or any(len(item) > 128 for item in requested_ids)
+    ):
+        raise HTTPException(status_code=422, detail="文件标识数量或格式无效。")
+    file_ids = requested_ids if ids else None
+    items, total = list_selectable_input_files_page(
+        db,
+        user,
+        page=checked_page,
+        page_size=checked_page_size,
+        query=checked_query,
+        file_ids=file_ids,
+    )
+    return PlatformFileOptionPage(
         items=items,
         total=total,
         page=checked_page,
@@ -709,7 +863,7 @@ def retry_workflow_batch_session(
 ) -> WorkflowBatchRead:
     batch = get_workflow_batch_or_404(db, batch_id, user)
     assert_skill_permission(db, user, batch.skill_id)
-    return _serialize_workflow_batch_for_user(db, user, retry_workflow_batch(db, batch))
+    return _serialize_workflow_batch_for_user(db, user, retry_workflow_batch(db, batch, user))
 
 
 @app.post("/api/workflow-batches/{batch_id}/cancel", response_model=WorkflowBatchRead)
@@ -899,6 +1053,61 @@ def get_workflow(
     return serialize_workflow(get_workflow_or_404(db, workflow_id, user))
 
 
+@app.get("/api/workflows/{workflow_id}/execution", response_model=ArExecutionRead)
+def get_workflow_execution(
+    workflow_id: str,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> ArExecutionRead:
+    return read_execution(get_workflow_or_404(db, workflow_id, user))
+
+
+@app.post("/api/workflows/{workflow_id}/execution/recover", response_model=ArExecutionRead)
+def recover_workflow_execution(
+    workflow_id: str,
+    body: ArRecoveryRequest,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> ArExecutionRead:
+    workflow = get_workflow_or_404(db, workflow_id, user)
+    recover_execution(db, workflow, body, user)
+    db.expire(workflow, ["actions"])
+    return read_execution(workflow)
+
+
+@app.post("/api/workflows/{workflow_id}/execution/investigate", response_model=ArExecutionRead)
+def investigate_failed_workflow_write(
+    workflow_id: str,
+    body: ArRecoveryRequest,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> ArExecutionRead:
+    from .ar_business_investigation import queue_investigation
+
+    workflow = get_workflow_or_404(db, workflow_id, user)
+    queue_investigation(db, workflow, body, user)
+    db.expire(workflow, ["actions"])
+    return read_execution(workflow)
+
+
+@app.get("/api/workflows/{workflow_id}/order-evidence", response_model=ArEvidencePage)
+def get_workflow_order_evidence(
+    workflow_id: str,
+    offset: int = 0,
+    limit: int = 20,
+    query: str = "",
+    record_id: str = "",
+    detail_offset: int = 0,
+    fingerprint: str = "",
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> ArEvidencePage:
+    workflow = get_workflow_or_404(db, workflow_id, user)
+    assert_skill_permission(db, user, workflow.skill_id)
+    return read_evidence_page(db, workflow, offset=offset, limit=limit, query=query, record_id=record_id,
+                              detail_offset=detail_offset, fingerprint=fingerprint)
+
+
 @app.get("/api/workflows/{workflow_id}/fetched-data", response_model=WorkflowFetchedDataRead)
 def get_workflow_fetched_data(
     workflow_id: str,
@@ -994,7 +1203,7 @@ def workflow_agent_action(
         user,
     )
     return WorkflowAgentActionResponse(
-        workflow=serialize_workflow(workflow),
+        workflow=serialize_workflow(result.workflow),
         action=result.action,
         await_confirmation=result.await_confirmation,
         confirmation_kind=result.confirmation_kind,
@@ -1082,7 +1291,10 @@ def rebuild_workflow_result(
 ) -> WorkflowRead:
     workflow = get_workflow_or_404(db, workflow_id, user)
     assert_skill_permission(db, user, workflow.skill_id)
-    return serialize_workflow(send_workflow_message(db, workflow, "重新生成核销日清"))
+    rebuilt = rebuild_failed_workflow(db, workflow, user)
+    db.commit()
+    db.refresh(rebuilt)
+    return serialize_workflow(rebuilt)
 
 
 @app.post("/api/workflows/{workflow_id}/reset", response_model=WorkflowRead)
@@ -1133,6 +1345,7 @@ def list_runs(
 def list_task_center_items(
     page: int = 1,
     page_size: int = 20,
+    query: str = "",
     view_state: TaskCenterViewState | None = None,
     item_type: TaskCenterReferenceType | None = None,
     skill_id: str = "",
@@ -1148,6 +1361,7 @@ def list_task_center_items(
         user,
         page=max(page, 1),
         page_size=min(max(page_size, 1), 100),
+        query=query.strip()[:128],
         view_state=view_state,
         item_type=item_type,
         skill_id=skill_id.strip()[:128],

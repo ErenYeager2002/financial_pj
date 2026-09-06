@@ -26,6 +26,7 @@ from .schemas import RunCreate, RunRead
 from .skill_availability_service import assert_skill_accepting_new_work
 from .step_runtime_service import initialize_run_steps, queue_run_execution_step
 from .storage import sha256_file
+from .task_errors import classify_task_error
 
 TERMINAL_STATES = {"succeeded", "failed", "timed_out", "cancelled"}
 
@@ -59,6 +60,32 @@ def serialize_run(
     can_retry: bool = False,
     retry_block_reason: str = "",
 ) -> RunRead:
+    safe_error = sanitize_text(run.error_message, error=True)
+    snapshot = _load(run.manifest_snapshot)
+    risk = snapshot.get("risk") if isinstance(snapshot, dict) else None
+    read_only = (
+        isinstance(risk, dict) and risk.get("level") == "read_only"
+        and risk.get("modifies_uploaded_files") is False
+    )
+    failure_detail: dict[str, Any] = {}
+    if run.state in {"failed", "timed_out"} or safe_error:
+        error_code, category = classify_task_error(safe_error, stage=run.progress_message)
+        failure_detail = {
+            "error_code": error_code,
+            "category": category,
+            "failed_stage": sanitize_text(
+                run.progress_message or "执行阶段待核实",
+                error=True,
+                max_length=255,
+            ),
+            "write_status": "not_applicable" if read_only else "unknown",
+            "published_material_version": "",
+            "recovery_allowed": can_retry,
+            "recovery_reason": sanitize_text(retry_block_reason, error=True, max_length=500),
+            "failed_at": (
+                run.finished_at or run.started_at or run.queued_at or run.created_at
+            ).isoformat(),
+        }
     return RunRead(
         id=run.id,
         owner_id=run.owner_id,
@@ -79,13 +106,14 @@ def serialize_run(
         parameters=_load(run.parameters_json),
         files=_load(run.files_json),
         result=_load(run.result_json),
-        error_message=sanitize_text(run.error_message, error=True),
+        error_message=safe_error,
         confirmation_required=run.confirmation_required,
         confirmed_by=run.confirmed_by,
         cancel_requested=run.cancel_requested,
         attempt_count=run.attempt_count,
         can_retry=can_retry,
         retry_block_reason=retry_block_reason,
+        failure_detail=failure_detail,
         created_at=run.created_at,
         queued_at=run.queued_at,
         started_at=run.started_at,

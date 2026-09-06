@@ -17,15 +17,19 @@ import {
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import type {
+  SkillAvailability,
   SkillRelease,
   SkillReleaseInboxItem,
-  SkillRollout
+  SkillRollout,
+  SkillSourceBinding
 } from '@/features/platform-api/types';
 import { formatDate } from '@/lib/format';
 
 interface Props {
   initialReleases?: SkillRelease[];
   initialInbox?: SkillReleaseInboxItem[];
+  initialAvailability?: SkillAvailability[];
+  initialBindings?: SkillSourceBinding[];
   view: 'inbox' | 'records';
 }
 
@@ -43,7 +47,13 @@ async function responseMessage(response: Response, fallback: string): Promise<st
   return body?.detail ?? fallback;
 }
 
-export function SkillReleaseManagement({ initialReleases = [], initialInbox = [], view }: Props) {
+export function SkillReleaseManagement({
+  initialReleases = [],
+  initialInbox = [],
+  initialAvailability = [],
+  initialBindings = [],
+  view
+}: Props) {
   const [releases, setReleases] = useState(initialReleases);
   const [inbox, setInbox] = useState(initialInbox);
   const [editing, setEditing] = useState<SkillRelease | null>(null);
@@ -52,6 +62,9 @@ export function SkillReleaseManagement({ initialReleases = [], initialInbox = []
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [rolloutState, setRolloutState] = useState<SkillRollout['state'] | ''>('');
+  const [availability, setAvailability] = useState(initialAvailability);
+  const availabilityBySkill = new Map(availability.map((item) => [item.skill_id, item]));
+  const bindingBySkill = new Map(initialBindings.map((item) => [item.skill_id, item]));
 
   function replaceRelease(updated: SkillRelease) {
     setReleases((current) => {
@@ -180,6 +193,10 @@ export function SkillReleaseManagement({ initialReleases = [], initialInbox = []
     }
     const refreshed = await fetch('/api/platform/admin/skill-releases');
     if (refreshed.ok) setReleases((await refreshed.json()) as SkillRelease[]);
+    const refreshedAvailability = await fetch('/api/platform/admin/skills/availability');
+    if (refreshedAvailability.ok) {
+      setAvailability((await refreshedAvailability.json()) as SkillAvailability[]);
+    }
     setPublishing(null);
     setRolloutState('');
     setBusy(false);
@@ -283,7 +300,18 @@ export function SkillReleaseManagement({ initialReleases = [], initialInbox = []
                   </CardHeader>
                   <CardContent className='space-y-3 text-sm'>
                     <div className='grid grid-cols-2 gap-2 text-muted-foreground'>
-                      <span>Commit：{release.source_commit.slice(0, 12) || '基线'}</span>
+                      <span>
+                        当前运行版本：
+                        {availabilityBySkill.get(release.skill_id)?.current_version
+                          ? `v${availabilityBySkill.get(release.skill_id)?.current_version}`
+                          : '未记录'}
+                      </span>
+                      <span>发布包状态：{STATE_LABELS[release.state]}</span>
+                      <span>发布包源码提交：{release.source_commit.slice(0, 12) || '未记录'}</span>
+                      <span>
+                        上游最近发现：
+                        {shortCommit(bindingBySkill.get(release.skill_id)?.last_seen_commit || '')}
+                      </span>
                       <span>导入：{formatDate(release.created_at)}</span>
                       <span>
                         结构校验：{release.validation?.passed === true ? '通过' : '未通过'}
@@ -536,4 +564,8 @@ function rolloutStateLabel(state: SkillRollout['state']) {
     failed: '发布失败，已恢复原版本',
     failed_disabled: '发布失败，保持禁用'
   }[state];
+}
+
+function shortCommit(commit: string): string {
+  return commit ? commit.slice(0, 12) : '未记录';
 }

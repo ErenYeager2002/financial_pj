@@ -16,19 +16,20 @@ from pathlib import Path
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
+import yaml
 from fastapi import HTTPException
 from openpyxl import load_workbook
 from sqlalchemy import and_, delete, or_, select, update
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from .approval_service import (
     load_workflow_manifest,
     revoke_workflow_approvals,
 )
 from .assistant_profile_service import resolve_assistant_config
+from .ar_execution_contract import ExecutionCancelled, ExecutionLeaseLost, ExecutionPhaseFailed
 from .audit_service import record_audit
 from .auth import UserContext
-from .auth_models import User
 from .authorization import assert_skill_permission
 from .fetched_bundle_service import (
     FetchedBundleError,
@@ -61,6 +62,7 @@ from .fetched_data_preview import (
 )
 from .leases import LeaseHeartbeat, lease_deadline
 from .model_service import resolve_runtime_config
+from .model_visible_data import visible_value as pi_harness_visible_value
 from .models import (
     FetchedBundle,
     FileRecord,
@@ -113,7 +115,7 @@ from .service_credential_service import (
 from .settings import settings
 from .skill_availability_service import assert_skill_accepting_new_work
 from .storage import safe_filename, sha256_file
-from .task_errors import TaskErrorDetail, build_task_error
+from .task_errors import TaskErrorDetail, build_task_error, classify_task_error
 from .task_reminder_workflow_service import (
     associate_reminder_with_workflow,
     restore_unfinished_batch_reminders,
@@ -130,6 +132,7 @@ from .workflow_execution_policy import (
     assert_workflow_agent_action_enabled,
     assert_workflow_execution_enabled,
     assert_workflow_skill_execution_enabled,
+    workflow_owner_context,
 )
 from .workflow_material_service import (
     MaterialVersionConflict,
@@ -215,7 +218,7 @@ CONFIRM_REPLIES = {"确认", "可以", "可以写", "按这个写", "没问题�
 WRITE_STAGING_DIR = "03_写入暂存区"
 BATCH_PUBLISH_TRANSACTION_DIR = ".批次发布事务"
 FETCH_SNAPSHOT_DIR = "01_智云导出"
-FETCH_SNAPSHOT_VERSION = "2026-08-31-total-received-v7"
+FETCH_SNAPSHOT_VERSION = "2026-09-03-delivery-local-v8"
 FETCHED_DATASET_SPECS = (
     ("payments", "回款记录", "回款记录"),
     ("orders", "订单交付", "订单交付"),
@@ -252,6 +255,7 @@ FETCHED_SUMMARY_LIST_KEYS = (
     "查不到SOD的SO",
     "缺项目交付日期的SO",
 )
+ACCRUAL_NOTICE_KEYS = {"跨月计提SO数", "跨月计提SOD数", "跨月计提待确认", "跨月计提冲突"}
 WORKLIST_SUMMARY_KEYS = {
     "今天要填",
     "已填过·跳过",
@@ -260,6 +264,15 @@ WORKLIST_SUMMARY_KEYS = {
     "异常",
     "流转确认后自动写",
     "流转须手填",
+} | ACCRUAL_NOTICE_KEYS
+WORKLIST_METRICS = {
+    "ledger_to_fill": ("今天要填", "盈亏核算表待填写行数"),
+    "ledger_skipped": ("已填过·跳过", "盈亏核算表已存在而跳过的行数"),
+    "unallocated_pending": ("挂账待办", "仍需人工处理的挂账行数"),
+    "conflicts_pending": ("冲突·需你定", "仍需人工判断的冲突行数"),
+    "flow_auto_written": ("流转确认后自动写", "到账流转表自动写入笔数"),
+    "flow_manual_pending": ("流转须手填", "仍需人工填写的流转笔数"),
+    "exceptions": ("异常", "异常行数"),
 }
 FETCHED_PREVIEW_MAX_LIMIT = 200
 AR_ID_PATTERN = re.compile(r"^AR[A-Z0-9_-]{3,30}$")
@@ -391,6 +404,127 @@ def _public_worklist_summary(value: object) -> dict[str, int]:
         and not isinstance(item, bool)
         and item >= 0
     }
+
+
+def _summary_message_value(
+    summary: object,
+    key: str,
+    *,
+    read_failed: bool = False,
+) -> str:
+    if isinstance(summary, dict):
+        value = summary.get(key)
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+            return str(value)
+    return "读取失败" if read_failed else "待核实"
+
+
+def _public_result_metrics(
+    context: dict[str, Any],
+) -> tuple[dict[str, dict[str, Any]], str, bool | None]:
+    from .ar_result_summary import public_final_metrics
+
+    final_metrics = public_final_metrics(context)
+    if final_metrics is not None:
+        return final_metrics
+    summary = _public_worklist_summary(context.get("summary"))
+    raw_statuses = context.get("result_metric_status", {})
+    statuses = raw_statuses if isinstance(raw_statuses, dict) else {}
+    read_failed = bool(context.get("summary_read_failed"))
+    metrics: dict[str, dict[str, Any]] = {}
+    for key, (legacy_key, meaning) in WORKLIST_METRICS.items():
+        value = summary.get(legacy_key)
+        state = statuses.get(key)
+        if state not in {"value", "not_applicable", "not_recorded", "read_failed"}:
+            state = "read_failed" if read_failed else "value" if value is not None else "not_recorded"
+        if state == "value" and (
+            not isinstance(value, int) or isinstance(value, bool) or value < 0
+        ):
+            state = "read_failed" if read_failed else "not_recorded"
+        metrics[key] = {
+            "value": value if state == "value" else None,
+            "state": state,
+            "meaning": meaning,
+        }
+    pending_keys = ("unallocated_pending", "conflicts_pending", "flow_manual_pending", "exceptions")
+    pending_metrics = [metrics[key] for key in pending_keys]
+    has_pending_items = any(
+        isinstance(item["value"], int)
+        and not isinstance(item["value"], bool)
+        and item["value"] > 0
+        for item in pending_metrics
+    )
+    has_only_known_empty_metrics = all(
+        (
+            isinstance(item["value"], int)
+            and not isinstance(item["value"], bool)
+            and item["value"] >= 0
+        )
+        or item["state"] == "not_applicable"
+        for item in pending_metrics
+    )
+    business_pending = (
+        True if has_pending_items else False if has_only_known_empty_metrics else None
+    )
+    scope = str(context.get("result_scope") or "day")
+    if scope not in {"day", "batch", "unknown"}:
+        scope = "unknown"
+    if context.get("empty_day_skipped") or (context.get("fetched_data") or {}).get("empty_day_skipped"):
+        metrics["confirmed_empty_day"] = {"value": 1, "state": "value", "meaning": "取数已确认本日无核销记录"}
+    return metrics, scope, business_pending
+
+
+def _aggregate_result_metrics(
+    workflows: list[WorkflowRead],
+) -> tuple[dict[str, dict[str, Any]], bool | None]:
+    from .ar_result_summary import aggregate_final_metrics
+
+    final_metrics = aggregate_final_metrics(workflows)
+    if final_metrics is not None:
+        return final_metrics
+    metrics: dict[str, dict[str, Any]] = {}
+    for key, (_, meaning) in WORKLIST_METRICS.items():
+        values = [workflow.result_metrics.get(key) for workflow in workflows]
+        states = [
+            item.get("state") if isinstance(item, dict) else getattr(item, "state", "not_recorded")
+            for item in values
+        ]
+        has_valid_values = all(
+            (
+                isinstance(item.get("value") if isinstance(item, dict) else getattr(item, "value", None), int)
+                and not isinstance(
+                    item.get("value") if isinstance(item, dict) else getattr(item, "value", None),
+                    bool,
+                )
+                and (item.get("value") if isinstance(item, dict) else getattr(item, "value", None)) >= 0
+            )
+            for item in values
+        )
+        if states and all(state == "value" for state in states) and has_valid_values:
+            total = sum(
+                int(item.get("value") if isinstance(item, dict) else getattr(item, "value"))
+                for item in values
+            )
+            state = "value"
+        elif states and any(state == "read_failed" for state in states):
+            total = None
+            state = "read_failed"
+        elif states and all(state == "not_applicable" for state in states):
+            total = None
+            state = "not_applicable"
+        else:
+            total = None
+            state = "not_recorded"
+        metrics[key] = {"value": total, "state": state, "meaning": meaning}
+    pending = [workflow.business_items_pending for workflow in workflows]
+    business_pending = (
+        None
+        if not pending or any(item is None for item in pending)
+        else True
+        if any(item is True for item in pending)
+        else False
+    )
+    return metrics, business_pending
 
 
 def _public_supplement_history(value: object) -> list[dict[str, Any]]:
@@ -556,7 +690,16 @@ def get_workflow_or_404(
     workflow_id: str,
     user: UserContext,
 ) -> WorkflowSession:
-    workflow = db.get(WorkflowSession, workflow_id)
+    workflow = db.scalar(
+        select(WorkflowSession)
+        .options(
+            selectinload(WorkflowSession.messages),
+            selectinload(WorkflowSession.actions),
+            selectinload(WorkflowSession.material_set),
+            selectinload(WorkflowSession.fetched_bundle),
+        )
+        .where(WorkflowSession.id == workflow_id)
+    )
     if not workflow:
         raise HTTPException(status_code=404, detail="对话任务不存在。")
     _assert_visible(workflow, user)
@@ -583,20 +726,42 @@ def _message(
 
 def serialize_workflow(workflow: WorkflowSession) -> WorkflowRead:
     messages = sorted(workflow.messages, key=lambda item: item.id)
-    actions = sorted(workflow.actions, key=lambda item: item.queued_at)
+    actions = sorted(workflow.actions, key=lambda item: _action_queued_at_utc(item))
     context = _load(workflow.context_json, {})
     fetched_data = context.get("fetched_data", {})
     fetched_data = fetched_data if isinstance(fetched_data, dict) else {}
     fetched_data_source = (
         "replay" if fetched_data.get("source") in {"replay", "snapshot"} else "live"
     )
+    result_metrics, result_scope, business_items_pending = _public_result_metrics(context)
     material_set = workflow.material_set
     stored_error_detail = context.get("error_detail", {})
-    has_public_error = isinstance(stored_error_detail, dict) and bool(
-        stored_error_detail.get("error_type")
+    safe_error_detail = (
+        pi_harness_visible_value(stored_error_detail)
+        if isinstance(stored_error_detail, dict)
+        else {}
     )
+    if workflow.state == "failed" or workflow.stage == "failed":
+        from .ar_rebuild_policy import legacy_rebuild_block_reason
+
+        rebuild_reason = legacy_rebuild_block_reason(workflow)
+        if rebuild_reason:
+            safe_error_detail = {**safe_error_detail, "recovery_allowed": False,
+                                 "rebuild_block_reason": rebuild_reason}
+    has_public_error = isinstance(safe_error_detail, dict) and bool(
+        safe_error_detail.get("error_type")
+    )
+    stored_error_message = pi_harness_visible_value(
+        sanitize_text(
+            str(context.get("step_error") or workflow.error_message or ""),
+            error=True,
+            max_length=1200,
+            hidden_message="失败详情已隐藏，请联系管理员查看审计记录。",
+        )
+    )
+    safe_stored_error_message = str(stored_error_message).strip()
     public_error_message = (
-        str(context.get("step_error") or workflow.error_message)
+        safe_stored_error_message or "失败详情待核实，请联系管理员查看审计记录。"
         if has_public_error
         else "任务未完成，请查看失败步骤并联系管理员。"
         if workflow.state == "failed" or workflow.stage == "failed"
@@ -656,11 +821,7 @@ def serialize_workflow(workflow: WorkflowSession) -> WorkflowRead:
         current_step=str(context.get("current_step", "")),
         current_step_label=str(context.get("current_step_label", "")),
         step_error=public_error_message if has_public_error else "",
-        step_error_detail=(
-            context.get("error_detail", {})
-            if isinstance(context.get("error_detail", {}), dict)
-            else {}
-        ),
+        step_error_detail=safe_error_detail,
         fetched_data_available=bool(fetched_data.get("available")),
         fetched_data_source=fetched_data_source,
         fetched_data_summary=_public_fetched_summary(fetched_data.get("summary")),
@@ -668,15 +829,23 @@ def serialize_workflow(workflow: WorkflowSession) -> WorkflowRead:
         fetched_data_supplement_history=_public_supplement_history(
             fetched_data.get("supplement_history")
         ),
-        result_summary=_public_worklist_summary(context.get("summary")),
+        result_summary={
+            key: value for key, value in _public_worklist_summary(context.get("summary")).items()
+            if "ledger_written" not in result_metrics or key in ACCRUAL_NOTICE_KEYS
+        },
+        result_metrics=result_metrics,
+        result_scope=result_scope,
+        business_items_pending=business_items_pending,
         files=_load(workflow.files_json, {}),
         artifacts=_load(workflow.artifacts_json, []),
         messages=[
             {
                 "id": item.id,
                 "role": item.role,
-                "content": item.content,
-                "data": _load(item.data_json, {}),
+                "content": pi_harness_visible_value(
+                    sanitize_text(item.content, error=True, max_length=4000)
+                ),
+                "data": pi_harness_visible_value(_load(item.data_json, {})),
                 "created_at": item.created_at,
             }
             for item in messages
@@ -687,7 +856,9 @@ def serialize_workflow(workflow: WorkflowSession) -> WorkflowRead:
                 "name": item.name,
                 "state": item.state,
                 "error_message": (
-                    item.error_message
+                    pi_harness_visible_value(
+                        sanitize_text(item.error_message, error=True, max_length=1200)
+                    )
                     if item.state != "failed"
                     else "该步骤未完成，请查看当前任务提示。"
                 ),
@@ -1256,6 +1427,7 @@ def _fetched_ar_groups(
                 written_off_original=_record_number(delivery, "订单已核销金额"),
                 written_off_local=_record_number(delivery, "订单已核销金额/本币"),
                 delivery_amount_original=_record_number(delivery, "交付额/原币"),
+                delivery_amount_local=_record_number(delivery, "交付额/本币"),
                 exchange_rate=_record_number(delivery, "汇率"),
                 currency=_record_identifier(delivery, "结算币种", "币种"),
                 order_name=_record_identifier(delivery, "订单名称"),
@@ -1534,6 +1706,9 @@ def confirm_fetched_data_review(
     *,
     queue_plan: bool = True,
 ) -> WorkflowSession:
+    # The human confirmation can queue the next executable action, so the
+    # task owner's current account and Skill permission must still be valid.
+    workflow_owner_context(db, workflow)
     if workflow.execution_mode == "pi_harness" and queue_plan:
         raise HTTPException(
             status_code=409,
@@ -1646,6 +1821,7 @@ def request_fetched_data_supplement(
     so_ids: list[str],
     reconciliation_date: str | None = None,
 ) -> tuple[WorkflowSession, dict[str, Any]]:
+    workflow_owner_context(db, workflow)
     if workflow.stage != "awaiting_fetched_data_confirmation":
         raise HTTPException(status_code=409, detail="当前任务不在取数检查阶段。")
     checked_ar_ids = _normalized_business_ids(ar_ids, AR_ID_PATTERN, "AR 编号")
@@ -1689,6 +1865,8 @@ def serialize_workflow_batch(
     *,
     retry_authorized: bool,
 ) -> WorkflowBatchRead:
+    from .workflow_progress import batch_progress
+
     workflows = sorted(batch.workflows, key=lambda item: item.batch_sequence)
     fetched_context = (
         _load(_batch_fetched_data_workflow(batch).context_json, {}) if workflows else {}
@@ -1698,13 +1876,7 @@ def serialize_workflow_batch(
     fetched_data_source = (
         "replay" if fetched_data.get("source") in {"replay", "snapshot"} else "live"
     )
-    progress = (
-        int(sum(item.progress for item in workflows) / len(workflows))
-        if workflows
-        else batch.progress
-    )
-    if batch.state == "finalizing":
-        progress = batch.progress
+    progress = batch_progress(batch)
     active = next((item for item in workflows if item.state == "running"), None)
     progress_message = batch.progress_message
     if active:
@@ -1728,7 +1900,7 @@ def serialize_workflow_batch(
             (
                 item
                 for item in reversed(
-                    sorted(last_workflow.actions, key=lambda action: action.queued_at)
+                    sorted(last_workflow.actions, key=lambda action: _action_queued_at_utc(action))
                 )
                 if item.name == "finalize_batch" and item.state == "failed"
             ),
@@ -1758,10 +1930,16 @@ def serialize_workflow_batch(
         if batch.state == "failed"
         else ""
     )
+    from .ar_report_recovery import report_recovery_status
+
+    report_recovery = report_recovery_status(batch)
+    if report_recovery is not None:
+        retryable = report_recovery["allowed"]
+        retry_message = report_recovery["reason"] if batch.state == "failed" else ""
     can_retry = retryable and retry_authorized
     retry_block_reason = (
         batch.error_message
-        if material_version_conflict
+        if material_version_conflict and report_recovery is None
         else "当前账号没有使用该财务工具的权限，请联系平台管理员。"
         if retryable and not retry_authorized
         else retry_message
@@ -1775,6 +1953,18 @@ def serialize_workflow_batch(
         if not isinstance(child_detail, dict) or not child_detail.get("error_type"):
             batch_error_message = "批次在某个日期未完成，请查看失败日期并联系管理员。"
     serialized_workflows = [serialize_workflow(item) for item in workflows]
+    batch_result_metrics, batch_business_items_pending = _aggregate_result_metrics(
+        serialized_workflows
+    )
+    batch_result_summary: dict[str, int] = {}
+    for legacy_key in WORKLIST_SUMMARY_KEYS:
+        values = [
+            item.result_summary.get(legacy_key)
+            for item in serialized_workflows
+            if isinstance(item.result_summary.get(legacy_key), int)
+        ]
+        if values and (len(values) == len(serialized_workflows) or legacy_key in ACCRUAL_NOTICE_KEYS):
+            batch_result_summary[legacy_key] = sum(values)
     integrated_report_name = _batch_integrated_report_name(
         _load(batch.reconciliation_dates_json, [])
     )
@@ -1818,6 +2008,10 @@ def serialize_workflow_batch(
         fetched_data_supplement_history=_public_supplement_history(
             fetched_data.get("supplement_history")
         ),
+        result_summary=batch_result_summary,
+        result_metrics=batch_result_metrics,
+        result_scope="batch",
+        business_items_pending=batch_business_items_pending,
         workflows=serialized_workflows,
         created_at=batch.created_at,
         updated_at=batch.updated_at,
@@ -1885,9 +2079,12 @@ def _batch_date_workspace(
 
 def _ensure_workflow_skill_snapshot(db: Session, workflow: WorkflowSession) -> Path:
     """Materialize a batch child's immutable Skill copy when its action starts."""
+    from .ar_snapshot_contract import validate_snapshot
+
     root = workflow_root(workflow.owner_id, workflow.id).resolve()
     destination = root / "skill"
     if destination.is_dir():
+        validate_snapshot(destination)
         return destination
 
     batch_id = str(getattr(workflow, "batch_id", "") or "")
@@ -1898,11 +2095,13 @@ def _ensure_workflow_skill_snapshot(db: Session, workflow: WorkflowSession) -> P
     source = workflow_root(primary.owner_id, primary.id).resolve() / "skill"
     if not source.is_dir():
         raise RuntimeError("批次首日的 Skill 快照已经缺失。")
+    validate_snapshot(source)
 
     root.mkdir(parents=True, exist_ok=True)
     staging = root / f".skill-snapshot-{uuid.uuid4().hex}"
     try:
         shutil.copytree(source, staging)
+        validate_snapshot(staging)
         if destination.exists():
             if not destination.is_dir():
                 raise RuntimeError("工作流 Skill 快照目录无效。")
@@ -1912,6 +2111,7 @@ def _ensure_workflow_skill_snapshot(db: Session, workflow: WorkflowSession) -> P
     except Exception:
         shutil.rmtree(staging, ignore_errors=True)
         raise
+    validate_snapshot(destination)
     return destination
 
 
@@ -2034,6 +2234,20 @@ def _cleanup_terminal_fetched_snapshot(db: Session, workflow: WorkflowSession) -
         if workflow.state not in TERMINAL_WORKFLOW_STATES:
             return
         members = [workflow]
+    from .ar_retention_policy import workflow_retention_hold, bundle_retention_hold
+
+    retention_members = list(batch.workflows) if batch is not None else members
+    if any(workflow_retention_hold(member) for member in retention_members):
+        # V2 recovery needs the exact original exports and staged evidence.
+        # Generic terminal cleanup must not invalidate a shared bundle while
+        # any phase/publication outcome remains unresolved.
+        return
+    # An otherwise completed date can share its bundle with another task that
+    # still needs the original files. Check all consumers before invalidating.
+    for bundle_id in {member.fetched_bundle_id for member in retention_members if member.fetched_bundle_id}:
+        retained_bundle = db.get(FetchedBundle, bundle_id)
+        if retained_bundle is not None and bundle_retention_hold(db, retained_bundle):
+            return
     terminal_outcome = (
         "cancelled"
         if (batch is not None and batch.state == "cancelled")
@@ -2088,7 +2302,26 @@ def _cleanup_terminal_fetched_snapshot(db: Session, workflow: WorkflowSession) -
             else None
         )
         if workspace is not None and workspace.is_relative_to(storage_root):
-            _discard_workspace_fetched_snapshot(storage_root, workspace)
+            try:
+                _discard_workspace_fetched_snapshot(storage_root, workspace)
+            except OSError as exc:
+                # Maintenance must not roll back verified publication/completion.
+                # A partial removal is not a reusable local fetch snapshot.
+                context["fetched_snapshot_cleanup"] = {
+                    "state": "failed", "error_type": type(exc).__name__,
+                    "reason": "任务结果已保存；本地取数副本清理未完成，可能因文件只读或被占用。副本不能继续回放，需管理员核查清理。",
+                }
+                fetched = context.get("fetched_data")
+                if isinstance(fetched, dict):
+                    fetched["available"] = False
+                member.context_json = _json(context)
+                member.progress_message = "任务结果已保存；本地取数副本清理未完成，需管理员核查文件只读或占用情况"
+                record_audit(db, actor_id=member.owner_id,
+                             actor_role="worker", department_id=member.department_id,
+                             action="workflow.fetched_snapshot.cleanup_failed",
+                             resource_type="workflow", resource_id=member.id, outcome="failed",
+                             details={"error_type": type(exc).__name__, "result_preserved": True})
+                return
     workflow_ids = [member.id for member in members]
     preview_ids = list(
         db.scalars(
@@ -2223,7 +2456,17 @@ def get_workflow_batch_or_404(
     batch_id: str,
     user: UserContext,
 ) -> WorkflowBatch:
-    batch = db.get(WorkflowBatch, batch_id)
+    workflow_load = selectinload(WorkflowBatch.workflows)
+    batch = db.scalar(
+        select(WorkflowBatch)
+        .options(
+            workflow_load.selectinload(WorkflowSession.messages),
+            workflow_load.selectinload(WorkflowSession.actions),
+            workflow_load.selectinload(WorkflowSession.material_set),
+            workflow_load.selectinload(WorkflowSession.fetched_bundle),
+        )
+        .where(WorkflowBatch.id == batch_id)
+    )
     if not batch:
         raise HTTPException(status_code=404, detail="核销批次不存在。")
     _assert_batch_visible(batch, user)
@@ -2231,6 +2474,14 @@ def get_workflow_batch_or_404(
 
 
 def _snapshot_skill(skill: RegisteredSkill, owner_id: str, workflow_id: str) -> Path:
+    from .ar_snapshot_contract import SnapshotCompatibilityError, validate_snapshot
+
+    try:
+        validate_snapshot(skill.directory)
+    except SnapshotCompatibilityError as exc:
+        raise HTTPException(status_code=422, detail=f"无法创建核销任务：{exc}") from exc
+    except (OSError, ValueError, yaml.YAMLError) as exc:
+        raise HTTPException(status_code=422, detail="Skill 执行包不完整或与当前平台不兼容，未创建可执行任务。") from exc
     root = workflow_root(owner_id, workflow_id)
     destination = root / "skill"
     root.mkdir(parents=True, exist_ok=False)
@@ -2244,6 +2495,12 @@ def _snapshot_skill(skill: RegisteredSkill, owner_id: str, workflow_id: str) -> 
             "__pycache__", ".pytest_cache", ".ruff_cache", "工作区", "output"
         ),
     )
+    try:
+        validate_snapshot(destination)
+    except SnapshotCompatibilityError as exc:
+        raise HTTPException(status_code=422, detail=f"任务固定快照检查失败：{exc}") from exc
+    except (OSError, ValueError, yaml.YAMLError) as exc:
+        raise HTTPException(status_code=422, detail="任务固定 Skill 快照兼容检查失败，未创建可执行任务。") from exc
     return destination
 
 
@@ -2525,6 +2782,14 @@ def _assert_single_flight_available(
 ) -> None:
     if skill_id != "ar-hexiao-daily":
         return
+    from .ar_execution_contract import INVESTIGATION_ACTION
+
+    investigation_filters = [WorkflowAction.name == INVESTIGATION_ACTION,
+                             WorkflowAction.state.in_(("queued", "running")), WorkflowSession.skill_id == skill_id]
+    if exclude_workflow_id:
+        investigation_filters.append(WorkflowSession.id != exclude_workflow_id)
+    if db.scalar(select(WorkflowAction.id).join(WorkflowSession).where(*investigation_filters).limit(1)):
+        raise HTTPException(status_code=409, detail="失败写入的独立调查尚未结束，请等待调查结果。")
     if active_task_discovery_count(db, skill_id, datetime.now(UTC)):
         raise HTTPException(
             status_code=409,
@@ -2648,8 +2913,8 @@ def start_workflow(
     """Start a workflow from a completed prerequisite form.
 
     The web form supplies the date, model and uploaded file IDs in one request.
-    The worker still performs the deterministic financial processing and keeps
-    the existing human confirmation gate before any workbook write.
+    The worker still performs the deterministic financial processing and uses
+    the task's existing confirmation strategy before any workbook write.
     """
     skill = registry.get(request.skill_id)
     if not skill or skill.manifest.handler.adapter != "workflow":
@@ -3055,6 +3320,9 @@ def _workflow_error_detail(workflow: WorkflowSession, reason: object) -> TaskErr
     context = _load(workflow.context_json, {})
     step_key = str(context.get("current_step", "unknown"))
     raw_reason = str(reason)
+    error_code, category = classify_task_error(raw_reason, step_key=step_key, stage=workflow.stage)
+    write_status = "unknown"
+    recovery_allowed: bool | None = None
     if step_key == "fetch_zhiyun" or workflow.stage == "supplementing_fetched_data":
         if (
             TRANSIENT_FETCH_FAILURE.search(raw_reason)
@@ -3062,12 +3330,63 @@ def _workflow_error_detail(workflow: WorkflowSession, reason: object) -> TaskErr
             or "timeout" in raw_reason.lower()
         ):
             safe_reason = "智云暂时无法访问，本次取数未完成。"
+            error_code, category = "WORKFLOW_FETCH_UNAVAILABLE", "network_credentials"
         else:
             safe_reason = "智云取数未完成。"
-    elif step_key == "write_files" or workflow.stage == "applying":
+            error_code, category = "WORKFLOW_FETCH_FAILED", "network_credentials"
+    elif step_key == "review_fetched_data" and workflow.stage == "building_fetch_preview":
+        preview_errors = {
+            "取数包尚未发布，不能建立预览。": (
+                "WORKFLOW_FETCH_PREVIEW_CONTEXT_MISSING",
+                "预览动作未收到已发布取数包信息，请修复步骤交接后重新建立预览。",
+            ),
+            "取数包标识缺失，不能建立预览。": (
+                "WORKFLOW_FETCH_PREVIEW_CONTEXT_MISSING",
+                "预览动作缺少取数包标识，无法核对取数来源。",
+            ),
+            "取数预览目录不存在。": (
+                "WORKFLOW_FETCH_PREVIEW_INPUT_MISSING",
+                "任务的取数预览文件目录不存在，无法建立预览。",
+            ),
+            "取数预览目录与已发布取数包不一致。": (
+                "WORKFLOW_FETCH_PREVIEW_INTEGRITY_FAILED",
+                "预览文件清单与已发布取数包不一致，已停止处理。",
+            ),
+            "取数预览文件与已发布取数包哈希不一致。": (
+                "WORKFLOW_FETCH_PREVIEW_INTEGRITY_FAILED",
+                "预览文件与已发布取数包的校验值不一致，已停止处理。",
+            ),
+        }
+        error_code, safe_reason = preview_errors.get(raw_reason, (
+            "WORKFLOW_FETCH_PREVIEW_FAILED",
+            "预览构建发生内部错误，请联系管理员检查此步骤。",
+        ))
+        category = "input_material" if error_code in {
+            "WORKFLOW_FETCH_PREVIEW_INPUT_MISSING", "WORKFLOW_FETCH_PREVIEW_INTEGRITY_FAILED",
+        } else "unknown"
+        write_status = "not_started"
+        recovery_allowed = True
+    elif isinstance(reason, PostWriteVerificationError):
+        safe_reason = "写入已经完成，但回读校验未完成。"
+        error_code, category = "WORKFLOW_POST_WRITE_VERIFICATION_FAILED", "version_conflict"
+        write_status = "verification_pending"
+        recovery_allowed = False
+    elif isinstance(reason, StagedWriteError):
         safe_reason = "写入前校验未通过，工作副本没有发布。"
+        error_code, category = "WORKFLOW_WRITE_CHECK_FAILED", "input_material"
+        write_status = "not_started"
+        recovery_allowed = True
+    elif step_key == "write_files" or workflow.stage == "applying":
+        safe_reason = "写入阶段未完成，当前发布状态待核实。"
+        error_code, category = "WORKFLOW_WRITE_STATUS_UNKNOWN", "version_conflict"
+        write_status = "unknown"
+        recovery_allowed = False
     else:
         safe_reason = "当前步骤未完成，请联系管理员查看审计记录。"
+        recovery_allowed = True
+    material_version = context.get("material_version")
+    if material_version is None and workflow.material_set is not None:
+        material_version = workflow.material_set.version
     return build_task_error(
         employee=workflow.owner_name or workflow.owner_id,
         skill_id=workflow.skill_id,
@@ -3075,17 +3394,28 @@ def _workflow_error_detail(workflow: WorkflowSession, reason: object) -> TaskErr
         step_key=step_key,
         step=str(context.get("current_step_label", "当前步骤")),
         reason=safe_reason,
+        error_code=error_code,
+        category=category,
+        write_status=write_status,
+        published_material_version=material_version,
+        recovery_allowed=recovery_allowed,
     )
 
 
-def _workflow_public_error(workflow: WorkflowSession, detail: TaskErrorDetail) -> dict[str, str]:
+def _workflow_public_error(workflow: WorkflowSession, detail: TaskErrorDetail) -> dict[str, Any]:
     date_label = workflow.reconciliation_date or "当前日期"
-    if detail.reason == "智云暂时无法访问，本次取数未完成。":
+    if detail.error_code == "WORKFLOW_FETCH_UNAVAILABLE":
         message = (
             f"{date_label} 取数未完成：智云暂时无法访问，本次取数未完成。请稍后点击“重试失败日期”。"
         )
         error_type = "zhiyun_unavailable"
-    elif detail.step_key == "write_files":
+    elif detail.error_code.startswith("WORKFLOW_FETCH_PREVIEW_"):
+        message = f"{date_label} 取数预览未完成：{detail.reason}尚未进入核销写入。"
+        error_type = "fetch_preview_failed"
+    elif detail.error_code == "WORKFLOW_POST_WRITE_VERIFICATION_FAILED":
+        message = f"{date_label} 写入后的回读校验未完成，发布状态待核实；请联系管理员处理。"
+        error_type = "post_write_verification"
+    elif detail.step_key == "write_files" or detail.write_status != "unknown":
         message = f"{date_label} 写入未完成：工作副本没有发布。请联系管理员核对后再处理。"
         error_type = "write_blocked"
     else:
@@ -3097,6 +3427,12 @@ def _workflow_public_error(workflow: WorkflowSession, detail: TaskErrorDetail) -
         "reason": detail.reason,
         "message": message,
         "error_type": error_type,
+        "error_code": detail.error_code,
+        "category": detail.category,
+        "write_status": detail.write_status,
+        "published_material_version": detail.published_material_version,
+        "recovery_allowed": detail.recovery_allowed,
+        "failed_at": detail.failed_at,
     }
 
 
@@ -3105,11 +3441,67 @@ def _store_workflow_error(workflow: WorkflowSession, detail: TaskErrorDetail) ->
     public_error = _workflow_public_error(workflow, detail)
     context["step_error"] = public_error["message"]
     context["error_detail"] = {
-        key: public_error[key] for key in ("step", "step_key", "reason", "error_type")
+        key: public_error[key]
+        for key in (
+            "step",
+            "step_key",
+            "reason",
+            "error_type",
+            "error_code",
+            "category",
+            "write_status",
+            "published_material_version",
+            "recovery_allowed",
+            "failed_at",
+        )
     }
     if hasattr(workflow, "context_json"):
         workflow.context_json = _json(context)
     workflow.error_message = public_error["message"]
+
+
+def mark_workflow_action_execution_rejected(
+    db: Session,
+    workflow: WorkflowSession,
+    action: WorkflowAction,
+) -> None:
+    """Persist a permission rejection without leaving a running action behind."""
+    message = "执行前权限复核未通过，本次动作没有开始；平台不会自动重试。"
+    now = datetime.now(UTC)
+    action.state = "failed"
+    action.error_message = message
+    action.finished_at = now
+    action.heartbeat_at = None
+    action.lease_expires_at = None
+    workflow.state = "failed"
+    workflow.stage = "failed"
+    workflow.error_message = message
+    workflow.progress_message = "执行前权限复核未通过，任务已停止"
+    context = _load(workflow.context_json, {})
+    context["current_step"] = context.get("current_step") or action.name
+    context["current_step_label"] = "执行前权限复核"
+    context["step_error"] = message
+    material_version = context.get("material_version")
+    context["error_detail"] = {
+        "employee": workflow.owner_name or workflow.owner_id,
+        "skill_id": workflow.skill_id,
+        "skill_name": workflow.skill_name,
+        "step_key": str(context.get("current_step") or action.name),
+        "step": "执行前权限复核",
+        "reason": message,
+        "error_type": "permission_revoked",
+        "error_code": "WORKFLOW_PERMISSION_RECHECK_FAILED",
+        "category": "permission",
+        "write_status": "not_started",
+        "published_material_version": (
+            str(material_version) if material_version is not None else ""
+        ),
+        "recovery_allowed": False,
+        "failed_at": now.isoformat(),
+    }
+    workflow.context_json = _json(context)
+    _message(db, workflow, "assistant", message, {"kind": "execution_rejected"})
+    _fail_batch(db, workflow, message)
 
 
 def list_workflows(
@@ -3120,6 +3512,12 @@ def list_workflows(
 ) -> list[WorkflowSession]:
     query = (
         select(WorkflowSession)
+        .options(
+            selectinload(WorkflowSession.messages),
+            selectinload(WorkflowSession.actions),
+            selectinload(WorkflowSession.material_set),
+            selectinload(WorkflowSession.fetched_bundle),
+        )
         .where(
             owner_list_filter(WorkflowSession, user),
             # Only sessions created by the completed prerequisite form belong
@@ -3144,6 +3542,12 @@ def list_workflow_batches(
 ) -> list[WorkflowBatch]:
     query = (
         select(WorkflowBatch)
+        .options(
+            selectinload(WorkflowBatch.workflows).selectinload(WorkflowSession.messages),
+            selectinload(WorkflowBatch.workflows).selectinload(WorkflowSession.actions),
+            selectinload(WorkflowBatch.workflows).selectinload(WorkflowSession.material_set),
+            selectinload(WorkflowBatch.workflows).selectinload(WorkflowSession.fetched_bundle),
+        )
         .where(owner_list_filter(WorkflowBatch, user))
         .order_by(WorkflowBatch.updated_at.desc())
         .offset(max(offset, 0))
@@ -3159,7 +3563,8 @@ def _cancel_workflow_actions(db: Session, workflow: WorkflowSession) -> None:
             WorkflowAction.workflow_id == workflow.id,
             WorkflowAction.state == "queued",
         )
-        .values(state="cancelled", finished_at=datetime.now(UTC))
+        .values({WorkflowAction.state: "cancelled", WorkflowAction.finished_at: datetime.now(UTC)})
+        .execution_options(synchronize_session="fetch")
     )
 
 
@@ -3171,11 +3576,19 @@ def _cancel_workflow_immediately(db: Session, workflow: WorkflowSession) -> None
     workflow.error_message = ""
 
 
+def _ar_publication_needs_completion(workflow: WorkflowSession) -> bool:
+    context = _load(workflow.context_json, {})
+    return ((context.get("ar_execution") or {}).get("publication") == "verified"
+            and not context.get("formal_ledgers"))
+
+
 def finalize_requested_batch_cancellation(db: Session, batch_id: str | None) -> None:
     if not batch_id:
         return
     batch = db.get(WorkflowBatch, batch_id)
     if not batch or batch.state != "cancelling":
+        return
+    if any(_ar_publication_needs_completion(workflow) for workflow in batch.workflows):
         return
     if any(
         action.state == "running" for workflow in batch.workflows for action in workflow.actions
@@ -3202,6 +3615,10 @@ def cancel_workflow_batch(
     if batch.owner_id != user.user_id:
         raise HTTPException(status_code=403, detail="只有任务发起人可以取消批次。")
     if batch.state in TERMINAL_WORKFLOW_STATES:
+        from .ar_business_investigation import cancel_investigation
+
+        for workflow in batch.workflows:
+            cancel_investigation(db, workflow, user)
         _cleanup_terminal_fetched_snapshot(db, _batch_primary_workflow(batch))
         db.commit()
         db.refresh(batch)
@@ -3228,7 +3645,7 @@ def cancel_workflow_batch(
     for workflow in batch.workflows:
         revoke_workflow_approvals(db, workflow, user, "所属批次已由发起人取消。")
         running_action = any(action.state == "running" for action in workflow.actions)
-        if running_action:
+        if running_action or _ar_publication_needs_completion(workflow):
             context = _load(workflow.context_json, {})
             context["stop_after_action"] = True
             workflow.context_json = _json(context)
@@ -3271,6 +3688,10 @@ def _request_workflow_cancellation(
 ) -> WorkflowSession:
     if workflow.owner_id != user.user_id:
         raise HTTPException(status_code=403, detail="只有任务发起人可以取消任务。")
+    from .ar_business_investigation import cancel_investigation
+
+    if workflow.state == "failed" and cancel_investigation(db, workflow, user):
+        return workflow
     if workflow.state in TERMINAL_WORKFLOW_STATES or workflow.state == "cancelling":
         return workflow
     if workflow.batch_id:
@@ -3295,13 +3716,18 @@ def _request_workflow_cancellation(
         )
 
     revoke_workflow_approvals(db, workflow, user, "任务已由发起人取消。")
-    if running_action:
+    if running_action or _ar_publication_needs_completion(workflow):
         context = _load(workflow.context_json, {})
         context["stop_after_action"] = True
         workflow.context_json = _json(context)
-        workflow.state = "cancelling"
-        workflow.progress_message = "已申请取消，等待当前取数动作结束"
-        message = "取消请求已记录；当前取数动作结束后，任务不会进入下一阶段。"
+        if _ar_publication_needs_completion(workflow):
+            workflow.state = "running"
+            workflow.progress_message = "已申请取消，正在完成已发布材料的必要台账登记"
+            message = "取消请求已记录；已发布材料完成台账登记后停止，不再写入工作簿。"
+        else:
+            workflow.state = "cancelling"
+            workflow.progress_message = "已申请取消，等待当前动作结束"
+            message = "取消请求已记录；当前动作结束后，任务不会进入下一阶段。"
     else:
         _cancel_workflow_actions(db, workflow)
         workflow.stage = "cancelled"
@@ -3420,6 +3846,7 @@ def update_workflow_files(
     user: UserContext,
     replace_roles: list[str] | None = None,
 ) -> WorkflowSession:
+    workflow_owner_context(db, workflow)
     editable_stages = {
         "awaiting_date",
         "awaiting_date_confirmation",
@@ -3460,6 +3887,7 @@ def reset_workflow(
     workflow: WorkflowSession,
     actor: UserContext,
 ) -> WorkflowSession:
+    workflow_owner_context(db, workflow)
     acquire_claim_lock(db)
     _assert_single_flight_available(
         db,
@@ -3547,6 +3975,15 @@ def _new_action(
     name: str,
     input_extra: dict[str, Any] | None = None,
 ) -> WorkflowAction:
+    state = "queued"
+    if workflow.skill_id == "ar-hexiao-daily":
+        from .ar_execution_runner import execution_version
+        from .workflow_action_state import isolated_action_state
+
+        if execution_version(workflow):
+            if name in {"apply_confirmed", "apply_material_update"}:
+                raise ValueError("新版核销必须分别执行盈亏、流转、复核和发布，不能排队旧版统一写入。")
+            state = isolated_action_state(state)
     action_input = {
         "reconciliation_date": workflow.reconciliation_date,
         "context": _load(workflow.context_json, {}),
@@ -3558,6 +3995,7 @@ def _new_action(
         id=str(uuid.uuid4()),
         workflow_id=workflow.id,
         name=name,
+        state=state,
         input_json=_json(action_input),
     )
     db.add(action)
@@ -3568,70 +4006,247 @@ def _queue_initial_execution(db: Session, workflow: WorkflowSession) -> Workflow
     return _new_action(db, workflow, reconciliation_runner(workflow.execution_mode).initial_action())
 
 
-def workflow_owner_context(db: Session, workflow: WorkflowSession) -> UserContext:
-    owner = db.get(User, workflow.owner_id)
-    if owner is None or owner.status != "active":
-        raise HTTPException(status_code=403, detail="任务所属账号已停用或不存在。")
-    if owner.department_id != workflow.department_id:
-        raise HTTPException(status_code=403, detail="任务所属账号的部门已经变化，拒绝继续执行。")
-    return UserContext(
-        user_id=owner.id,
-        display_name=owner.display_name,
-        role=owner.role,
-        department_id=owner.department_id,
-        username=owner.username,
+def _copy_recovery_skill_snapshot(source: WorkflowSession, workflow_id: str) -> None:
+    source_root = (workflow_root(source.owner_id, source.id) / "skill").resolve()
+    if not source_root.is_dir() or source_root.is_symlink():
+        raise HTTPException(status_code=409, detail="原任务的 Skill 快照已经缺失，无法安全恢复。")
+    for path in source_root.rglob("*"):
+        if path.is_symlink():
+            raise HTTPException(status_code=409, detail="原任务的 Skill 快照包含不安全文件，无法恢复。")
+    destination_root = workflow_root(source.owner_id, workflow_id).resolve()
+    destination = destination_root / "skill"
+    destination_root.mkdir(parents=True, exist_ok=False)
+    try:
+        shutil.copytree(source_root, destination)
+    except Exception:
+        shutil.rmtree(destination_root, ignore_errors=True)
+        raise
+
+
+def _workflow_has_started_write(workflow: WorkflowSession) -> bool:
+    context = _load(workflow.context_json, {})
+    detail = context.get("error_detail", {}) if isinstance(context, dict) else {}
+    write_status = detail.get("write_status") if isinstance(detail, dict) else None
+    if isinstance(detail, dict) and detail.get("write_status") in {
+        "started",
+        "published",
+        "verification_pending",
+        "unknown",
+    }:
+        return True
+    if isinstance(context, dict) and context.get("write_started") is True:
+        return True
+    for action in workflow.actions:
+        if action.name not in {"apply_confirmed", "apply_material_update"}:
+            continue
+        if action.state in {"running", "succeeded"}:
+            return True
+        if action.state == "failed" and write_status != "not_started":
+            return True
+    return False
+
+
+def rebuild_failed_workflow(
+    db: Session,
+    source: WorkflowSession,
+    actor: UserContext,
+) -> WorkflowSession:
+    """Create an immutable recovery task while retaining the failed source task."""
+    from .ar_rebuild_policy import legacy_rebuild_block_reason
+
+    # Both the HTTP endpoint and chat actions reach this guard. Refresh under
+    # the same lock as claims so an earlier read cannot hide a write claim.
+    # A chat caller has already stored its message; finish that transaction
+    # before acquiring SQLite's explicit claim transaction.
+    db.commit()
+    acquire_claim_lock(db)
+    db.refresh(source)
+    db.expire(source, ["actions"])
+    rebuild_reason = legacy_rebuild_block_reason(source)
+    if rebuild_reason:
+        raise HTTPException(status_code=409, detail=rebuild_reason)
+    if source.state != "failed" and source.stage != "failed":
+        raise HTTPException(status_code=409, detail="只有已经失败的任务可以从原始材料新建日清。")
+    if source.batch_id:
+        raise HTTPException(
+            status_code=409,
+            detail="这是核销批次中的日期任务，请从批次详情处理失败日期；当前入口不会单独重跑。",
+        )
+    if not source.reconciliation_date:
+        raise HTTPException(status_code=409, detail="原任务缺少业务日期，无法创建恢复任务。")
+    if any(action.state in {"queued", "running"} for action in source.actions):
+        raise HTTPException(status_code=409, detail="原任务仍有未结束动作，暂时不能创建恢复任务。")
+    if _workflow_has_started_write(source):
+        raise HTTPException(
+            status_code=409,
+            detail="原任务已经进入写入或回读阶段，不能盲目重试；请联系管理员核对工作副本。",
+        )
+
+    # This re-reads the owner and current Skill permission at the moment the
+    # new executable task is created. The caller's identity is still checked
+    # by the route, but the task owner is the authoritative execution subject.
+    owner = workflow_owner_context(db, source)
+    if actor.department_id != owner.department_id or (
+        not actor.is_admin and actor.user_id != owner.user_id
+    ):
+        raise HTTPException(status_code=403, detail="当前账号不能恢复该任务。")
+    assert_workflow_execution_enabled(source)
+    if not has_service_credential(
+        db,
+        source.owner_id,
+        source.department_id,
+        "zhiyun",
+    ):
+        raise HTTPException(status_code=409, detail="当前账号没有可用的智云凭据，暂时不能创建恢复任务。")
+    existing = db.scalar(
+        select(WorkflowSession)
+        .options(
+            selectinload(WorkflowSession.messages),
+            selectinload(WorkflowSession.actions),
+            selectinload(WorkflowSession.material_set),
+            selectinload(WorkflowSession.fetched_bundle),
+        )
+        .where(
+            WorkflowSession.owner_id == source.owner_id,
+            WorkflowSession.department_id == source.department_id,
+            WorkflowSession.context_json.like(
+                f'%"recovery_source_workflow_id": "{source.id}"%'
+            ),
+        )
+        .order_by(WorkflowSession.created_at.desc())
     )
+    if existing is not None:
+        return existing
+
+    _assert_single_flight_available(db, source.skill_id, exclude_workflow_id=source.id)
+    assert_skill_accepting_new_work(db, source.skill_id, acquire_lock=False)
+    material_set = (
+        db.get(WorkflowMaterialSet, source.material_set_id) if source.material_set_id else None
+    )
+    current = current_material_set(
+        db,
+        source.owner_id,
+        source.department_id,
+        source.skill_id,
+    )
+    if material_set is None or current is None or current.id != material_set.id:
+        raise HTTPException(
+            status_code=409,
+            detail="原任务固定的业务材料版本已经不是当前版本，请在新建任务时明确选择当前材料。",
+        )
+    try:
+        bindings = material_set_bindings(db, material_set)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail="原任务固定的业务材料版本已不可用。") from exc
+    skill = registry.get(source.skill_id)
+    missing = _missing_required_files(skill, bindings) if skill else list(FILE_ROLES)
+    ready = not missing
+    if not ready:
+        raise HTTPException(
+            status_code=409,
+            detail=f"原任务固定材料不完整：{'、'.join(missing)}。请在新建任务时重新选择材料。",
+        )
+
+    workflow_id = str(uuid.uuid4())
+    try:
+        _copy_recovery_skill_snapshot(source, workflow_id)
+    except FileExistsError as exc:
+        raise HTTPException(status_code=409, detail="恢复任务工作区已经存在，请稍后查看任务中心。") from exc
+    source_context = _load(source.context_json, {})
+    source_context = source_context if isinstance(source_context, dict) else {}
+    requires_confirmation = bool(source_context.get("requires_confirmation", True))
+    requires_approval = bool(source_context.get("requires_approval", False))
+    workflow = WorkflowSession(
+        id=workflow_id,
+        display_id=_next_business_task_id(db, source.skill_id),
+        owner_id=source.owner_id,
+        owner_name=source.owner_name,
+        department_id=source.department_id,
+        skill_id=source.skill_id,
+        skill_name=source.skill_name,
+        skill_version=source.skill_version,
+        execution_mode=source.execution_mode,
+        skill_hash=source.skill_hash,
+        skill_commit=source.skill_commit,
+        concurrency_limit=source.concurrency_limit,
+        model_connection_id=source.model_connection_id,
+        model_provider=source.model_provider,
+        model_name=source.model_name,
+        state="running",
+        stage="preparing",
+        reconciliation_date=source.reconciliation_date,
+        previous_workflow_id="",
+        material_set_id=material_set.id,
+        fetched_bundle_id=None,
+        context_json=_json(
+            {
+                "started_from_form": True,
+                "recovery_source_workflow_id": source.id,
+                "recovery_source_display_id": source.display_id or source.id,
+                "requires_confirmation": requires_confirmation,
+                "requires_approval": requires_approval,
+                "current_step": "queued",
+                "current_step_label": "已创建恢复任务，等待后台开始",
+                "fetched_data_source": "live",
+                "replay_source_bundle_id": None,
+                "material_set_id": material_set.id,
+                "material_version": material_set.version,
+                "material_source_workflow_id": material_set.source_workflow_id,
+            }
+        ),
+        files_json=_json(bindings),
+        artifacts_json="[]",
+        progress=5,
+        progress_message="已创建恢复任务，等待后台开始",
+        error_message="",
+    )
+    db.add(workflow)
+    db.flush()
+    _queue_initial_execution(db, workflow)
+    associate_reminder_with_workflow(db, workflow)
+    _message(
+        db,
+        workflow,
+        "assistant",
+        f"已创建新任务 {workflow.display_id}，使用核销日期 {workflow.reconciliation_date}、"
+        f"业务材料 V{material_set.version} 和 {workflow.execution_mode} 执行方式。"
+        "原任务及其失败信息保留；本任务会重新取数，尚未开始写入。",
+        {
+            "kind": "recovery_task_created",
+            "source_workflow_id": source.id,
+            "material_set_id": material_set.id,
+            "material_version": material_set.version,
+            "execution_mode": workflow.execution_mode,
+        },
+    )
+    record_audit(
+        db,
+        actor=actor,
+        action="workflow.recovery.created",
+        resource_type="workflow",
+        resource_id=workflow.id,
+        details={
+            "source_workflow_id": source.id,
+            "source_display_id": source.display_id or source.id,
+            "reconciliation_date": workflow.reconciliation_date,
+            "material_version": material_set.version,
+            "execution_mode": workflow.execution_mode,
+        },
+    )
+    return workflow
 
 
-PI_HARNESS_SECRET_KEYS = frozenset(
-    {
-        "api_key",
-        "authorization",
-        "cookie",
-        "credential",
-        "credentials",
-        "password",
-        "refresh_token",
-        "secret",
-        "session_cookie",
-        "token",
-    }
-)
-PI_HARNESS_INLINE_SECRET = re.compile(
-    r"(?i)\b(password|passwd|secret|token|authorization|cookie|api[_-]?key)"
-    r"\s*[:=]\s*[^\s,;]+|\bbearer\s+[A-Za-z0-9._~+/=-]+"
-)
-
-
-def pi_harness_visible_value(value: Any) -> Any:
-    """Preserve task data while removing authentication material at any depth."""
-    if isinstance(value, dict):
-        visible: dict[str, Any] = {}
-        for key, item in value.items():
-            normalized = str(key).strip().casefold().replace("-", "_")
-            secret_key = normalized in PI_HARNESS_SECRET_KEYS or normalized.endswith(
-                ("_api_key", "_cookie", "_credential", "_password", "_secret", "_token")
-            )
-            visible[str(key)] = (
-                "[认证信息已过滤]"
-                if secret_key
-                else pi_harness_visible_value(item)
-            )
-        return visible
-    if isinstance(value, list):
-        return [pi_harness_visible_value(item) for item in value]
-    if isinstance(value, tuple):
-        return [pi_harness_visible_value(item) for item in value]
-    if isinstance(value, str):
-        return PI_HARNESS_INLINE_SECRET.sub("[认证信息已过滤]", value)
-    return value
+def _action_queued_at_utc(action: WorkflowAction) -> datetime:
+    # SQLite reloads DateTime values without tzinfo; freshly queued actions use UTC.
+    value = action.queued_at
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
 def pi_harness_task_context(workflow: WorkflowSession) -> dict[str, Any]:
     """Return the complete stored task state, excluding authentication material."""
     context = _load(workflow.context_json, {})
     context = context if isinstance(context, dict) else {}
-    actions = sorted(workflow.actions, key=lambda item: item.queued_at)
+    actions = sorted(workflow.actions, key=_action_queued_at_utc)
     messages = sorted(workflow.messages, key=lambda item: item.id)
     batch = workflow.batch
     return {
@@ -3645,7 +4260,9 @@ def pi_harness_task_context(workflow: WorkflowSession) -> dict[str, Any]:
         "batch_sequence": workflow.batch_sequence,
         "progress": workflow.progress,
         "progress_message": workflow.progress_message,
-        "error_message": sanitize_text(workflow.error_message, error=True),
+        "error_message": pi_harness_visible_value(
+            sanitize_text(workflow.error_message, error=True)
+        ),
         "skill": {
             "id": workflow.skill_id,
             "name": workflow.skill_name,
@@ -3685,7 +4302,9 @@ def pi_harness_task_context(workflow: WorkflowSession) -> dict[str, Any]:
                 "attempt_count": item.attempt_count,
                 "input": pi_harness_visible_value(_load(item.input_json, {})),
                 "result": pi_harness_visible_value(_load(item.result_json, {})),
-                "error_message": sanitize_text(item.error_message, error=True),
+                "error_message": pi_harness_visible_value(
+                    sanitize_text(item.error_message, error=True)
+                ),
                 "queued_at": item.queued_at.isoformat(),
                 "started_at": item.started_at.isoformat() if item.started_at else None,
                 "finished_at": item.finished_at.isoformat() if item.finished_at else None,
@@ -3699,7 +4318,9 @@ def pi_harness_task_context(workflow: WorkflowSession) -> dict[str, Any]:
                 "state": batch.state,
                 "progress": batch.progress,
                 "progress_message": batch.progress_message,
-                "error_message": sanitize_text(batch.error_message, error=True),
+                "error_message": pi_harness_visible_value(
+                    sanitize_text(batch.error_message, error=True)
+                ),
                 "reconciliation_dates": _load(batch.reconciliation_dates_json, []),
                 "workflows": [
                     {
@@ -3711,7 +4332,9 @@ def pi_harness_task_context(workflow: WorkflowSession) -> dict[str, Any]:
                         "stage": item.stage,
                         "progress": item.progress,
                         "progress_message": item.progress_message,
-                        "error_message": sanitize_text(item.error_message, error=True),
+                        "error_message": pi_harness_visible_value(
+                            sanitize_text(item.error_message, error=True)
+                        ),
                     }
                     for item in sorted(batch.workflows, key=lambda child: child.batch_sequence)
                 ],
@@ -3727,6 +4350,9 @@ def queue_pi_harness_tool(
     workflow: WorkflowSession,
     tool_name: str,
     arguments: dict[str, Any],
+    *,
+    harness_action_id: str = "",
+    worker_id: str = "",
 ) -> WorkflowAction | None:
     """Validate and queue one Skill-owned Pi tool against the pinned task state."""
     if workflow.execution_mode != "pi_harness":
@@ -3760,6 +4386,37 @@ def queue_pi_harness_tool(
         )
         db.commit()
         return None
+    from .ar_execution_contract import TOOL_PHASE
+    from .ar_execution_runner import queue_execution_phase
+
+    if tool_name in TOOL_PHASE:
+        return queue_execution_phase(db, workflow, tool_name, arguments,
+                                      harness_action_id=harness_action_id, worker_id=worker_id)
+    if tool_name == "initialize_reconciliation":
+        from .ar_execution_runner import execution_version
+
+        if not execution_version(workflow) or arguments:
+            raise HTTPException(status_code=409, detail="初始化工具与当前固定执行契约或参数不一致。")
+        if _load(workflow.context_json, {}).get("ar_execution"):
+            existing = db.scalar(select(WorkflowAction).where(
+                WorkflowAction.workflow_id == workflow.id, WorkflowAction.name == "build_reconciliation_plan",
+                WorkflowAction.state == "succeeded",
+            ).order_by(WorkflowAction.queued_at.desc()))
+            if existing is None:
+                raise HTTPException(status_code=409, detail="初始化检查点缺少原执行事实。")
+            return existing
+        tool_name = "build_reconciliation_plan"
+    if tool_name == "finalize_batch" and _load(workflow.context_json, {}).get("formal_ledgers"):
+        if arguments:
+            raise HTTPException(status_code=422, detail="范围报告工具不接受额外参数。")
+        pending_report = db.scalar(select(WorkflowAction).where(
+            WorkflowAction.workflow_id == workflow.id, WorkflowAction.name == "finalize_batch",
+            WorkflowAction.state.in_(("queued", "running", "succeeded")),
+        ).order_by(WorkflowAction.queued_at.desc()))
+        if pending_report is not None:
+            return pending_report
+    if tool_name == "apply_reconciliation" and _load(workflow.context_json, {}).get("ar_execution"):
+        raise HTTPException(status_code=409, detail="新版任务必须逐阶段执行，不能调用旧版统一写入入口。")
     action_name = PI_HARNESS_TOOL_ACTIONS.get(tool_name)
     if not action_name:
         raise HTTPException(status_code=422, detail="Pi Harness 请求了未声明的工具。")
@@ -3873,10 +4530,10 @@ def _status_reply(workflow: WorkflowSession) -> str:
             "智云核销数据由平台自动获取。"
         ),
         "awaiting_apply_confirmation": "《核销日清》已生成；请打开检查，确认后回复“确认”。",
-        "waiting_approval": "已收到写入确认，正在继续执行（旧任务状态已兼容处理）。",
+        "waiting_approval": "写入确认已记录，正在等待另一名平台管理员审批。",
         "applying": "正在执行确认后的写入和回读校验，请不要修改相关表格。",
         "completed": "本次核销已完成，结果文件可以下载。",
-        "failed": "上一步没有完成。请根据错误提示，以原始上传文件重新生成核销日清。",
+        "failed": "上一步没有完成。请按当前业务材料版本新建日清；原任务及其失败信息会保留。",
         "cancelled": "本次对话任务已经取消。",
     }
     return labels.get(workflow.stage, workflow.progress_message or "正在处理。")
@@ -3902,7 +4559,7 @@ def _apply_decision(
     workflow: WorkflowSession,
     decision: WorkflowDecision,
     actor: UserContext,
-) -> None:
+) -> WorkflowSession | None:
     action = decision.action
     source = {"decision_source": decision.source, "action": action}
     if action == "reply":
@@ -3970,6 +4627,11 @@ def _apply_decision(
         if workflow.stage not in {"awaiting_files", "failed"}:
             _message(db, workflow, "assistant", _status_reply(workflow), source)
             return
+        if workflow.state == "failed" or workflow.stage == "failed":
+            # A failed task is an immutable record. The recovery path creates a
+            # fresh task after rechecking the current material and owner policy;
+            # it must never clear the failed task and queue it again in place.
+            return rebuild_failed_workflow(db, workflow, actor)
         ready, missing = _has_required_files(workflow)
         if not ready:
             _message(
@@ -3996,6 +4658,7 @@ def _apply_decision(
                 source,
             )
             return
+        workflow_owner_context(db, workflow)
         workflow.context_json = "{}"
         workflow.artifacts_json = "[]"
         if not workflow.material_set_id:
@@ -4025,11 +4688,19 @@ def _apply_decision(
         if workflow.stage not in {"awaiting_apply_confirmation", "waiting_approval"}:
             _message(db, workflow, "assistant", _status_reply(workflow), source)
             return
-        # Older tasks may still be persisted in waiting_approval from the
-        # previous release.  Treat that state as a compatibility alias and
-        # invalidate its historical approval record before queuing the write.
+        # Older tasks may still be persisted in waiting_approval with a real
+        # pending two-person approval. A chat confirmation must not revoke or
+        # bypass that approval record.
         if workflow.stage == "waiting_approval":
-            revoke_workflow_approvals(db, workflow, actor, "平台已取消管理员审批流程。")
+            _message(
+                db,
+                workflow,
+                "assistant",
+                "该任务正在等待另一名平台管理员审批，聊天确认不能跳过审批。",
+                source,
+            )
+            return
+        workflow_owner_context(db, workflow)
         _queue_action(db, workflow, "apply_material_update")
         workflow.stage = "applying"
         workflow.state = "running"
@@ -4040,43 +4711,12 @@ def _apply_decision(
             db,
             workflow,
             "assistant",
-            "已收到写入确认。现在执行：先写盈亏明细，再写流转安全子集，随后回读校验。",
+            "已收到写入确认。现在执行盈亏明细写入并尽力回填流转安全子集，随后回读校验。",
             source,
         )
         return
     if action == "rebuild_worklist":
-        if workflow.stage in BUSY_STAGES:
-            _message(db, workflow, "assistant", "当前动作还在执行，完成后才能重出清单。", source)
-            return
-        ready, _ = _has_required_files(workflow)
-        has_credential = has_service_credential(
-            db,
-            workflow.owner_id,
-            workflow.department_id,
-            "zhiyun",
-        )
-        if not ready or not has_credential or not workflow.reconciliation_date:
-            workflow.stage = "awaiting_files" if workflow.reconciliation_date else "awaiting_date"
-            workflow.state = "active"
-            _message(db, workflow, "assistant", _status_reply(workflow), source)
-            return
-        revoke_workflow_approvals(db, workflow, actor, "发起人重新生成变更预览。")
-        _queue_initial_execution(db, workflow)
-        workflow.context_json = "{}"
-        workflow.artifacts_json = "[]"
-        workflow.stage = "preparing"
-        workflow.state = "running"
-        workflow.progress = 5
-        workflow.progress_message = "正在以原始上传文件生成新的核销日清"
-        workflow.error_message = ""
-        _message(
-            db,
-            workflow,
-            "assistant",
-            "旧任务结果不会继续写入；正在以原始上传文件创建新的日清工作区。",
-            source,
-        )
-        return
+        return rebuild_failed_workflow(db, workflow, actor)
     if action == "cancel":
         _request_workflow_cancellation(db, workflow, actor)
         return
@@ -4085,6 +4725,7 @@ def _apply_decision(
 
 @dataclass(frozen=True)
 class WorkflowAgentActionResult:
+    workflow: WorkflowSession
     action: str
     await_confirmation: bool
     confirmation_kind: str
@@ -4105,6 +4746,7 @@ def apply_workflow_agent_action(
             select(WorkflowAction.id).where(
                 WorkflowAction.workflow_id == workflow.id,
                 WorkflowAction.name == PI_HARNESS_ACTION,
+                WorkflowAction.state.in_(("queued", "running")),
             )
         )
         is not None
@@ -4114,6 +4756,7 @@ def apply_workflow_agent_action(
             status_code=409,
             detail="该任务正在由后台 Pi Harness 全程执行，交互式 Agent 不能接管。",
         )
+    workflow_owner_context(db, workflow)
     assert_workflow_execution_enabled(workflow)
     assert_workflow_agent_action_enabled(workflow.skill_id, action)
     decision = validate_workflow_agent_request(workflow.stage, action, arguments)
@@ -4141,10 +4784,13 @@ def apply_workflow_agent_action(
             db.commit()
             acquire_claim_lock(db)
             db.refresh(workflow)
-        _apply_decision(db, workflow, decision, actor)
+        target = _apply_decision(db, workflow, decision, actor) or workflow
+    if decision.action == "request_user_confirmation":
+        target = workflow
 
     db.commit()
     return WorkflowAgentActionResult(
+        workflow=target,
         action=action,
         await_confirmation=decision.action == "request_user_confirmation"
         or action == "set_reconciliation_date",
@@ -4153,7 +4799,7 @@ def apply_workflow_agent_action(
             if action == "set_reconciliation_date"
             else str(decision.arguments.get("kind", ""))
         ),
-        message=_status_reply(workflow),
+        message=_status_reply(target),
     )
 
 
@@ -4169,6 +4815,7 @@ def send_workflow_message(
             select(WorkflowAction.id).where(
                 WorkflowAction.workflow_id == workflow.id,
                 WorkflowAction.name == PI_HARNESS_ACTION,
+                WorkflowAction.state.in_(("queued", "running")),
             )
         )
         is not None
@@ -4178,6 +4825,7 @@ def send_workflow_message(
             status_code=409,
             detail="该任务正在由后台 Pi Harness 全程执行；可查看进度或取消任务。",
         )
+    owner = workflow_owner_context(db, workflow)
     assert_workflow_execution_enabled(workflow)
     _message(db, workflow, "user", content)
     db.flush()
@@ -4199,7 +4847,7 @@ def send_workflow_message(
         if is_background_model_connection(workflow.model_connection_id)
         else resolve_runtime_config(
             db,
-            user,
+            owner,
             workflow.model_connection_id,
             workflow.model_name,
         )
@@ -4225,78 +4873,123 @@ def send_workflow_message(
         db.commit()
         acquire_claim_lock(db)
         db.refresh(workflow)
-    _apply_decision(db, workflow, decision, user)
+    target = _apply_decision(db, workflow, decision, user) or workflow
     db.commit()
-    db.refresh(workflow)
-    return workflow
+    db.refresh(target)
+    return target
 
 
 def claim_next_workflow_action(
     db: Session,
     pools: tuple[str, ...],
     worker_id: str = "workflow-worker",
+    *,
+    execution_contracts: tuple[str, ...] = (),
 ) -> WorkflowAction | None:
     if "workflow" not in pools:
         return None
+    from .ar_execution_contract import INVESTIGATION_ACTION
+    from .workflow_action_state import action_storage_states
     acquire_claim_lock(db)
     now = datetime.now(UTC)
     recover_expired_jobs(db, now)
-    candidates = list(
-        db.scalars(
-            select(WorkflowAction)
-            .join(WorkflowSession, WorkflowSession.id == WorkflowAction.workflow_id)
-            .outerjoin(WorkflowBatch, WorkflowBatch.id == WorkflowSession.batch_id)
-            .where(
-                WorkflowAction.state == "queued",
-                WorkflowAction.name != PI_HARNESS_ACTION,
-                or_(
-                    and_(
-                        WorkflowSession.state.in_(("active", "running")),
-                        WorkflowSession.stage.in_(BUSY_STAGES),
-                    ),
-                    and_(
-                        WorkflowAction.name == "finalize_batch",
-                        WorkflowSession.state == "succeeded",
-                        WorkflowSession.stage == "completed",
-                        WorkflowBatch.state == "finalizing",
-                    ),
+    candidates = db.scalars(
+        select(WorkflowAction)
+        .join(WorkflowSession, WorkflowSession.id == WorkflowAction.workflow_id)
+        .outerjoin(WorkflowBatch, WorkflowBatch.id == WorkflowSession.batch_id)
+        .where(
+            WorkflowAction._stored_state.in_(action_storage_states("queued")),
+            WorkflowAction.name != PI_HARNESS_ACTION,
+            or_(
+                and_(WorkflowAction.name == INVESTIGATION_ACTION, WorkflowSession.state == "failed"),
+                and_(
+                    WorkflowSession.state.in_(("active", "running")),
+                    WorkflowSession.stage.in_(BUSY_STAGES),
                 ),
-            )
-            .order_by(WorkflowAction.queued_at.asc())
-            .limit(100)
-        ).all()
+                and_(
+                    WorkflowAction.name == "finalize_batch",
+                    WorkflowSession.state == "succeeded",
+                    WorkflowSession.stage == "completed",
+                    WorkflowBatch.state == "finalizing",
+                ),
+            ),
+        )
+        .order_by(WorkflowAction.queued_at.asc())
+        .execution_options(yield_per=50)
     )
     selected: WorkflowAction | None = None
-    for action in candidates:
-        workflow = db.get(WorkflowSession, action.workflow_id)
-        if not workflow:
-            action.state = "failed"
-            action.error_message = "对话任务不存在。"
-            action.finished_at = now
-            continue
-        if active_task_discovery_count(db, workflow.skill_id, now):
-            continue
-        if action.name == "finalize_batch" and workflow.stage == "completed":
-            batch = db.get(WorkflowBatch, workflow.batch_id) if workflow.batch_id else None
-            if batch and batch.state == "finalizing":
+    try:
+        for action in candidates:
+            workflow = db.get(WorkflowSession, action.workflow_id)
+            if not workflow:
+                action.state = "failed"
+                action.error_message = "对话任务不存在。"
+                action.finished_at = now
+                continue
+            from .ar_execution_runner import execution_version
+            from .ar_snapshot_contract import SnapshotCompatibilityError
+
+            try:
+                contract = execution_version(workflow)
+                if bool(contract) != action.is_contract_isolated:
+                    raise SnapshotCompatibilityError("动作队列与固定执行契约不一致，必须核查原排队记录。")
+            except (OSError, ValueError) as exc:
+                reason = str(exc) if isinstance(exc, SnapshotCompatibilityError) else "固定执行契约无法读取或与已记录版本不一致。"
+                message = f"{reason} 本次动作未开始，未回退旧流程。"
+                action.state, action.error_message, action.finished_at = "failed", message, now
+                if action.name == INVESTIGATION_ACTION:
+                    continue
+                workflow.state, workflow.stage = "failed", "failed"
                 context = _load(workflow.context_json, {})
-                context["current_step"] = "finalize_batch"
-                context["current_step_label"] = "正在生成范围报告"
+                context["current_step"] = action.name
+                context["current_step_label"] = "检查执行契约兼容性"
+                context["step_error"] = message
+                context["error_detail"] = {
+                    "step_key": action.name, "step": "检查执行契约兼容性", "reason": message,
+                    "error_code": "AR_EXECUTION_CONTRACT_INCOMPATIBLE", "category": "compatibility",
+                    "write_status": "not_started", "recovery_allowed": False, "failed_at": now.isoformat(),
+                }
                 workflow.context_json = _json(context)
-                workflow.state = "running"
-                workflow.stage = "finalizing"
-                workflow.progress = 99
-                workflow.progress_message = "每日核销已完成，正在生成范围报告"
-        if active_workflow_count(db, workflow.skill_id, now) >= max(1, workflow.concurrency_limit):
-            continue
-        action.state = "running"
-        action.started_at = now
-        action.worker_id = worker_id
-        action.attempt_count += 1
-        action.heartbeat_at = now
-        action.lease_expires_at = lease_deadline(now)
-        selected = action
-        break
+                workflow.error_message = message
+                workflow.progress_message = message
+                _fail_batch(db, workflow, message)
+                continue
+            if contract and contract not in execution_contracts:
+                continue
+            if active_task_discovery_count(db, workflow.skill_id, now):
+                continue
+            try:
+                workflow_owner_context(db, workflow)
+            except HTTPException:
+                if action.name == INVESTIGATION_ACTION:
+                    action.state, action.finished_at = "failed", now
+                    action.error_message = "任务所有者当前无执行权限，未启动独立调查；原核销失败记录保留。"
+                    continue
+                mark_workflow_action_execution_rejected(db, workflow, action)
+                continue
+            if action.name == "finalize_batch" and workflow.stage == "completed":
+                batch = db.get(WorkflowBatch, workflow.batch_id) if workflow.batch_id else None
+                if batch and batch.state == "finalizing":
+                    context = _load(workflow.context_json, {})
+                    context["current_step"] = "finalize_batch"
+                    context["current_step_label"] = "正在生成范围报告"
+                    workflow.context_json = _json(context)
+                    workflow.state = "running"
+                    workflow.stage = "finalizing"
+                    workflow.progress = 99
+                    workflow.progress_message = "每日核销已完成，正在生成范围报告"
+            if active_workflow_count(db, workflow.skill_id, now) >= max(1, workflow.concurrency_limit):
+                continue
+            action.state = "running"
+            action.started_at = now
+            action.worker_id = worker_id
+            action.attempt_count += 1
+            action.heartbeat_at = now
+            action.lease_expires_at = lease_deadline(now)
+            selected = action
+            break
+    finally:
+        candidates.close()
     db.commit()
     return selected
 
@@ -4423,6 +5116,25 @@ def _run_script(
     return completed.stdout
 
 
+def _parse_apply_result(stdout: str) -> dict[str, bool] | None:
+    """Read the non-sensitive write outcome emitted by ``apply_all.py``."""
+    prefix = "AR_WRITE_RESULT "
+    for line in reversed(stdout.splitlines()):
+        if not line.startswith(prefix):
+            continue
+        try:
+            payload = json.loads(line[len(prefix):])
+        except (TypeError, ValueError):
+            return None
+        if not isinstance(payload, dict) or "flow_written" not in payload:
+            return None
+        return {
+            "ledger_written": bool(payload.get("ledger_written")),
+            "flow_written": bool(payload.get("flow_written")),
+        }
+    return None
+
+
 def _script_declares_argument(script_path: Path, argument: str) -> bool:
     source = script_path.read_text(encoding="utf-8")
     return bool(
@@ -4437,14 +5149,19 @@ def _run_shifted_details_audit(
     script_dir: Path,
     workspace: str,
     batch_dates: list[str],
+    *,
+    script_runner=None,
 ) -> None:
     """Run the pinned audit through its current or legacy date-selection interface."""
+    def run(arguments: list[str]) -> str:
+        if script_runner is not None:
+            return script_runner("audit_shifted_details.py", arguments, accepted=(0, 1))
+        return _run_script(script_dir, "audit_shifted_details.py", arguments, accepted_returncodes=(0, 1))
+
     script_path = script_dir / "audit_shifted_details.py"
     supports_selected_dates = _script_declares_argument(script_path, "--date")
     if supports_selected_dates:
-        _run_script(
-            script_dir,
-            script_path.name,
+        run(
             [
                 "--workspace",
                 workspace,
@@ -4454,18 +5171,14 @@ def _run_shifted_details_audit(
                 batch_dates[-1],
                 *[part for item in batch_dates for part in ("--date", item)],
             ],
-            accepted_returncodes=(0, 1),
         )
         return
 
     # Legacy Skill snapshots do not declare --date. Run each selected date as
     # an exact one-day range so gaps between selected dates are never audited.
     for item in batch_dates:
-        _run_script(
-            script_dir,
-            script_path.name,
+        run(
             ["--workspace", workspace, "--date-from", item, "--date-to", item],
-            accepted_returncodes=(0, 1),
         )
 
 
@@ -4658,6 +5371,11 @@ def _worklist_summary(stdout: str) -> dict[str, int]:
         match = re.search(rf"{label}\s+(\d+)", flow)
         if match:
             summary[f"流转{label}"] = int(match.group(1))
+    notice = next((item for item in stdout.splitlines() if item.startswith("跨月计提提示：")), "")
+    for label in ACCRUAL_NOTICE_KEYS:
+        match = re.search(rf"{re.escape(label)}\s+(\d+)", notice)
+        if match:
+            summary[label] = int(match.group(1))
     return summary
 
 
@@ -5087,7 +5805,29 @@ def _execute_named_workflow_phase(
                 dates=[str(item) for item in batch_dates],
                 target=target,
             )
-    ledgers = _discover_annual_ledger_paths(business)
+    from .ar_execution_runner import execution_version
+    from .ar_annual_materials import fixed_annual_ledgers
+
+    if execution_version(workflow) and action_name == "prepare_workspace":
+        # _copy_inputs preserves the immutable material binding order. Bind
+        # those exact copies to the registered years, including subsequent days.
+        annual_bindings = _authoritative_material_bindings(db, workflow)[ANNUAL_LEDGER_ROLE]
+        annual_copies = copied_files.get(ANNUAL_LEDGER_ROLE, [])
+        if len(annual_bindings) != len(annual_copies):
+            raise RuntimeError("年度盈亏副本数量与固定材料版本不一致。")
+        fixed_years = {}
+        for binding, path in zip(annual_bindings, annual_copies, strict=True):
+            year = binding.get("year")
+            if type(year) is not int or year in fixed_years:
+                raise RuntimeError("固定材料版本的年度缺失或重复，不能按当前年份猜测。")
+            if sha256_file(path) != binding.get("sha256"):
+                raise RuntimeError(f"{year} 年盈亏副本与固定材料版本的文件指纹不一致。")
+            fixed_years[year] = path
+        ledgers = fixed_annual_ledgers(business, fixed_years)
+    elif execution_version(workflow) and reuse_existing_workspace:
+        ledgers = fixed_annual_ledgers(business, action_context.get("ledger_years"))
+    else:
+        ledgers = _discover_annual_ledger_paths(business)
     if not ledgers:
         raise RuntimeError("没有找到盈亏核算表副本。")
     flow_files = copied_files.get(RECEIPT_FLOW_ROLE, [])
@@ -5246,6 +5986,10 @@ def _execute_named_workflow_phase(
             "awaiting_fetched_data_confirmation": True,
             "artifacts": [],
         }
+    from .ar_execution_runner import execution_version, initialize_execution
+
+    if execution_version(workflow):
+        return initialize_execution(db, workflow, business, ledgers, flow_files[0])
     if batch is not None and workflow.batch_sequence == 1:
         _set_progress_step(db, workflow, "audit_shifted_details", "正在审计跨日迁移明细", 22)
         # The audit uses exit code 1 for a business finding: selected dates need
@@ -5311,12 +6055,24 @@ def _execute_named_workflow_phase(
             f"{label}（{index}/{len(steps) + 1}）",
             20 + index * 11,
         )
+        accepted_returncodes = (0,)
+        if script == "validate_plan.py":
+            accepted_returncodes = (0, 1)
+        elif script == "apply_flow.py":
+            # 流转表是次要回填；失败时仍继续生成盈亏日清，交给统一写入
+            # 阶段按人工处理记录结果。
+            accepted_returncodes = (0, 1, 2)
         _run_script(
             script_dir,
             script,
             arguments,
-            accepted_returncodes=(0, 1) if script == "validate_plan.py" else (0,),
+            accepted_returncodes=accepted_returncodes,
         )
+        if script == "classify_hexiao.py" and (script_dir / "build_execution_evidence.py").is_file():
+            _run_script(
+                script_dir, "build_execution_evidence.py",
+                ["--workspace", workspace, "--hexiao-date", hexiao_date],
+            )
     _set_progress_step(db, workflow, "build_worklist", "正在生成核销日清文件", 80)
     stdout = _run_script(
         script_dir,
@@ -5338,12 +6094,14 @@ def _execute_named_workflow_phase(
         raise RuntimeError("日清已生成，但没有找到校验后计划或盈亏副本。")
     _set_progress_step(db, workflow, "review", "核销日清已生成，等待结果确认", 82)
     summary = _worklist_summary(stdout)
+    evidence = business / "04_产出" / f"逐单证据_{hexiao_date.replace('-', '')}.json"
     return {
         "workspace": str(business),
         "checked_plan": str(checked[-1]),
         "ledger_years": {str(year): str(path) for year, path in ledgers.items()},
         "flow_file": str(flow_files[0]),
         "summary": summary,
+        "ar_evidence": {"fingerprint": sha256_file(evidence)} if evidence.is_file() else {},
         "artifacts": [artifact],
     }
 
@@ -5672,15 +6430,21 @@ def _publish_verified_material_set(
     db: Session,
     workflow: WorkflowSession,
     bindings: dict[str, list[dict[str, Any]]],
+    *,
+    annual_years: dict[str, int] | None = None,
 ) -> tuple[WorkflowMaterialSet, dict[str, list[dict[str, Any]]]]:
     with db.begin_nested():
-        material_set = publish_workflow_material_set(db, workflow, bindings)
+        material_set = publish_workflow_material_set(db, workflow, bindings, annual_years=annual_years)
         readback = material_set_bindings(db, material_set)
         if (
             len(readback.get(ANNUAL_LEDGER_ROLE, [])) < 1
             or len(readback.get(RECEIPT_FLOW_ROLE, [])) != 1
         ):
             raise PostWriteVerificationError("新业务材料版本回读不完整，当前版本没有切换。")
+        if annual_years is not None and {
+            item["file_id"]: item["year"] for item in readback[ANNUAL_LEDGER_ROLE]
+        } != annual_years:
+            raise PostWriteVerificationError("新业务材料版本的盈亏年度回读不一致，当前版本没有切换。")
     return material_set, readback
 
 
@@ -5689,6 +6453,8 @@ def _apply_confirmed(
     action: WorkflowAction,
     workflow: WorkflowSession,
 ) -> dict[str, Any]:
+    if _load(workflow.context_json, {}).get("ar_execution"):
+        raise RuntimeError("新版任务必须完成独立写入、复核与发布阶段，不能使用旧版统一写入入口。")
     if isinstance(workflow, WorkflowSession):
         _ensure_legacy_workflow_material_snapshot(db, workflow)
     context = _load(action.input_json, {}).get("context", {})
@@ -5729,8 +6495,20 @@ def _apply_confirmed(
         raise RuntimeError("到账流转表副本不存在，请重新生成日清。")
     source_workspace = str(business)
     # The preparation snapshot is a pre-write guard. Verify the task copy before
-    # staging so a stale or externally changed workbook cannot enter a write run.
-    _run_script(script_dir, "verify_sources.py", ["verify", "--workspace", source_workspace])
+    # staging so a stale ledger or fetched source cannot enter a write run. The
+    # flow workbook is checked by apply_flow's row identity guard instead; it is
+    # a secondary output and must not block the ledger write.
+    _run_script(
+        script_dir,
+        "verify_sources.py",
+        [
+            "verify",
+            "--workspace",
+            source_workspace,
+            "--ignore-path",
+            str(flow_file),
+        ],
+    )
 
     staging_workspace: Path | None = None
     artifacts: list[dict[str, Any]] = []
@@ -5768,7 +6546,7 @@ def _apply_confirmed(
             if staged_ledgers
             else ["--ledger", str(staged_legacy_ledger)]
         )
-        _run_script(
+        apply_stdout = _run_script(
             script_dir,
             "apply_all.py",
             [
@@ -5782,6 +6560,8 @@ def _apply_confirmed(
                 "--flow-in-place",
             ],
         )
+        write_result = _parse_apply_result(apply_stdout)
+        flow_written = True if write_result is None else write_result["flow_written"]
         # apply_all performs planned-cell readback. Commit and verify a new
         # baseline for the staged outputs before any file is published.
         _run_script(script_dir, "verify_sources.py", ["snapshot", "--workspace", staging])
@@ -5858,6 +6638,12 @@ def _apply_confirmed(
         "artifacts": artifacts,
         "material_set_id": material_set.id if material_set is not None else None,
         "material_version": material_set.version if material_set is not None else None,
+        "flow_written": flow_written,
+        "warnings": (
+            []
+            if flow_written
+            else ["到账流转表本次未完成写入，盈亏核算表已独立写入并发布。"]
+        ),
     }
     if getattr(action, "name", "apply_confirmed") == "apply_confirmed" or material_set is None:
         result["next_files"] = next_files
@@ -5936,12 +6722,55 @@ def _copy_report_input(source: Path, target_dir: Path) -> None:
     shutil.copyfile(source, target)
 
 
+def _copy_verified_ar_report_inputs(
+    db: Session, child: WorkflowSession, context: dict, child_output: Path, output_dir: Path,
+) -> None:
+    from .ar_execution_contract import CONTRACT_VERSION
+    from .ar_result_summary import metrics_from_report
+    from .ar_formal_ledger_service import read_formal_ledger_bundle
+    from .ar_publication import published_report
+
+    execution = context.get("ar_execution") or {}
+    if execution.get("schema_version") != CONTRACT_VERSION:
+        return
+    if (execution.get("publication") != "verified" or not context.get("formal_ledgers")
+            or "complete_reconciliation" not in (execution.get("completed") or [])):
+        raise RuntimeError("新版日期尚未完成发布和正式台账登记，不能纳入范围报告。")
+    # A saved completion flag cannot stand in for the actual registered bundle.
+    # Readback is read-only and does not require this historical material to be
+    # the current head after later dates have published their results.
+    read_formal_ledger_bundle(db, child)
+    reference = context.get("final_result") or {}
+    token = child.reconciliation_date.replace("-", "")
+    final_name = f"最终核销结果_{token}.json"
+    for name in (f"核销日清_{token}.xlsx", final_name):
+        registered = published_report(db, child, name)
+        source = registered.path
+        if name == final_name and (Path(str(reference.get("path") or "")).resolve() != (child_output / name).resolve()
+                                   or reference.get("fingerprint") != registered.sha256):
+            raise RuntimeError("范围报告最终结果与日期任务的固定引用不一致。")
+        _copy_report_input(source, output_dir)
+        copied = output_dir / name
+        if sha256_file(copied) != registered.sha256:
+            raise RuntimeError("已发布报告的实际文件或复制后指纹不一致，不能生成范围报告。")
+        if name == final_name:
+            if copied.stat().st_size > 32 * 1024 * 1024:
+                raise RuntimeError("最终核销结果超过受控读取上限。")
+            metrics = metrics_from_report(json.loads(copied.read_bytes()), child.reconciliation_date)
+            if metrics != reference.get("metrics"):
+                raise RuntimeError("页面最终摘要与范围报告来源不一致，不能交付冲突数量。")
+
+
 def _prepare_batch_report_workspace(
     db: Session,
     batch: WorkflowBatch,
     workflow: WorkflowSession,
     action: WorkflowAction,
 ) -> Path:
+    from .ar_execution_contract import CONTRACT_VERSION
+    from .ar_staging_archive import copy_report_inputs
+    from .ar_staging_retention import registered_archive
+
     storage_root = _workflow_storage_root(db, workflow)
     action_root = (
         storage_root
@@ -5967,14 +6796,34 @@ def _prepare_batch_report_workspace(
         export_dir.mkdir(parents=True)
         for child in sorted(batch.workflows, key=lambda item: item.batch_sequence):
             child_workspace = _controlled_context_workspace(storage_root, child)
+            child_context = _load(child.context_json, {})
+            verified_reports = (child_context.get("ar_execution") or {}).get("schema_version") == CONTRACT_VERSION
+            archived = registered_archive(db, child, child_context) if verified_reports else None
+            published_workspace = child_context.get("published_workspace")
+            if published_workspace:
+                candidate = Path(str(published_workspace)).resolve()
+                if (not candidate.is_relative_to(child_workspace)
+                        or (archived is None and not candidate.is_dir())):
+                    raise RuntimeError("最终报告工作区不属于当前核销日期任务。")
+                child_workspace = candidate
             token = child.reconciliation_date.replace("-", "")
             child_output = child_workspace / "04_产出"
+            _copy_verified_ar_report_inputs(db, child, child_context, child_output, output_dir)
+            if archived is not None:
+                reference, directory = archived
+                copy_report_inputs(reference, directory, child.reconciliation_date, output_dir, export_dir)
+                continue
             for prefix in ("核销日清", "变更清单", "订单写入差异"):
+                if verified_reports and prefix == "核销日清":
+                    continue
                 for source in child_output.glob(f"{prefix}_{token}*.xlsx"):
                     _copy_report_input(source, output_dir)
             counts = child_output / f"判定结果_{token}.json"
             if counts.is_file():
                 _copy_report_input(counts, output_dir)
+            final_counts = child_output / f"最终核销结果_{token}.json"
+            if not verified_reports and final_counts.is_file():
+                _copy_report_input(final_counts, output_dir)
             summary = child_workspace / FETCH_SNAPSHOT_DIR / f"取数摘要_{token}.json"
             if summary.is_file():
                 _copy_report_input(summary, export_dir)
@@ -5991,16 +6840,28 @@ def _finalize_batch_reports(
     workflow: WorkflowSession,
     result: dict[str, Any],
     action: WorkflowAction | None,
+    *,
+    guarded: bool = False,
 ) -> None:
     if action is None:
         raise RuntimeError("范围报告动作不存在。")
+    if guarded:
+        from .ar_execution_runner import lock_execution
+
+        lock_execution(db, action, workflow)
+        db.refresh(batch)
+        if batch.state not in {"finalizing", "cancelling"}:
+            raise ExecutionLeaseLost("批次已停止范围报告执行，旧 Worker 不能继续登记报告")
+        db.commit()
+        db.info.pop("ar_execution_lock", None)
     workspace = _prepare_batch_report_workspace(db, batch, workflow, action)
     result["workspace"] = str(workspace)
     dates = _load(batch.reconciliation_dates_json, [])
     script_dir = workflow_root(workflow.owner_id, workflow.id) / "skill" / "vendor" / "scripts"
-    batch.state = "finalizing"
-    batch.progress = 99
-    batch.progress_message = "每日核销已完成，正在生成范围报告"
+    if not guarded:
+        batch.state = "finalizing"
+        batch.progress = 99
+        batch.progress_message = "每日核销已完成，正在生成范围报告"
     empty_dates = []
     for child in batch.workflows:
         child_context = _load(child.context_json, {})
@@ -6033,6 +6894,18 @@ def _finalize_batch_reports(
             child.reconciliation_date,
         ):
             empty_dates.append(child.reconciliation_date)
+    if guarded:
+        # Progress is committed before the subprocess; no claim transaction is
+        # held during report generation. Outputs belong to this action only.
+        lock_execution(db, action, workflow)
+        db.refresh(batch)
+        workflow_owner_context(db, workflow)
+        if batch.state not in {"finalizing", "cancelling"}:
+            raise ExecutionLeaseLost("准备报告期间批次已停止，不能继续派发报告脚本")
+        batch.progress = 99
+        batch.progress_message = "每日核销已完成，正在生成范围报告"
+        db.commit()
+        db.info.pop("ar_execution_lock", None)
     _run_batch_report_builder(
         script_dir,
         workspace,
@@ -6047,6 +6920,12 @@ def _finalize_batch_reports(
     )
     if len(reports) != 1:
         raise RuntimeError("批次整合核销日清未生成，批次不能结束。")
+    if guarded:
+        lock_execution(db, action, workflow)
+        db.refresh(batch)
+        workflow_owner_context(db, workflow)
+        if batch.state not in {"finalizing", "cancelling"}:
+            raise ExecutionLeaseLost("批次状态已变化，拒绝登记过期范围报告")
     stored_artifacts = _load(workflow.artifacts_json, [])
     for report in reports:
         artifact = _register_artifact(db, workflow, report, action.id)
@@ -6102,7 +6981,8 @@ def _advance_batch(
         batch.progress = 99
         batch.progress_message = "每日核销已完成，等待生成范围报告"
         batch.updated_at = datetime.now(UTC)
-        if reconciliation_runner(workflow.execution_mode).worker_finalizes_batch():
+        if (reconciliation_runner(workflow.execution_mode).worker_finalizes_batch()
+                or (context.get("ar_execution") and context.get("formal_ledgers"))):
             _new_action(
                 db,
                 workflow,
@@ -6169,11 +7049,19 @@ def _advance_batch(
 def retry_workflow_batch(
     db: Session,
     batch: WorkflowBatch,
+    actor: UserContext | None = None,
 ) -> WorkflowBatch:
     acquire_claim_lock(db)
     db.refresh(batch)
+    owner = workflow_owner_context(db, batch)
+    actor = actor or owner
     if batch.state != "failed":
         raise HTTPException(status_code=409, detail="只有失败并暂停的批次可以继续。")
+    from .ar_report_recovery import recover_report
+
+    db.expire(batch, ["workflows"])
+    if recover_report(db, batch, actor):
+        return batch
     _reject_superseded_batch_material(db, batch)
     _assert_single_flight_available(
         db,
@@ -6227,6 +7115,9 @@ def retry_workflow_batch(
         last.context_json = _json(context)
         last.progress_message = "正在重新生成范围报告"
         last.error_message = ""
+        owner = workflow_owner_context(db, last)
+        if owner.user_id != actor.user_id and not actor.is_admin:
+            raise HTTPException(status_code=403, detail="当前账号不能继续该批次。")
         _queue_action(
             db,
             last,
@@ -6250,6 +7141,12 @@ def retry_workflow_batch(
     )
     if pending:
         raise HTTPException(status_code=409, detail="批次中仍有动作正在执行。")
+
+    # The earlier checks protect the existing batch state; this second check is
+    # immediately before a new executable action is queued.
+    owner = workflow_owner_context(db, batch)
+    if owner.user_id != actor.user_id and not actor.is_admin:
+        raise HTTPException(status_code=403, detail="当前账号不能继续该批次。")
 
     _cleanup_terminal_fetched_snapshot(db, failed)
     context = _load(failed.context_json, {})
@@ -6323,6 +7220,7 @@ def retry_workflow_batch(
     failed.progress = 5
     failed.progress_message = f"正在重新执行 {failed.reconciliation_date}"
     failed.error_message = ""
+    workflow_owner_context(db, failed)
     _queue_initial_execution(db, failed)
     _message(
         db,
@@ -6380,6 +7278,11 @@ def _transition_reconciliation_plan_result(
     workflow: WorkflowSession,
     result: dict[str, Any],
 ) -> None:
+    if result.get("ar_execution"):
+        from .ar_execution_runner import transition_phase
+
+        transition_phase(db, action, workflow, result)
+        return
     context = _load(workflow.context_json, {})
     context.update(result)
     workflow.context_json = _json(context)
@@ -6441,11 +7344,42 @@ def _transition_reconciliation_plan_result(
 def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
     action_id = action.id
     workflow_id = action.workflow_id
+    action._ar_claim_worker_id = action.worker_id
     workflow = db.get(WorkflowSession, workflow_id)
     if not workflow:
         action.state = "failed"
         action.error_message = "对话任务不存在。"
         action.finished_at = datetime.now(UTC)
+        return
+    from .ar_execution_contract import INVESTIGATION_ACTION
+
+    if action.name == INVESTIGATION_ACTION:
+        from .ar_business_investigation import execute_investigation
+
+        execute_investigation(db, action, workflow)
+        return
+    from .ar_report_recovery import record_report_failure, uses_verified_reports
+
+    guarded_report = action.name == "finalize_batch" and uses_verified_reports(workflow.batch)
+    try:
+        workflow_owner_context(db, workflow)
+    except HTTPException:
+        if guarded_report:
+            from .ar_execution_runner import lock_execution
+
+            db.rollback()
+            db.info.pop("ar_execution_lock", None)
+            try:
+                lock_execution(db, action, workflow)
+            except ExecutionLeaseLost:
+                db.rollback()
+                db.info["ar_execution_lease_lost"] = True
+                return
+        mark_workflow_action_execution_rejected(db, workflow, action)
+        if guarded_report:
+            record_report_failure(workflow, action, process_exit_confirmed=True, error_type="permission_rejected_before_execution")
+        sync_reminder_from_workflow(db, workflow)
+        _cleanup_terminal_fetched_snapshot(db, workflow)
         return
     preview_dates_to_prime: list[str] = []
     try:
@@ -6533,6 +7467,9 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
                 workflow.state = "running"
                 workflow.progress = max(workflow.progress, 15)
                 workflow.progress_message = "智云取数完成，正在建立检查预览"
+                # The queued action pins its input from workflow.context_json.
+                # Persist the fetch result before taking that input snapshot.
+                workflow.context_json = _json(context)
                 if reconciliation_runner(workflow.execution_mode).worker_chains_next_action():
                     _new_action(db, workflow, "build_fetch_preview")
             workflow.context_json = _json(context)
@@ -6555,6 +7492,18 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
                 "请先查看取数数据；确认完整后再继续生成核销日清。",
                 {"kind": "fetched_data_preview_ready"},
             )
+        elif action.name.startswith("ar_"):
+            from .ar_execution_runner import execute_phase, transition_phase
+
+            try:
+                result = execute_phase(db, action, workflow)
+                transition_phase(db, action, workflow, result)
+            except (ExecutionLeaseLost, ExecutionCancelled):
+                raise
+            except Exception as exc:
+                # Legacy timeout/write handlers do not fence v2 leases. Route
+                # every v2 phase error through the guarded failure transaction.
+                raise ExecutionPhaseFailed(str(exc)) from exc
         elif action.name == "build_reconciliation_plan":
             result = _build_reconciliation_plan_action(db, action, workflow)
             _transition_reconciliation_plan_result(db, action, workflow, result)
@@ -6627,6 +7576,7 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
                     "正在按 Skill 规则写入隔离工作副本。"
                 )
             else:
+                summary_read_failed = bool(context.get("summary_read_failed"))
                 context["current_step"] = "awaiting_confirmation"
                 context["current_step_label"] = "核销日清已生成，等待人工确认"
                 workflow.stage = "awaiting_apply_confirmation"
@@ -6636,13 +7586,13 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
                 reply = (
                     f"✅ 核销日期 {_date_label(workflow.reconciliation_date)} 的核销判定完了，"
                     "财务工作簿原件一个字节没动；智云只做了查询取数。\n"
-                    f"盈亏：今天要填 {summary.get('今天要填', 0)} 行；"
-                    f"已填过·跳过 {summary.get('已填过·跳过', 0)} 行；"
-                    f"冲突·需你定 {summary.get('冲突·需你定', 0)} 行；"
-                    f"挂账待办 {summary.get('挂账待办', 0)} 行；"
-                    f"异常 {summary.get('异常', 0)} 行。\n"
-                    f"流转：确认后自动写 {summary.get('流转确认后自动写', 0)} 笔；"
-                    f"须你手填 {summary.get('流转须手填', 0)} 笔。\n"
+                    f"盈亏：今天要填 {_summary_message_value(summary, '今天要填', read_failed=summary_read_failed)} 行；"
+                    f"已填过·跳过 {_summary_message_value(summary, '已填过·跳过', read_failed=summary_read_failed)} 行；"
+                    f"冲突·需你定 {_summary_message_value(summary, '冲突·需你定', read_failed=summary_read_failed)} 行；"
+                    f"挂账待办 {_summary_message_value(summary, '挂账待办', read_failed=summary_read_failed)} 行；"
+                    f"异常 {_summary_message_value(summary, '异常', read_failed=summary_read_failed)} 行。\n"
+                    f"流转：确认后自动写 {_summary_message_value(summary, '流转确认后自动写', read_failed=summary_read_failed)} 笔；"
+                    f"须你手填 {_summary_message_value(summary, '流转须手填', read_failed=summary_read_failed)} 笔。\n"
                     "请下载并打开《核销日清》检查；没问题回复“确认”或“可以写”。"
                 )
             _message(db, workflow, "assistant", reply, {"kind": "worklist_ready"})
@@ -6750,19 +7700,32 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
             workflow.stage = "completed"
             workflow.state = "succeeded"
             workflow.progress = 100
-            workflow.progress_message = "盈亏和流转写入完成，结果文件已生成"
+            flow_written = bool(result.get("flow_written", True))
+            if flow_written:
+                workflow.progress_message = "盈亏和流转写入完成，结果文件已生成"
+            else:
+                workflow.progress_message = "盈亏核算表已写入，流转表转人工处理"
             context["current_step"] = "completed"
             context["current_step_label"] = "写入完成，结果文件已生成"
             context.pop("step_error", None)
             context.pop("error_detail", None)
             workflow.context_json = _json(context)
+            if flow_written:
+                completion_message = (
+                    "统一写入完成：先写盈亏明细，再写到账流转表安全子集；"
+                    "回读校验已通过。到账流转表、年度盈亏核算表和《核销日清》已放到右侧下载区。"
+                )
+            else:
+                completion_message = (
+                    "盈亏明细已写入并通过回读校验。流转表本次未完成写入，"
+                    "已保留在结果区供人工处理；年度盈亏核算表和《核销日清》已放到右侧下载区。"
+                )
             _message(
                 db,
                 workflow,
                 "assistant",
-                "统一写入完成：先写盈亏明细，再写到账流转表安全子集；"
-                "回读校验已通过。到账流转表、年度盈亏核算表和《核销日清》已放到右侧下载区。",
-                {"kind": "workflow_completed"},
+                completion_message,
+                {"kind": "workflow_completed", "flow_written": flow_written},
             )
             if workflow.fetched_bundle_id:
                 finalize_bundle(
@@ -6776,7 +7739,7 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
             if not batch:
                 raise RuntimeError("所属核销批次不存在。")
             result = {"artifacts": []}
-            _finalize_batch_reports(db, batch, workflow, result, action)
+            _finalize_batch_reports(db, batch, workflow, result, action, guarded=guarded_report)
             if workflow.fetched_bundle_id:
                 finalize_bundle(
                     db,
@@ -6816,7 +7779,39 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
             finalize_requested_batch_cancellation(db, workflow.batch_id)
         if preview_dates_to_prime:
             _prime_fetched_data_previews(db, workflow, preview_dates_to_prime)
+    except ExecutionCancelled as exc:
+        # This signal is raised only while holding the current action's claim
+        # lock, before a new script or publication has started.
+        action.state = "cancelled"
+        action.finished_at = datetime.now(UTC)
+        workflow.state = "cancelled"
+        workflow.stage = "cancelled"
+        workflow.progress_message = str(exc)
+        workflow.error_message = ""
+        finalize_requested_batch_cancellation(db, workflow.batch_id)
+    except ExecutionLeaseLost:
+        # The scheduler or another owner has already recorded the authoritative
+        # outcome. A stale Worker cannot overwrite it with success or failure.
+        db.rollback()
+        db.info.pop("ar_execution_lock", None)
+        db.info["ar_execution_lease_lost"] = True
+        return
     except subprocess.TimeoutExpired:
+        if guarded_report:
+            from .ar_execution_runner import lock_execution
+
+            db.rollback()
+            db.info.pop("ar_execution_lock", None)
+            try:
+                lock_execution(db, action, workflow)
+            except ExecutionLeaseLost:
+                db.rollback()
+                db.info["ar_execution_lease_lost"] = True
+                return
+            # The report runs synchronously through subprocess.run, which kills
+            # and waits for the child before raising TimeoutExpired. A scheduler
+            # lease expiration has no such exit proof and remains blocked.
+            record_report_failure(workflow, action, process_exit_confirmed=True, error_type="TimeoutExpired")
         detail = _workflow_error_detail(workflow, "脚本执行超时。")
         public_error = _workflow_public_error(workflow, detail)
         action.state = "failed"
@@ -6876,7 +7871,7 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
             "assistant",
             (
                 f"{public_error['message']} 原任务副本没有被修改。"
-                "请以原始上传文件重新生成核销日清后再执行。"
+                "请按当前业务材料版本新建日清后再处理。"
             ),
             {"kind": "staged_write_discarded", "error": public_error},
         )
@@ -6899,6 +7894,20 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
             {"kind": "post_write_verification_failed", "error": public_error},
         )
     except Exception as exc:
+        if action.name.startswith("ar_") or guarded_report:
+            # Discard any uncommitted publication before recording failure.
+            # Refresh under the claim lock so a stale Worker cannot replace an
+            # outcome already recorded by cancellation or lease recovery.
+            from .ar_execution_runner import lock_execution
+
+            db.rollback()
+            db.info.pop("ar_execution_lock", None)
+            try:
+                lock_execution(db, action, workflow)
+            except ExecutionLeaseLost:
+                db.rollback()
+                db.info["ar_execution_lease_lost"] = True
+                return
         if not db.is_active:
             db.rollback()
             action = db.get(WorkflowAction, action_id)
@@ -6910,6 +7919,29 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
         action.state = "failed"
         action.error_message = public_error["message"]
         action.finished_at = datetime.now(UTC)
+        if guarded_report:
+            record_report_failure(workflow, action, process_exit_confirmed=True, error_type=type(exc).__name__)
+        if action.name == "build_fetch_preview":
+            record_audit(
+                db, actor_id=workflow.owner_id, actor_role="worker",
+                department_id=workflow.department_id,
+                action="workflow.fetched_data.preview.failed",
+                resource_type="workflow", resource_id=workflow.id, outcome="failed",
+                details={"action_id": action.id, "error_type": type(exc).__name__,
+                         "error_code": detail.error_code, "reason": detail.reason},
+            )
+        if isinstance(exc, ExecutionPhaseFailed):
+            context = _load(workflow.context_json, {})
+            cause = exc.__cause__
+            context["ar_failure"] = {
+                "action_id": action.id, "phase": action.name.removeprefix("ar_"),
+                "process_exit_confirmed": getattr(action, "_ar_process_exit_confirmed", False),
+                "process_records": list(getattr(action, "_ar_process_records", [])),
+                "process_evidence_version": getattr(action, "_ar_process_evidence_version", ""),
+                "error_type": type(cause).__name__ if cause else type(exc).__name__,
+                "failed_at": action.finished_at.isoformat(),
+            }
+            workflow.context_json = _json(context)
         if action.name == "finalize_batch":
             workflow.state = "succeeded"
             workflow.stage = "completed"
@@ -6961,13 +7993,18 @@ def run_workflow_action_once(
     db: Session,
     pools: tuple[str, ...],
     worker_id: str = "workflow-worker",
+    *,
+    execution_contracts: tuple[str, ...] = (),
 ) -> bool:
-    action = claim_next_workflow_action(db, pools, worker_id)
+    action = claim_next_workflow_action(db, pools, worker_id, execution_contracts=execution_contracts)
     if not action:
         return False
     with LeaseHeartbeat("workflow_action", action.id, worker_id):
         execute_workflow_action(db, action)
+    if db.info.pop("ar_execution_lease_lost", False):
+        return True
     action.heartbeat_at = datetime.now(UTC)
     action.lease_expires_at = None
     db.commit()
+    db.info.pop("ar_execution_lock", None)
     return True

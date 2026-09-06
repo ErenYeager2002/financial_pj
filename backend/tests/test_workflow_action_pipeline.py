@@ -11,20 +11,27 @@ from fastapi import HTTPException
 from sqlalchemy import select, text
 
 from app.database import SessionLocal, init_db
+from app.auth_models import User, UserSkillPermission
 from app.models import FetchedBundle, WorkflowAction, WorkflowSession
+from app.resource_policy import workflow_root
 from app.workflow_service import confirm_fetched_data_review, execute_workflow_action
 
 
-def _workflow() -> WorkflowSession:
-    return WorkflowSession(
+def _workflow(db) -> WorkflowSession:
+    owner_id = f"pipeline-owner-{uuid.uuid4().hex[:8]}"
+    db.add(User(id=owner_id, username=owner_id, password_hash="not-used", department_id="finance"))
+    db.flush()
+    db.add(UserSkillPermission(id=str(uuid.uuid4()), user_id=owner_id, skill_id="ar-hexiao-daily", can_run=True))
+    workflow = WorkflowSession(
         id=str(uuid.uuid4()),
-        owner_id=f"pipeline-owner-{uuid.uuid4().hex[:8]}",
+        owner_id=owner_id,
         owner_name="动作拆分测试员工",
         department_id="finance",
         skill_id="ar-hexiao-daily",
         skill_name="应收核销日清",
         skill_version="1.6.12",
         skill_hash="a" * 64,
+        execution_mode="workflow",
         model_connection_id="background",
         model_provider="platform",
         model_name="deterministic",
@@ -33,6 +40,39 @@ def _workflow() -> WorkflowSession:
         stage="preparing",
         context_json=json.dumps({"started_from_form": True}),
     )
+    # These exercise the legacy fetch contract, with a task-owned old snapshot.
+    (workflow_root(owner_id, workflow.id) / "skill").mkdir(parents=True)
+    return workflow
+
+
+def test_terminal_snapshot_cleanup_failure_preserves_completed_result(monkeypatch):
+    from app import workflow_service
+
+    init_db()
+    def unavailable(*_args):
+        raise PermissionError("private-path-must-not-be-disclosed")
+
+    monkeypatch.setattr(workflow_service, "_discard_workspace_fetched_snapshot", unavailable)
+    with SessionLocal() as db:
+        workflow = _workflow(db)
+        workspace = workflow_root(workflow.owner_id, workflow.id) / "workspace"
+        workspace.mkdir()
+        workflow.state, workflow.stage = "succeeded", "completed"
+        workflow.context_json = json.dumps({"workspace": str(workspace), "fetched_data": {"available": True}})
+        db.add(workflow)
+        db.flush()
+        action = WorkflowAction(id=str(uuid.uuid4()), workflow_id=workflow.id,
+                                name="complete_reconciliation", state="succeeded")
+        db.add(action)
+        workflow_service._cleanup_terminal_fetched_snapshot(db, workflow)
+        db.commit()
+        db.refresh(workflow)
+        db.refresh(action)
+        assert workflow.state == action.state == "succeeded"
+        context = json.loads(workflow.context_json)
+        assert context["fetched_snapshot_cleanup"]["state"] == "failed"
+        assert context["fetched_data"]["available"] is False
+        assert "private-path" not in workflow.context_json
 
 
 def test_fetch_pipeline_runs_one_named_action_per_phase(monkeypatch) -> None:
@@ -40,6 +80,7 @@ def test_fetch_pipeline_runs_one_named_action_per_phase(monkeypatch) -> None:
 
     init_db()
     calls: list[str] = []
+    build_preview = workflow_service._build_fetch_preview_action
 
     def prepare(_db, _action, _workflow):
         calls.append("prepare_workspace")
@@ -51,6 +92,7 @@ def test_fetch_pipeline_runs_one_named_action_per_phase(monkeypatch) -> None:
             "workspace": "D:/controlled/workspace",
             "fetched_data": {
                 "available": True,
+                "bundle_id": "published-test-bundle",
                 "dates": ["2026-08-20"],
                 "review_status": "waiting",
             },
@@ -59,18 +101,26 @@ def test_fetch_pipeline_runs_one_named_action_per_phase(monkeypatch) -> None:
 
     def preview(_db, _action, _workflow):
         calls.append("build_fetch_preview")
-        return {"preview_dates": ["2026-08-20"], "artifacts": []}
+        # Exercise the real preview input guard at the chained action boundary.
+        return build_preview(_db, _action, _workflow)
+
+    def assert_mirror(_db, *, bundle_id, owner_id, dates, mirror):
+        assert bundle_id == "published-test-bundle"
+        assert dates == ["2026-08-20"]
+        return SimpleNamespace(preview_available=False)
 
     monkeypatch.setattr(workflow_service, "_prepare_workspace_action", prepare)
     monkeypatch.setattr(workflow_service, "_fetch_data_action", fetch)
     monkeypatch.setattr(workflow_service, "_build_fetch_preview_action", preview)
+    monkeypatch.setattr(workflow_service, "assert_bundle_preview_mirror", assert_mirror)
+    monkeypatch.setattr(workflow_service, "_prime_fetched_data_previews", lambda *_args: None)
     monkeypatch.setattr(workflow_service, "assert_workflow_execution_enabled", lambda _item: None)
     monkeypatch.setattr(workflow_service, "acquire_claim_lock", lambda *_args: None)
     monkeypatch.setattr(workflow_service, "sync_reminder_from_workflow", lambda *_args: None)
     monkeypatch.setattr(workflow_service, "_cleanup_terminal_fetched_snapshot", lambda *_args: None)
 
     with SessionLocal() as db:
-        workflow = _workflow()
+        workflow = _workflow(db)
         action = WorkflowAction(
             id=str(uuid.uuid4()),
             workflow_id=workflow.id,
@@ -111,6 +161,38 @@ def test_fetch_pipeline_runs_one_named_action_per_phase(monkeypatch) -> None:
         assert workflow.state == "waiting_confirmation"
 
 
+@pytest.mark.parametrize(
+    ("reason", "expected_code", "expected_reason"),
+    [
+        ("取数包尚未发布，不能建立预览。", "WORKFLOW_FETCH_PREVIEW_CONTEXT_MISSING",
+         "预览动作未收到已发布取数包信息，请修复步骤交接后重新建立预览。"),
+        ("取数预览文件与已发布取数包哈希不一致。", "WORKFLOW_FETCH_PREVIEW_INTEGRITY_FAILED",
+         "预览文件与已发布取数包的校验值不一致，已停止处理。"),
+        ("private-path secret-token", "WORKFLOW_FETCH_PREVIEW_FAILED",
+         "预览构建发生内部错误，请联系管理员检查此步骤。"),
+    ],
+)
+def test_fetch_preview_error_explains_prewrite_failure(reason, expected_code, expected_reason):
+    from app import workflow_service
+
+    workflow = SimpleNamespace(
+        context_json=json.dumps({"current_step": "review_fetched_data",
+                                 "current_step_label": "取数完成，正在建立检查预览"}),
+        stage="building_fetch_preview", reconciliation_date="2026-09-03",
+        owner_name="测试员工", owner_id="owner", skill_id="ar-hexiao-daily",
+        skill_name="应收核销日清", material_set=None,
+    )
+    detail = workflow_service._workflow_error_detail(workflow, RuntimeError(reason))
+    public = workflow_service._workflow_public_error(workflow, detail)
+    assert public["error_code"] == expected_code
+    assert public["reason"] == expected_reason
+    assert public["write_status"] == "not_started"
+    assert "尚未进入核销写入" in public["message"]
+    assert "写入未完成" not in public["message"]
+    assert "private-path" not in public["message"]
+    assert "secret-token" not in public["message"]
+
+
 def test_prepare_workspace_reuses_reviewable_bundle_by_rebuilding_preview(monkeypatch) -> None:
     from app import workflow_service
 
@@ -129,7 +211,7 @@ def test_prepare_workspace_reuses_reviewable_bundle_by_rebuilding_preview(monkey
     monkeypatch.setattr(workflow_service, "_cleanup_terminal_fetched_snapshot", lambda *_args: None)
 
     with SessionLocal() as db:
-        workflow = _workflow()
+        workflow = _workflow(db)
         workflow.fetched_bundle_id = "reviewable-bundle"
         workflow.context_json = json.dumps(
             {
@@ -161,7 +243,7 @@ def test_prepare_workspace_reuses_reviewable_bundle_by_rebuilding_preview(monkey
 def test_fetched_data_confirmation_is_idempotent_for_plan_action() -> None:
     init_db()
     with SessionLocal() as db:
-        workflow = _workflow()
+        workflow = _workflow(db)
         workflow.stage = "awaiting_fetched_data_confirmation"
         workflow.state = "waiting_confirmation"
         workflow.context_json = json.dumps(
@@ -189,7 +271,7 @@ def test_fetched_data_confirmation_is_idempotent_for_plan_action() -> None:
 def test_named_fetch_pipeline_cannot_confirm_without_a_bundle() -> None:
     init_db()
     with SessionLocal() as db:
-        workflow = _workflow()
+        workflow = _workflow(db)
         workflow.stage = "awaiting_fetched_data_confirmation"
         workflow.state = "waiting_confirmation"
         workflow.context_json = json.dumps(
@@ -244,7 +326,7 @@ def test_fetch_action_accepts_current_skill_export_schema_and_publishes_bundle(
         json.dumps(
             {
                 "day": reconciliation_date,
-                "export_schema_version": "2026-08-31-total-received-v7",
+                "export_schema_version": workflow_service.FETCH_SNAPSHOT_VERSION,
                 "read_only": True,
                 "file_sha256": file_hashes,
             }
@@ -275,7 +357,7 @@ def test_fetch_action_accepts_current_skill_export_schema_and_publishes_bundle(
     monkeypatch.setattr(workflow_service, "sync_reminder_from_workflow", lambda *_args: None)
     monkeypatch.setattr(workflow_service, "_cleanup_terminal_fetched_snapshot", lambda *_args: None)
     with SessionLocal() as db:
-        workflow = _workflow()
+        workflow = _workflow(db)
         action = WorkflowAction(
             id=str(uuid.uuid4()),
             workflow_id=workflow.id,
@@ -289,6 +371,7 @@ def test_fetch_action_accepts_current_skill_export_schema_and_publishes_bundle(
         execute_workflow_action(db, action)
 
         result = json.loads(action.result_json)
+        assert action.state == "succeeded", action.error_message
         bundle = db.get(FetchedBundle, result["fetched_bundle_id"])
         assert bundle is not None
         assert bundle.source_type == "live"
@@ -309,7 +392,7 @@ def test_action_failure_recovers_failed_transaction_before_recording_error(monke
     monkeypatch.setattr(workflow_service, "_cleanup_terminal_fetched_snapshot", lambda *_args: None)
 
     with SessionLocal() as db:
-        workflow = _workflow()
+        workflow = _workflow(db)
         action = WorkflowAction(
             id=str(uuid.uuid4()),
             workflow_id=workflow.id,
@@ -376,7 +459,7 @@ def test_fetch_action_replays_bundle_without_live_fetch(monkeypatch, tmp_path: P
     monkeypatch.setattr(workflow_service, "stage_bundle_preview_files", stage)
 
     with SessionLocal() as db:
-        workflow = _workflow()
+        workflow = _workflow(db)
         action = WorkflowAction(
             id=str(uuid.uuid4()),
             workflow_id=workflow.id,

@@ -66,6 +66,15 @@ def test_core_routes_publish_explicit_contracts() -> None:
     assert upload_schema["$ref"].endswith("/PlatformFile")
     assert "/api/workbench" in paths
     assert "/api/files/{file_id}" in paths
+    summary_schema = paths["/api/catalog/skill-summaries"]["get"]["responses"]["200"][
+        "content"
+    ]["application/json"]["schema"]
+    assert summary_schema["type"] == "array"
+    assert summary_schema["items"]["$ref"].endswith("/SkillSummary")
+    group_schema = paths["/api/files/groups"]["get"]["responses"]["200"]["content"][
+        "application/json"
+    ]["schema"]
+    assert group_schema["$ref"].endswith("/PlatformFileGroupSummaryPage")
     assert "/api/runs/{run_id}/retry" in paths
     assert "/api/assistant/prepare" in paths
     assert "/api/task-drafts/{draft_id}/confirm" in paths

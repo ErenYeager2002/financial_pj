@@ -5,11 +5,12 @@ import json
 import re
 import shutil
 import uuid
+from collections.abc import Sequence
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from fastapi import HTTPException, UploadFile, status
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from .auth import UserContext
@@ -17,6 +18,7 @@ from .models import (
     FileRecord,
     RunRecord,
     WorkflowAction,
+    WorkflowMaterialSet,
     WorkflowMaterialSetFile,
     WorkflowSession,
 )
@@ -24,6 +26,11 @@ from .resource_policy import assert_owner, run_root, upload_root
 from .settings import settings
 
 SAFE_NAME_PATTERN = re.compile(r"[^0-9A-Za-z\u4e00-\u9fff._()（）-]+")
+RESULT_FILE_DELETE_REASON = "结果文件随任务记录保留，不能单独删除。"
+MATERIAL_FILE_DELETE_REASON = "文件属于业务材料版本；为保留当前版本和历史版本，不能删除。"
+REFERENCED_FILE_DELETE_REASON = "文件仍被任务使用；为保留审计和重试证据，不能删除。"
+
+
 def safe_filename(name: str) -> str:
     clean = SAFE_NAME_PATTERN.sub("_", Path(name).name).strip("._")
     return clean[:180] or "uploaded-file"
@@ -137,63 +144,220 @@ def copy_input_to_workspace(source: Path, target_dir: Path, role: str) -> Path:
     return target.resolve()
 
 
-def _contains_file_id(value: str, file_id: str) -> bool:
+def _file_ids_from_json(value: str, candidates: set[str] | None = None) -> set[str]:
     try:
         payload = json.loads(value or "{}")
-    except json.JSONDecodeError:
-        return False
+    except (TypeError, json.JSONDecodeError):
+        return set()
 
-    def contains(item: object) -> bool:
+    def collect(item: object) -> set[str]:
         if isinstance(item, dict):
-            return any(contains(value) for value in item.values())
+            result: set[str] = set()
+            for child in item.values():
+                result.update(collect(child))
+            return result
         if isinstance(item, list):
-            return any(contains(value) for value in item)
-        return item == file_id
+            result = set()
+            for child in item:
+                result.update(collect(child))
+            return result
+        if not isinstance(item, str):
+            return set()
+        return {item} if candidates is None or item in candidates else set()
 
-    return contains(payload)
+    return collect(payload)
+
+
+def _file_delete_status(
+    record: FileRecord,
+    *,
+    material_reference: bool,
+    file_reference: bool,
+) -> tuple[bool, str]:
+    if record.kind != "input":
+        return False, RESULT_FILE_DELETE_REASON
+    if material_reference:
+        return False, MATERIAL_FILE_DELETE_REASON
+    if file_reference:
+        return False, REFERENCED_FILE_DELETE_REASON
+    return True, ""
+
+
+def _reference_json_filter(column: object, file_ids: set[str]) -> object:
+    """Select only legacy JSON rows that can contain one of the page's IDs."""
+    return or_(*(column.like(f"%{file_id}%") for file_id in file_ids))  # type: ignore[attr-defined]
+
+
+def _reference_scope(model: type[object], scopes: set[tuple[str, str]]) -> object:
+    return or_(
+        *(
+            and_(
+                getattr(model, "owner_id") == owner_id,
+                getattr(model, "department_id") == department_id,
+            )
+            for owner_id, department_id in scopes
+        )
+    )
+
+
+def _legacy_reference_maps(
+    db: Session,
+    records: Sequence[FileRecord],
+) -> tuple[dict[str, set[str]], dict[str, set[str]], set[str]]:
+    """Read only matching legacy references and keep malformed rows conservative.
+
+    The relationship table is authoritative for material versions. Older task
+    records still carry references in JSON, so the compatibility path searches
+    for the current page's IDs in SQL and parses only matching rows. A matching
+    malformed row blocks deletion for that file instead of treating a failed
+    parse as proof that the file is unused.
+    """
+    file_ids = {record.id for record in records if record.kind == "input"}
+    scopes = {(record.owner_id, record.department_id) for record in records}
+    run_refs: dict[str, set[str]] = {}
+    workflow_refs: dict[str, set[str]] = {}
+    uncertain: set[str] = set()
+    if not file_ids or not scopes:
+        return run_refs, workflow_refs, uncertain
+
+    def add_refs(
+        rows: Sequence[tuple[str, str]],
+        target: dict[str, set[str]],
+    ) -> None:
+        for source_id, value in rows:
+            raw = value or ""
+            matched = {file_id for file_id in file_ids if file_id in raw}
+            if not matched:
+                continue
+            try:
+                json.loads(raw or "{}")
+            except (TypeError, json.JSONDecodeError):
+                uncertain.update(matched)
+                continue
+            for file_id in _file_ids_from_json(raw, file_ids):
+                target.setdefault(file_id, set()).add(source_id)
+
+    run_rows = db.execute(
+        select(RunRecord.id, RunRecord.files_json).where(
+            _reference_scope(RunRecord, scopes),
+            _reference_json_filter(RunRecord.files_json, file_ids),
+        )
+    ).all()
+    add_refs(run_rows, run_refs)
+
+    workflow_rows = db.execute(
+        select(WorkflowSession.id, WorkflowSession.files_json).where(
+            _reference_scope(WorkflowSession, scopes),
+            _reference_json_filter(WorkflowSession.files_json, file_ids),
+        )
+    ).all()
+    add_refs(workflow_rows, workflow_refs)
+
+    action_rows = db.execute(
+        select(WorkflowAction.workflow_id, WorkflowAction.input_json)
+        .join(WorkflowSession, WorkflowSession.id == WorkflowAction.workflow_id)
+        .where(
+            _reference_scope(WorkflowSession, scopes),
+            _reference_json_filter(WorkflowAction.input_json, file_ids),
+        )
+    ).all()
+    add_refs(action_rows, workflow_refs)
+    return run_refs, workflow_refs, uncertain
 
 
 def file_references(
     db: Session,
     record: FileRecord,
 ) -> tuple[list[str], list[str]]:
-    runs = db.scalars(
-        select(RunRecord).where(RunRecord.owner_id == record.owner_id)
-    ).all()
-    workflows = db.scalars(
-        select(WorkflowSession).where(WorkflowSession.owner_id == record.owner_id)
-    ).all()
-    actions = db.scalars(
-        select(WorkflowAction)
-        .join(WorkflowSession, WorkflowSession.id == WorkflowAction.workflow_id)
-        .where(WorkflowSession.owner_id == record.owner_id)
-    ).all()
-    run_ids = [item.id for item in runs if _contains_file_id(item.files_json, record.id)]
-    workflow_ids = {
-        item.id for item in workflows if _contains_file_id(item.files_json, record.id)
-    }
-    workflow_ids.update(
-        item.workflow_id for item in actions if _contains_file_id(item.input_json, record.id)
-    )
+    run_refs, workflow_refs, _ = _legacy_reference_maps(db, [record])
+    run_ids = set(run_refs.get(record.id, set()))
+    workflow_ids = set(workflow_refs.get(record.id, set()))
     if record.run_id:
-        run_ids.append(record.run_id)
-    return sorted(set(run_ids)), sorted(workflow_ids)
+        run_ids.add(record.run_id)
+    if record.workflow_id:
+        workflow_ids.add(record.workflow_id)
+    return sorted(run_ids), sorted(workflow_ids)
 
 
 def file_delete_status(db: Session, record: FileRecord) -> tuple[bool, str]:
     if record.kind != "input":
-        return False, "结果文件随任务记录保留，不能单独删除。"
+        return _file_delete_status(
+            record,
+            material_reference=False,
+            file_reference=False,
+        )
     material_reference = db.scalar(
         select(WorkflowMaterialSetFile.id).where(
             WorkflowMaterialSetFile.file_id == record.id
         )
     )
-    if material_reference:
-        return False, "文件属于业务材料版本；为保留当前版本和历史版本，不能删除。"
-    run_ids, workflow_ids = file_references(db, record)
-    if run_ids or workflow_ids:
-        return False, "文件仍被任务使用；为保留审计和重试证据，不能删除。"
-    return True, ""
+    run_refs, workflow_refs, uncertain = _legacy_reference_maps(db, [record])
+    run_ids = set(run_refs.get(record.id, set()))
+    workflow_ids = set(workflow_refs.get(record.id, set()))
+    if record.run_id:
+        run_ids.add(record.run_id)
+    if record.workflow_id:
+        workflow_ids.add(record.workflow_id)
+    return _file_delete_status(
+        record,
+        material_reference=bool(material_reference),
+        file_reference=bool(run_ids or workflow_ids or record.id in uncertain),
+    )
+
+
+def file_delete_statuses(
+    db: Session,
+    records: Sequence[FileRecord],
+) -> dict[str, tuple[bool, str]]:
+    """Build deletion statuses for a file page without per-file reference queries."""
+    if not records:
+        return {}
+
+    statuses: dict[str, tuple[bool, str]] = {
+        record.id: _file_delete_status(
+            record,
+            material_reference=False,
+            file_reference=False,
+        )
+        for record in records
+        if record.kind != "input"
+    }
+    input_records = [record for record in records if record.kind == "input"]
+    if not input_records:
+        return statuses
+
+    record_ids = {record.id for record in input_records}
+    material_file_ids = set(
+        db.scalars(
+            select(WorkflowMaterialSetFile.file_id)
+            .join(
+                WorkflowMaterialSet,
+                WorkflowMaterialSet.id == WorkflowMaterialSetFile.material_set_id,
+            )
+            .where(
+                WorkflowMaterialSetFile.file_id.in_(record_ids),
+                _reference_scope(
+                    WorkflowMaterialSet,
+                    {(record.owner_id, record.department_id) for record in input_records},
+                ),
+            )
+        ).all()
+    )
+    run_refs, workflow_refs, uncertain = _legacy_reference_maps(db, input_records)
+
+    for record in input_records:
+        statuses[record.id] = _file_delete_status(
+            record,
+            material_reference=record.id in material_file_ids,
+            file_reference=bool(
+                record.run_id
+                or record.workflow_id
+                or run_refs.get(record.id)
+                or workflow_refs.get(record.id)
+                or record.id in uncertain
+            ),
+        )
+    return statuses
 
 
 def delete_upload(

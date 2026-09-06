@@ -89,9 +89,8 @@ def test_registry_and_admin_boundary() -> None:
             "labor-invoice-check",
             "compliance-spot-check",
             "reconcile-bank",
-            "split-by-sales",
             "ar-hexiao-daily",
-            "receivables-merge",
+            "receivables-merge-and-split",
             "dreame-ar-progress-diff",
             "withholding-report-rename",
             "order-daily-summary",
@@ -105,7 +104,7 @@ def test_registry_and_admin_boundary() -> None:
     with auth_client(role="skill_admin") as admin_client:
         allowed = admin_client.post("/api/admin/registry/reload")
         assert allowed.status_code == 200
-        assert allowed.json()["skills"] == 19
+        assert allowed.json()["skills"] == 18
         assert allowed.json()["errors"] == []
 
 

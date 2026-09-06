@@ -11,6 +11,7 @@ import httpx
 from fastapi import HTTPException
 
 from .model_providers import chat_completion_request
+from .model_visible_data import visible_text
 from .orchestrator import LlmConfig, config_extra_body
 
 CONFIRM_WORDS = {
@@ -304,16 +305,17 @@ def _llm_decision(
 ) -> WorkflowDecision | None:
     allowed = STAGE_ACTIONS.get(stage, ("show_status",))
     tools = [_tool(action) for action in allowed]
+    safe_message = visible_text(message)
     recent_messages = [
-        {"role": item["role"], "content": item["content"]}
+        {"role": item["role"], "content": visible_text(str(item["content"]))}
         for item in history[-20:]
         if item.get("role") in {"user", "assistant"} and item.get("content")
     ]
     if not recent_messages or recent_messages[-1] != {
         "role": "user",
-        "content": message,
+        "content": safe_message,
     }:
-        recent_messages.append({"role": "user", "content": message})
+        recent_messages.append({"role": "user", "content": safe_message})
     payload: dict[str, Any] = {
         "model": config.model,
         "messages": [

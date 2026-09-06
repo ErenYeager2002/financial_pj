@@ -49,12 +49,11 @@ CI：`.github/workflows/pytest.yml` 在 push/PR 到 `main` 时跑同一套 `pyte
 - **行为 / 环境**：理清需求、装依赖——不碰业务口径，但所有业务技能都用得上
 - **通用基座**：处理四类文档（Excel/PDF/Word/PPT）的底层能力，给业务技能"打下手"、也兜住够不上独立技能的零散文档活
 
-### 业务技能（财务专有，config 驱动、可复现）· 9 个
+### 业务技能（财务专有，config 驱动、可复现）· 8 个
 
 | skill | 解决什么 | 状态 |
 |-------|----------|------|
-| [receivables-merge](skills/receivables-merge/) | **应收账款合并**：合并分年表、算账龄、按上一版回填标注、按维护表做销售归属、删已回款行、结转老坏账、出透视汇总 | ✅ 真实数据验证 · 回归通过 · 已入包 |
-| [split-by-sales](skills/split-by-sales/) | **按销售拆分**：把应收 all 按销售人员拆成一人一份带下拉框 Excel（账龄降序、坏账桶忽略、GM 单独 sheet、对账）——接在合并之后 | ✅ 回归通过 · 链路通 · 已入包 |
+| [receivables-merge-and-split](skills/receivables-merge-and-split/) | **应收账款合并与销售拆分**：一次上传材料，选择仅合并、合并并按销售拆分或已有应收 all 直接拆分 | ✅ 合并与拆分链路合并维护 |
 | [labor-invoice-check](skills/labor-invoice-check/) | **劳务发票核对**：待支付清单(国内个人)×发票台账，按身份证号求和多张发票、实习生/外国人豁免、≤800 放行、>800 缺票/未开票标黄催票 → 主核对表+不付名单+可付名单 | ✅ 真实数据验证 · 回归通过 · 已入包 |
 | [withholding-report-rename](skills/withholding-report-rename/) | **代扣代缴申报表重命名**：一批「代扣代缴、代收代缴税款报告表」PDF 批量改名成 `{纳税人名称}{金额合计}.pdf`；默认 copy 不动原件、出对照表，抽不到的进待人工 | ✅ 回归 5/5 · opencode 实测 · 已入包 |
 | [compliance-spot-check](skills/compliance-spot-check/) | **合规文件抽查**：吃应收 all（+可选抽查历史）→ 本周建议名单（营销人员｜客户｜交付月份）；未反馈优先、已反馈月份跳过、覆盖在职；只推荐不自动发邮件 | ✅ 合成回归通过 · 已入包 · 待真实 all 试用 |
@@ -63,7 +62,7 @@ CI：`.github/workflows/pytest.yml` 在 push/PR 到 `main` 时跑同一套 `pyte
 | [ar-hexiao-daily](skills/ar-hexiao-daily/) | **应收核销日清**：出纳按核销日取智云数 → SOD 级判定 → 一份《核销日清》→ **她确认** → 写前复核 → 统一写盈亏明细 + 流转安全子集；含跑批台账查漏天（**永不写智云**） | ✅ 测试 186 · **opencode 端到端实测通过**（715 格与她手填逐格一致）· 待工位真 T-1 验收 |
 | [order-daily-summary](skills/order-daily-summary/) | **九点下单统计**：登录智云抓下单表 → 组织架构归多语（不含运保）/数据/游戏/其他 →「下单数据(万元)」xlsx | ✅ 单测 24 · **内网真机复测通过（2026-07-24）** |
 
-> 链路示意：`receivables-merge` → `split-by-sales`（旁路 `compliance-spot-check`）；出纳核销独立走 `ar-hexiao-daily`；亮晶下单日报走 `order-daily-summary`。  
+> 链路示意：`receivables-merge-and-split`（旁路 `compliance-spot-check`）；出纳核销独立走 `ar-hexiao-daily`；亮晶下单日报走 `order-daily-summary`。
 > **规划中（未建 skill）**：销售反馈汇总 等。  
 > **已下线 / 迁出**：`payroll-info-match`、`insurance-fund-merge`（不做）；`bank-income-extract` 已改独立 Windows exe（日记账挑收入），不再随本包维护。
 
@@ -97,7 +96,7 @@ CI：`.github/workflows/pytest.yml` 在 push/PR 到 `main` 时跑同一套 `pyte
 | 规范 | 说明 |
 |---|---|
 | [docs/技能标准规范.md](docs/技能标准规范.md) | 四件套结构、交互模型、config 驱动 |
-| **[docs/技能README模板.md](docs/技能README模板.md)** | **每个业务技能的 README 必须讲清三段**：① 这技能干嘛 ② **没有它的时候手工怎么做** ③ **现在人和 AI 怎么配合干**。范本见 `ar-hexiao-daily` / `receivables-merge` |
+| **[docs/技能README模板.md](docs/技能README模板.md)** | **每个业务技能的 README 必须讲清三段**：① 这技能干嘛 ② **没有它的时候手工怎么做** ③ **现在人和 AI 怎么配合干**。范本见 `ar-hexiao-daily` / `receivables-merge-and-split` |
 | **[docs/仓库边界_什么进什么不进.md](docs/仓库边界_什么进什么不进.md)** | **什么该进这个仓库、什么留本地**（真实数据 / 需求收集 / 录音 / 凭据一律不进），含 push 前自检命令 |
 
 > **为什么 README 一定要写"手工原样"**：不写清她原来怎么干，就没人说得清这技能到底省了什么，
@@ -191,7 +190,7 @@ git log -1 --oneline
 - 禁止清空整个 skills 目录；禁止「只保留这 15 个」；禁止重命名白名单外的夹。
 
 【财务包白名单】
-receivables-merge、split-by-sales、labor-invoice-check、withholding-report-rename、compliance-spot-check、dreame-ar-progress-diff、dept-expense-alloc、ar-hexiao-daily、order-daily-summary、task-clarifier、xlsx、docx、pptx、pdf、env-doctor
+receivables-merge-and-split、labor-invoice-check、withholding-report-rename、compliance-spot-check、dreame-ar-progress-diff、dept-expense-alloc、ar-hexiao-daily、order-daily-summary、task-clarifier、xlsx、docx、pptx、pdf、env-doctor
 （另：把「财务技能包_来源与更新.md」放到 skills 目录根。）
 
 【装到哪】

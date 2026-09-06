@@ -54,7 +54,7 @@ try {
     if (-not (Test-Path -LiteralPath $SourceSkills)) {
         throw "Gitee repository has no skills directory: $SourceSkills"
     }
-    $required = @("ar-hexiao-daily", "receivables-merge")
+    $required = @("ar-hexiao-daily", "receivables-merge-and-split")
     foreach ($skill in $required) {
         if (-not (Test-Path -LiteralPath (Join-Path $SourceSkills $skill))) {
             throw "Required Skill missing from Gitee: $skill"

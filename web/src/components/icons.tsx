@@ -57,12 +57,14 @@ import {
   IconMusic,
   IconPalette,
   IconPaperclip,
+  IconPlayerStop,
   IconPhone,
   IconPhoto,
   IconPizza,
   IconPlus,
   IconProps,
   IconRosetteDiscountCheck,
+  IconRobot,
   IconSearch,
   IconSelector,
   IconSend,
@@ -147,6 +149,8 @@ export const Icons = {
   video: IconVideo,
   send: IconSend,
   paperclip: IconPaperclip,
+  stop: IconPlayerStop,
+  robot: IconRobot,
 
   // Files
   page: IconFile,

@@ -1,0 +1,139 @@
+'use client';
+
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import type { WorkflowBatchRead, WorkflowRead } from '@/features/platform-api/types';
+import type { JSX } from 'react';
+
+type ResultSource = Pick<
+  WorkflowRead | WorkflowBatchRead,
+  'result_metrics' | 'result_scope' | 'business_items_pending' | 'result_summary'
+>;
+
+const METRICS = [
+  ['ledger_to_fill', '待写入'],
+  ['ledger_skipped', '已跳过'],
+  ['unallocated_pending', '挂账'],
+  ['conflicts_pending', '冲突'],
+  ['exceptions', '异常']
+] as const;
+
+const FINAL_METRICS = [
+  ['ledger_written', '已写入'],
+  ['ledger_final_skipped', '已跳过'],
+  ['unallocated_pending', '挂账'],
+  ['conflicts_pending', '冲突'],
+  ['exceptions', '异常']
+] as const;
+
+const LEGACY_KEYS: Record<string, string> = {
+  ledger_to_fill: '今天要填',
+  ledger_skipped: '已填过·跳过',
+  unallocated_pending: '挂账待办',
+  conflicts_pending: '冲突·需你定',
+  flow_auto_written: '流转确认后自动写',
+  flow_manual_pending: '流转须手填',
+  exceptions: '异常'
+};
+
+function scopeLabel(scope: string): string {
+  if (scope === 'day') return '本日';
+  if (scope === 'batch') return '本批次';
+  return '范围待核实';
+}
+
+function metricValue(
+  source: ResultSource,
+  key: string,
+  final: boolean
+): { value: string; meaning: string } {
+  const metric = source.result_metrics?.[key];
+  if (metric) {
+    if (metric.state === 'value' && metric.value !== null && metric.value !== undefined) {
+      return { value: String(metric.value), meaning: metric.meaning || '' };
+    }
+    if (metric.state === 'not_applicable') return { value: '不适用', meaning: metric.meaning || '' };
+    if (metric.state === 'read_failed') return { value: '读取失败', meaning: metric.meaning || '' };
+    return { value: final ? '尚无完整结果' : '旧版本未记录', meaning: metric.meaning || '' };
+  }
+  if (final) return { value: '尚无完整结果', meaning: '' };
+  const legacy = source.result_summary?.[LEGACY_KEYS[key]];
+  if (typeof legacy === 'number' && Number.isFinite(legacy)) {
+    return { value: String(legacy), meaning: '兼容旧任务结果' };
+  }
+  return { value: '旧版本未记录', meaning: '兼容旧任务结果' };
+}
+
+export function WorkflowResultSummary({
+  source,
+  title
+}: {
+  source: ResultSource;
+  title: string;
+}): JSX.Element | null {
+  const final = source.result_metrics?.ledger_written !== undefined;
+  const definitions = final ? FINAL_METRICS : METRICS;
+  const emptyDay = source.result_metrics?.confirmed_empty_day?.value === 1;
+  const hasResults = definitions.some(([key]) => {
+    const metric = source.result_metrics?.[key];
+    return metric?.state === 'read_failed' ||
+      (metric?.state === 'value' && typeof metric.value === 'number') ||
+      (!final && typeof source.result_summary?.[LEGACY_KEYS[key]] === 'number');
+  });
+  const noticeCount = (key: string) => {
+    const value = source.result_summary?.[key];
+    return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null;
+  };
+  const accrualCount = noticeCount('跨月计提SOD数');
+  if (!hasResults && !emptyDay && !accrualCount) return null;
+  const pending = ['unallocated_pending', 'conflicts_pending', 'exceptions'].some(key => {
+    const value = source.result_metrics?.[key]?.value ?? source.result_summary?.[LEGACY_KEYS[key]];
+    return typeof value === 'number' && value > 0;
+  });
+
+  const coverage = (key: string) => metricValue(source, key, true).value;
+  return (
+    <Card>
+      <CardHeader className='pb-3'>
+        <div className='flex flex-wrap items-center justify-between gap-2'>
+          <CardTitle className='text-base'>{title}</CardTitle>
+          <div className='flex items-center gap-2'>
+            {pending && <Badge variant='outline' className='border-amber-600/40 text-amber-700 dark:text-amber-300'>有待处理项</Badge>}
+            <Badge variant='outline'>{scopeLabel(source.result_scope)}</Badge>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className='space-y-3'>
+        {emptyDay ? <p className='text-sm text-muted-foreground'>当日无核销记录</p> : hasResults && (
+          <dl className='grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 lg:grid-cols-5'>
+            {definitions.map(([key, label]) => {
+              const item = metricValue(source, key, final);
+              return (
+                <div key={key} className={['unallocated_pending', 'conflicts_pending', 'exceptions'].includes(key) && Number(item.value) > 0 ? 'text-amber-700 dark:text-amber-300' : undefined}>
+                  <dt className='text-sm'>{label}</dt>
+                  <dd className='mt-1 text-xl font-semibold tabular-nums break-words'>{item.value}</dd>
+                </div>
+              );
+            })}
+          </dl>
+        )}
+        {final && source.result_scope === 'batch' && (
+          <p className='text-xs text-muted-foreground'>
+            已复核 {coverage('result_dates_reviewed')}/{coverage('result_dates_total')} 天
+            · 已发布 {coverage('result_dates_published')} 天
+            · 无记录 {coverage('result_dates_empty')} 天
+            {(source.result_metrics?.result_dates_legacy?.value ?? 0) > 0 &&
+              ` · 另有 ${coverage('result_dates_legacy')} 天旧版结果未计入`}
+          </p>
+        )}
+        {accrualCount !== null && accrualCount > 0 && (
+          <p role='status' className='text-sm text-amber-700 dark:text-amber-300'>
+            跨月计提补填：{source.result_scope === 'batch' ? '已检查日期涉及' : '涉及'} {accrualCount} 项
+            · 月份待确认 {noticeCount('跨月计提待确认') ?? '未记录'} 项
+            · 冲突 {noticeCount('跨月计提冲突') ?? '未记录'} 项
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}

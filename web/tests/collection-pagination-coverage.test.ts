@@ -34,26 +34,68 @@ test('active platform business collections use the shared pagination module', as
   }
 });
 
-test('文件中心、AI 助手和 Skill 中心只使用纵向滚动', async () => {
-  const [files, assistant, skills, filesPage, assistantPage, fileServer, scrollable] =
-    await Promise.all([
-      readFile('src/features/files/components/file-list.tsx', 'utf8'),
-      readFile('src/features/ai-chat/components/assistant-workspace.tsx', 'utf8'),
-      readFile('src/features/skills/components/skill-catalog.tsx', 'utf8'),
-      readFile('src/app/dashboard/files/page.tsx', 'utf8'),
-      readFile('src/app/dashboard/ai-chat/page.tsx', 'utf8'),
-      readFile('src/features/files/api/server.ts', 'utf8'),
-      readFile('src/components/ui/scrollable-collection.tsx', 'utf8')
-    ]);
+test('文件中心和 AI 助手使用服务端分页，Skill 中心使用浏览器自然滚动', async () => {
+  const [
+    files,
+    assistant,
+    transcript,
+    filePicker,
+    filePickerState,
+    skills,
+    skillsPage,
+    filesPage,
+    assistantPage,
+    fileServer,
+    selectableRoute,
+    scrollable
+  ] = await Promise.all([
+    readFile('src/features/files/components/file-list.tsx', 'utf8'),
+    readFile('src/features/ai-chat/components/assistant-workspace.tsx', 'utf8'),
+    readFile('src/features/ai-chat/components/assistant-transcript.tsx', 'utf8'),
+    readFile('src/features/ai-chat/components/selectable-input-file-picker.tsx', 'utf8'),
+    readFile('src/features/ai-chat/components/selectable-input-file-picker-state.ts', 'utf8'),
+    readFile('src/features/skills/components/skill-catalog.tsx', 'utf8'),
+    readFile('src/app/dashboard/skills/page.tsx', 'utf8'),
+    readFile('src/app/dashboard/files/page.tsx', 'utf8'),
+    readFile('src/app/dashboard/ai-chat/page.tsx', 'utf8'),
+    readFile('src/features/files/api/server.ts', 'utf8'),
+    readFile('src/app/api/platform/files/selectable-inputs/route.ts', 'utf8'),
+    readFile('src/components/ui/scrollable-collection.tsx', 'utf8')
+  ]);
 
-  for (const source of [files, assistant, skills]) {
-    assert.match(source, /ScrollableCollection/);
-    assert.doesNotMatch(source, /PaginatedCollection|CollectionPaginationControls|<Pagination/);
-  }
-  assert.match(filesPage, /listAllFiles\(kind, query\)/);
-  assert.doesNotMatch(filesPage, /params\.page|listFiles\(/);
-  assert.match(assistantPage, /listAllFiles\('input'\)/);
-  assert.match(fileServer, /for \(let page = 2; page <= first\.pages; page \+= 1\)/);
+  assert.match(files, /ScrollableCollection/);
+  assert.match(files, /<Pagination/);
+  assert.doesNotMatch(files, /PaginatedCollection|useCollectionPagination/);
+  assert.match(assistant, /AssistantTranscript/);
+  assert.doesNotMatch(assistant, /<Pagination|Checkbox|搜索文件名/);
+  assert.doesNotMatch(
+    assistant,
+    /PaginatedCollection|CollectionPaginationControls|useCollectionPagination/
+  );
+  assert.match(transcript, /overflow-y-auto/);
+  assert.match(transcript, /onScroll/);
+  assert.match(filePicker, /ScrollableCollection/);
+  assert.match(filePicker, /<Pagination/);
+  assert.match(filePicker, /selectedFileIds/);
+  assert.match(filePicker, /selectedFileLimitMessage/);
+  assert.match(filePickerState, /最多选择 \$\{limit\} 个文件。/);
+  assert.doesNotMatch(skills, /ScrollableCollection|max-h-\[36rem\]|overflow-y-auto/);
+  assert.doesNotMatch(skills, /PaginatedCollection|CollectionPaginationControls|<Pagination/);
+  assert.doesNotMatch(skills, /pageSize|pageCount|useCollectionPagination/);
+  assert.match(skills, /grid items-stretch gap-4 md:grid-cols-2 xl:grid-cols-3/);
+  assert.match(skillsPage, /listSkillSummaries\(\)/);
+  assert.doesNotMatch(skillsPage, /listSkillCatalog\(\)/);
+  assert.match(filesPage, /listFileGroups/);
+  assert.match(filesPage, /listFiles\(/);
+  assert.match(filesPage, /parseFileCenterSearchParams/);
+  assert.doesNotMatch(filesPage, /params\.page/);
+  assert.doesNotMatch(filesPage, /listAllFiles/);
+  assert.doesNotMatch(assistantPage, /listSelectableInputFilesPage/);
+  assert.match(fileServer, /listSelectableInputFilesPage/);
+  assert.match(fileServer, /listSelectableInputFilesByIds/);
+  assert.match(fileServer, /include_delete_status/);
+  assert.doesNotMatch(fileServer, /for \(let page = 2; page <= first\.pages; page \+= 1\)/);
+  assert.match(selectableRoute, /listSelectableInputFilesPage/);
   assert.match(scrollable, /overflow-y-auto/);
   assert.match(scrollable, /role='region'/);
   assert.match(scrollable, /aria-label=\{ariaLabel\}/);

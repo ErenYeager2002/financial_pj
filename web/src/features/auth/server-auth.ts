@@ -2,6 +2,7 @@ import 'server-only';
 
 import { auth } from '@clerk/nextjs/server';
 import { cookies } from 'next/headers';
+import { cache } from 'react';
 import { PlatformApiError } from '@/features/platform-api/errors';
 import { authMode } from './auth-mode';
 
@@ -13,22 +14,24 @@ export interface PlatformCredential {
   clerkUserId: string | null;
 }
 
-export async function platformCredential(): Promise<PlatformCredential> {
-  const mode = authMode();
-  if (mode === 'clerk' || mode === 'hybrid') {
-    const clerk = await auth();
-    if (clerk.isAuthenticated) {
-      const token = await clerk.getToken();
-      if (!token) throw new PlatformApiError(401, '无法获取当前登录凭据，请重新登录。');
-      return { provider: 'clerk', token, clerkUserId: clerk.userId };
+export const platformCredential = cache(
+  async function platformCredential(): Promise<PlatformCredential> {
+    const mode = authMode();
+    if (mode === 'clerk' || mode === 'hybrid') {
+      const clerk = await auth();
+      if (clerk.isAuthenticated) {
+        const token = await clerk.getToken();
+        if (!token) throw new PlatformApiError(401, '无法获取当前登录凭据，请重新登录。');
+        return { provider: 'clerk', token, clerkUserId: clerk.userId };
+      }
+      if (mode === 'clerk') throw new PlatformApiError(401, '请先登录。');
     }
-    if (mode === 'clerk') throw new PlatformApiError(401, '请先登录。');
-  }
 
-  const token = (await cookies()).get(SESSION_COOKIE)?.value ?? '';
-  if (!token) throw new PlatformApiError(401, '请先登录。');
-  return { provider: 'session', token, clerkUserId: null };
-}
+    const token = (await cookies()).get(SESSION_COOKIE)?.value ?? '';
+    if (!token) throw new PlatformApiError(401, '请先登录。');
+    return { provider: 'session', token, clerkUserId: null };
+  }
+);
 
 export function credentialHeaders(credential: PlatformCredential): HeadersInit {
   return credential.provider === 'clerk'

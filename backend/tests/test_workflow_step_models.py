@@ -1074,13 +1074,20 @@ def test_legacy_standard_run_worker_claim_does_not_require_step_rows() -> None:
 
 
 def test_legacy_workflow_worker_claim_does_not_require_step_rows() -> None:
+    from app.auth_models import UserSkillPermission
     from app.models import StepRun, WorkflowAction
+    from app.resource_policy import workflow_root
     from app.workflow_service import claim_next_workflow_action
 
     engine = _sqlite_engine()
     Base.metadata.create_all(engine)
 
     with Session(engine) as db:
+        db.add(User(id="legacy-workflow-owner", username="legacy-workflow-owner",
+                    password_hash="not-used", department_id="finance"))
+        db.flush()
+        db.add(UserSkillPermission(id=str(uuid.uuid4()), user_id="legacy-workflow-owner",
+                                   skill_id="ar-hexiao-daily", can_run=True))
         workflow = WorkflowSession(
             id="legacy-worker-workflow",
             owner_id="legacy-workflow-owner",
@@ -1103,6 +1110,7 @@ def test_legacy_workflow_worker_claim_does_not_require_step_rows() -> None:
         )
         db.add_all([workflow, action])
         db.commit()
+        (workflow_root(workflow.owner_id, workflow.id) / "skill").mkdir(parents=True, exist_ok=True)
 
         claimed = claim_next_workflow_action(db, ("workflow",), "legacy-workflow-worker")
 

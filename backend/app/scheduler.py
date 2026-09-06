@@ -17,6 +17,7 @@ from .models import (
     WorkflowSession,
 )
 from .reconciliation_runner import PI_HARNESS_ACTION
+from .ar_execution_contract import publication_needs_completion
 from .settings import settings
 from .step_runtime_service import finish_run_execution_step, queue_run_execution_step
 from .task_reminder_workflow_service import sync_reminder_from_workflow
@@ -109,6 +110,35 @@ def recover_expired_jobs(db: Session, now: datetime | None = None) -> None:
         action.lease_expires_at = None
         workflow = db.get(WorkflowSession, action.workflow_id)
         if workflow:
+            from .ar_execution_contract import INVESTIGATION_ACTION
+
+            if action.name == INVESTIGATION_ACTION:
+                action.error_message = "独立调查 Worker 租约已过期，调查结果未确认；原核销失败记录保留，未自动重试。"
+                action.result_json = json.dumps({"error_type": "WorkerLeaseExpired", "process_exit_confirmed": False})
+                continue
+            context = json.loads(workflow.context_json or "{}")
+            if action.name.startswith("ar_"):
+                context["ar_failure"] = {
+                    "action_id": action.id, "phase": action.name.removeprefix("ar_"),
+                    "process_exit_confirmed": False, "error_type": "WorkerLeaseExpired",
+                    "failed_at": current.isoformat(),
+                }
+                workflow.context_json = json.dumps(context, ensure_ascii=False)
+            if action.name == "finalize_batch":
+                from .ar_report_recovery import record_report_failure, uses_verified_reports
+
+                if uses_verified_reports(workflow.batch):
+                    record_report_failure(workflow, action, process_exit_confirmed=False, error_type="WorkerLeaseExpired")
+                    context = json.loads(workflow.context_json or "{}")
+            if action.name == PI_HARNESS_ACTION and (
+                workflow.state in {"succeeded", "cancelled"}
+                or publication_needs_completion(context)
+                or ((context.get("ar_execution") or {}).get("publication") == "verified" and workflow.stage == "finalizing")
+            ):
+                context["ar_harness_failure"] = {"action_id": action.id, "message": action.error_message}
+                workflow.context_json = json.dumps(context, ensure_ascii=False)
+                sync_reminder_from_workflow(db, workflow)
+                continue
             workflow.state = "failed"
             workflow.stage = "failed"
             workflow.error_message = action.error_message

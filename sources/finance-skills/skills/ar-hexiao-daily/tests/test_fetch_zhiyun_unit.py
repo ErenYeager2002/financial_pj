@@ -73,6 +73,7 @@ def test_settlement_relation_recovers_order_when_xiadan_is_empty():
         "written_off": "120.47",
         "written_off_local": "",
         "deliver": "120.50",
+        "deliver_local": "",
         "rate": "",
         "currency": "人民币CNY",
         "name": "",
@@ -80,6 +81,24 @@ def test_settlement_relation_recovers_order_when_xiadan_is_empty():
         "delivery_date_status": "",
         "source": "结算",
     }]
+
+
+def test_related_order_reads_delivery_amount_local():
+    controls = [
+        {"controlId": "order", "controlName": "SO"},
+        {"controlId": "original", "controlName": "交付额/原币"},
+        {"controlId": "local", "controlName": "交付额/本币"},
+    ]
+    rows = [{
+        "order": "SO26060803",
+        "original": "8844.00",
+        "local": "63605.16",
+    }]
+
+    got = F.extract_related_orders(rows, controls, F.REL_XIADAN)
+
+    assert got[0]["deliver"] == "8844.00"
+    assert got[0]["deliver_local"] == "63605.16"
 
 
 def test_related_order_reads_project_delivery_date_from_order_detail():

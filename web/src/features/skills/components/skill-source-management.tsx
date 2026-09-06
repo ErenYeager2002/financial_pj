@@ -17,6 +17,7 @@ import {
 import { Input } from '@/components/ui/input';
 import type {
   SkillAvailability,
+  SkillActiveWork,
   SkillSourceBinding,
   SkillSourceDiscovery
 } from '@/features/platform-api/types';
@@ -301,6 +302,50 @@ export function SkillSourceManagement({ initialBindings, initialAvailability }: 
                             <p className='text-xs text-muted-foreground'>
                               活动任务 {item.active_work_count}
                             </p>
+                            <p className='text-xs text-muted-foreground'>
+                              当前运行版本：{item.current_version ? `v${item.current_version}` : '未记录'}
+                            </p>
+                            {!!item.active_work?.length && (
+                              <details className='mt-2 rounded border p-2 text-xs'>
+                                <summary className='cursor-pointer font-medium'>
+                                  查看活动任务明细
+                                </summary>
+                                <div className='mt-2 space-y-2'>
+                                  {item.active_work?.map((work) => (
+                                    <div
+                                      key={`${work.reference_type}:${work.reference_id}`}
+                                      className='rounded bg-muted/50 p-2'
+                                    >
+                                      <div className='flex flex-wrap items-center justify-between gap-2'>
+                                        <span className='font-medium'>
+                                          {work.display_id || work.reference_id}
+                                        </span>
+                                        <Badge variant='outline'>{activeWorkStateLabel(work.state)}</Badge>
+                                      </div>
+                                      <p className='mt-1 text-muted-foreground'>
+                                        {work.progress_message || work.original_state}
+                                        {work.stage ? ` · ${work.stage}` : ''}
+                                      </p>
+                                      <p className='mt-1 text-muted-foreground'>
+                                        等待约 {activeWorkAge(work)}
+                                        {work.blocks_disable ? ' · 当前会阻止停用' : ''}
+                                      </p>
+                                      {work.waiting_reason && (
+                                        <p className='mt-1 text-muted-foreground'>
+                                          {work.waiting_reason}
+                                        </p>
+                                      )}
+                                    </div>
+                                  ))}
+                                  {item.active_work_truncated && (
+                                    <p className='text-muted-foreground'>
+                                      仅显示最近 200 条，仍有 {item.active_work_count - (item.active_work?.length ?? 0)}{' '}
+                                      条活动任务未展开。
+                                    </p>
+                                  )}
+                                </div>
+                              </details>
+                            )}
                           </>
                         ) : (
                           <Badge variant='outline'>平台未登记</Badge>
@@ -322,7 +367,7 @@ export function SkillSourceManagement({ initialBindings, initialAvailability }: 
                               {binding.source_path}
                             </p>
                             <p className='text-xs text-muted-foreground'>
-                              已发布 {shortCommit(binding.published_commit)} · 最近发现{' '}
+                              已安装源码提交：{shortCommit(binding.published_commit)} · 上游最近发现：{' '}
                               {shortCommit(binding.last_seen_commit)}
                             </p>
                           </>
@@ -592,6 +637,26 @@ function candidateStateLabel(state: SkillSourceDiscovery['candidates'][number]['
     unmatched: '平台无同名项',
     excluded: '已排除'
   }[state];
+}
+
+function activeWorkStateLabel(state: SkillActiveWork['state']): string {
+  return {
+    queued: '排队中',
+    running: '执行中',
+    waiting_material: '等待材料',
+    waiting_confirmation: '等待确认',
+    unknown: '状态待核实'
+  }[state];
+}
+
+function activeWorkAge(work: SkillActiveWork): string {
+  const start = work.queued_at || work.updated_at;
+  const timestamp = Date.parse(start);
+  if (!Number.isFinite(timestamp)) return '待核实';
+  const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+  if (seconds < 60) return `${seconds} 秒`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} 分钟`;
+  return `${Math.floor(seconds / 3600)} 小时`;
 }
 
 async function responseMessage(response: Response, fallback: string): Promise<string> {

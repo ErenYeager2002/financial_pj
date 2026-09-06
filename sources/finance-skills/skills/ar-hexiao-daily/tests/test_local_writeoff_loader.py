@@ -141,3 +141,64 @@ def test_loader_audits_explicit_total_against_order_original_amounts(tmp_path):
     assert audit["effective_order_amount_count"] == 2
     assert payment["writeoffs"] == {"SO1": 10.0, "SO2": 20.0}
     assert payment["writeoffs_local"] == {}
+
+
+def test_whole_foreign_delivery_fallback_audits_original_but_writes_local(tmp_path):
+    export_dir = tmp_path / "01_智云导出"
+    _xlsx(
+        export_dir / "回款记录_20260902.xlsx",
+        [
+            "回款记录ID", "核销日期", "到账日期", "到账金额/原币", "到账金额/本币",
+            "总到账金额/原币", "总到账金额/本币", "手续费/原币", "原币币种",
+            "回款类型", "核销状态", "开票客户",
+        ],
+        [[
+            "AR26090004", dt.date(2026, 9, 2), dt.date(2026, 9, 2),
+            8833.0, 63526.05, 8844.0, None, 11.0, "美元USD",
+            "整笔回款", "核销成功", "客户甲",
+        ]],
+    )
+    _xlsx(
+        export_dir / "订单交付_20260902.xlsx",
+        [
+            "回款记录ID", "SO", "订单已核销金额", "订单已核销金额/本币",
+            "交付额/原币", "交付额/本币", "汇率", "结算币种", "订单名称",
+            "项目交付日期", "交付日期取数状态",
+        ],
+        [[
+            "AR26090004", "SO26060803", None, None, 8844.0, 63605.16,
+            7.1919, "美元USD", "订单甲", dt.date(2026, 6, 10), "订单详情明确值",
+        ]],
+    )
+    _xlsx(
+        export_dir / "订单明细_20260902.xlsx",
+        ["SO", "SOD", "交付额/原币"],
+        [["SO26060803", "SOD26061029", 8844.0]],
+    )
+
+    payment = C.load_exports(tmp_path, dt.date(2026, 9, 2))[0]
+    audit = payment["duplicate_writeoff_audit"]
+
+    assert audit["comparison_basis"] == "delivery_fallback_original"
+    assert audit["delta"] == 0
+    assert payment["writeoffs"] == {"SO26060803": 8844.0}
+    assert payment["writeoffs_local"] == {"SO26060803": 63605.16}
+
+    record = C.expand_payment(payment, {})[0]
+    assert record["amount_local"] == 63605.16
+    assert record["deliver_local"] == 63605.16
+
+    ledger = C.LedgerIndex(synthetic={
+        "so": {"SO26060803": [5657]},
+        "sod": {"SOD26061029": [5657]},
+        "rows": {
+            5657: {
+                "so": "SO26060803", "sod": "SOD26061029",
+                "yingshou": 63605.16,
+            }
+        },
+    })
+    result = C.classify_one(record, ledger, {}, 0.0, 2026)
+    assert result["bucket"] == "auto"
+    assert result["five_cols"]["计提"] == 63605.16
+    assert result["five_cols"]["回款明细"] == 63605.16

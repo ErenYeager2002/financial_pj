@@ -5,7 +5,6 @@ import {
   listAdminModelConnections
 } from '@/features/ai-chat/api/server';
 import { AssistantWorkspace } from '@/features/ai-chat/components/assistant-workspace';
-import { listAllFiles } from '@/features/files/api/server';
 import { platformServerRequest } from '@/features/platform-api/server-client';
 import type { PlatformSession } from '@/features/platform-api/types';
 
@@ -14,9 +13,8 @@ export const metadata = {
 };
 
 export default async function Page() {
-  const [status, filePage, session] = await Promise.all([
+  const [status, session] = await Promise.all([
     getAssistantStatus(),
-    listAllFiles('input'),
     platformServerRequest<PlatformSession>('/api/session')
   ]);
   const isAdmin = session.role === 'skill_admin';
@@ -25,12 +23,11 @@ export default async function Page() {
     : [undefined, undefined];
   return (
     <PageContainer
-      pageTitle='AI 助手'
-      pageDescription='用自然语言生成财务任务草稿，确认后才会创建任务'
+      pageTitle='AI 助手' headingLevel={1} compact
     >
       <AssistantWorkspace
         initialConfigured={status.configured}
-        files={filePage}
+        initialModel={status.model}
         isAdmin={isAdmin}
         profile={profile}
         connections={connections}

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-校验与《核销日清》生成后统一写入：先把 SO 与交付金额写入流转表，
-再写盈亏明细，最后按实际写入结果回填流转状态和红字。
+校验与《核销日清》生成后统一写入：流转表前置登记、盈亏明细和流转状态
+按既定顺序尝试执行。流转表写入失败时只转人工处理，不阻断盈亏明细写入。
 
 不再要求人工确认；--confirmed 仅为旧命令兼容参数。
-盈亏失败 → 不写流转。
+盈亏写入失败 → 不发布本次结果；流转表任何阶段失败均不阻断盈亏写入。
 """
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import common  # noqa: E402
+import validate_plan  # noqa: E402
 import apply_to_copy  # noqa: E402
 import apply_flow  # noqa: E402
 import build_flow_plan  # noqa: E402
@@ -67,6 +68,20 @@ def _record_done(args, *, ledger_written: bool, flow_written: bool) -> None:
         print(
             f"WARN: 写后台账登记失败（不影响已写入的数据）：{type(e).__name__}",
             file=sys.stderr,
+        )
+    finally:
+        # Backend uses this small, non-sensitive marker to distinguish a
+        # successful ledger publication from a flow-table manual fallback.
+        print(
+            "AR_WRITE_RESULT "
+            + json.dumps(
+                {
+                    "ledger_written": bool(ledger_written),
+                    "flow_written": bool(flow_written),
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
         )
 
 
@@ -146,6 +161,7 @@ def main(argv=None) -> int:
     ap.add_argument("--in-place", action="store_true", help="盈亏就地写")
     ap.add_argument("--flow-in-place", action="store_true", help="流转就地写")
     ap.add_argument("--force", action="store_true", help="盈亏跳过冲突只写可写")
+    ap.add_argument("--ledger-only", action="store_true", help="平台分阶段执行：仅写盈亏并回读，不写流转或登记正式收工台账")
     args = ap.parse_args(argv)
 
     checked_path = Path(args.checked)
@@ -211,6 +227,24 @@ def main(argv=None) -> int:
         year: _year_subplan(plan, year, ledger_paths[year])
         for year in grouped
     }
+    # 整单跳过也将影响流转完成状态；即使该年度没有 write，仍须复核当前表。
+    so_skips = [it for it in (plan.get("skip") or []) if it.get("code") == "OK_SO_ALREADY_SETTLED"]
+    if any(it.get("ledger_year") is None for it in so_skips):
+        print("ERROR: 整单跳过项缺少交付年度，请重新判定；未执行盈亏或流转写入。", file=sys.stderr)
+        return 2
+    for year in sorted({int(it["ledger_year"]) for it in so_skips}):
+        path = ledger_paths.get(year)
+        if path is None or not path.is_file():
+            print(f"ERROR: 缺少 {year} 年盈亏表，无法复核整单跳过；未执行写入。", file=sys.stderr)
+            return 2
+        try:
+            problems = validate_plan.recheck_so_skips(_year_subplan(plan, year, path), path)
+        except (OSError, ValueError) as exc:
+            problems = [f"无法读取当前年度盈亏表（{type(exc).__name__}）"]
+        if problems:
+            print("ERROR: 整单跳过的执行前复核失败：" + "；".join(problems), file=sys.stderr)
+            return 2
+
     # 所有年度表先统一做写前复核，任一失败都不开始写。
     for year, subplan in subplans.items():
         try:
@@ -231,23 +265,22 @@ def main(argv=None) -> int:
     date_value = common.norm_date(plan.get("hexiao_date"))
     date_tag = date_value.strftime("%Y%m%d") if date_value else "未定日期"
 
-    # 流转计划在盈亏写入前就要使用：智云取数与分类完成后，先登记 SO 和交付金额。
+    # 先读取流转计划，实际流转表写入放到盈亏写入并回读之后；计划异常只转人工处理。
     flow_plan_path = Path(args.flow_plan) if args.flow_plan else ws / "04_产出" / "流转写入计划_校验后.json"
     flow_plan_data = None
+    flow_warnings = []
     if flow_plan_path.is_file():
-        flow_plan_data = json.loads(flow_plan_path.read_text(encoding="utf-8"))
-        prefill_args = [
-            "--plan", str(flow_plan_path),
-            "--workspace", str(args.workspace),
-            "--phase", "prefill",
-            "--report", str(ws / "04_产出" / f"流转前置变更清单_{date_tag}.xlsx"),
-        ]
-        if args.flow_in_place:
-            prefill_args.append("--in-place")
-        rc0 = apply_flow.main(prefill_args)
-        if rc0 != 0:
-            print(f"ERROR: 流转表前置填单失败 EXIT:{rc0}，盈亏表未写。", file=sys.stderr)
-            return rc0
+        try:
+            flow_plan_data = json.loads(flow_plan_path.read_text(encoding="utf-8"))
+            if not isinstance(flow_plan_data, dict):
+                raise ValueError("流转写入计划不是对象")
+        except Exception as e:
+            flow_warnings.append(
+                f"流转写入计划读取未完成（{type(e).__name__}），已继续写入盈亏。"
+            )
+            flow_plan_data = None
+    else:
+        flow_warnings.append("未找到流转写入计划，已跳过流转写入并继续写入盈亏。")
 
     if args.in_place:
         for year in grouped:
@@ -262,7 +295,10 @@ def main(argv=None) -> int:
             no_write_ledger = ledger_paths.get(preferred_year)
             if no_write_ledger is None:
                 no_write_ledger = ledger_paths[sorted(ledger_paths)[0]]
-            ledger_args = ["--checked", str(checked_path), "--ledger", str(no_write_ledger)]
+            no_write_year = next(year for year, path in ledger_paths.items() if path == no_write_ledger)
+            empty_path = Path(temp_dir) / "checked_no_write.json"
+            empty_path.write_text(json.dumps(_year_subplan(plan, no_write_year, no_write_ledger), ensure_ascii=False, indent=2), encoding="utf-8")
+            ledger_args = ["--checked", str(empty_path), "--ledger", str(no_write_ledger)]
             if args.in_place:
                 ledger_args.append("--in-place")
             if args.force:
@@ -275,6 +311,8 @@ def main(argv=None) -> int:
             sub_path = Path(temp_dir) / f"checked_{year}.json"
             sub_path.write_text(json.dumps(subplan, ensure_ascii=False, indent=2), encoding="utf-8")
             ledger_args = ["--checked", str(sub_path), "--ledger", str(ledger_paths[year])]
+            if args.ledger_only:
+                ledger_args.extend(["--execution-receipt", str(ws / "04_产出" / f"盈亏执行_{date_tag}_{year}.json")])
             if len(subplans) > 1:
                 change_report = ws / "04_产出" / f"变更清单_{date_tag}_{year}.xlsx"
                 diff_report = ws / "04_产出" / f"订单写入差异_{date_tag}_{year}.xlsx"
@@ -312,19 +350,78 @@ def main(argv=None) -> int:
         )
     apply_to_copy._mark_review_applied(checked_path)
 
-    # 3) 盈亏全部写入并回读成功后，再按真实结果回填流转状态。
+    if args.ledger_only:
+        print("AR_WRITE_RESULT " + json.dumps({
+            "ledger_written": bool(writable), "flow_written": False,
+            "ledger_verified": True, "publication_pending": True,
+        }))
+        return 0
+
+    # 3) 盈亏全部写入并回读成功后，再按真实结果处理流转表。
     if flow_plan_data is None:
-        print("WARN: 无流转写入计划，跳过流转写入（盈亏已成功）。")
+        for warning in flow_warnings:
+            print(f"WARN: {warning}")
         _record_done(args, ledger_written=bool(writable), flow_written=False)
         _resnapshot_sources(args.workspace)
         return 0
 
-    final_flow_plan = build_flow_plan.finalize_plan_after_ledger(flow_plan_data, plan)
+    prefill_args = [
+        "--plan", str(flow_plan_path),
+        "--workspace", str(args.workspace),
+        "--phase", "prefill",
+        "--report", str(ws / "04_产出" / f"流转前置变更清单_{date_tag}.xlsx"),
+    ]
+    if args.flow_in_place:
+        prefill_args.append("--in-place")
+    try:
+        rc0 = apply_flow.main(prefill_args)
+    except Exception as e:
+        flow_warnings.append(
+            f"流转表前置登记未完成（{type(e).__name__}），盈亏已写入。"
+        )
+        flow_plan_data = None
+    else:
+        if rc0 != 0:
+            flow_warnings.append(
+                f"流转表前置登记未完成（退出码 {rc0}），盈亏已写入。"
+            )
+            flow_plan_data = None
+    if flow_plan_data is None:
+        for warning in flow_warnings:
+            print(f"WARN: {warning}")
+        print("盈亏已写入并回读；流转表转人工处理。")
+        _record_done(args, ledger_written=bool(writable), flow_written=False)
+        _resnapshot_sources(args.workspace)
+        return 0
+
+    try:
+        final_flow_plan = build_flow_plan.finalize_plan_after_ledger(flow_plan_data, plan)
+    except Exception as e:
+        flow_warnings.append(
+            f"流转状态计划生成未完成（{type(e).__name__}），盈亏已写入。"
+        )
+        for warning in flow_warnings:
+            print(f"WARN: {warning}")
+        print("盈亏已写入并回读；流转表转人工处理。")
+        _record_done(args, ledger_written=bool(writable), flow_written=False)
+        _resnapshot_sources(args.workspace)
+        return 0
     final_flow_path = ws / "04_产出" / f"流转状态回填计划_{date_tag}.json"
     final_flow_path.parent.mkdir(parents=True, exist_ok=True)
-    final_flow_path.write_text(
-        json.dumps(final_flow_plan, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    try:
+        final_flow_path.write_text(
+            json.dumps(final_flow_plan, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    except Exception as e:
+        flow_warnings.append(
+            f"流转状态计划保存未完成（{type(e).__name__}），盈亏已写入。"
+        )
+        for warning in flow_warnings:
+            print(f"WARN: {warning}")
+        print("盈亏已写入并回读；流转表转人工处理。")
+        _record_done(args, ledger_written=bool(writable), flow_written=False)
+        _resnapshot_sources(args.workspace)
+        return 0
     flow_args = [
         "--plan", str(final_flow_path),
         "--workspace", str(args.workspace),
@@ -333,14 +430,27 @@ def main(argv=None) -> int:
     ]
     if args.flow_in_place:
         flow_args.append("--in-place")
-    rc2 = apply_flow.main(flow_args)
-    if rc2 != 0:
-        print(
-            f"WARN: 盈亏已写成功，但流转写入 EXIT:{rc2}（请看流转变更/手填项）。",
-            file=sys.stderr,
+    flow_written = True
+    try:
+        rc2 = apply_flow.main(flow_args)
+    except Exception as e:
+        flow_written = False
+        flow_warnings.append(
+            f"流转状态回填未完成（{type(e).__name__}），盈亏已写入。"
         )
+    else:
+        if rc2 != 0:
+            flow_written = False
+            flow_warnings.append(
+                f"流转状态回填未完成（退出码 {rc2}），盈亏已写入。"
+            )
+    if not flow_written:
+        for warning in flow_warnings:
+            print(f"WARN: {warning}")
+        print("盈亏已写入并回读；流转表转人工处理。")
         _record_done(args, ledger_written=bool(writable), flow_written=False)
-        return rc2
+        _resnapshot_sources(args.workspace)
+        return 0
     print("统一写入完成：盈亏 + 流转")
     _record_done(args, ledger_written=bool(writable), flow_written=True)
     _resnapshot_sources(args.workspace)

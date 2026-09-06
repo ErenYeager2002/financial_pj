@@ -28,7 +28,8 @@ export default function PageContainer({
   pageTitle,
   pageDescription,
   headingLevel = 2,
-  pageHeaderAction
+  pageHeaderAction,
+  compact = false
 }: {
   children: React.ReactNode;
   isLoading?: boolean;
@@ -38,6 +39,7 @@ export default function PageContainer({
   pageDescription?: string;
   headingLevel?: 1 | 2;
   pageHeaderAction?: React.ReactNode;
+  compact?: boolean;
 }) {
   if (!access) {
     return (
@@ -56,13 +58,14 @@ export default function PageContainer({
   const hasHeader = pageTitle || pageHeaderAction;
 
   return (
-    <div className='flex flex-1 flex-col px-4 pt-2 pb-4 md:px-6 md:pt-4'>
+    <div className={compact ? 'platform-page' : 'flex flex-1 flex-col px-4 pt-2 pb-4 md:px-6 md:pt-4'}>
       {hasHeader && (
-        <div className='mb-4 flex items-start justify-between gap-4'>
+        <div className={compact ? 'mb-6 flex flex-wrap items-start justify-between gap-4' : 'mb-4 flex items-start justify-between gap-4'}>
           <Heading
             title={pageTitle ?? ''}
             description={pageDescription ?? ''}
             level={headingLevel}
+            compact={compact}
           />
           {pageHeaderAction && <div className='shrink-0'>{pageHeaderAction}</div>}
         </div>

@@ -7,7 +7,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Calendar, CalendarDayButton } from '@/components/ui/calendar';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PaginatedCollection } from '@/components/ui/collection-pagination';
 import { Icons } from '@/components/icons';
 import { ZhiyunCredentialCard } from '@/features/workflow-agent/components/zhiyun-credential-card';
@@ -97,7 +97,7 @@ function stageLabel(stage: string): string {
     awaiting_files: '等待材料',
     preparing: '后台处理中',
     awaiting_apply_confirmation: '等待确认写入',
-    waiting_approval: '继续执行',
+    waiting_approval: '等待管理员审批',
     applying: '写入中',
     completed: '已完成',
     failed: '失败',
@@ -174,8 +174,6 @@ export function WorkflowLauncher({
   const [snapshotOptionsError, setSnapshotOptionsError] = React.useState('');
   const [useSnapshot, setUseSnapshot] = React.useState(false);
   const [selectedFetchedBundleId, setSelectedFetchedBundleId] = React.useState('');
-  const [rerunSuccessfulDates, setRerunSuccessfulDates] = React.useState(false);
-  const [rerunReason, setRerunReason] = React.useState('');
   const [error, setError] = React.useState('');
   const appliedInitialDatesKeyRef = React.useRef('');
   const dateDragRef = React.useRef<{
@@ -569,11 +567,7 @@ export function WorkflowLauncher({
       setDateError(dateRangeError);
       return;
     }
-    const normalizedRerunReason = rerunReason.trim();
-    if (rerunSuccessfulDates && !normalizedRerunReason) {
-      setError('勾选重新核销已成功日期后，必须填写重新核销原因。');
-      return;
-    }
+    const rerunSuccessfulDates = skillId === 'ar-hexiao-daily';
     setWorking(true);
     setError('');
     setDateError('');
@@ -599,7 +593,7 @@ export function WorkflowLauncher({
             files,
             replace_roles,
             rerun_successful_dates: rerunSuccessfulDates,
-            rerun_reason: normalizedRerunReason,
+            rerun_reason: rerunSuccessfulDates ? '创建任务页默认重新核销所选已成功日期' : '',
             ...(useSnapshot ? { fetched_bundle_id: selectedFetchedBundleId } : {})
           };
       const response = await fetch(endpoint, {
@@ -687,12 +681,7 @@ export function WorkflowLauncher({
                     />
                     <span>
                       <span className='block font-medium'>
-                        {mode === 'pi_harness' ? 'AI 执行' : '工作流执行'}
-                      </span>
-                      <span className='mt-0.5 block text-xs text-muted-foreground'>
-                        {mode === 'pi_harness'
-                          ? 'Pi Harness 按当前任务固定的 Skill 全程执行。'
-                          : '沿用现有固定工作流执行。'}
+                        {mode === 'pi_harness' ? '受控智能执行' : '工作流执行'}
                       </span>
                     </span>
                   </label>
@@ -711,9 +700,6 @@ export function WorkflowLauncher({
           {supportsSnapshotReplay && (
             <div className='rounded-lg border p-3'>
               <p className='text-sm font-medium'>取数记录</p>
-              <p className='mt-1 text-xs text-muted-foreground'>
-                这里只提供仍在保留期限内的可回放取数包。
-              </p>
               <div className='mt-3 grid gap-2 text-sm'>
                 <label
                   htmlFor='fetched-data-source-live'
@@ -754,9 +740,6 @@ export function WorkflowLauncher({
                   />
                   <span className='min-w-0 flex-1'>
                     <span className='font-medium'>使用可回放取数包</span>
-                    <span className='mt-0.5 block text-xs text-muted-foreground'>
-                      回放原始取数文件，后续仍需人工检查和现有审批。
-                    </span>
                   </span>
                 </label>
               </div>
@@ -869,51 +852,6 @@ export function WorkflowLauncher({
             <p className='border-t pt-2 text-xs text-muted-foreground'>已选：{selectedDateLabel}</p>
           </div>
 
-          {supportsSnapshotReplay && (
-            <div className='rounded-lg border p-3'>
-              <div className='flex items-start gap-3 text-sm'>
-                <input
-                  id='rerun-successful-dates'
-                  type='checkbox'
-                  className='mt-0.5 size-4'
-                  checked={rerunSuccessfulDates}
-                  disabled={working}
-                  onChange={(event) => {
-                    setRerunSuccessfulDates(event.target.checked);
-                    setError('');
-                    if (!event.target.checked) setRerunReason('');
-                  }}
-                />
-                <div>
-                  <label htmlFor='rerun-successful-dates' className='font-medium'>
-                    重新核销已成功日期
-                  </label>
-                  <p className='mt-1 text-xs text-muted-foreground'>
-                    仅在确实需要复核时勾选。原成功任务会保留，新任务仍需完成取数检查和写前确认。
-                  </p>
-                </div>
-              </div>
-              {rerunSuccessfulDates && (
-                <label htmlFor='rerun-reason' className='mt-3 grid gap-1.5 text-sm font-medium'>
-                  重新核销原因
-                  <textarea
-                    id='rerun-reason'
-                    value={rerunReason}
-                    maxLength={500}
-                    rows={3}
-                    disabled={working}
-                    onChange={(event) => {
-                      setRerunReason(event.target.value);
-                      setError('');
-                    }}
-                    className='resize-y rounded-md border bg-background px-3 py-2 font-normal'
-                    placeholder='说明本次重新核对的原因'
-                  />
-                </label>
-              )}
-            </div>
-          )}
-
           {fileInputs.length > 0 && (
             <div className='space-y-3'>
               <div>
@@ -924,9 +862,6 @@ export function WorkflowLauncher({
                   )}
                   {materialsLoading && <Badge variant='outline'>正在读取已保存文件</Badge>}
                 </div>
-                <p className='mt-1 text-xs text-muted-foreground'>
-                  成功任务会发布下一业务版本，后续任务自动使用该版本；需要更换时再上传。
-                </p>
               </div>
               {fileInputs.map((input) => {
                 const entries = materials[input.role] ?? [];
@@ -936,9 +871,9 @@ export function WorkflowLauncher({
                       <div className='min-w-0'>
                         <p className='text-sm font-medium'>
                           {input.name}
+                          {input.role === 'profit_loss_ledgers' && '（每年一份）'}
                           {input.required && <span className='ml-1 text-destructive'>*</span>}
                         </p>
-                        <p className='mt-1 text-xs text-muted-foreground'>{input.description}</p>
                         {entries.length > 0 ? (
                           <PaginatedCollection
                             ariaLabel={`${input.name}已选材料`}
@@ -989,7 +924,7 @@ export function WorkflowLauncher({
                         {uploadingRole === input.role
                           ? '上传中…'
                           : entries.length
-                            ? '替换/新增'
+                            ? input.multiple ? '新增/替换' : '替换当前表'
                             : '选择文件'}
                         <input
                           type='file'
@@ -1066,7 +1001,6 @@ export function WorkflowLauncher({
       <Card>
         <CardHeader>
           <CardTitle>最近任务</CardTitle>
-          <CardDescription>任务提交后可离开页面，Worker 会继续执行。</CardDescription>
         </CardHeader>
         <CardContent className='space-y-2'>
           {recentTasks.length ? (

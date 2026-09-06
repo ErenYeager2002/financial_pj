@@ -596,12 +596,13 @@ export function SkillRunSetup({ skill, experience, draft, draftFiles = [] }: Ski
                       id={`parameter-${name}`}
                       className='border-input bg-background ring-offset-background focus-visible:ring-ring h-9 w-full rounded-md border px-3 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none'
                       value={String(parameters[name] ?? '')}
-                      onChange={(event) =>
+                      onChange={(event) => {
+                        const value = event.currentTarget.value;
                         setParameters((current) => ({
                           ...current,
-                          [name]: event.currentTarget.value
-                        }))
-                      }
+                          [name]: value
+                        }));
+                      }}
                     >
                       {!requiredParameters.has(name) && <option value=''>不指定</option>}
                       {property.enum.map((option) => (

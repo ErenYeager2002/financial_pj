@@ -7,18 +7,25 @@ import type {
   ApprovalDecisionRequest as GeneratedApprovalDecisionRequest,
   ApprovalRecord as GeneratedApprovalRecord,
   AssistantConversationRead as GeneratedAssistantConversation,
+  AssistantConversationSummary as GeneratedAssistantConversationSummary,
   AssistantMessageRead as GeneratedAssistantMessage,
   AssistantStatus as GeneratedAssistantStatus,
   AuditEventRead as GeneratedAuditEvent,
+  AuditEventPage as GeneratedAuditEventPage,
   FeatureControlRead as GeneratedFeatureControl,
   ModelConnectionRead as GeneratedModelConnection,
   ModelProviderRead as GeneratedModelProvider,
   ObservabilitySummary as GeneratedObservabilitySummary,
   PlatformFile as GeneratedPlatformFile,
   PlatformFileDetail as GeneratedPlatformFileDetail,
+  PlatformFileGroupSummary as GeneratedPlatformFileGroupSummary,
+  PlatformFileGroupSummaryPage as GeneratedPlatformFileGroupSummaryPage,
+  PlatformFileOption as GeneratedPlatformFileOption,
+  PlatformFileOptionPage as GeneratedPlatformFileOptionPage,
   PlatformFilePage as GeneratedPlatformFilePage,
   PlatformHealth as GeneratedPlatformHealth,
   PlatformUser as GeneratedPlatformUser,
+  RuntimeHealth as GeneratedRuntimeHealth,
   RunActionResponse as GeneratedRunActionResponse,
   RunApprovalRead as GeneratedRunApproval,
   RunCreate as GeneratedRunCreate,
@@ -32,6 +39,7 @@ import type {
   ServiceCredentialRead as GeneratedServiceCredentialRead,
   SkillDetail as GeneratedSkillDetail,
   SkillAvailabilityRead as GeneratedSkillAvailability,
+  SkillActiveWorkRead as GeneratedSkillActiveWork,
   SkillDedicationRead as GeneratedSkillDedication,
   SkillDedicationWrite as GeneratedSkillDedicationWrite,
   SkillPermissionRead as GeneratedSkillPermission,
@@ -57,6 +65,7 @@ import type {
   WorkflowRead as GeneratedWorkflowRead,
   WorkflowReusableFilesRead as GeneratedWorkflowReusableFilesRead,
   WorkflowAgentContext as GeneratedWorkflowAgentContext,
+  WorkflowResultMetric as GeneratedWorkflowResultMetric,
   TaskDraft as GeneratedTaskDraft,
   Workbench as GeneratedWorkbench
 } from './generated';
@@ -64,6 +73,7 @@ import type {
 export type PlatformUser = GeneratedPlatformUser;
 export type AssistantStatus = GeneratedAssistantStatus;
 export type AssistantConversation = GeneratedAssistantConversation;
+export type AssistantConversationSummary = GeneratedAssistantConversationSummary;
 export type AssistantMessage = GeneratedAssistantMessage;
 export type AdminAssistantProfile = GeneratedAdminAssistantProfile;
 export type AdminUser = GeneratedAdminUser;
@@ -72,10 +82,12 @@ export type AdminUserUpdate = GeneratedAdminUserUpdate;
 export type ModelConnection = GeneratedModelConnection;
 export type ModelProvider = GeneratedModelProvider;
 export type ObservabilitySummary = GeneratedObservabilitySummary;
+export type AuditEventPage = GeneratedAuditEventPage;
 export type PlatformSession = GeneratedPlatformUser;
 export type SkillSummary = GeneratedSkillSummary;
 export type SkillDetail = GeneratedSkillDetail;
 export type SkillAvailability = GeneratedSkillAvailability;
+export type SkillActiveWork = GeneratedSkillActiveWork;
 export type SkillDedication = GeneratedSkillDedication;
 export type SkillDedicationWrite = GeneratedSkillDedicationWrite;
 export type SkillPermission = GeneratedSkillPermission;
@@ -131,14 +143,20 @@ export interface WorkflowFetchedSnapshot {
 }
 export type PlatformFile = GeneratedPlatformFile;
 export type PlatformFileDetail = GeneratedPlatformFileDetail;
+export type PlatformFileGroupSummary = GeneratedPlatformFileGroupSummary;
+export type PlatformFileGroupSummaryPage = GeneratedPlatformFileGroupSummaryPage;
+export type PlatformFileOption = GeneratedPlatformFileOption;
+export type PlatformFileOptionPage = GeneratedPlatformFileOptionPage;
 export type PlatformFilePage = GeneratedPlatformFilePage;
 export type PlatformHealth = GeneratedPlatformHealth;
+export type RuntimeHealth = GeneratedRuntimeHealth;
 export type Workbench = GeneratedWorkbench;
 export type AuditEvent = GeneratedAuditEvent;
 export type FeatureControl = GeneratedFeatureControl;
 export type TaskDraft = GeneratedTaskDraft;
 export type ApprovalRecord = GeneratedApprovalRecord;
 export type ApprovalDecisionRequest = GeneratedApprovalDecisionRequest;
+export type WorkflowResultMetric = GeneratedWorkflowResultMetric;
 
 export interface PlatformErrorBody {
   detail: string;

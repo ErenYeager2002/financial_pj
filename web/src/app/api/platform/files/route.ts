@@ -10,9 +10,12 @@ export async function GET(request: Request) {
   try {
     const params = new URL(request.url).searchParams;
     const page = Number(params.get('page') ?? '1');
-    const pageSize = Number(params.get('page_size') ?? '20');
+    const pageSize = Number(params.get('page_size') ?? '25');
     const kind = params.get('kind') ?? '';
     const query = params.get('query') ?? '';
+    const skillId = (params.get('skill_id') ?? '').trim();
+    const unassignedParam = params.get('unassigned');
+    const includeDeleteStatusParam = params.get('include_delete_status');
     if (!Number.isSafeInteger(page) || page < 1) {
       throw new PlatformApiError(400, '页码必须是正整数。');
     }
@@ -22,7 +25,32 @@ export async function GET(request: Request) {
     if (!['', 'input', 'output'].includes(kind)) {
       throw new PlatformApiError(400, '文件类型无效。');
     }
-    return NextResponse.json(await listFiles(page, pageSize, kind, query));
+    if (skillId.length > 128) {
+      throw new PlatformApiError(400, 'Skill 标识格式无效。');
+    }
+    if (unassignedParam !== null && !['true', 'false'].includes(unassignedParam)) {
+      throw new PlatformApiError(400, 'unassigned 必须是 true 或 false。');
+    }
+    if (skillId && unassignedParam === 'true') {
+      throw new PlatformApiError(400, 'skill_id 和 unassigned 不能同时使用。');
+    }
+    if (
+      includeDeleteStatusParam !== null &&
+      !['true', 'false'].includes(includeDeleteStatusParam)
+    ) {
+      throw new PlatformApiError(400, 'include_delete_status 必须是 true 或 false。');
+    }
+    return NextResponse.json(
+      await listFiles({
+        page,
+        pageSize,
+        kind,
+        query,
+        includeDeleteStatus: includeDeleteStatusParam !== 'false',
+        skillId,
+        unassigned: unassignedParam === 'true'
+      })
+    );
   } catch (error) {
     return platformRouteError(error, '文件列表加载失败。');
   }

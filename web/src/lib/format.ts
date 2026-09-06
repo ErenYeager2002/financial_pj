@@ -6,6 +6,7 @@ export function formatDate(
 
   try {
     return new Intl.DateTimeFormat('zh-CN', {
+      timeZone: 'Asia/Shanghai',
       month: opts.month ?? 'long',
       day: opts.day ?? 'numeric',
       year: opts.year ?? 'numeric',

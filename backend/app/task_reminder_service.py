@@ -14,6 +14,7 @@ from .auth import UserContext
 from .auth_models import User
 from .models import TaskDiscoveryCheck, TaskReminder, TaskReminderSubscription
 from .registry import registry
+from .redaction import sanitize_text
 from .scheduler import acquire_claim_lock
 from .schemas import ServiceCredentialRead
 from .service_credential_service import (
@@ -32,6 +33,7 @@ from .task_reminder_contracts import (
     TaskReminderSubscriptionWrite,
 )
 from .task_reminder_workflow_service import reconcile_linked_task_reminders
+from .task_errors import classify_task_error
 
 SUPPORTED_REMINDER_SKILLS = {"ar-hexiao-daily"}
 SHANGHAI = ZoneInfo("Asia/Shanghai")
@@ -430,9 +432,22 @@ def get_task_reminder_board(db: Session, actor: UserContext) -> TaskReminderBoar
                 owner_id=item.owner_id,
                 owner_name=owners[item.owner_id].display_name,
                 business_dates=json.loads(item.business_dates_json or "[]"),
-                error_message=item.error_message,
+                error_message=sanitize_text(
+                    item.error_message,
+                    error=True,
+                    max_length=1200,
+                    hidden_message="检查失败详情已隐藏，请联系管理员查看审计记录。",
+                ),
+                error_code=classify_task_error(item.error_message)[0],
+                error_category=classify_task_error(item.error_message)[1],
                 attempt_count=item.attempt_count,
                 last_checked_at=_utc(item.finished_at or item.started_at),
+                audit_href=(
+                    f"/dashboard/users?tab=audit&audit_resource_type=task_discovery_check"
+                    f"&audit_resource_id={item.id}"
+                    if actor.is_admin
+                    else None
+                ),
             )
             for item in failures
             if item.owner_id in owners

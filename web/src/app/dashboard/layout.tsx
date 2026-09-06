@@ -42,7 +42,7 @@ export default async function DashboardLayout({
           跳到主要内容
         </a>
         <AppSidebar navGroups={navGroups} session={session} />
-        <SidebarInset id='main-content' tabIndex={-1} className='scroll-mt-16'>
+        <SidebarInset id='main-content' tabIndex={-1} className='min-w-0 scroll-mt-16'>
           <Header />
           {children}
         </SidebarInset>

@@ -8,7 +8,7 @@ description: >-
 
 # Excel 表格处理（xlsx）
 
-> **研发说明** · 甲骨易财务部自研通用技能（研发维护：李明昊，2026-06）。补业务类 skill 管不到的日常 Excel 整理与小表制作，与 receivables-merge 等同属 `finance-skills` 包，供 opencode 财务同事说人话触发。**纯本地**：openpyxl/pandas + `scripts/recalc.py` 等，数据不出本机、无联网/API 依赖。
+> **研发说明** · 甲骨易财务部自研通用技能（研发维护：李明昊，2026-06）。补业务类 skill 管不到的日常 Excel 整理与小表制作，与 receivables-merge-and-split 等同属 `finance-skills` 包，供 opencode 财务同事说人话触发。**纯本地**：openpyxl/pandas + `scripts/recalc.py` 等，数据不出本机、无联网/API 依赖。
 
 # Requirements for Outputs
 

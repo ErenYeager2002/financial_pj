@@ -29,6 +29,18 @@ export function buildBreadcrumbs(
     return [...taskDetailBreadcrumbs, { title: '任务详情', link: pathname }];
   }
 
+  if (/^\/dashboard\/runs\/[^/]+$/.test(pathname)) {
+    return [...taskDetailBreadcrumbs, { title: '任务结果', link: pathname }];
+  }
+
+  if (/^\/dashboard\/skills\/[^/]+\/run$/.test(pathname)) {
+    return [
+      { title: '工作台', link: '/dashboard/overview' },
+      { title: 'Skill 中心', link: '/dashboard/skills' },
+      { title: '创建财务任务', link: pathname }
+    ];
+  }
+
   if (routeMapping[pathname]) return routeMapping[pathname];
 
   const segments = pathname.split('/').filter(Boolean);

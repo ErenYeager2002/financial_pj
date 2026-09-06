@@ -29,6 +29,8 @@ from typing import Dict, List
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import common  # noqa: E402
+import validate_plan  # noqa: E402
+import baseline_receipts as BR  # noqa: E402
 import workbook_finalize  # noqa: E402
 from validate_plan import (  # noqa: E402
     DERIVED,
@@ -122,6 +124,13 @@ def write_plan(
     wb.close()
 
     before_rows = read_ledger_rows(src)
+    for it in items:
+        if (it.get("row_operation") or {}).get("type") == BR.OPERATION:
+            verdict = BR.check(it, before_rows)
+            members = [member for member in items if member.get("split_chain_group_id") == it.get("split_chain_group_id")]
+            if (verdict["verdict"] != "write" or
+                    {member["case_id"] for member in members} != {step["case_id"] for step in it["row_operation"]["steps"]}):
+                raise ValueError("保留应收拆行组不完整或写前复核失败：" + verdict["reason"])
     changes: List[dict] = []
     edits: List = []
     insertions: List = []
@@ -130,6 +139,8 @@ def write_plan(
         op = it.get("row_operation") or {}
         if op.get("type") == "split_below":
             source_rows.append(int(it["ledger_row_ref"]))
+        elif op.get("type") == BR.OPERATION and it.get("_split_chain_primary"):
+            source_rows.extend([int(op["insert_after"])] * len(op["steps"]))
         elif op.get("type") == "split_payment_chain" and it.get("_split_chain_primary"):
             insertion_count = max(len(op.get("steps") or []) - 1, 0)
             if op.get("final_unpaid"):
@@ -161,6 +172,20 @@ def write_plan(
 
     # 链内每个父 AR 都有独立物理行：第 1 笔使用原行，后续笔使用连续复制行。
     for it in items:
+        if (it.get("row_operation") or {}).get("type") == BR.OPERATION:
+            op = it["row_operation"]
+            it["_applied_row_ref"] = final_original_row(int(op["insert_after"])) + 1 + int(it.get("split_chain_index") or 0)
+            expected = {
+                str(final_original_row(int(ref))): {**values, **({"是否结账": "是"} if op["settled"] else {})}
+                for ref, values in op["before_rows"].items()
+            }
+            for index, step in enumerate(op["steps"]):
+                target = final_original_row(int(op["insert_after"])) + 1 + index
+                expected[str(target)] = BR.normalized({
+                    "SO": it["so"], "SOD": it["sod"], "应收金额": None,
+                    **step["five_cols"], "差异": step["derived_cols"].get("差异"),
+                })
+            it["_baseline_expected_rows"] = expected
         if (it.get("row_operation") or {}).get("type") == "split_payment_chain":
             base = final_original_row(int(it["ledger_row_ref"]))
             it["_applied_row_ref"] = base + int(it.get("split_chain_index") or 0)
@@ -186,6 +211,34 @@ def write_plan(
         derived = it.get("derived_cols") or {}
         before = before_rows.get(r, {})
         op = it.get("row_operation") or {}
+        if op.get("type") == BR.OPERATION:
+            if "差异" in derived:
+                if "差异" not in cols:
+                    raise ValueError("最终结清需要差异列，禁止遗漏计提差异")
+                formula = difference_formula(list(map(int, it["_baseline_expected_rows"])), applied_r)
+                it["_difference_formula"] = formula
+            if it.get("_split_chain_primary"):
+                if op["settled"]:
+                    for ref in op["before_rows"]:
+                        edits.append((int(ref), cols["是否结账"], "是"))
+                for index, step in enumerate(op["steps"]):
+                    row_no = final_original_row(int(op["insert_after"])) + 1 + index
+                    overrides = {cols[key]: value for key, value in normalized_five(step["five_cols"]).items()}
+                    overrides.update({cols["应收"]: None, cols["SO"]: it["so"], cols["SOD"]: it["sod"]})
+                    if "差异" in cols:
+                        value = step["derived_cols"].get("差异")
+                        overrides[cols["差异"]] = (
+                            xlsx_patch.FormulaValue(difference_formula(list(map(int, it["_baseline_expected_rows"])), row_no), value)
+                            if value is not None else None
+                        )
+                    insertions.append((int(op["insert_after"]), overrides))
+            changes.append({
+                "案例ID": it["case_id"], "行号": applied_r, "SO": it["so"], "SOD": it["sod"],
+                "改前": {key: "" for key in FIVE}, "改后": {key: _norm(five.get(key)) for key in FIVE},
+                "操作": "保留原始应收，新增本次回款行", "新增行号": applied_r,
+                "原始应收行": final_original_row(op["anchor_row"]), "整组结账": op["settled"],
+            })
+            continue
         if op.get("type") == "split_payment_chain":
             steps = op.get("steps") or []
             step_index = int(it.get("split_chain_index") or 0)
@@ -445,7 +498,7 @@ def precheck_before_write(plan: dict, items: List[dict], src: Path) -> List[str]
     任一不过就整批中止（不是跳过那一条）——因为插一行会让它**之后所有行**一起错位，
     只跳过报错的那条，等于把剩下的照样写歪。
     """
-    problems: List[str] = []
+    problems: List[str] = validate_plan.recheck_so_skips(plan, src)
 
     for it in items:
         audit_problem = duplicate_audit_error(plan, it)
@@ -545,6 +598,19 @@ def verify_written(out: Path, items: List[dict]) -> List[str]:
                 f"第 {r} 行 SOD：期望 {sod!r} 实际 {_norm(row.get('SOD'))!r}"
             )
         op = it.get("row_operation") or {}
+        if op.get("type") == BR.OPERATION:
+            expected = it.get("_baseline_expected_rows") or {}
+            actual_group = {str(ref): BR.normalized(value) for ref, value in rows.items()
+                            if value.get("SO") == it["so"] and value.get("SOD") == it["sod"]}
+            if not expected or actual_group != expected:
+                problems.append(f"{it['case_id']} 保留应收拆行组的身份、空值、金额或结账状态回读不一致")
+            baseline = sum(BR.cents(value["应收金额"]) or 0 for value in actual_group.values())
+            received = sum(BR.cents(value["回款明细"]) or 0 for value in actual_group.values())
+            accrual = sum(BR.cents(value["计提"]) or 0 for value in actual_group.values())
+            desired_accrual = sum(BR.cents(step["five_cols"].get("计提")) or 0 for step in op["steps"])
+            if (baseline != BR.cents(op["baseline_receivable"]) or received != BR.cents(op["steps"][-1]["cumulative_received"])
+                    or accrual != desired_accrual):
+                problems.append(f"{it['case_id']} 应收、回款或计提合计不守恒")
         if op.get("type") == "split_below":
             inserted_r = int(it.get("_inserted_row_ref") or (r + 1))
             inserted = rows.get(inserted_r)
@@ -700,7 +766,11 @@ def _comparison_objects(items: List[dict]) -> List[dict]:
                 expected[key] = derived[key]
 
         operation = item.get("row_operation") or {}
-        if operation.get("type") == "split_below":
+        if operation.get("type") == BR.OPERATION:
+            expected.update({key: five.get(key) for key in FIVE})
+            expected["应收金额"] = None
+            expected["差异"] = derived.get("差异")
+        elif operation.get("type") == "split_below":
             expected["应收金额"] = operation.get("paid_receivable")
             expected["计提"] = None
             expected["差异"] = None
@@ -1223,6 +1293,7 @@ def main(argv=None) -> int:
     ap.add_argument("--out", default="", help="新文件模式的输出路径（默认落 04_产出/）")
     ap.add_argument("--report", default="", help="变更清单 xlsx")
     ap.add_argument("--difference-report", default="", help="订单写入差异表 xlsx")
+    ap.add_argument("--execution-receipt", default="", help="平台阶段执行：保存实际写后行号与回读事实")
     ap.add_argument("--force", action="store_true", help="即使计划里有 conflict 也照写可写的那部分")
     ap.add_argument(
         "--in-place",
@@ -1253,7 +1324,17 @@ def main(argv=None) -> int:
         )
         return 2
     if not writable:
-        print("没有可写的笔（可能都已经填过了）。什么都没改。")
+        try:
+            problems = validate_plan.recheck_so_skips(plan, src)
+        except (OSError, ValueError) as exc:
+            problems = [f"整单跳过复核无法读取当前盈亏表（{type(exc).__name__}）"]
+        if problems:
+            print("ERROR: " + "；".join(problems), file=sys.stderr)
+            return 2
+        skipped = plan.get("skip") or []
+        print(f"没有需写入的盈亏项目；跳过 {len(skipped)} 笔，冲突 {len(conflicts)} 笔。未改动盈亏表。")
+        for item in skipped:
+            print(f"跳过 {item.get('case_id') or '-'}：{(item.get('_check') or {}).get('reason') or item.get('reason') or '计划未提供跳过原因'}")
         return 0
 
     # ★ 写入前最后一道闸：她的表在「校验 → 写入」之间是否发生变化
@@ -1316,6 +1397,12 @@ def main(argv=None) -> int:
 
     if rc == 0:
         _mark_review_applied(checked_p)
+        if args.execution_receipt:
+            receipt = Path(args.execution_receipt)
+            receipt.parent.mkdir(parents=True, exist_ok=True)
+            with receipt.open("x", encoding="utf-8") as handle:
+                json.dump({"hexiao_date": hexiao_date, "verified": True,
+                           "items": writable}, handle, ensure_ascii=False, indent=2, default=str)
     return rc
 
 

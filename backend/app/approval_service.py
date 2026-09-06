@@ -514,21 +514,16 @@ def decide_approval(
         )
         if active:
             raise HTTPException(status_code=409, detail="工作流已有动作正在执行。")
-        action = WorkflowAction(
-            id=str(uuid.uuid4()),
-            workflow_id=workflow.id,
-            name="apply_confirmed",
-            input_json=_dump(
-                {
-                    "reconciliation_date": workflow.reconciliation_date,
-                    "files": _load(workflow.files_json, {}),
-                    "context": _load(workflow.context_json, {}),
-                    "approval_id": record.id,
-                    "approval_snapshot_sha256": snapshot_hash,
-                }
-            ),
-        )
-        db.add(action)
+        from .workflow_service import _new_action
+
+        try:
+            action = _new_action(db, workflow, "apply_confirmed", {
+                "files": _load(workflow.files_json, {}),
+                "approval_id": record.id,
+                "approval_snapshot_sha256": snapshot_hash,
+            })
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         record.status = "approved"
         record.execution_action_id = action.id
         workflow.stage = "applying"

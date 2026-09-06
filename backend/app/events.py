@@ -5,7 +5,9 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from .audit_service import record_audit
 from .models import RunEvent, RunRecord
+from .redaction import sanitize_value
 
 
 def emit_event(
@@ -35,6 +37,23 @@ def emit_event(
     )
     db.add(event)
     db.add(run)
+    if event_type == "state" and state in {"failed", "timed_out"}:
+        record_audit(
+            db,
+            actor_id=run.owner_id,
+            actor_role="system",
+            department_id=run.department_id,
+            action=f"run.execution.{state}",
+            resource_type="run",
+            resource_id=run.id,
+            outcome="failed",
+            details={
+                "skill_id": run.skill_id,
+                "attempt": run.attempt_count,
+                "progress": run.progress,
+                "error": sanitize_value((data or {}).get("error") or {"reason": message}),
+            },
+        )
     if commit:
         db.commit()
     return event

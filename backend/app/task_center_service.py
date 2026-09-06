@@ -3,13 +3,14 @@ from __future__ import annotations
 import json
 import math
 import re
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import quote
 
 from fastapi import HTTPException
 from sqlalchemy import JSON, String, case, cast, func, literal, select, union_all
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from .auth import UserContext
 from .contracts import (
@@ -22,6 +23,7 @@ from .contracts import (
 from .models import RunRecord, WorkflowBatch, WorkflowSession
 from .redaction import sanitize_text
 from .resource_policy import owner_list_filter
+from .workflow_progress import batch_progress
 
 DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 UUID = re.compile(
@@ -43,6 +45,14 @@ FAILED_STAGES = {"failed"}
 CANCELLED_STAGES = {"cancelled"}
 SUCCEEDED_STAGES = {"completed"}
 RUNNING_STAGES = {"applying", "finalizing", "supplementing_fetched_data"}
+
+
+def task_center_scope(user: UserContext, time_range: str = "全部时间") -> str:
+    user_scope = "当前部门" if user.is_admin else "当前账号"
+    return (
+        f"{time_range}；{user_scope}；普通任务、独立核销日期任务和核销批次，"
+        "批次子任务不重复计数。"
+    )
 
 
 def _load_object(value: str) -> dict[str, Any]:
@@ -194,7 +204,7 @@ def _batch_item(batch: WorkflowBatch) -> TaskCenterItem:
         business_date_count=count,
         view_state=view_state,
         original_state=batch.state,
-        progress=min(max(batch.progress, 0), 100),
+        progress=batch_progress(batch),
         progress_message=sanitize_text(batch.progress_message, max_length=160),
         error_summary=_safe_failure_summary(view_state),
         created_at=batch.created_at,
@@ -239,63 +249,69 @@ def task_center_candidates_query(dialect_name: str, user: UserContext) -> Any:
     run_query = select(
         literal("run").label("reference_type"),
         RunRecord.id.label("reference_id"),
+        literal("").label("business_task_id"),
         RunRecord.skill_id.label("skill_id"),
+        RunRecord.skill_name.label("skill_name"),
         run_date.label("business_date_start"),
         run_date.label("business_date_end"),
+        RunRecord.created_at.label("created_at"),
         run_updated.label("updated_at"),
         _view_state_expression(RunRecord.state).label("view_state"),
     ).where(owner_list_filter(RunRecord, user))
     workflow_query = select(
         literal("workflow").label("reference_type"),
         WorkflowSession.id.label("reference_id"),
+        WorkflowSession.display_id.label("business_task_id"),
         WorkflowSession.skill_id.label("skill_id"),
+        WorkflowSession.skill_name.label("skill_name"),
         WorkflowSession.reconciliation_date.label("business_date_start"),
         WorkflowSession.reconciliation_date.label("business_date_end"),
+        WorkflowSession.created_at.label("created_at"),
         WorkflowSession.updated_at.label("updated_at"),
         _view_state_expression(WorkflowSession.state, WorkflowSession.stage).label("view_state"),
     ).where(
         owner_list_filter(WorkflowSession, user),
-        WorkflowSession.context_json.like('%"started_from_form": true%'),
+        # A conversational session is only a formal task after the start form
+        # has been submitted. Keep the task center aligned with list_workflows
+        # while still including independent dates and recovery tasks.
+        WorkflowSession.context_json.like('"%started_from_form": true%'),
         WorkflowSession.batch_id.is_(None),
     )
     batch_query = select(
         literal("workflow_batch").label("reference_type"),
         WorkflowBatch.id.label("reference_id"),
+        WorkflowBatch.display_id.label("business_task_id"),
         WorkflowBatch.skill_id.label("skill_id"),
+        WorkflowBatch.skill_name.label("skill_name"),
         batch_start.label("business_date_start"),
         batch_end.label("business_date_end"),
+        WorkflowBatch.created_at.label("created_at"),
         WorkflowBatch.updated_at.label("updated_at"),
         _view_state_expression(WorkflowBatch.state).label("view_state"),
     ).where(owner_list_filter(WorkflowBatch, user))
     return union_all(run_query, workflow_query, batch_query).subquery("task_center_candidates")
 
 
-def query_task_center(
-    db: Session,
-    user: UserContext,
+def _task_center_filters(
+    candidates: Any,
     *,
-    page: int,
-    page_size: int,
-    view_state: TaskCenterViewState | None = None,
+    query: str = "",
     item_type: TaskCenterReferenceType | None = None,
     skill_id: str = "",
     business_date_from: str = "",
     business_date_to: str = "",
     updated_from: datetime | None = None,
     updated_to: datetime | None = None,
-) -> TaskCenterPage:
-    if business_date_from and not DATE.fullmatch(business_date_from):
-        raise HTTPException(status_code=422, detail="业务开始日期格式无效。")
-    if business_date_to and not DATE.fullmatch(business_date_to):
-        raise HTTPException(status_code=422, detail="业务结束日期格式无效。")
-    if business_date_from and business_date_to and business_date_from > business_date_to:
-        raise HTTPException(status_code=422, detail="业务日期范围无效。")
-    if updated_from and updated_to and _aware(updated_from) > _aware(updated_to):
-        raise HTTPException(status_code=422, detail="更新时间范围无效。")
-
-    dialect_name = db.bind.dialect.name if db.bind is not None else ""
-    candidates = task_center_candidates_query(dialect_name, user)
-    filters = []
+) -> list[Any]:
+    filters: list[Any] = []
+    if query:
+        pattern = f"%{query}%"
+        filters.append(
+            candidates.c.reference_id.ilike(pattern)
+            | candidates.c.business_task_id.ilike(pattern)
+            | candidates.c.skill_id.ilike(pattern)
+            | candidates.c.skill_name.ilike(pattern)
+        )
     if item_type:
         filters.append(candidates.c.reference_type == item_type)
     if skill_id:
@@ -318,6 +334,139 @@ def query_task_center(
         filters.append(candidates.c.updated_at >= updated_from)
     if updated_to:
         filters.append(candidates.c.updated_at <= updated_to)
+    return filters
+
+
+def _hydrate_task_center_items(
+    db: Session,
+    selected: list[tuple[str, str]],
+) -> list[TaskCenterItem]:
+    ids_by_type: dict[str, list[str]] = {"run": [], "workflow": [], "workflow_batch": []}
+    for reference_type, reference_id in selected:
+        ids_by_type[reference_type].append(reference_id)
+    records: dict[tuple[str, str], TaskCenterItem] = {}
+    if ids_by_type["run"]:
+        for record in db.scalars(
+            select(RunRecord).where(RunRecord.id.in_(ids_by_type["run"]))
+        ).all():
+            records[("run", record.id)] = _run_item(record)
+    if ids_by_type["workflow"]:
+        for record in db.scalars(
+            select(WorkflowSession).where(WorkflowSession.id.in_(ids_by_type["workflow"]))
+        ).all():
+            records[("workflow", record.id)] = _workflow_item(record)
+    if ids_by_type["workflow_batch"]:
+        for record in db.scalars(
+            select(WorkflowBatch)
+            .options(selectinload(WorkflowBatch.workflows).load_only(WorkflowSession.progress))
+            .where(WorkflowBatch.id.in_(ids_by_type["workflow_batch"]))
+        ).all():
+            records[("workflow_batch", record.id)] = _batch_item(record)
+    return [records[item] for item in selected if item in records]
+
+
+@dataclass(frozen=True)
+class TaskCenterOverview:
+    state_counts: TaskCenterStateCounts
+    pending_items: list[TaskCenterItem]
+    recent_items: list[TaskCenterItem]
+    skill_usage: list[tuple[str, str, int, datetime | None]]
+
+
+def task_center_overview(
+    db: Session,
+    user: UserContext,
+    *,
+    limit: int = 5,
+    since: datetime | None = None,
+) -> TaskCenterOverview:
+    """Build all dashboard task summaries from the Task Center candidate set."""
+    dialect_name = db.bind.dialect.name if db.bind is not None else ""
+    candidates = task_center_candidates_query(dialect_name, user)
+    filters = [candidates.c.created_at >= since] if since else []
+    count_rows = db.execute(
+        select(candidates.c.view_state, func.count())
+        .where(*filters)
+        .group_by(candidates.c.view_state)
+    ).all()
+    counts = {state: 0 for state in VIEW_STATES}
+    for state, count in count_rows:
+        counts[state] = int(count)
+
+    def select_ids(states: tuple[str, ...], *, descending: bool = True) -> list[tuple[str, str]]:
+        rows = db.execute(
+            select(candidates.c.reference_type, candidates.c.reference_id)
+            .where(*filters, candidates.c.view_state.in_(states))
+            .order_by(
+                candidates.c.updated_at.desc() if descending else candidates.c.updated_at.asc(),
+                candidates.c.reference_type.asc(),
+                candidates.c.reference_id.asc(),
+            )
+            .limit(max(1, min(limit, 20)))
+        ).all()
+        return [(str(item[0]), str(item[1])) for item in rows]
+
+    usage_rows = db.execute(
+        select(
+            candidates.c.skill_id,
+            candidates.c.skill_name,
+            func.count(),
+            func.max(candidates.c.updated_at),
+        )
+        .where(*filters)
+        .group_by(candidates.c.skill_id, candidates.c.skill_name)
+        .order_by(func.count().desc(), candidates.c.skill_name.asc())
+        .limit(50)
+    ).all()
+    return TaskCenterOverview(
+        state_counts=TaskCenterStateCounts(**counts),
+        pending_items=_hydrate_task_center_items(
+            db, select_ids(("pending", "running", "failed"))
+        ),
+        recent_items=_hydrate_task_center_items(db, select_ids(("succeeded",))),
+        skill_usage=[
+            (str(skill_id), str(skill_name or skill_id), int(count), updated_at)
+            for skill_id, skill_name, count, updated_at in usage_rows
+        ],
+    )
+
+
+def query_task_center(
+    db: Session,
+    user: UserContext,
+    *,
+    page: int,
+    page_size: int,
+    query: str = "",
+    view_state: TaskCenterViewState | None = None,
+    item_type: TaskCenterReferenceType | None = None,
+    skill_id: str = "",
+    business_date_from: str = "",
+    business_date_to: str = "",
+    updated_from: datetime | None = None,
+    updated_to: datetime | None = None,
+) -> TaskCenterPage:
+    if business_date_from and not DATE.fullmatch(business_date_from):
+        raise HTTPException(status_code=422, detail="业务开始日期格式无效。")
+    if business_date_to and not DATE.fullmatch(business_date_to):
+        raise HTTPException(status_code=422, detail="业务结束日期格式无效。")
+    if business_date_from and business_date_to and business_date_from > business_date_to:
+        raise HTTPException(status_code=422, detail="业务日期范围无效。")
+    if updated_from and updated_to and _aware(updated_from) > _aware(updated_to):
+        raise HTTPException(status_code=422, detail="更新时间范围无效。")
+
+    dialect_name = db.bind.dialect.name if db.bind is not None else ""
+    candidates = task_center_candidates_query(dialect_name, user)
+    filters = _task_center_filters(
+        candidates,
+        query=query.strip()[:128],
+        item_type=item_type,
+        skill_id=skill_id,
+        business_date_from=business_date_from,
+        business_date_to=business_date_to,
+        updated_from=updated_from,
+        updated_to=updated_to,
+    )
 
     count_rows = db.execute(
         select(candidates.c.view_state, func.count())
@@ -344,28 +493,9 @@ def query_task_center(
         .limit(page_size)
     ).all()
 
-    ids_by_type: dict[str, list[str]] = {"run": [], "workflow": [], "workflow_batch": []}
-    for reference_type, reference_id in selected:
-        ids_by_type[reference_type].append(reference_id)
-    records: dict[tuple[str, str], TaskCenterItem] = {}
-    if ids_by_type["run"]:
-        for record in db.scalars(
-            select(RunRecord).where(RunRecord.id.in_(ids_by_type["run"]))
-        ).all():
-            records[("run", record.id)] = _run_item(record)
-    if ids_by_type["workflow"]:
-        for record in db.scalars(
-            select(WorkflowSession).where(WorkflowSession.id.in_(ids_by_type["workflow"]))
-        ).all():
-            records[("workflow", record.id)] = _workflow_item(record)
-    if ids_by_type["workflow_batch"]:
-        for record in db.scalars(
-            select(WorkflowBatch).where(WorkflowBatch.id.in_(ids_by_type["workflow_batch"]))
-        ).all():
-            records[("workflow_batch", record.id)] = _batch_item(record)
-    page_items = [
-        records[(reference_type, reference_id)] for reference_type, reference_id in selected
-    ]
+    page_items = _hydrate_task_center_items(
+        db, [(str(reference_type), str(reference_id)) for reference_type, reference_id in selected]
+    )
     return TaskCenterPage(
         items=page_items,
         total=total,
@@ -373,4 +503,5 @@ def query_task_center(
         page_size=page_size,
         pages=math.ceil(total / page_size) if total else 0,
         state_counts=TaskCenterStateCounts(**counts),
+        scope=task_center_scope(user),
     )

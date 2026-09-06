@@ -16,6 +16,7 @@ import {
 } from '@/features/task-reminders/task-reminder-board-presentation';
 import { formatDate } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { taskErrorCategoryLabel } from '@/features/workflows/step-display';
 
 function responseMessage(response: Response): Promise<string> {
   return response
@@ -37,6 +38,16 @@ export function TaskReminderBoardView({ data }: { data: TaskReminderBoard }) {
   const resolvedCount = data.resolved_count ?? 0;
   const visibility = taskReminderBoardVisibility(data.reminders ?? [], failures);
   const dateBounds = React.useMemo(() => manualCheckDateBounds(), []);
+  const failureGroups = React.useMemo(() => {
+    const grouped = new Map<string, typeof failures>();
+    for (const failure of failures) {
+      const key = `${failure.skill_id}:${failure.owner_id}:${[...(failure.business_dates ?? [])]
+        .sort()
+        .join(',')}`;
+      grouped.set(key, [...(grouped.get(key) ?? []), failure]);
+    }
+    return [...grouped.values()];
+  }, [failures]);
   const groups = React.useMemo(() => {
     const source = data.reminders ?? [];
     const grouped = new Map<string, typeof source>();
@@ -152,7 +163,7 @@ export function TaskReminderBoardView({ data }: { data: TaskReminderBoard }) {
                       {actionableDates.length ? (
                         <Link
                           href={taskReminderWorkflowHref(first.skill_id, actionableDates)}
-                          className={cn(buttonVariants({ size: 'sm' }))}
+                          className={cn(buttonVariants({ size: 'sm' }), 'platform-action')}
                         >
                           处理这些日期
                         </Link>
@@ -163,16 +174,21 @@ export function TaskReminderBoardView({ data }: { data: TaskReminderBoard }) {
                 <CardContent className='space-y-2'>
                   <PaginatedCollection
                     ariaLabel={`${first.skill_name}待处理日期`}
-                    contentClassName='space-y-2'
+                    contentClassName='platform-list'
                   >
                     {reminders.map((reminder) => (
                       <div
                         key={reminder.id}
                         role='listitem'
-                        className='flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3'
+                        className='platform-reminder-row'
                       >
                         <div>
-                          <p className='font-medium'>{reminder.business_date}</p>
+                          <div className='flex flex-wrap items-center gap-2'>
+                            <p className='font-medium tabular-nums'>{reminder.business_date}</p>
+                            {reminder.reopened ? (
+                              <Badge variant='destructive'>数据有变化</Badge>
+                            ) : null}
+                          </div>
                           <p className='text-sm text-muted-foreground'>
                             {reminder.record_count} 条回款 · 最近检查{' '}
                             {formatDate(reminder.last_checked_at, {
@@ -182,13 +198,10 @@ export function TaskReminderBoardView({ data }: { data: TaskReminderBoard }) {
                           </p>
                         </div>
                         <div className='flex items-center gap-2'>
-                          {reminder.reopened ? (
-                            <Badge variant='destructive'>数据有变化</Badge>
-                          ) : null}
                           {reminder.state === 'in_progress' && reminder.workflow_id ? (
                             <Link
                               href={`/dashboard/workflows/${encodeURIComponent(reminder.workflow_id)}`}
-                              className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                              className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'platform-action')}
                             >
                               查看任务
                             </Link>
@@ -197,7 +210,7 @@ export function TaskReminderBoardView({ data }: { data: TaskReminderBoard }) {
                               href={taskReminderWorkflowHref(reminder.skill_id, [
                                 reminder.business_date
                               ])}
-                              className={cn(buttonVariants({ size: 'sm' }))}
+                              className={cn(buttonVariants({ size: 'sm' }), 'platform-action')}
                             >
                               去做任务
                             </Link>
@@ -214,38 +227,84 @@ export function TaskReminderBoardView({ data }: { data: TaskReminderBoard }) {
       ) : null}
       {visibility.showFailures ? (
         <PaginatedCollection ariaLabel='任务检查失败记录' contentClassName='space-y-4'>
-          {failures.map((failure) => (
-            <Card
-              key={failure.id}
-              role='alert'
-              aria-live='polite'
-              className='border-destructive/40'
-            >
-              <CardHeader>
-                <h2 className='text-base leading-snug font-medium'>任务检查失败</h2>
-                <CardDescription>
-                  {failure.skill_name} · {failure.owner_name} ·{' '}
-                  {(failure.business_dates ?? []).join('、')}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className='flex flex-wrap items-center justify-between gap-3'>
-                <div className='space-y-1 text-sm'>
-                  <p className='text-destructive'>
-                    {failure.error_message || '检查未完成，可稍后重试。'}
+          {failureGroups.map((group) => {
+            const latest = group[0];
+            return (
+              <Card
+                key={`${latest.skill_id}:${latest.owner_id}:${(latest.business_dates ?? []).join(',')}`}
+                role='alert'
+                aria-live='polite'
+                className='border-destructive/40'
+              >
+                <CardHeader>
+                  <h2 className='text-base leading-snug font-medium'>任务检查失败</h2>
+                  <CardDescription>
+                    {latest.skill_name} · {latest.owner_name} ·{' '}
+                    {(latest.business_dates ?? []).join('、')} · {group.length} 次失败记录
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className='space-y-3'>
+                  <div className='flex flex-wrap items-center justify-between gap-3'>
+                    <div className='space-y-1 text-sm'>
+                      <p className='text-destructive'>
+                        {latest.error_message || '检查未完成，可稍后重试。'}
+                      </p>
+                      <p className='text-muted-foreground'>
+                        <span className='block'>错误分类：{taskErrorCategoryLabel(latest.error_category)}</span>
+                        <span className='block'>错误码：
+                        {latest.error_code || '待核实'}</span>
+                        <span className='block'>最近尝试 {latest.attempt_count} 次 ·{' '}
+                        {formatDate(latest.last_checked_at, {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          second: '2-digit'
+                        })}{' '}
+                        （北京时间）</span>
+                      </p>
+                    </div>
+                    <Button
+                      size='sm'
+                      variant='outline'
+                      disabled={retrying === latest.id}
+                      onClick={() => void retry(latest.id)}
+                    >
+                      {retrying === latest.id ? '正在排队' : '重试检查'}
+                    </Button>
+                    {latest.audit_href ? (
+                      <a
+                        className='platform-action text-sm underline underline-offset-2'
+                        href={latest.audit_href}
+                      >
+                        管理员审计查询
+                      </a>
+                    ) : null}
+                  </div>
+                  <p className='text-xs text-muted-foreground'>
+                    重试检查只重新检查提醒日期，不会重跑已经创建的核销任务。
                   </p>
-                  <p className='text-muted-foreground'>已尝试 {failure.attempt_count} 次。</p>
-                </div>
-                <Button
-                  size='sm'
-                  variant='outline'
-                  disabled={retrying === failure.id}
-                  onClick={() => void retry(failure.id)}
-                >
-                  {retrying === failure.id ? '正在排队' : '重试检查'}
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
+                  {group.length > 1 && (
+                    <details className='rounded-md border px-3 py-2'>
+                      <summary className='cursor-pointer text-sm font-medium'>查看每次检查记录</summary>
+                      <ul className='mt-2 space-y-2 text-xs text-muted-foreground'>
+                        {group.map((failure) => (
+                          <li key={failure.id}>
+                            {formatDate(failure.last_checked_at, {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              second: '2-digit'
+                            })}{' '}
+                            （北京时间）· {taskErrorCategoryLabel(failure.error_category)} ·{' '}
+                            {failure.error_code || '待核实'} ·{' '}
+                            {failure.error_message || '检查未完成'}
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
         </PaginatedCollection>
       ) : null}
       <section className='rounded-lg border px-4 py-3' aria-labelledby='manual-check-date-title'>

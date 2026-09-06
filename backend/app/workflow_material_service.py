@@ -144,6 +144,7 @@ def _validated_members(
     bindings: dict[str, list[dict[str, Any]]],
     *,
     source_workflow_id: str = "",
+    annual_years: dict[str, int] | None = None,
 ) -> list[tuple[str, int, FileRecord]]:
     unknown = set(bindings) - MATERIAL_ROLES
     if unknown:
@@ -171,7 +172,12 @@ def _validated_members(
                 record.kind != "output" or record.workflow_id != source_workflow_id
             ):
                 raise ValueError("发布版本只能引用当前任务登记的输出文件。")
-            year = _annual_year(record.original_name) if role == ANNUAL_LEDGER_ROLE else 0
+            year = 0
+            if role == ANNUAL_LEDGER_ROLE:
+                year = (annual_years[file_id] if annual_years and file_id in annual_years
+                        else _annual_year(record.original_name))
+                if type(year) is not int or not 1900 <= year <= 2099:
+                    raise ValueError("业务材料固定的盈亏年度无效。")
             if role == ANNUAL_LEDGER_ROLE and year in years:
                 raise ValueError(f"业务材料中存在两份 {year} 年盈亏核算表。")
             years.add(year)
@@ -258,15 +264,29 @@ def create_or_replace_current_set(
     source_workflow_id: str = "",
     expected_current_id: str | None = None,
     require_no_current: bool = False,
+    annual_years: dict[str, int] | None = None,
 ) -> WorkflowMaterialSet:
+    current = current_material_set(db, user.user_id, user.department_id, skill_id)
+    # Reusing a registered file must preserve its immutable year, including
+    # unnamed workbooks selected again after New Year. New uploads retain the
+    # existing first-registration filename fallback.
+    fixed_years = {item.file_id: item.year for item in current.files
+                   if item.role == ANNUAL_LEDGER_ROLE} if current else {}
+    if annual_years is not None:
+        annual_ids = [str(entry.get("file_id", ""))
+                      for entry in bindings.get(ANNUAL_LEDGER_ROLE, [])]
+        if (not annual_ids or len(annual_ids) != len(set(annual_ids))
+                or set(annual_years) != set(annual_ids)):
+            raise ValueError("发布年度映射与年度盈亏文件不完整对应。")
+        fixed_years = annual_years
     members = _validated_members(
         db,
         user,
         skill_id,
         bindings,
         source_workflow_id=source_workflow_id,
+        annual_years=fixed_years,
     )
-    current = current_material_set(db, user.user_id, user.department_id, skill_id)
     if require_no_current and current is not None:
         raise MaterialVersionConflict(
             "业务工作簿已有更新版本；当前任务不能覆盖新版本，请基于最新版本重新创建任务。"
@@ -338,7 +358,11 @@ def material_set_matches_bindings(
     bindings: dict[str, list[dict[str, Any]]],
 ) -> bool:
     """Compare an already-started workflow's fixed inputs with an immutable version."""
-    members = _validated_members(db, user, skill_id, bindings)
+    members = _validated_members(
+        db, user, skill_id, bindings,
+        annual_years={item.file_id: item.year for item in material_set.files
+                      if item.role == ANNUAL_LEDGER_ROLE},
+    )
     return {_member_key(*member) for member in members} == _stored_member_keys(material_set)
 
 
@@ -346,6 +370,8 @@ def publish_workflow_material_set(
     db: Session,
     workflow: WorkflowSession,
     bindings: dict[str, list[dict[str, Any]]],
+    *,
+    annual_years: dict[str, int] | None = None,
 ) -> WorkflowMaterialSet:
     if not workflow.material_set_id:
         raise MaterialVersionConflict(
@@ -364,6 +390,7 @@ def publish_workflow_material_set(
         bindings,
         source_workflow_id=workflow.id,
         expected_current_id=workflow.material_set_id,
+        annual_years=annual_years,
     )
 
 
@@ -395,6 +422,8 @@ def restore_material_set(
         material_set_bindings(db, target),
         source_workflow_id=target.source_workflow_id,
         expected_current_id=current.id,
+        annual_years={item.file_id: item.year for item in target.files
+                      if item.role == ANNUAL_LEDGER_ROLE},
     )
 
 

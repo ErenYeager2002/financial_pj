@@ -53,7 +53,7 @@
 
 ```mermaid
 flowchart TD
-    A["应收 all<br/>(receivables-merge 的产出)"] --> C{"按规则打分选人"}
+    A["应收 all<br/>(receivables-merge-and-split 的产出)"] --> C{"按规则打分选人"}
     H["抽查历史<br/>(可选·没有也能跑)"] -.-> C
     R["config/抽查规则.md<br/>金额相对比较 · 账龄≥6月<br/>特殊客户 · 在职/离职名单"] --> C
     C --> P1["金额：销售内部相对大 + 1万兜底"]

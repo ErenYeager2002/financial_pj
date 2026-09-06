@@ -12,37 +12,21 @@ from .contracts import (
     WorkbenchSkillUsage,
     WorkbenchTaskReminderSummary,
 )
-from .file_service import serialize_file
-from .models import FileRecord, RunRecord, TaskDiscoveryCheck, TaskReminder
+from .file_service import serialize_files
+from .models import FileRecord, TaskDiscoveryCheck, TaskReminder
 from .registry import registry
 from .resource_policy import owner_list_filter
-from .run_service import retry_status, serialize_run
-
-ACTIVE_STATES = {"created", "parsing", "queued", "running", "cancelling"}
-FAILED_STATES = {"failed", "timed_out"}
-
-
-def _run_summary(db: Session, record: RunRecord, user: UserContext):
-    can_retry, reason = retry_status(db, record, user)
-    return serialize_run(record, can_retry=can_retry, retry_block_reason=reason)
-
+from .runtime_health_service import runtime_health
+from .task_center_service import task_center_overview, task_center_scope
 
 def get_workbench(db: Session, user: UserContext) -> Workbench:
-    run_filter = owner_list_filter(RunRecord, user)
+    overview = task_center_overview(db, user, limit=5)
     file_filter = owner_list_filter(FileRecord, user)
-    state_counts = {
-        state: int(count)
-        for state, count in db.execute(
-            select(RunRecord.state, func.count())
-            .where(run_filter)
-            .group_by(RunRecord.state)
-        ).all()
-    }
     counts = WorkbenchCounts(
-        waiting_confirmation=state_counts.get("waiting_confirmation", 0),
-        active=sum(state_counts.get(state, 0) for state in ACTIVE_STATES),
-        succeeded=state_counts.get("succeeded", 0),
-        failed=sum(state_counts.get(state, 0) for state in FAILED_STATES),
+        waiting_confirmation=overview.state_counts.pending,
+        active=overview.state_counts.running,
+        succeeded=overview.state_counts.succeeded,
+        failed=overview.state_counts.failed,
         files=int(
             db.scalar(select(func.count()).select_from(FileRecord).where(file_filter)) or 0
         ),
@@ -76,12 +60,10 @@ def get_workbench(db: Session, user: UserContext) -> Workbench:
         ),
     )
 
-    usage_rows = db.execute(
-        select(RunRecord.skill_id, func.count(), func.max(RunRecord.created_at))
-        .where(run_filter)
-        .group_by(RunRecord.skill_id)
-    ).all()
-    usage = {skill_id: (int(count), last_run_at) for skill_id, count, last_run_at in usage_rows}
+    usage = {
+        skill_id: (count, last_run_at)
+        for skill_id, _skill_name, count, last_run_at in overview.skill_usage
+    }
     allowed = allowed_skill_ids(db, user)
     available = [
         item
@@ -104,21 +86,6 @@ def get_workbench(db: Session, user: UserContext) -> Workbench:
         for item in available[:5]
     ]
 
-    pending = db.scalars(
-        select(RunRecord)
-        .where(
-            run_filter,
-            RunRecord.state.in_(("waiting_confirmation", "failed", "timed_out")),
-        )
-        .order_by(RunRecord.created_at.desc())
-        .limit(5)
-    ).all()
-    recent_results = db.scalars(
-        select(RunRecord)
-        .where(run_filter, RunRecord.state == "succeeded")
-        .order_by(RunRecord.finished_at.desc(), RunRecord.created_at.desc())
-        .limit(5)
-    ).all()
     recent_files = db.scalars(
         select(FileRecord)
         .where(file_filter)
@@ -129,7 +96,9 @@ def get_workbench(db: Session, user: UserContext) -> Workbench:
         counts=counts,
         task_reminders=task_reminders,
         common_skills=common_skills,
-        pending_runs=[_run_summary(db, item, user) for item in pending],
-        recent_results=[_run_summary(db, item, user) for item in recent_results],
-        recent_files=[serialize_file(db, item) for item in recent_files],
+        pending_tasks=overview.pending_items,
+        recent_tasks=overview.recent_items,
+        task_scope=task_center_scope(user),
+        runtime=runtime_health(db, user),
+        recent_files=serialize_files(db, recent_files),
     )

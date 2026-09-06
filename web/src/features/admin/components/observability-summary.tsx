@@ -14,12 +14,12 @@ interface ObservabilitySummaryProps {
 
 export function ObservabilitySummary({ summary }: ObservabilitySummaryProps): React.JSX.Element {
   const metrics = [
-    ['任务数', String(summary.run_count)],
+    ['任务数', String(summary.task_count)],
+    ['失败任务', String(summary.failed_task_count)],
     ['失败率', `${(summary.failure_rate * 100).toFixed(1)}%`],
     ['平均排队', seconds(summary.average_queue_seconds)],
     ['平均执行', seconds(summary.average_run_seconds)],
-    ['重试次数', String(summary.retry_count)],
-    ['人工介入', String(summary.manual_intervention_count)]
+    ['重试次数', String(summary.retry_count)]
   ];
   return (
     <Card>
@@ -27,6 +27,7 @@ export function ObservabilitySummary({ summary }: ObservabilitySummaryProps): Re
         <CardTitle>运行观测</CardTitle>
         <CardDescription>
           最近 {summary.window_hours} 小时的脱敏聚合数据，不包含任务原文、凭据或文件路径。
+          {summary.task_scope ? `统计范围：${summary.task_scope}` : ''} 步骤和模型指标仍按普通任务运行记录统计。
         </CardDescription>
       </CardHeader>
       <CardContent className='space-y-5'>

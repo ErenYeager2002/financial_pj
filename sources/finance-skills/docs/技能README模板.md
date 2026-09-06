@@ -115,4 +115,4 @@ flowchart TD
 | 范本 | 好在哪 |
 |---|---|
 | `skills/ar-hexiao-daily/README.md` | 三段齐全 + 两张 Mermaid（主链路 + 判定树）+ 验收数字具体 |
-| `skills/receivables-merge/README.md` | S1–S8 分步图，把复杂加工链讲清楚 |
+| `skills/receivables-merge-and-split/README.md` | 合并与拆分模式图，把复杂加工链讲清楚 |

@@ -27,6 +27,7 @@ dependencies = [
   "argon2-cffi>=23.1,<24",
   "PyJWT[crypto]>=2.10,<3",
   "psycopg[binary]>=3.2,<4",
+  "psutil>=7.0,<8",
 ]
 
 [project.optional-dependencies]

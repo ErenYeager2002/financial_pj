@@ -12,5 +12,5 @@ export default async function ChangePasswordPage() {
   if (session.auth_provider === 'clerk') {
     redirect('/dashboard/overview');
   }
-  return <main className='flex min-h-screen items-center justify-center p-4'><ChangePasswordForm /></main>;
+  return <main className='flex min-h-screen items-center justify-center p-4'><ChangePasswordForm mustChangePassword={session.must_change_password} /></main>;
 }

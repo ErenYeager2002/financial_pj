@@ -24,6 +24,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type {
   AdminUser,
   AuditEvent,
+  AuditEventPage,
   PlatformSession,
   SkillPermissionWrite,
   SkillSummary
@@ -35,8 +36,19 @@ interface PlatformUserManagementProps {
   session: PlatformSession;
   initialUsers: AdminUser[];
   skills: SkillSummary[];
-  initialAuditEvents: AuditEvent[];
+  initialAuditPage: AuditEventPage;
+  initialAuditFilters: AuditFilters;
+  initialAuditTab: boolean;
   authMode: AuthMode;
+}
+
+interface AuditFilters {
+  action: string;
+  actorId: string;
+  resourceType: string;
+  resourceId: string;
+  createdFrom: string;
+  createdTo: string;
 }
 
 type PermissionState = Required<Omit<SkillPermissionWrite, 'skill_id' | 'requires_approval'>> & {
@@ -88,6 +100,14 @@ async function responseMessage(response: Response, fallback: string): Promise<st
   return body?.detail ?? fallback;
 }
 
+function auditDateQueryValue(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  const withSeconds = trimmed.length === 16 ? `${trimmed}:00` : trimmed;
+  const parsed = new Date(`${withSeconds}+08:00`);
+  return Number.isNaN(parsed.getTime()) ? trimmed : parsed.toISOString();
+}
+
 function permissionsFor(user: AdminUser, skills: SkillSummary[]): Record<string, PermissionState> {
   const current = new Map((user.permissions ?? []).map((item) => [item.skill_id, item]));
   return Object.fromEntries(
@@ -112,11 +132,15 @@ export function PlatformUserManagement({
   session,
   initialUsers,
   skills,
-  initialAuditEvents,
+  initialAuditPage,
+  initialAuditFilters,
+  initialAuditTab,
   authMode
 }: PlatformUserManagementProps) {
   const [users, setUsers] = useState(initialUsers);
-  const [auditEvents, setAuditEvents] = useState(initialAuditEvents);
+  const [auditEvents, setAuditEvents] = useState(initialAuditPage.items ?? []);
+  const [auditHasMore, setAuditHasMore] = useState(initialAuditPage.has_more);
+  const [auditLoading, setAuditLoading] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [selected, setSelected] = useState<AdminUser | null>(null);
   const [displayName, setDisplayName] = useState('');
@@ -128,8 +152,12 @@ export function PlatformUserManagement({
   const [permissions, setPermissions] = useState<Record<string, PermissionState>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [auditAction, setAuditAction] = useState('');
-  const [auditActor, setAuditActor] = useState('');
+  const [auditAction, setAuditAction] = useState(initialAuditFilters.action);
+  const [auditActor, setAuditActor] = useState(initialAuditFilters.actorId);
+  const [auditResourceType, setAuditResourceType] = useState(initialAuditFilters.resourceType);
+  const [auditResourceId, setAuditResourceId] = useState(initialAuditFilters.resourceId);
+  const [auditCreatedFrom, setAuditCreatedFrom] = useState(initialAuditFilters.createdFrom);
+  const [auditCreatedTo, setAuditCreatedTo] = useState(initialAuditFilters.createdTo);
   const usersById = useMemo(() => new Map(users.map((user) => [user.id, user])), [users]);
   const permissionPage = useResponsiveCollectionPagination(skills, {
     base: 5,
@@ -268,25 +296,36 @@ export function PlatformUserManagement({
     setBusy(false);
   }
 
-  async function loadAudit() {
-    setBusy(true);
+  async function loadAudit(reset = true) {
+    setAuditLoading(true);
     setError('');
-    const params = new URLSearchParams({ limit: '100' });
+    const params = new URLSearchParams({ limit: '20' });
     if (auditAction.trim()) params.set('action', auditAction.trim());
     if (auditActor) params.set('actor_id', auditActor);
-    const response = await fetch(`/api/platform/admin/audit-events?${params}`);
+    if (auditResourceType.trim()) params.set('resource_type', auditResourceType.trim());
+    if (auditResourceId.trim()) params.set('resource_id', auditResourceId.trim());
+    if (auditCreatedFrom.trim()) params.set('created_from', auditDateQueryValue(auditCreatedFrom));
+    if (auditCreatedTo.trim()) params.set('created_to', auditDateQueryValue(auditCreatedTo));
+    if (!reset && auditEvents.length) params.set('before_id', String(auditEvents[auditEvents.length - 1].id));
+    const response = await fetch(`/api/platform/admin/audit-events/page?${params}`);
     if (!response.ok) {
       setError(await responseMessage(response, '审计事件加载失败。'));
-      setBusy(false);
+      setAuditLoading(false);
       return;
     }
-    setAuditEvents((await response.json()) as AuditEvent[]);
-    setBusy(false);
+    const page = (await response.json()) as AuditEventPage;
+    setAuditEvents((current) =>
+      reset
+        ? page.items ?? []
+        : [...current, ...(page.items ?? []).filter((item) => !current.some((row) => row.id === item.id))]
+    );
+    setAuditHasMore(page.has_more);
+    setAuditLoading(false);
   }
 
   return (
     <>
-      <Tabs defaultValue='users' className='space-y-4'>
+      <Tabs defaultValue={initialAuditTab ? 'audit' : 'users'} className='space-y-4'>
         <TabsList>
           <TabsTrigger value='users'>
             <IconUserCog />
@@ -362,7 +401,7 @@ export function PlatformUserManagement({
 
         <TabsContent value='audit' className='space-y-4'>
           <Card>
-            <CardContent className='flex flex-wrap items-end gap-3 pt-4'>
+            <CardContent className='grid gap-3 pt-4 md:grid-cols-2 xl:grid-cols-3'>
               <label htmlFor='audit-action' className='grid min-w-56 flex-1 gap-1 text-sm'>
                 动作
                 <Input
@@ -388,44 +427,100 @@ export function PlatformUserManagement({
                   ))}
                 </select>
               </label>
+              <label htmlFor='audit-resource-type' className='grid gap-1 text-sm'>
+                资源类型
+                <Input
+                  id='audit-resource-type'
+                  value={auditResourceType}
+                  onChange={(event) => setAuditResourceType(event.target.value)}
+                  placeholder='例如 workflow 或 file'
+                />
+              </label>
+              <label htmlFor='audit-resource-id' className='grid gap-1 text-sm'>
+                任务或文件标识
+                <Input
+                  id='audit-resource-id'
+                  value={auditResourceId}
+                  onChange={(event) => setAuditResourceId(event.target.value)}
+                />
+              </label>
+              <label htmlFor='audit-created-from' className='grid gap-1 text-sm'>
+                开始时间（北京时间）
+                <Input
+                  id='audit-created-from'
+                  type='datetime-local'
+                  value={auditCreatedFrom}
+                  onChange={(event) => setAuditCreatedFrom(event.target.value)}
+                />
+              </label>
+              <label htmlFor='audit-created-to' className='grid gap-1 text-sm'>
+                结束时间（北京时间）
+                <Input
+                  id='audit-created-to'
+                  type='datetime-local'
+                  value={auditCreatedTo}
+                  onChange={(event) => setAuditCreatedTo(event.target.value)}
+                />
+              </label>
               <Button
                 type='button'
                 variant='outline'
-                onClick={() => void loadAudit()}
-                disabled={busy}
+                onClick={() => void loadAudit(true)}
+                disabled={auditLoading}
               >
-                查询
+                {auditLoading ? '查询中…' : '查询'}
               </Button>
             </CardContent>
           </Card>
-          <PaginatedCollection ariaLabel='审计记录' contentClassName='space-y-2'>
-            {auditEvents.map((event) => (
-              <Card key={event.id}>
-                <CardContent className='grid gap-2 py-3 text-sm md:grid-cols-[11rem_1fr_auto] md:items-center'>
-                  <div className='text-muted-foreground'>{formatDate(event.created_at)}</div>
-                  <div>
-                    <p className='font-medium'>{ACTION_LABELS[event.action] ?? event.action}</p>
-                    <p className='text-xs text-muted-foreground'>
-                      {(usersById.get(event.actor_id)?.display_name ?? event.actor_id) || '系统'} ·{' '}
-                      {event.resource_type || '平台'}{' '}
-                      {event.resource_id ? `· ${event.resource_id.slice(0, 12)}…` : ''}
-                    </p>
-                    {Object.keys(event.details ?? {}).length > 0 && (
-                      <details className='mt-1 text-xs text-muted-foreground'>
-                        <summary className='cursor-pointer'>查看脱敏详情</summary>
-                        <pre className='mt-1 overflow-x-auto whitespace-pre-wrap rounded bg-muted p-2'>
-                          {JSON.stringify(event.details, null, 2)}
-                        </pre>
-                      </details>
-                    )}
-                  </div>
-                  <Badge variant={event.outcome === 'success' ? 'outline' : 'destructive'}>
-                    {event.outcome === 'success' ? '成功' : '失败'}
-                  </Badge>
-                </CardContent>
-              </Card>
-            ))}
-          </PaginatedCollection>
+          {auditEvents.length ? (
+            <PaginatedCollection ariaLabel='审计记录' contentClassName='space-y-2'>
+              {auditEvents.map((event) => (
+                <Card key={event.id}>
+                  <CardContent className='grid gap-2 py-3 text-sm md:grid-cols-[13rem_1fr_auto] md:items-center'>
+                    <div className='text-muted-foreground'>
+                      {new Date(event.created_at).toLocaleString('zh-CN', {
+                        hour12: false,
+                        timeZone: 'Asia/Shanghai',
+                        timeZoneName: 'short'
+                      })}{' '}
+                      （北京时间）
+                    </div>
+                    <div>
+                      <p className='font-medium'>{ACTION_LABELS[event.action] ?? event.action}</p>
+                      <p className='text-xs text-muted-foreground'>
+                        {(usersById.get(event.actor_id)?.display_name ?? event.actor_id) || '系统'} ·{' '}
+                        {event.resource_type || '平台'}{' '}
+                        {event.resource_id ? `· ${event.resource_id.slice(0, 12)}…` : ''}
+                      </p>
+                      {Object.keys(event.details ?? {}).length > 0 && (
+                        <details className='mt-1 text-xs text-muted-foreground'>
+                          <summary className='cursor-pointer'>查看脱敏详情</summary>
+                          <pre className='mt-1 overflow-x-auto whitespace-pre-wrap rounded bg-muted p-2'>
+                            {JSON.stringify(event.details, null, 2)}
+                          </pre>
+                        </details>
+                      )}
+                    </div>
+                    <Badge variant={event.outcome === 'success' ? 'outline' : 'destructive'}>
+                      {event.outcome === 'success' ? '成功' : '失败'}
+                    </Badge>
+                  </CardContent>
+                </Card>
+              ))}
+            </PaginatedCollection>
+          ) : (
+            <p className='text-sm text-muted-foreground'>当前条件下没有审计记录。</p>
+          )}
+          {auditHasMore && (
+            <Button
+              type='button'
+              variant='outline'
+              onClick={() => void loadAudit(false)}
+              disabled={auditLoading}
+            >
+              {auditLoading ? '加载中…' : '加载更早记录'}
+            </Button>
+          )}
         </TabsContent>
       </Tabs>
 

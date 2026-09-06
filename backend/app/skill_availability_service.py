@@ -8,13 +8,181 @@ from sqlalchemy.orm import Session
 
 from .audit_service import record_audit
 from .auth import UserContext
-from .contracts import SkillAvailabilityRead
-from .models import RunRecord, SkillAvailability, WorkflowSession
+from .contracts import SkillActiveWorkRead, SkillAvailabilityRead
+from .models import RunRecord, SkillAvailability, WorkflowBatch, WorkflowSession
 from .registry import registry
 from .scheduler import acquire_claim_lock
 
 RUN_TERMINAL_STATES = {"succeeded", "failed", "timed_out", "cancelled"}
 WORKFLOW_TERMINAL_STATES = {"succeeded", "failed", "cancelled"}
+ACTIVE_WORK_DETAIL_LIMIT = 200
+
+
+def _work_state(state: str, stage: str = "") -> tuple[str, str]:
+    if state in {"queued", "created", "validating"}:
+        return "queued", ""
+    if state in {"waiting_confirmation", "waiting_approval"} or stage in {
+        "awaiting_apply_confirmation",
+        "awaiting_date_confirmation",
+        "awaiting_fetched_data_confirmation",
+        "waiting_approval",
+    }:
+        return "waiting_confirmation", "等待人工确认后继续。"
+    if stage in {
+        "awaiting_date",
+        "awaiting_files",
+        "supplementing_fetched_data",
+        "awaiting_fetched_data",
+    }:
+        return "waiting_material", "等待业务日期或材料。"
+    if state in {"running", "active", "cancelling"}:
+        return "running", ""
+    return "unknown", "当前状态需要核实。"
+
+
+def _active_work_details(
+    db: Session, skill_id: str
+) -> tuple[list[SkillActiveWorkRead], bool]:
+    items: list[SkillActiveWorkRead] = []
+    runs = list(
+        db.scalars(
+            select(RunRecord)
+            .where(
+                RunRecord.skill_id == skill_id,
+                RunRecord.state.not_in(RUN_TERMINAL_STATES),
+            )
+            .order_by(
+                func.coalesce(
+                    RunRecord.finished_at, RunRecord.started_at,
+                    RunRecord.queued_at, RunRecord.created_at,
+                ).desc(),
+                RunRecord.id.desc(),
+            )
+            .limit(ACTIVE_WORK_DETAIL_LIMIT + 1)
+        ).all()
+    )
+    for run in runs:
+        state, reason = _work_state(run.state)
+        items.append(
+            SkillActiveWorkRead(
+                reference_type="run",
+                reference_id=run.id,
+                display_id=run.id,
+                state=state,
+                original_state=run.state,
+                progress=run.progress,
+                progress_message=run.progress_message,
+                queued_at=run.queued_at,
+                started_at=run.started_at,
+                updated_at=run.finished_at or run.started_at or run.queued_at or run.created_at,
+                waiting_reason=reason,
+            )
+        )
+
+    workflows = list(
+        db.scalars(
+            select(WorkflowSession)
+            .where(
+                WorkflowSession.skill_id == skill_id,
+                WorkflowSession.batch_id.is_(None),
+                WorkflowSession.state.not_in(WORKFLOW_TERMINAL_STATES),
+            )
+            .order_by(WorkflowSession.updated_at.desc())
+            .limit(ACTIVE_WORK_DETAIL_LIMIT + 1)
+        ).all()
+    )
+    for workflow in workflows:
+        state, reason = _work_state(workflow.state, workflow.stage)
+        items.append(
+            SkillActiveWorkRead(
+                reference_type="workflow",
+                reference_id=workflow.id,
+                display_id=workflow.display_id or workflow.id,
+                state=state,
+                original_state=workflow.state,
+                stage=workflow.stage,
+                progress=workflow.progress,
+                progress_message=workflow.progress_message,
+                queued_at=workflow.created_at,
+                started_at=workflow.created_at if workflow.state == "running" else None,
+                updated_at=workflow.updated_at,
+                waiting_reason=reason,
+            )
+        )
+
+    batches = list(
+        db.scalars(
+            select(WorkflowBatch)
+            .where(
+                WorkflowBatch.skill_id == skill_id,
+                WorkflowBatch.state.not_in(WORKFLOW_TERMINAL_STATES),
+            )
+            .order_by(WorkflowBatch.updated_at.desc())
+            .limit(ACTIVE_WORK_DETAIL_LIMIT + 1)
+        ).all()
+    )
+    batch_ids = [batch.id for batch in batches]
+    batch_children: dict[str, list[WorkflowSession]] = {}
+    if batch_ids:
+        children = list(
+            db.scalars(
+                select(WorkflowSession)
+                .where(
+                    WorkflowSession.batch_id.in_(batch_ids),
+                    WorkflowSession.state.not_in(WORKFLOW_TERMINAL_STATES),
+                )
+                .order_by(WorkflowSession.updated_at.desc())
+            ).all()
+        )
+        for child in children:
+            if child.batch_id:
+                batch_children.setdefault(child.batch_id, []).append(child)
+    for batch in batches:
+        state, reason = _work_state(batch.state)
+        stage = ""
+        progress_message = batch.progress_message
+        representative = None
+        candidates = batch_children.get(batch.id, [])
+        if candidates:
+            representative = min(
+                candidates,
+                key=lambda child: (
+                    0
+                    if _work_state(child.state, child.stage)[0]
+                    in {"waiting_material", "waiting_confirmation"}
+                    else 1
+                    if _work_state(child.state, child.stage)[0] == "running"
+                    else 2,
+                    -(child.updated_at.timestamp() if child.updated_at else 0),
+                ),
+            )
+            child_state, child_reason = _work_state(
+                representative.state, representative.stage
+            )
+            if child_state != "unknown":
+                state = child_state
+                reason = child_reason
+                stage = representative.stage
+                progress_message = representative.progress_message or batch.progress_message
+        items.append(
+            SkillActiveWorkRead(
+                reference_type="workflow_batch",
+                reference_id=batch.id,
+                display_id=batch.display_id or batch.id,
+                state=state,
+                original_state=batch.state,
+                stage=stage,
+                progress=batch.progress,
+                progress_message=progress_message,
+                queued_at=batch.created_at,
+                started_at=batch.created_at if batch.state == "running" else None,
+                updated_at=batch.updated_at,
+                waiting_reason=reason,
+            )
+        )
+
+    items.sort(key=lambda item: item.updated_at, reverse=True)
+    return items[:ACTIVE_WORK_DETAIL_LIMIT], len(items) > ACTIVE_WORK_DETAIL_LIMIT
 
 
 def active_work_count(db: Session, skill_id: str) -> int:
@@ -35,15 +203,29 @@ def active_work_count(db: Session, skill_id: str) -> int:
             .select_from(WorkflowSession)
             .where(
                 WorkflowSession.skill_id == skill_id,
+                WorkflowSession.batch_id.is_(None),
                 WorkflowSession.state.not_in(WORKFLOW_TERMINAL_STATES),
             )
         )
         or 0
     )
-    return int(runs + workflows)
+    batches = (
+        db.scalar(
+            select(func.count())
+            .select_from(WorkflowBatch)
+            .where(
+                WorkflowBatch.skill_id == skill_id,
+                WorkflowBatch.state.not_in(WORKFLOW_TERMINAL_STATES),
+            )
+        )
+        or 0
+    )
+    return int(runs + workflows + batches)
 
 
 def _read(db: Session, record: SkillAvailability) -> SkillAvailabilityRead:
+    active_work, active_work_truncated = _active_work_details(db, record.skill_id)
+    current = registry.get(record.skill_id, include_unpublished=True)
     return SkillAvailabilityRead(
         skill_id=record.skill_id,
         state=record.state,
@@ -52,6 +234,10 @@ def _read(db: Session, record: SkillAvailability) -> SkillAvailabilityRead:
         changed_by=record.changed_by,
         changed_at=record.changed_at,
         active_work_count=active_work_count(db, record.skill_id),
+        active_work=active_work,
+        active_work_truncated=active_work_truncated,
+        current_version=current.manifest.version if current else "",
+        current_skill_hash=current.skill_hash if current else "",
     )
 
 
@@ -60,6 +246,8 @@ def get_availability(db: Session, skill_id: str) -> SkillAvailabilityRead:
         raise HTTPException(status_code=404, detail="平台不存在该 Skill。")
     record = db.get(SkillAvailability, skill_id)
     if record is None:
+        active_work, active_work_truncated = _active_work_details(db, skill_id)
+        current = registry.get(skill_id, include_unpublished=True)
         return SkillAvailabilityRead(
             skill_id=skill_id,
             state="enabled",
@@ -68,6 +256,10 @@ def get_availability(db: Session, skill_id: str) -> SkillAvailabilityRead:
             changed_by="",
             changed_at=None,
             active_work_count=active_work_count(db, skill_id),
+            active_work=active_work,
+            active_work_truncated=active_work_truncated,
+            current_version=current.manifest.version if current else "",
+            current_skill_hash=current.skill_hash if current else "",
         )
     return _read(db, record)
 

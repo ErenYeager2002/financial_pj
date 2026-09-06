@@ -34,12 +34,14 @@ CASES = {
         {"today": "", "include_detail": True, "no_date_filter": True},
     ),
     "project-detail-to-ledger": (GENERATOR.project_inputs, {}),
-    "receivables-merge": (GENERATOR.receivables_inputs, {"base_month": "202608"}),
+    "receivables-merge-and-split": (
+        GENERATOR.receivables_inputs,
+        {"mode": "合并并按销售拆分", "base_month": "202608"},
+    ),
     "reconcile-bank": (
         GENERATOR.reconciliation_inputs,
         {"amount_tolerance": 1, "date_tolerance_days": 2},
     ),
-    "split-by-sales": (GENERATOR.split_inputs, {"date_label": "0827"}),
 }
 
 

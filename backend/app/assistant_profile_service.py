@@ -31,7 +31,8 @@ def assistant_status(db: Session, user: UserContext) -> AssistantStatus:
     profile = _profile(db, user.department_id)
     connection = db.get(ModelConnection, profile.connection_id) if profile else None
     return AssistantStatus(
-        configured=bool(profile and connection and connection.status == "connected")
+        configured=bool(profile and connection and connection.status == "connected"),
+        model=profile.model if profile else "",
     )
 
 

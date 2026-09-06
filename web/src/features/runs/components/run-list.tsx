@@ -41,7 +41,6 @@ export function RunList({
       <Card>
         <CardHeader>
           <CardTitle>暂无任务</CardTitle>
-          <CardDescription>从 Skill 目录选择一个已开放的能力并创建任务。</CardDescription>
         </CardHeader>
         <CardContent>
           <Link href='/dashboard/skills' className={cn(buttonVariants())}>
@@ -56,7 +55,7 @@ export function RunList({
     <Card>
       <CardHeader>
         <CardTitle>任务记录</CardTitle>
-        <CardDescription>共 {total} 条，失败原因和重试条件由平台统一判断。</CardDescription>
+        <CardDescription>共 {total} 条</CardDescription>
       </CardHeader>
       <CardContent>
         <div

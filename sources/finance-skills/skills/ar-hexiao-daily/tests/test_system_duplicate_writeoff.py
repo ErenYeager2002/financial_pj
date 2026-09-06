@@ -185,6 +185,35 @@ def test_validate_accepts_whole_parent_delivery_surplus():
     assert checked["counts"] == {"write": 1, "skip": 0, "conflict": 0}
 
 
+def test_validate_blocks_foreign_delivery_fallback_without_local_amount():
+    parent = payment(
+        amount=100, local=719.19, currency="美元USD", huikuan_type="整笔回款"
+    )
+    _, parent_audit = audit(parent, [])
+    audits = {"AR1": parent_audit}
+    plan = {
+        "duplicate_writeoff_audits": audits,
+        "duplicate_writeoff_audit_sha256": W.audit_fingerprint(audits),
+        "auto": [{
+            "ar": "AR1", "so": "SO1", "sod": "SOD1", "ledger_row_ref": 2,
+            "currency": "美元USD", "amount_orig": 100,
+            "amount_local": None, "deliver_local": None,
+            "five_cols": {"计提": 100, "回款明细": 100, "是否结账": "是",
+                          "收款时间": "2026-07-31", "收款方式": "汇"},
+            "warning_codes": ["W_WHOLE_PAYMENT_DELIVERY_FALLBACK"],
+            "duplicate_writeoff_audit": parent_audit,
+        }],
+    }
+    rows = {2: {"SO": "SO1", "SOD": "SOD1", "计提": None, "回款明细": None,
+                "是否结账": "否", "收款时间": None, "收款方式": None,
+                "差异": None, "_差异列存在": True, "应收金额": 719.19}}
+
+    checked = V.validate(plan, rows)
+
+    assert checked["counts"] == {"write": 0, "skip": 0, "conflict": 1}
+    assert "本币" in checked["conflict"][0]["_check"]["reason"]
+
+
 def test_whole_parent_uses_explicit_total_original_despite_currency_label_mismatch():
     parent = payment(
         amount=30,
@@ -571,5 +600,6 @@ def test_validate_recomputes_whole_parent_gate_after_status_and_hash_tamper():
 def test_fetch_contract_exposes_record_identity_and_new_version():
     assert F.MINGXI_COLS[0] == "核销记录NUM"
     assert "订单已核销金额" in F.XIADAN_COLS
-    assert F.EXPORT_SCHEMA_VERSION == "2026-08-31-total-received-v7"
+    assert "交付额/本币" in F.XIADAN_COLS
+    assert F.EXPORT_SCHEMA_VERSION == "2026-09-03-delivery-local-v8"
     assert "项目交付日期" in F.XIADAN_COLS

@@ -74,6 +74,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/audit-events/page": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Audit Event Page */
+        get: operations["list_audit_event_page_api_admin_audit_events_page_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/feature-controls": {
         parameters: {
             query?: never;
@@ -557,6 +574,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/assistant/conversations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Assistant Conversations */
+        get: operations["assistant_conversations_api_assistant_conversations_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/assistant/conversations/latest": {
         parameters: {
             query?: never;
@@ -770,6 +804,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/catalog/skill-summaries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Catalog Skill Summaries
+         * @description 返回 Skill 中心使用的轻量员工安全目录。
+         */
+        get: operations["list_catalog_skill_summaries_api_catalog_skill_summaries_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/catalog/skills": {
         parameters: {
             query?: never;
@@ -825,6 +879,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/files/groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List File Group Summaries */
+        get: operations["list_file_group_summaries_api_files_groups_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/files/selectable-inputs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Selectable Input Files */
+        get: operations["list_selectable_input_files_api_files_selectable_inputs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/files/{file_id}": {
         parameters: {
             query?: never;
@@ -869,6 +957,26 @@ export interface paths {
         };
         /** Health */
         get: operations["health_api_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/health/readiness": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Health Readiness
+         * @description Return measured local queue and Worker state for the management UI.
+         */
+        get: operations["health_readiness_api_health_readiness_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1674,6 +1782,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/workflows/{workflow_id}/execution": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Workflow Execution */
+        get: operations["get_workflow_execution_api_workflows__workflow_id__execution_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workflows/{workflow_id}/execution/investigate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Investigate Failed Workflow Write */
+        post: operations["investigate_failed_workflow_write_api_workflows__workflow_id__execution_investigate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workflows/{workflow_id}/execution/recover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Recover Workflow Execution */
+        post: operations["recover_workflow_execution_api_workflows__workflow_id__execution_recover_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/workflows/{workflow_id}/fetched-data": {
         parameters: {
             query?: never;
@@ -1753,6 +1912,23 @@ export interface paths {
         put?: never;
         /** Workflow Message */
         post: operations["workflow_message_api_workflows__workflow_id__messages_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workflows/{workflow_id}/order-evidence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Workflow Order Evidence */
+        get: operations["get_workflow_order_evidence_api_workflows__workflow_id__order_evidence_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2113,6 +2289,198 @@ export interface components {
              */
             workflow_id: string | null;
         };
+        /** ArEvidenceDetail */
+        ArEvidenceDetail: {
+            /** Entries */
+            entries?: components["schemas"]["ArEvidenceEntry"][];
+            /** Fingerprint */
+            fingerprint: string;
+            /** Next Offset */
+            next_offset: number;
+            /** Offset */
+            offset: number;
+            /** Record Id */
+            record_id: string;
+            /** Total */
+            total: number;
+        };
+        /** ArEvidenceEntry */
+        ArEvidenceEntry: {
+            /**
+             * Char Offset
+             * @default 0
+             */
+            char_offset: number;
+            /**
+             * Char Total
+             * @default 0
+             */
+            char_total: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "string" | "number" | "boolean" | "null" | "object" | "array";
+            /** Path */
+            path: string[];
+            /** Text */
+            text: string;
+        };
+        /** ArEvidencePage */
+        ArEvidencePage: {
+            /** Available */
+            available: boolean;
+            /** Counts */
+            counts?: {
+                [key: string]: number;
+            };
+            detail?: components["schemas"]["ArEvidenceDetail"] | null;
+            /**
+             * Fingerprint
+             * @default
+             */
+            fingerprint: string;
+            /**
+             * Limit
+             * @default 20
+             */
+            limit: number;
+            /**
+             * Message
+             * @default
+             */
+            message: string;
+            /**
+             * Next Offset
+             * @default 0
+             */
+            next_offset: number;
+            /**
+             * Offset
+             * @default 0
+             */
+            offset: number;
+            /**
+             * Paging Version
+             * @default ar-evidence-page-v2
+             */
+            paging_version: string;
+            /** Reconciliation Date */
+            reconciliation_date: string;
+            /** Records */
+            records?: components["schemas"]["ArEvidenceSummary"][];
+            /**
+             * Schema Version
+             * @default ar-evidence-v1
+             */
+            schema_version: string;
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+        };
+        /** ArEvidenceSummary */
+        ArEvidenceSummary: {
+            /**
+             * Ar
+             * @default
+             */
+            ar: string;
+            /**
+             * Code
+             * @default
+             */
+            code: string;
+            /** Initial Bucket */
+            initial_bucket: string;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+            /**
+             * Reason Truncated
+             * @default false
+             */
+            reason_truncated: boolean;
+            /** Record Id */
+            record_id: string;
+            /**
+             * So
+             * @default
+             */
+            so: string;
+            /**
+             * Sod
+             * @default
+             */
+            sod: string;
+        };
+        /** ArExecutionRead */
+        ArExecutionRead: {
+            /** Available */
+            available: boolean;
+            /**
+             * Checkpoint Fingerprint
+             * @default
+             */
+            checkpoint_fingerprint: string;
+            /** Counts */
+            counts?: {
+                [key: string]: number;
+            };
+            /** Flow */
+            flow?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Formal Ledgers Registered
+             * @default false
+             */
+            formal_ledgers_registered: boolean;
+            /**
+             * Next Tool
+             * @default
+             */
+            next_tool: string;
+            /** Phases */
+            phases?: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Publication
+             * @default not_published
+             */
+            publication: string;
+            /**
+             * Recovery Allowed
+             * @default false
+             */
+            recovery_allowed: boolean;
+            /**
+             * Recovery Failed Action Id
+             * @default
+             */
+            recovery_failed_action_id: string;
+            /**
+             * Recovery Reason
+             * @default
+             */
+            recovery_reason: string;
+            /**
+             * Schema Version
+             * @default
+             */
+            schema_version: string;
+        };
+        /** ArRecoveryRequest */
+        ArRecoveryRequest: {
+            /** Checkpoint Fingerprint */
+            checkpoint_fingerprint: string;
+            /** Failed Action Id */
+            failed_action_id: string;
+        };
         /** AssistantConversationRead */
         AssistantConversationRead: {
             /** Messages */
@@ -2124,6 +2492,20 @@ export interface components {
              * @default null
              */
             updated_at: string | null;
+        };
+        /** AssistantConversationSummary */
+        AssistantConversationSummary: {
+            /** Message Count */
+            message_count: number;
+            /**
+             * Preview
+             * @default
+             */
+            preview: string;
+            /** Session Id */
+            session_id: string;
+            /** Updated At */
+            updated_at?: string | null;
         };
         /** AssistantMessageRead */
         AssistantMessageRead: {
@@ -2200,6 +2582,25 @@ export interface components {
         AssistantStatus: {
             /** Configured */
             configured: boolean;
+            /**
+             * Model
+             * @default
+             */
+            model: string;
+        };
+        /** AuditEventPage */
+        AuditEventPage: {
+            /**
+             * Has More
+             * @default false
+             */
+            has_more: boolean;
+            /** Items */
+            items?: components["schemas"]["AuditEventRead"][];
+            /** Limit */
+            limit: number;
+            /** Next Before Id */
+            next_before_id?: number | null;
         };
         /** AuditEventRead */
         AuditEventRead: {
@@ -2254,6 +2655,39 @@ export interface components {
             /** New Password */
             new_password: string;
         };
+        /** ExecutionModeSpec */
+        ExecutionModeSpec: {
+            /**
+             * Adapter
+             * @enum {string}
+             */
+            adapter: "workflow" | "pi_harness";
+            /**
+             * Instructions
+             * @default null
+             */
+            instructions: string | null;
+            /**
+             * Tools
+             * @default null
+             */
+            tools: string | null;
+            /** Worker Pool */
+            worker_pool: string;
+        };
+        /** ExecutionSpec */
+        ExecutionSpec: {
+            /**
+             * Default Mode
+             * @default workflow
+             * @enum {string}
+             */
+            default_mode: "workflow" | "pi_harness";
+            /** Modes */
+            modes: {
+                [key: string]: components["schemas"]["ExecutionModeSpec"];
+            };
+        };
         /** ExternalDataSourceSpec */
         ExternalDataSourceSpec: {
             /**
@@ -2268,26 +2702,6 @@ export interface components {
             required: boolean;
             /** System */
             system: string;
-        };
-        /** ExecutionModeSpec */
-        ExecutionModeSpec: {
-            /** @enum {string} */
-            adapter: "workflow" | "pi_harness";
-            /** @default null */
-            instructions: string | null;
-            /** @default null */
-            tools: string | null;
-            /** Worker Pool */
-            worker_pool: string;
-        };
-        /** ExecutionSpec */
-        ExecutionSpec: {
-            /** @default workflow */
-            default_mode: "workflow" | "pi_harness";
-            /** Modes */
-            modes: {
-                [key: string]: components["schemas"]["ExecutionModeSpec"];
-            };
         };
         /** FeatureControlRead */
         FeatureControlRead: {
@@ -2563,6 +2977,11 @@ export interface components {
             average_run_seconds: number;
             /** Failed Run Count */
             failed_run_count: number;
+            /**
+             * Failed Task Count
+             * @default 0
+             */
+            failed_task_count: number;
             /** Failure Rate */
             failure_rate: number;
             /** Manual Intervention Count */
@@ -2575,6 +2994,16 @@ export interface components {
             run_count: number;
             /** Step Metrics */
             step_metrics?: components["schemas"]["StepMetricRead"][];
+            /**
+             * Task Count
+             * @default 0
+             */
+            task_count: number;
+            /**
+             * Task Scope
+             * @default
+             */
+            task_scope: string;
             /** Window Hours */
             window_hours: number;
         };
@@ -2594,6 +3023,11 @@ export interface components {
         /** PlatformFile */
         PlatformFile: {
             /**
+             * Business Date
+             * @default
+             */
+            business_date: string;
+            /**
              * Can Delete
              * @default false
              */
@@ -2624,6 +3058,16 @@ export interface components {
             id: string;
             /** Kind */
             kind: ("input" | "output") | string;
+            /**
+             * Material Set Id
+             * @default null
+             */
+            material_set_id: string | null;
+            /**
+             * Material Version
+             * @default null
+             */
+            material_version: number | null;
             /** Name */
             name: string;
             /**
@@ -2636,6 +3080,11 @@ export interface components {
              * @default null
              */
             run_id: string | null;
+            /**
+             * Same Content Count
+             * @default 1
+             */
+            same_content_count: number;
             /** Sha256 */
             sha256: string;
             /** Size Bytes */
@@ -2656,6 +3105,17 @@ export interface components {
              */
             skill_version: string;
             /**
+             * Source Task Id
+             * @default
+             */
+            source_task_id: string;
+            /**
+             * Source Task Type
+             * @default
+             * @enum {string}
+             */
+            source_task_type: "run" | "workflow" | "workflow_batch" | "";
+            /**
              * Workflow Id
              * @default null
              */
@@ -2663,6 +3123,16 @@ export interface components {
         };
         /** PlatformFileDetail */
         PlatformFileDetail: {
+            /**
+             * Audit Href
+             * @default
+             */
+            audit_href: string;
+            /**
+             * Business Date
+             * @default
+             */
+            business_date: string;
             /**
              * Can Delete
              * @default false
@@ -2694,6 +3164,16 @@ export interface components {
             id: string;
             /** Kind */
             kind: ("input" | "output") | string;
+            /**
+             * Material Set Id
+             * @default null
+             */
+            material_set_id: string | null;
+            /**
+             * Material Version
+             * @default null
+             */
+            material_version: number | null;
             /** Name */
             name: string;
             /** Referenced Run Ids */
@@ -2710,6 +3190,11 @@ export interface components {
              * @default null
              */
             run_id: string | null;
+            /**
+             * Same Content Count
+             * @default 1
+             */
+            same_content_count: number;
             /** Sha256 */
             sha256: string;
             /** Size Bytes */
@@ -2730,10 +3215,120 @@ export interface components {
              */
             skill_version: string;
             /**
+             * Source Task Id
+             * @default
+             */
+            source_task_id: string;
+            /**
+             * Source Task Type
+             * @default
+             * @enum {string}
+             */
+            source_task_type: "run" | "workflow" | "workflow_batch" | "";
+            /**
              * Workflow Id
              * @default null
              */
             workflow_id: string | null;
+        };
+        /** PlatformFileGroupSummary */
+        PlatformFileGroupSummary: {
+            /** File Count */
+            file_count: number;
+            /**
+             * Latest Created At
+             * @default null
+             */
+            latest_created_at: string | null;
+            /**
+             * Skill Id
+             * @default
+             */
+            skill_id: string;
+            /** Skill Name */
+            skill_name: string;
+            /**
+             * Unassigned
+             * @default false
+             */
+            unassigned: boolean;
+        };
+        /** PlatformFileGroupSummaryPage */
+        PlatformFileGroupSummaryPage: {
+            /** Items */
+            items?: components["schemas"]["PlatformFileGroupSummary"][];
+            /** Total Files */
+            total_files: number;
+            /** Total Groups */
+            total_groups: number;
+        };
+        /** PlatformFileOption */
+        PlatformFileOption: {
+            /**
+             * Business Date
+             * @default
+             */
+            business_date: string;
+            /**
+             * Created At
+             * @default null
+             */
+            created_at: string | null;
+            /** Id */
+            id: string;
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "input";
+            /** Name */
+            name: string;
+            /**
+             * Same Content Count
+             * @default 1
+             */
+            same_content_count: number;
+            /** Size Bytes */
+            size_bytes: number;
+            /**
+             * Skill Id
+             * @default
+             */
+            skill_id: string;
+            /**
+             * Skill Name
+             * @default
+             */
+            skill_name: string;
+            /**
+             * Skill Version
+             * @default
+             */
+            skill_version: string;
+            /**
+             * Source Task Id
+             * @default
+             */
+            source_task_id: string;
+            /**
+             * Source Task Type
+             * @default
+             * @enum {string}
+             */
+            source_task_type: "run" | "workflow" | "workflow_batch" | "";
+        };
+        /** PlatformFileOptionPage */
+        PlatformFileOptionPage: {
+            /** Items */
+            items?: components["schemas"]["PlatformFileOption"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Pages */
+            pages: number;
+            /** Total */
+            total: number;
         };
         /** PlatformFilePage */
         PlatformFilePage: {
@@ -2750,22 +3345,57 @@ export interface components {
         };
         /** PlatformHealth */
         PlatformHealth: {
+            /** Checked At */
+            checked_at?: string | null;
             /** Configured Execution Capacity */
             configured_execution_capacity: number;
             /** Configured Workers */
             configured_workers: {
                 [key: string]: number;
             };
+            /**
+             * Dependency Status
+             * @default unknown
+             * @enum {string}
+             */
+            dependency_status: "available" | "unavailable" | "not_checked" | "unknown";
             /** Environment */
             environment: string;
+            /**
+             * Liveness
+             * @default alive
+             * @constant
+             */
+            liveness: "alive";
             /** Name */
             name: string;
+            /** Online Workers */
+            online_workers?: {
+                [key: string]: number;
+            };
+            /** Queue Depth */
+            queue_depth?: {
+                [key: string]: number;
+            };
+            /**
+             * Readiness
+             * @default unknown
+             * @enum {string}
+             */
+            readiness: "ready" | "not_ready" | "unknown";
             /** Registry Errors */
             registry_errors?: components["schemas"]["RegistryError"][];
+            /**
+             * Scope
+             * @default 存活探针未执行数据库或外部依赖检查。
+             */
+            scope: string;
             /** Skills */
             skills: number;
             /** Status */
             status: string;
+            /** Workers */
+            workers?: components["schemas"]["WorkerHealth"][];
         };
         /** PlatformUser */
         PlatformUser: {
@@ -2957,6 +3587,10 @@ export interface components {
             created_at: string;
             /** Error Message */
             error_message: string;
+            /** Failure Detail */
+            failure_detail?: {
+                [key: string]: unknown;
+            };
             /** Files */
             files?: {
                 [key: string]: unknown;
@@ -3067,6 +3701,10 @@ export interface components {
             created_at: string;
             /** Error Message */
             error_message: string;
+            /** Failure Detail */
+            failure_detail?: {
+                [key: string]: unknown;
+            };
             /** Files */
             files?: {
                 [key: string]: unknown;
@@ -3100,6 +3738,51 @@ export interface components {
             started_at: string | null;
             /** State */
             state: string;
+        };
+        /** RuntimeHealth */
+        RuntimeHealth: {
+            /**
+             * Checked At
+             * @default null
+             */
+            checked_at: string | null;
+            /** Configured Workers */
+            configured_workers?: {
+                [key: string]: number;
+            };
+            /**
+             * Dependency Status
+             * @default unknown
+             * @enum {string}
+             */
+            dependency_status: "available" | "unavailable" | "not_checked" | "unknown";
+            /**
+             * Liveness
+             * @default alive
+             * @constant
+             */
+            liveness: "alive";
+            /** Online Workers */
+            online_workers?: {
+                [key: string]: number;
+            };
+            /** Queue Depth */
+            queue_depth?: {
+                [key: string]: number;
+            };
+            /**
+             * Readiness
+             * @default unknown
+             * @enum {string}
+             */
+            readiness: "ready" | "not_ready" | "unknown";
+            /**
+             * Scope
+             * @default
+             */
+            scope: string;
+            /** Workers */
+            workers?: components["schemas"]["WorkerHealth"][];
         };
         /** RuntimeSpec */
         RuntimeSpec: {
@@ -3191,14 +3874,87 @@ export interface components {
             /** Username */
             username: string;
         };
+        /** SkillActiveWorkRead */
+        SkillActiveWorkRead: {
+            /**
+             * Blocks Disable
+             * @default true
+             */
+            blocks_disable: boolean;
+            /**
+             * Display Id
+             * @default
+             */
+            display_id: string;
+            /** Original State */
+            original_state: string;
+            /**
+             * Progress
+             * @default 0
+             */
+            progress: number;
+            /**
+             * Progress Message
+             * @default
+             */
+            progress_message: string;
+            /** Queued At */
+            queued_at?: string | null;
+            /** Reference Id */
+            reference_id: string;
+            /**
+             * Reference Type
+             * @enum {string}
+             */
+            reference_type: "run" | "workflow" | "workflow_batch";
+            /**
+             * Stage
+             * @default
+             */
+            stage: string;
+            /** Started At */
+            started_at?: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "queued" | "running" | "waiting_material" | "waiting_confirmation" | "unknown";
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /**
+             * Waiting Reason
+             * @default
+             */
+            waiting_reason: string;
+        };
         /** SkillAvailabilityRead */
         SkillAvailabilityRead: {
+            /** Active Work */
+            active_work?: components["schemas"]["SkillActiveWorkRead"][];
             /** Active Work Count */
             active_work_count: number;
+            /**
+             * Active Work Truncated
+             * @default false
+             */
+            active_work_truncated: boolean;
             /** Changed At */
             changed_at: string | null;
             /** Changed By */
             changed_by: string;
+            /**
+             * Current Skill Hash
+             * @default
+             */
+            current_skill_hash: string;
+            /**
+             * Current Version
+             * @default
+             */
+            current_version: string;
             /** Generation */
             generation: number;
             /** Reason */
@@ -3253,6 +4009,11 @@ export interface components {
             action_label: string;
             /** Categories */
             categories: string[];
+            /**
+             * Default Execution Mode
+             * @default null
+             */
+            default_execution_mode: ("workflow" | "pi_harness") | null;
             /** Description */
             description: string;
             /** Estimated Minutes */
@@ -3263,10 +4024,8 @@ export interface components {
              * @enum {string}
              */
             execution_mode: "standard" | "guided_workflow";
-            /** Supported task execution modes */
+            /** Execution Modes */
             execution_modes?: ("workflow" | "pi_harness")[];
-            /** Default task execution mode */
-            default_execution_mode?: ("workflow" | "pi_harness") | null;
             /** File Inputs */
             file_inputs?: components["schemas"]["FileInputSpec"][];
             /** Id */
@@ -3680,6 +4439,11 @@ export interface components {
             action_label: string;
             /** Categories */
             categories: string[];
+            /**
+             * Default Execution Mode
+             * @default null
+             */
+            default_execution_mode: ("workflow" | "pi_harness") | null;
             /** Description */
             description: string;
             /** Estimated Minutes */
@@ -3690,10 +4454,8 @@ export interface components {
              * @enum {string}
              */
             execution_mode: "standard" | "guided_workflow";
-            /** Supported task execution modes */
+            /** Execution Modes */
             execution_modes?: ("workflow" | "pi_harness")[];
-            /** Default task execution mode */
-            default_execution_mode?: ("workflow" | "pi_harness") | null;
             /** Id */
             id: string;
             /** Name */
@@ -3895,6 +4657,11 @@ export interface components {
             page_size: number;
             /** Pages */
             pages: number;
+            /**
+             * Scope
+             * @default
+             */
+            scope: string;
             state_counts: components["schemas"]["TaskCenterStateCounts"];
             /** Total */
             total: number;
@@ -3947,8 +4714,20 @@ export interface components {
         TaskDiscoveryFailureRead: {
             /** Attempt Count */
             attempt_count: number;
+            /** Audit Href */
+            audit_href?: string | null;
             /** Business Dates */
             business_dates?: string[];
+            /**
+             * Error Category
+             * @default unknown
+             */
+            error_category: string;
+            /**
+             * Error Code
+             * @default TASK_DISCOVERY_FAILED
+             */
+            error_code: string;
             /** Error Message */
             error_message: string;
             /** Id */
@@ -4177,11 +4956,21 @@ export interface components {
             counts: components["schemas"]["WorkbenchCounts"];
             /** Pending Runs */
             pending_runs?: components["schemas"]["RunSummary"][];
+            /** Pending Tasks */
+            pending_tasks?: components["schemas"]["TaskCenterItem"][];
             /** Recent Files */
             recent_files?: components["schemas"]["PlatformFile"][];
             /** Recent Results */
             recent_results?: components["schemas"]["RunSummary"][];
+            /** Recent Tasks */
+            recent_tasks?: components["schemas"]["TaskCenterItem"][];
+            runtime?: components["schemas"]["RuntimeHealth"];
             task_reminders?: components["schemas"]["WorkbenchTaskReminderSummary"];
+            /**
+             * Task Scope
+             * @default
+             */
+            task_scope: string;
         };
         /** WorkbenchCounts */
         WorkbenchCounts: {
@@ -4242,6 +5031,41 @@ export interface components {
              * @default 0
              */
             pending_dates: number;
+        };
+        /** WorkerHealth */
+        WorkerHealth: {
+            /**
+             * Configured Capacity
+             * @default 0
+             */
+            configured_capacity: number;
+            /**
+             * Last Heartbeat At
+             * @default null
+             */
+            last_heartbeat_at: string | null;
+            /**
+             * Online Capacity
+             * @default 0
+             */
+            online_capacity: number;
+            /** Pool */
+            pool: string;
+            /**
+             * Queued Count
+             * @default 0
+             */
+            queued_count: number;
+            /**
+             * Running Count
+             * @default 0
+             */
+            running_count: number;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "online" | "expired" | "unknown";
         };
         /** WorkflowActionRead */
         WorkflowActionRead: {
@@ -4363,6 +5187,8 @@ export interface components {
         };
         /** WorkflowBatchRead */
         WorkflowBatchRead: {
+            /** Business Items Pending */
+            business_items_pending?: boolean | null;
             /**
              * Can Retry
              * @default false
@@ -4377,8 +5203,12 @@ export interface components {
             display_id: string;
             /** Error Message */
             error_message: string;
-            /** Execution Mode */
-            execution_mode?: "workflow" | "pi_harness";
+            /**
+             * Execution Mode
+             * @default workflow
+             * @enum {string}
+             */
+            execution_mode: "workflow" | "pi_harness";
             /**
              * Fetched Data Available
              * @default false
@@ -4415,6 +5245,20 @@ export interface components {
             progress_message: string;
             /** Reconciliation Dates */
             reconciliation_dates: string[];
+            /** Result Metrics */
+            result_metrics?: {
+                [key: string]: components["schemas"]["WorkflowResultMetric"];
+            };
+            /**
+             * Result Scope
+             * @default unknown
+             * @enum {string}
+             */
+            result_scope: "day" | "batch" | "unknown";
+            /** Result Summary */
+            result_summary?: {
+                [key: string]: unknown;
+            };
             /**
              * Retry Block Reason
              * @default
@@ -4448,8 +5292,12 @@ export interface components {
         };
         /** WorkflowBatchStart */
         WorkflowBatchStart: {
-            /** Execution Mode */
-            execution_mode?: "workflow" | "pi_harness";
+            /**
+             * Execution Mode
+             * @default workflow
+             * @enum {string}
+             */
+            execution_mode: "workflow" | "pi_harness";
             /** Fetched Bundle Id */
             fetched_bundle_id?: string | null;
             /** Files */
@@ -4484,8 +5332,12 @@ export interface components {
         };
         /** WorkflowCreate */
         WorkflowCreate: {
-            /** Execution Mode */
-            execution_mode?: "workflow" | "pi_harness";
+            /**
+             * Execution Mode
+             * @default workflow
+             * @enum {string}
+             */
+            execution_mode: "workflow" | "pi_harness";
             /** Model */
             model?: string | null;
             /** Model Connection Id */
@@ -4600,6 +5452,8 @@ export interface components {
              * @default
              */
             currency: string;
+            /** Delivery Amount Local */
+            delivery_amount_local?: number | null;
             /** Delivery Amount Original */
             delivery_amount_original?: number | null;
             /**
@@ -4884,6 +5738,8 @@ export interface components {
              * @default 0
              */
             batch_sequence: number;
+            /** Business Items Pending */
+            business_items_pending?: boolean | null;
             /**
              * Created At
              * Format: date-time
@@ -4903,8 +5759,12 @@ export interface components {
             display_id: string;
             /** Error Message */
             error_message: string;
-            /** Execution Mode */
-            execution_mode?: "workflow" | "pi_harness";
+            /**
+             * Execution Mode
+             * @default workflow
+             * @enum {string}
+             */
+            execution_mode: "workflow" | "pi_harness";
             fetched_bundle?: components["schemas"]["FetchedBundleRead"] | null;
             /**
              * Fetched Data Available
@@ -4960,6 +5820,16 @@ export interface components {
              * @default true
              */
             requires_confirmation: boolean;
+            /** Result Metrics */
+            result_metrics?: {
+                [key: string]: components["schemas"]["WorkflowResultMetric"];
+            };
+            /**
+             * Result Scope
+             * @default unknown
+             * @enum {string}
+             */
+            result_scope: "day" | "batch" | "unknown";
             /** Result Summary */
             result_summary?: {
                 [key: string]: unknown;
@@ -4981,13 +5851,28 @@ export interface components {
             step_error: string;
             /** Step Error Detail */
             step_error_detail?: {
-                [key: string]: string;
+                [key: string]: unknown;
             };
             /**
              * Updated At
              * Format: date-time
              */
             updated_at: string;
+        };
+        /** WorkflowResultMetric */
+        WorkflowResultMetric: {
+            /**
+             * Meaning
+             * @default
+             */
+            meaning: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "value" | "not_applicable" | "not_recorded" | "read_failed";
+            /** Value */
+            value?: number | null;
         };
         /** WorkflowReusableFilesRead */
         WorkflowReusableFilesRead: {
@@ -5015,8 +5900,12 @@ export interface components {
         };
         /** WorkflowStart */
         WorkflowStart: {
-            /** Execution Mode */
-            execution_mode?: "workflow" | "pi_harness";
+            /**
+             * Execution Mode
+             * @default workflow
+             * @enum {string}
+             */
+            execution_mode: "workflow" | "pi_harness";
             /** Fetched Bundle Id */
             fetched_bundle_id?: string | null;
             /** Files */
@@ -5057,19 +5946,27 @@ export type AgentModelRequest = components['schemas']['AgentModelRequest'];
 export type AgentPrepareRequest = components['schemas']['AgentPrepareRequest'];
 export type ApprovalDecisionRequest = components['schemas']['ApprovalDecisionRequest'];
 export type ApprovalRecord = components['schemas']['ApprovalRecord'];
+export type ArEvidenceDetail = components['schemas']['ArEvidenceDetail'];
+export type ArEvidenceEntry = components['schemas']['ArEvidenceEntry'];
+export type ArEvidencePage = components['schemas']['ArEvidencePage'];
+export type ArEvidenceSummary = components['schemas']['ArEvidenceSummary'];
+export type ArExecutionRead = components['schemas']['ArExecutionRead'];
+export type ArRecoveryRequest = components['schemas']['ArRecoveryRequest'];
 export type AssistantConversationRead = components['schemas']['AssistantConversationRead'];
+export type AssistantConversationSummary = components['schemas']['AssistantConversationSummary'];
 export type AssistantMessageRead = components['schemas']['AssistantMessageRead'];
 export type AssistantMessageWrite = components['schemas']['AssistantMessageWrite'];
 export type AssistantPrepareRequest = components['schemas']['AssistantPrepareRequest'];
 export type AssistantRecommendation = components['schemas']['AssistantRecommendation'];
 export type AssistantStatus = components['schemas']['AssistantStatus'];
+export type AuditEventPage = components['schemas']['AuditEventPage'];
 export type AuditEventRead = components['schemas']['AuditEventRead'];
 export type BodyUploadAvatarApiProfileAvatarPost = components['schemas']['Body_upload_avatar_api_profile_avatar_post'];
 export type BodyUploadFileApiFilesPost = components['schemas']['Body_upload_file_api_files_post'];
 export type ChangePasswordRequest = components['schemas']['ChangePasswordRequest'];
-export type ExternalDataSourceSpec = components['schemas']['ExternalDataSourceSpec'];
 export type ExecutionModeSpec = components['schemas']['ExecutionModeSpec'];
 export type ExecutionSpec = components['schemas']['ExecutionSpec'];
+export type ExternalDataSourceSpec = components['schemas']['ExternalDataSourceSpec'];
 export type FeatureControlRead = components['schemas']['FeatureControlRead'];
 export type FeatureControlUpdateRequest = components['schemas']['FeatureControlUpdateRequest'];
 export type FetchedBundleRead = components['schemas']['FetchedBundleRead'];
@@ -5088,6 +5985,10 @@ export type ObservabilitySummary = components['schemas']['ObservabilitySummary']
 export type PermissionSpec = components['schemas']['PermissionSpec'];
 export type PlatformFile = components['schemas']['PlatformFile'];
 export type PlatformFileDetail = components['schemas']['PlatformFileDetail'];
+export type PlatformFileGroupSummary = components['schemas']['PlatformFileGroupSummary'];
+export type PlatformFileGroupSummaryPage = components['schemas']['PlatformFileGroupSummaryPage'];
+export type PlatformFileOption = components['schemas']['PlatformFileOption'];
+export type PlatformFileOptionPage = components['schemas']['PlatformFileOptionPage'];
 export type PlatformFilePage = components['schemas']['PlatformFilePage'];
 export type PlatformHealth = components['schemas']['PlatformHealth'];
 export type PlatformUser = components['schemas']['PlatformUser'];
@@ -5104,11 +6005,13 @@ export type RunDetail = components['schemas']['RunDetail'];
 export type RunEventRead = components['schemas']['RunEventRead'];
 export type RunPage = components['schemas']['RunPage'];
 export type RunSummary = components['schemas']['RunSummary'];
+export type RuntimeHealth = components['schemas']['RuntimeHealth'];
 export type RuntimeSpec = components['schemas']['RuntimeSpec'];
 export type SafetyConstraintSpec = components['schemas']['SafetyConstraintSpec'];
 export type ServiceCredentialRead = components['schemas']['ServiceCredentialRead'];
 export type ServiceCredentialWrite = components['schemas']['ServiceCredentialWrite'];
 export type SessionRead = components['schemas']['SessionRead'];
+export type SkillActiveWorkRead = components['schemas']['SkillActiveWorkRead'];
 export type SkillAvailabilityRead = components['schemas']['SkillAvailabilityRead'];
 export type SkillAvailabilityTransitionRequest = components['schemas']['SkillAvailabilityTransitionRequest'];
 export type SkillDedicationRead = components['schemas']['SkillDedicationRead'];
@@ -5157,6 +6060,7 @@ export type Workbench = components['schemas']['Workbench'];
 export type WorkbenchCounts = components['schemas']['WorkbenchCounts'];
 export type WorkbenchSkillUsage = components['schemas']['WorkbenchSkillUsage'];
 export type WorkbenchTaskReminderSummary = components['schemas']['WorkbenchTaskReminderSummary'];
+export type WorkerHealth = components['schemas']['WorkerHealth'];
 export type WorkflowActionRead = components['schemas']['WorkflowActionRead'];
 export type WorkflowAgentActionResponse = components['schemas']['WorkflowAgentActionResponse'];
 export type WorkflowAgentConfirmationArguments = components['schemas']['WorkflowAgentConfirmationArguments'];
@@ -5189,6 +6093,7 @@ export type WorkflowMaterialSetRead = components['schemas']['WorkflowMaterialSet
 export type WorkflowMessageCreate = components['schemas']['WorkflowMessageCreate'];
 export type WorkflowMessageRead = components['schemas']['WorkflowMessageRead'];
 export type WorkflowRead = components['schemas']['WorkflowRead'];
+export type WorkflowResultMetric = components['schemas']['WorkflowResultMetric'];
 export type WorkflowReusableFilesRead = components['schemas']['WorkflowReusableFilesRead'];
 export type WorkflowStart = components['schemas']['WorkflowStart'];
 export type $defs = Record<string, never>;
@@ -5339,6 +6244,10 @@ export interface operations {
                 limit?: number;
                 offset?: number;
                 before_id?: number | null;
+                resource_type?: string;
+                resource_id?: string;
+                created_from?: string | null;
+                created_to?: string | null;
             };
             header?: never;
             path?: never;
@@ -5353,6 +6262,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AuditEventRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_audit_event_page_api_admin_audit_events_page_get: {
+        parameters: {
+            query?: {
+                action?: string;
+                actor_id?: string;
+                resource_type?: string;
+                resource_id?: string;
+                created_from?: string | null;
+                created_to?: string | null;
+                limit?: number;
+                before_id?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditEventPage"];
                 };
             };
             /** @description Validation Error */
@@ -6419,6 +7366,26 @@ export interface operations {
             };
         };
     };
+    assistant_conversations_api_assistant_conversations_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantConversationSummary"][];
+                };
+            };
+        };
+    };
     latest_assistant_conversation_api_assistant_conversations_latest_get: {
         parameters: {
             query?: never;
@@ -6749,6 +7716,26 @@ export interface operations {
             };
         };
     };
+    list_catalog_skill_summaries_api_catalog_skill_summaries_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillSummary"][];
+                };
+            };
+        };
+    };
     list_catalog_skills_api_catalog_skills_get: {
         parameters: {
             query?: never;
@@ -6808,6 +7795,9 @@ export interface operations {
                 kind?: string;
                 query?: string;
                 latest_only?: boolean;
+                include_delete_status?: boolean;
+                skill_id?: string;
+                unassigned?: boolean;
             };
             header?: never;
             path?: never;
@@ -6855,6 +7845,73 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlatformFile"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_file_group_summaries_api_files_groups_get: {
+        parameters: {
+            query?: {
+                kind?: string;
+                query?: string;
+                latest_only?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlatformFileGroupSummaryPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_selectable_input_files_api_files_selectable_inputs_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+                query?: string;
+                ids?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlatformFileOptionPage"];
                 };
             };
             /** @description Validation Error */
@@ -6975,6 +8032,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlatformHealth"];
+                };
+            };
+        };
+    };
+    health_readiness_api_health_readiness_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeHealth"];
                 };
             };
         };
@@ -7726,6 +8803,7 @@ export interface operations {
             query?: {
                 page?: number;
                 page_size?: number;
+                query?: string;
                 view_state?: ("pending" | "running" | "failed" | "succeeded" | "cancelled") | null;
                 item_type?: ("run" | "workflow" | "workflow_batch") | null;
                 skill_id?: string;
@@ -8656,6 +9734,107 @@ export interface operations {
             };
         };
     };
+    get_workflow_execution_api_workflows__workflow_id__execution_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArExecutionRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    investigate_failed_workflow_write_api_workflows__workflow_id__execution_investigate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArRecoveryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArExecutionRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    recover_workflow_execution_api_workflows__workflow_id__execution_recover_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArRecoveryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArExecutionRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_workflow_fetched_data_api_workflows__workflow_id__fetched_data_get: {
         parameters: {
             query?: {
@@ -8816,6 +9995,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkflowRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_workflow_order_evidence_api_workflows__workflow_id__order_evidence_get: {
+        parameters: {
+            query?: {
+                offset?: number;
+                limit?: number;
+                query?: string;
+                record_id?: string;
+                detail_offset?: number;
+                fingerprint?: string;
+            };
+            header?: never;
+            path: {
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArEvidencePage"];
                 };
             };
             /** @description Validation Error */

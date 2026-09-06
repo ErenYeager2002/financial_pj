@@ -2,15 +2,19 @@
 
 import * as React from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PaginatedCollection } from '@/components/ui/collection-pagination';
 import { Icons } from '@/components/icons';
 import { WorkflowFetchedDataDialog } from '@/features/workflow-agent/components/workflow-fetched-data-dialog';
+import { useWorkflowPolling } from '@/features/workflow-agent/hooks/use-workflow-polling';
 import { WorkflowMaterialHistory } from '@/features/workflow-agent/components/workflow-material-history';
 import { WorkflowProgressCard } from '@/features/workflow-agent/components/workflow-progress-card';
+import { WorkflowRecoveryActions } from '@/features/workflow-agent/components/workflow-execution-results';
+import { WorkflowResultSummary } from '@/features/workflow-agent/components/workflow-result-summary';
 import { workflowStatusLabel } from '@/features/workflow-agent/workflow-batch-selection';
 import type { WorkflowBatchRead, WorkflowRead } from '@/features/platform-api/types';
 
@@ -30,13 +34,11 @@ type BindingEntry = {
 const MATERIAL_ROLES = [
   {
     role: 'profit_loss_ledgers',
-    label: '年度盈亏核算表',
-    description: '可上传多个年度，每个年度保留一份。'
+    label: '年度盈亏核算表（每年一份）'
   },
   {
     role: 'receipt_flow_table',
-    label: '到账流转表',
-    description: '只保留一份；上传新表会替换当前绑定。'
+    label: '到账流转表'
   }
 ] as const;
 
@@ -80,14 +82,10 @@ function isTerminal(workflow: WorkflowRead): boolean {
   return ['succeeded', 'failed', 'cancelled'].includes(workflow.state);
 }
 
-function summaryValue(summary: Record<string, unknown>, key: string): string {
-  const value = summary[key];
-  return value === undefined || value === null || value === '' ? '未提供' : String(value);
-}
-
 export function WorkflowAgentPanel({
   initialWorkflow
 }: WorkflowAgentPanelProps): React.JSX.Element {
+  const router = useRouter();
   const [workflow, setWorkflow] = React.useState(initialWorkflow);
   const [error, setError] = React.useState('');
   const [activity, setActivity] = React.useState('');
@@ -122,11 +120,13 @@ export function WorkflowAgentPanel({
     [workflow.id]
   );
 
-  React.useEffect(() => {
-    if (isTerminal(workflow)) return;
-    const timer = window.setInterval(() => void refresh(true), 2000);
-    return () => window.clearInterval(timer);
-  }, [refresh, workflow]);
+  useWorkflowPolling({
+    enabled: !isTerminal(workflow),
+    fast: ['preparing', 'fetching_data', 'building_fetch_preview', 'applying', 'finalizing'].includes(
+      workflow.stage
+    ),
+    refresh: () => refresh(true)
+  });
 
   async function confirmWrite() {
     if (confirmationBusy) return;
@@ -197,8 +197,10 @@ export function WorkflowAgentPanel({
         { method: 'POST' }
       );
       if (!response.ok) throw new Error(await responseMessage(response, '新建任务失败。'));
-      setWorkflow((await response.json()) as WorkflowRead);
-      setActivity('已重新排队，后台会以原始上传文件创建新的日清工作区。');
+      const nextWorkflow = (await response.json()) as WorkflowRead;
+      setWorkflow(nextWorkflow);
+      router.replace(`/dashboard/workflows/${encodeURIComponent(nextWorkflow.id)}`);
+      setActivity('已创建新任务，将使用当前业务材料版本并重新取数。');
     } catch (rebuildError) {
       setError(rebuildError instanceof Error ? rebuildError.message : '新建任务失败。');
     } finally {
@@ -350,7 +352,7 @@ export function WorkflowAgentPanel({
         <Alert>
           <AlertTitle>请检查智云取数数据</AlertTitle>
           <AlertDescription className='flex flex-wrap items-center justify-between gap-3'>
-            <span>任务已暂停。确认数据完整，或填写缺失的 SO/AR 编号补取后，才能继续核销判定。</span>
+            <span>确认数据后继续核销。</span>
             <Button type='button' onClick={() => setFetchedDataOpen(true)}>
               检查并确认
             </Button>
@@ -371,58 +373,51 @@ export function WorkflowAgentPanel({
           </Alert>
         )}
 
+      {(workflow.stage === 'waiting_approval' || workflow.state === 'waiting_approval') && (
+        <Alert>
+          <AlertTitle>等待管理员审批</AlertTitle>
+          <AlertDescription>
+            由另一名管理员审批后开始写入。
+          </AlertDescription>
+        </Alert>
+      )}
+
       {workflow.state === 'failed' && (
         <Alert variant='destructive'>
-          <AlertTitle>任务没有完成</AlertTitle>
+          <AlertTitle>
+            任务没有完成
+            {workflow.step_error_detail?.error_code
+              ? `（${workflow.step_error_detail.error_code}）`
+              : ''}
+          </AlertTitle>
           <AlertDescription className='flex flex-wrap items-center justify-between gap-3'>
             <span>
-              请先查看上方流程卡片标出的失败步骤；旧任务不会继续写入，可用原始上传文件新建日清。
+              {typeof workflow.step_error_detail?.rebuild_block_reason === 'string'
+                ? workflow.step_error_detail.rebuild_block_reason
+                : '请先查看上方流程卡片标出的失败步骤及恢复条件，再决定是否新建日清。'}
             </span>
             <Button
               type='button'
               variant='destructive'
               onClick={() => void rebuild()}
-              disabled={confirmationBusy}
+              disabled={
+                confirmationBusy || workflow.step_error_detail?.recovery_allowed !== true
+              }
             >
-              {confirmationBusy ? '处理中…' : '以原始文件新建日清'}
+              {confirmationBusy
+                ? '正在创建…'
+                : workflow.step_error_detail?.recovery_allowed === true
+                  ? '用当前材料版本新建日清'
+                  : '恢复条件待核实'}
             </Button>
           </AlertDescription>
         </Alert>
       )}
 
-      {(workflow.state === 'succeeded' || workflow.stage === 'completed') && (
-        <Card>
-          <CardHeader>
-            <CardTitle className='text-base'>核销结果</CardTitle>
-            <CardDescription>
-              核销日期：{workflow.reconciliation_date}；写入状态：已完成
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <PaginatedCollection
-              ariaLabel='核销结果'
-              contentClassName='grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4'
-            >
-              {[
-              ['本日写入', '今天要填'],
-              ['已填过·跳过', '已填过·跳过'],
-              ['挂账待办', '挂账待办'],
-              ['冲突·需人工处理', '冲突·需你定'],
-              ['流转确认后自动写', '流转确认后自动写'],
-              ['流转须手填', '流转须手填'],
-              ['异常', '异常']
-              ].map(([label, key]) => (
-                <div key={key} className='rounded-md border bg-muted/20 p-3'>
-                  <p className='text-muted-foreground'>{label}</p>
-                  <p className='mt-1 font-medium'>
-                    {summaryValue(workflow.result_summary ?? {}, key)}
-                  </p>
-                </div>
-              ))}
-            </PaginatedCollection>
-          </CardContent>
-        </Card>
+      {workflow.state === 'failed' && (
+        <WorkflowRecoveryActions workflow={workflow} onRecovered={refresh} />
       )}
+      <WorkflowResultSummary source={workflow} title='本次核销结果' />
 
       <Card>
         <CardHeader>
@@ -432,9 +427,6 @@ export function WorkflowAgentPanel({
               <Badge variant='secondary'>业务版本 V{workflow.material_version}</Badge>
             )}
           </CardTitle>
-          <CardDescription>
-            本任务固定使用创建时的业务版本；成功写入后会发布下一版本供后续任务使用。
-          </CardDescription>
         </CardHeader>
         <CardContent className='space-y-3'>
           {MATERIAL_ROLES.map((item) => {
@@ -444,11 +436,14 @@ export function WorkflowAgentPanel({
                 <div className='flex flex-wrap items-start justify-between gap-2'>
                   <div>
                     <p className='text-sm font-medium'>{item.label}</p>
-                    <p className='text-xs text-muted-foreground'>{item.description}</p>
                   </div>
                   {filesEditable && (
                     <label className='cursor-pointer rounded-md border px-3 py-2 text-xs font-medium transition-colors hover:bg-muted'>
-                      {uploadingRole === item.role ? '上传中…' : '上传新表'}
+                      {uploadingRole === item.role
+                        ? '上传中…'
+                        : item.role === 'receipt_flow_table' && entries.length > 0
+                          ? '替换当前表'
+                          : '上传新表'}
                       <input
                         type='file'
                         className='sr-only'
@@ -520,7 +515,6 @@ export function WorkflowAgentPanel({
         <Card>
           <CardHeader>
             <CardTitle className='text-base'>任务产出</CardTitle>
-            <CardDescription>《核销日清》为本日主要结果。</CardDescription>
           </CardHeader>
           <CardContent>
             <PaginatedCollection ariaLabel='任务产出' contentClassName='space-y-2'>

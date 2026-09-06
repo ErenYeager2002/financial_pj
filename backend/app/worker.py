@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .adapters import ExecutionContext, get_adapter
+from .ar_execution_contract import CONTRACT_VERSION
 from .auth import UserContext
 from .database import SessionLocal, init_db
 from .events import emit_event
@@ -226,10 +227,15 @@ def run_once(
             run.lease_expires_at = None
             db.commit()
             return True
-        if run_workflow_action_once(db, pools, identity):
+        if run_workflow_action_once(db, pools, identity, execution_contracts=(CONTRACT_VERSION,)):
             return True
         if "workflow" in pools and purge_expired_bundles(db, limit=1):
             return True
+        if "workflow" in pools:
+            from .ar_staging_retention import maintain_expired_staging
+
+            if maintain_expired_staging(db):
+                return True
     if "workflow" in pools:
         from .skill_rollout_service import run_rollout_once
 

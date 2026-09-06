@@ -2,7 +2,10 @@ param(
     [switch]$Stop,
     [string]$EnvFile,
     [string]$AppOrigin = "http://localhost:3000",
-    [string]$Hostname = "127.0.0.1"
+    [string]$Hostname = "127.0.0.1",
+    [ValidateRange(1, 65535)]
+    [int]$Port = 3000,
+    [string]$StatePathOverride = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -10,7 +13,16 @@ $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $WebRoot = Join-Path $ProjectRoot "web"
 $AgentRuntimeRoot = Join-Path $ProjectRoot "agent-runtime"
-$StatePath = Join-Path $ProjectRoot "data\development\frontend-host.json"
+$StateRoot = [IO.Path]::GetFullPath((Join-Path $ProjectRoot "data\development")).TrimEnd('\')
+$StatePath = if ([string]::IsNullOrWhiteSpace($StatePathOverride)) {
+    Join-Path $StateRoot "frontend-host.json"
+} else {
+    $CandidateStatePath = [IO.Path]::GetFullPath($StatePathOverride)
+    if (-not $CandidateStatePath.StartsWith("$StateRoot\", [StringComparison]::OrdinalIgnoreCase)) {
+        throw "前端状态文件必须位于 data\development 目录内。"
+    }
+    $CandidateStatePath
+}
 $ScriptPath = $MyInvocation.MyCommand.Path
 
 function Read-EnvValues([string]$Path) {
@@ -240,7 +252,8 @@ try {
     }
     $env:NEXT_PUBLIC_APP_URL = $AppOrigin
     $env:FINANCIAL_PLATFORM_API_URL = "http://127.0.0.1:8000"
-    $env:PORT = "3000"
+    $env:FINANCIAL_PLATFORM_API_TIMING = "1"
+    $env:PORT = [string]$Port
     $env:HOSTNAME = $Hostname
 
     $RuntimeWatch = Start-Process `
@@ -249,7 +262,7 @@ try {
         -PassThru `
         -NoNewWindow
 
-    & corepack pnpm --dir $WebRoot dev --hostname $Hostname
+    & corepack pnpm --dir $WebRoot dev --hostname $Hostname --port $Port
     if ($LASTEXITCODE -ne 0) {
         throw "本机 Next.js 开发服务异常退出。"
     }

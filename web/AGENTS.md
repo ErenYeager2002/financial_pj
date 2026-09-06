@@ -4,7 +4,7 @@ This directory is the active Next.js interface for the financial Skill platform.
 
 ## Before changing code
 
-- Read `../CONTEXT.md` and the relevant current document under `../docs/`.
+- Follow the context-reading rules in `../AGENTS.md`, including frontend-related decisions under `../docs/`.
 - Treat `src/features/platform-api/` as the platform boundary. Update the OpenAPI contract first when an API shape changes, then regenerate the client with `pnpm contracts:generate`.
 - Use Clerk only to prove login identity. Platform roles, resource isolation, approvals, audit, and execution permissions come from the FastAPI backend.
 
@@ -16,4 +16,4 @@ Use server components by default. Add `use client` only for browser APIs or Reac
 
 ## Completion
 
-Run the affected Node tests, `pnpm typecheck`, and `pnpm build`. A frontend change is complete when no deleted route is referenced, the platform navigation tests pass, and the production build succeeds.
+Follow the verification and delivery rules in `../AGENTS.md`.
