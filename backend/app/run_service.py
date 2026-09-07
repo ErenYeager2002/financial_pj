@@ -14,7 +14,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .auth import UserContext
-from .authorization import assert_skill_permission
+from .authorization import assert_skill_permission, refresh_active_user
 from .events import emit_event
 from .model_service import resolve_runtime_config
 from .models import FileRecord, ModelTraceRecord, RunModelAudit, RunRecord
@@ -303,6 +303,10 @@ def create_run(db: Session, request: RunCreate, user: UserContext) -> RunRecord:
             return existing
 
     assert_skill_accepting_new_work(db, request.skill_id)
+    user = refresh_active_user(db, user)
+    assert_skill_permission(db, user, request.skill_id)
+    if request.files:
+        assert_skill_permission(db, user, request.skill_id, "can_upload")
 
     llm_config = resolve_runtime_config(
         db,

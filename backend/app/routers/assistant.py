@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -132,6 +132,12 @@ def stream_agent_model(
     body: AgentModelRequest,
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_user),
+    model_session: str | None = Header(
+        default=None,
+        alias="X-Financial-Model-Session",
+        max_length=128,
+        description="可选的模型会话标识；按当前用户隔离并脱敏后用于上游提示缓存。",
+    ),
 ) -> StreamingResponse:
     """给服务端 Pi Runtime 提供受部门模型配置约束的 SSE 上游。"""
     config = resolve_agent_model_config(db, user, body.connection_id, body.model)
@@ -140,7 +146,10 @@ def stream_agent_model(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    stream_context = open_agent_model_stream(config, payload)
+    session_options: dict[str, str] = {}
+    if config.provider == "opencode_go" and model_session:
+        session_options["session_id"] = f"assistant:{user.user_id}:{model_session}"
+    stream_context = open_agent_model_stream(config, payload, **session_options)
     stats = AgentModelStreamStats()
     try:
         response = stream_context.__enter__()

@@ -9,7 +9,7 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 
 export const metadata: Metadata = {
-  title: '财务 Skill 平台',
+  title: { absolute: '财务自动化平台' },
   description: '财务 Skill 执行、任务和治理平台',
   robots: {
     index: false,

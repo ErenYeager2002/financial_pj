@@ -1,7 +1,13 @@
 from __future__ import annotations
 
 import importlib.util
+import io
+import json
+import sys
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 
 def _probe_module():
@@ -56,3 +62,51 @@ def test_probe_returns_only_date_count_and_fingerprint() -> None:
     assert client.calls == [
         ("synthetic-sheet", "synthetic-date-control", "2026-08-24")
     ]
+
+
+@pytest.mark.parametrize("close_fails", [False, True])
+def test_main_uses_real_client_session_cleanup_without_losing_results(monkeypatch, capsys, close_fails) -> None:
+    module = _probe_module()
+    path = Path(__file__).resolve().parents[2] / "skills/ar-hexiao-daily/vendor/scripts/fetch_zhiyun.py"
+    spec = importlib.util.spec_from_file_location("probe_real_fetch_zhiyun", path)
+    assert spec is not None and spec.loader is not None
+    fetch = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fetch)
+    closed = []
+
+    class Session:
+        def post(self, *args, **kwargs):
+            return SimpleNamespace(
+                raise_for_status=lambda: None,
+                json=lambda: {"data": {"data": [{"rowid": "synthetic-row"}], "count": 1}},
+            )
+
+        def close(self):
+            closed.append(True)
+            if close_fails:
+                raise RuntimeError("synthetic cleanup failure")
+
+    import requests
+
+    monkeypatch.setattr(requests, "Session", Session)
+    monkeypatch.setattr(fetch, "_assert_platform_network_url", lambda url: None)
+    monkeypatch.setitem(sys.modules, "fetch_zhiyun", fetch)
+    monkeypatch.setitem(sys.modules, "secure_zhiyun_fetch", SimpleNamespace(
+        _edge_login=lambda *args: ("synthetic-cookie", "synthetic-account"),
+        LOGIN_FAILURE_MESSAGES={},
+    ))
+    monkeypatch.setattr(sys, "path", list(sys.path))
+    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps({
+        "account": "synthetic-user", "password": "synthetic-password",
+        "business_dates": ["2026-09-03"],
+    })))
+
+    assert module.main() == 0
+    output = capsys.readouterr()
+    result = json.loads(output.out)["results"]
+    assert [(item["business_date"], item["record_count"]) for item in result] == [("2026-09-03", 1)]
+    assert len(result[0]["fingerprint"]) == 64
+    assert closed == [True]
+    assert "Traceback" not in output.err
+    assert "synthetic-password" not in output.out + output.err
+    assert "synthetic cleanup failure" not in output.err

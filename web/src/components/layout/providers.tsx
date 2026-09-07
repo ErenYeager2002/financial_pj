@@ -15,8 +15,8 @@ const clerkLocalization = {
     ...zhCN.signIn,
     start: {
       ...zhCN.signIn?.start,
-      title: '登录企业管理后台',
-      titleCombined: '登录企业管理后台'
+      title: '登录财务自动化平台',
+      titleCombined: '登录财务自动化平台'
     }
   },
   signUp: {

@@ -464,6 +464,10 @@ function getOrCreateRuntime(
     gatewayUrl: `${platformServerBaseUrl()}/api/assistant/model`,
     accessToken: async () => tokenRef.value
   });
+  modelHandle.model.headers = {
+    ...modelHandle.model.headers,
+    'X-Financial-Model-Session': sessionId
+  };
   const entry: RuntimeEntry = {
     ownerId,
     runtime: new PiAgentRuntime({ streamFn: modelHandle.streamSimple }),

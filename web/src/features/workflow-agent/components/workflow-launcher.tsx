@@ -645,8 +645,6 @@ export function WorkflowLauncher({
                 setExecutionMode(
                   defaultSkillExecutionMode(skills.find((skill) => skill.id === nextSkillId))
                 );
-                setRerunSuccessfulDates(false);
-                setRerunReason('');
               }}
               disabled={working || skills.length === 0}
             >

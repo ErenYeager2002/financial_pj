@@ -3,12 +3,18 @@
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { WorkflowBatchRead, WorkflowRead } from '@/features/platform-api/types';
-import type { JSX } from 'react';
+import { useId, useState, type JSX } from 'react';
+import { RESULT_COLORS, WorkflowResultDetails, type ResultFilter } from './workflow-result-details';
 
 type ResultSource = Pick<
   WorkflowRead | WorkflowBatchRead,
-  'result_metrics' | 'result_scope' | 'business_items_pending' | 'result_summary'
+  'id' | 'updated_at' | 'result_metrics' | 'result_scope' | 'business_items_pending' | 'result_summary'
 >;
+
+const FILTERS: Record<string, ResultFilter> = {
+  ledger_written: 'written', ledger_final_skipped: 'skipped',
+  unallocated_pending: 'hold', conflicts_pending: 'conflict', exceptions: 'exception'
+};
 
 const METRICS = [
   ['ledger_to_fill', '待写入'],
@@ -71,6 +77,9 @@ export function WorkflowResultSummary({
   source: ResultSource;
   title: string;
 }): JSX.Element | null {
+  const [selection, setSelection] = useState<{ sourceId: string; filter: ResultFilter } | null>(null);
+  const filter = selection?.sourceId === source.id ? selection.filter : null;
+  const detailsId = useId();
   const final = source.result_metrics?.ledger_written !== undefined;
   const definitions = final ? FINAL_METRICS : METRICS;
   const emptyDay = source.result_metrics?.confirmed_empty_day?.value === 1;
@@ -105,17 +114,22 @@ export function WorkflowResultSummary({
       </CardHeader>
       <CardContent className='space-y-3'>
         {emptyDay ? <p className='text-sm text-muted-foreground'>当日无核销记录</p> : hasResults && (
-          <dl className='grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 lg:grid-cols-5'>
+          <div className='grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 lg:grid-cols-5'>
             {definitions.map(([key, label]) => {
               const item = metricValue(source, key, final);
-              return (
-                <div key={key} className={['unallocated_pending', 'conflicts_pending', 'exceptions'].includes(key) && Number(item.value) > 0 ? 'text-amber-700 dark:text-amber-300' : undefined}>
-                  <dt className='text-sm'>{label}</dt>
-                  <dd className='mt-1 text-xl font-semibold tabular-nums break-words'>{item.value}</dd>
-                </div>
-              );
+              const expanded = filter === FILTERS[key];
+              const colors = RESULT_COLORS[key === 'ledger_skipped' ? 'skipped' : FILTERS[key]];
+              const content = <>
+                <span className='flex items-center gap-2 text-sm'>{label}{final && <span aria-hidden='true' className='text-xs'>{expanded ? '▴' : '▾'}</span>}</span>
+                <span className='mt-1 block text-xl font-semibold tabular-nums break-words'>{item.value}</span>
+              </>;
+              return <div key={key} className={colors?.text}>
+                {final ? <button type='button' className={`min-h-11 min-w-11 w-full rounded-md border p-2 text-left transition-[filter] hover:brightness-95 dark:hover:brightness-110 focus-visible:outline-2 focus-visible:outline-ring ${colors?.surface ?? ''} ${expanded ? 'ring-1 ring-current' : ''}`}
+                  aria-label={`${expanded ? '收起' : '展开'}${label}明细`} aria-expanded={expanded} aria-controls={detailsId} title={item.meaning}
+                  onClick={() => setSelection(expanded ? null : { sourceId: source.id, filter: FILTERS[key] })}>{content}</button> : content}
+              </div>;
             })}
-          </dl>
+          </div>
         )}
         {final && source.result_scope === 'batch' && (
           <p className='text-xs text-muted-foreground'>
@@ -133,6 +147,11 @@ export function WorkflowResultSummary({
             · 冲突 {noticeCount('跨月计提冲突') ?? '未记录'} 项
           </p>
         )}
+        <div id={detailsId} hidden={!final || emptyDay || !filter}>
+        {final && !emptyDay && filter && <WorkflowResultDetails
+          key={`${source.id}:${source.updated_at}:${filter}`} id={source.id} scope={source.result_scope}
+          filter={filter} onClose={() => setSelection(null)} />}
+        </div>
       </CardContent>
     </Card>
   );

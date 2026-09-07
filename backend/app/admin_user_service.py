@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi import HTTPException
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -9,8 +9,18 @@ from .audit_service import record_audit
 from .auth import UserContext
 from .auth_models import User, UserSkillPermission
 from .auth_service import create_user, hash_password, revoke_all_user_sessions
-from .authorization import list_user_permissions, replace_user_permissions
+from .authorization import list_user_permissions, refresh_active_user, replace_user_permissions
+from .models import (
+    RunRecord,
+    SkillDedicatedUser,
+    TaskDiscoveryCheck,
+    TaskReminderSubscription,
+    WorkflowAction,
+    WorkflowBatch,
+    WorkflowSession,
+)
 from .registry import registry
+from .scheduler import acquire_claim_lock
 from .schemas_auth import (
     AdminPasswordReset,
     AdminUserCreate,
@@ -47,12 +57,23 @@ def user_read(db: Session, user: User) -> AdminUserRead:
     )
 
 
+def _lock_admin_change(db: Session, actor: UserContext) -> None:
+    # All user mutations share this lock, including on SQLite where FOR UPDATE
+    # alone cannot stop a stale enable/reset/permission request after deletion.
+    acquire_claim_lock(db)
+    if not refresh_active_user(db, actor).is_admin:
+        raise HTTPException(status_code=403, detail="只有当前部门的有效管理员可以管理用户。")
+
+
 def _department_user(db: Session, actor: UserContext, user_id: str) -> User:
     stored = db.scalar(
         select(User).where(
             User.id == user_id,
             User.department_id == actor.department_id,
+            User.status != "deleted",
         )
+        .with_for_update()
+        .execution_options(populate_existing=True)
     )
     if not stored:
         raise HTTPException(status_code=404, detail="用户不存在。")
@@ -62,7 +83,7 @@ def _department_user(db: Session, actor: UserContext, user_id: str) -> User:
 def list_department_users(db: Session, actor: UserContext) -> list[AdminUserRead]:
     users = db.scalars(
         select(User)
-        .where(User.department_id == actor.department_id)
+        .where(User.department_id == actor.department_id, User.status != "deleted")
         .order_by(User.created_at, User.username)
     ).all()
     record_audit(
@@ -81,6 +102,7 @@ def create_department_user(
     actor: UserContext,
     body: AdminUserCreate,
 ) -> AdminUserRead:
+    _lock_admin_change(db, actor)
     if body.department_id != actor.department_id:
         raise HTTPException(status_code=403, detail="不能在其他部门创建平台用户。")
     try:
@@ -115,6 +137,7 @@ def update_department_user(
     user_id: str,
     body: AdminUserUpdate,
 ) -> AdminUserRead:
+    _lock_admin_change(db, actor)
     user = _department_user(db, actor, user_id)
     if user.id == actor.user_id:
         if body.status == "disabled":
@@ -163,12 +186,60 @@ def update_department_user(
     return user_read(db, user)
 
 
+def delete_department_user(db: Session, actor: UserContext, user_id: str) -> None:
+    # Serialize with claims and other deletions. Recheck the actor after acquiring
+    # the lock so two administrators cannot concurrently delete each other.
+    _lock_admin_change(db, actor)
+    user = _department_user(db, actor, user_id)
+    if user.id == actor.user_id:
+        raise HTTPException(status_code=409, detail="不能删除当前登录的管理员。")
+
+    terminal = ("succeeded", "failed", "cancelled")
+    for model, finished_states in (
+        (RunRecord, (*terminal, "timed_out")),
+        (WorkflowSession, terminal),
+        (WorkflowBatch, terminal),
+        (TaskDiscoveryCheck, (*terminal, "timed_out")),
+    ):
+        if db.scalar(select(model.id).where(
+            model.owner_id == user.id, model.state.not_in(finished_states),
+        ).limit(1)) is not None:
+            raise HTTPException(status_code=409, detail="该用户还有未结束的任务，请先完成或取消任务后再删除。")
+    if db.scalar(select(WorkflowAction.id).join(
+        WorkflowSession, WorkflowSession.id == WorkflowAction.workflow_id,
+    ).where(
+        WorkflowSession.owner_id == user.id,
+        WorkflowAction.state.in_(("queued", "running", "cancelling")),
+    ).limit(1)) is not None:
+        raise HTTPException(status_code=409, detail="该用户仍有后台动作尚未结束，请等待完成后再删除。")
+
+    user.status = "deleted"
+    # Keep identity bindings occupied: auto-provisioning or username reuse must
+    # never recreate this identity with access to its historical financial data.
+    user.password_hash = ""
+    revoked_sessions = revoke_all_user_sessions(db, user.id, commit=False)
+    db.execute(delete(UserSkillPermission).where(UserSkillPermission.user_id == user.id))
+    db.execute(delete(SkillDedicatedUser).where(SkillDedicatedUser.user_id == user.id))
+    db.execute(update(TaskReminderSubscription).where(
+        TaskReminderSubscription.owner_id == user.id,
+    ).values(enabled=False))
+    db.execute(update(TaskDiscoveryCheck).where(
+        TaskDiscoveryCheck.owner_id == user.id,
+    ).values(next_retry_at=None))
+    record_audit(
+        db, actor=actor, action="user.delete", resource_type="user", resource_id=user.id,
+        details={"history_preserved": True, "revoked_sessions": revoked_sessions},
+    )
+    db.commit()
+
+
 def reset_department_user_password(
     db: Session,
     actor: UserContext,
     user_id: str,
     body: AdminPasswordReset,
 ) -> AdminUserRead:
+    _lock_admin_change(db, actor)
     user = _department_user(db, actor, user_id)
     user.password_hash = hash_password(body.initial_password)
     user.must_change_password = True
@@ -194,6 +265,7 @@ def replace_department_user_permissions(
     user_id: str,
     body: SkillPermissionsReplace,
 ) -> list[SkillPermissionRead]:
+    _lock_admin_change(db, actor)
     user = _department_user(db, actor, user_id)
     if user.role == "skill_admin" and body.permissions:
         raise HTTPException(status_code=422, detail="管理员默认拥有全部 Skill，无需单独授权。")

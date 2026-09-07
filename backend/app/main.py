@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Response, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from .audit_service import record_audit
 from .ar_execution_service import ArEvidencePage, ArExecutionRead, read_evidence_page, read_execution
 from .ar_execution_recovery import ArRecoveryRequest, recover_execution
+from .ar_result_details import ArResultPage, read_result_page
 from .auth import UserContext, get_current_user, get_sse_user, require_admin
 from .auth_service import bootstrap_admin
 from .authorization import allowed_skill_ids, assert_skill_permission, get_skill_permission
@@ -1088,6 +1089,34 @@ def investigate_failed_workflow_write(
     queue_investigation(db, workflow, body, user)
     db.expire(workflow, ["actions"])
     return read_execution(workflow)
+
+
+@app.get("/api/workflows/{workflow_id}/result-details", response_model=ArResultPage)
+def get_workflow_result_details(
+    workflow_id: str,
+    category: str = Query("all", pattern="^(all|written|skipped|hold|conflict|exception)$"),
+    offset: int = Query(0, ge=0), limit: int = Query(5, ge=1, le=50),
+    db: Session = Depends(get_db), user: UserContext = Depends(get_current_user),
+) -> ArResultPage:
+    workflow = get_workflow_or_404(db, workflow_id, user)
+    assert_skill_permission(db, user, workflow.skill_id)
+    return read_result_page(db, [workflow], category=category, offset=offset, limit=limit)
+
+
+@app.get("/api/workflow-batches/{batch_id}/result-details", response_model=ArResultPage)
+def get_batch_result_details(
+    batch_id: str,
+    category: str = Query("all", pattern="^(all|written|skipped|hold|conflict|exception)$"),
+    offset: int = Query(0, ge=0), limit: int = Query(5, ge=1, le=50),
+    db: Session = Depends(get_db), user: UserContext = Depends(get_current_user),
+) -> ArResultPage:
+    batch = get_workflow_batch_or_404(db, batch_id, user)
+    assert_skill_permission(db, user, batch.skill_id)
+    from .resource_policy import assert_owner
+    for workflow in batch.workflows:
+        assert_owner(workflow.owner_id, user, "核销任务", workflow.department_id)
+        assert_skill_permission(db, user, workflow.skill_id)
+    return read_result_page(db, list(batch.workflows), category=category, offset=offset, limit=limit)
 
 
 @app.get("/api/workflows/{workflow_id}/order-evidence", response_model=ArEvidencePage)

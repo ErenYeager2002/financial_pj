@@ -121,6 +121,8 @@ def build_agent_model_payload(config: LlmConfig, incoming: dict[str, Any]) -> di
 def open_agent_model_stream(
     config: LlmConfig,
     payload: dict[str, Any],
+    *,
+    session_id: str | None = None,
 ) -> AbstractContextManager[httpx.Response]:
     """打开已绑定部门配置的上游模型流。"""
     return chat_completion_stream_request(
@@ -128,6 +130,7 @@ def open_agent_model_stream(
         config.base_url,
         config.api_key,
         payload,
+        **({"session_id": session_id} if config.provider == "opencode_go" else {}),
     )
 
 

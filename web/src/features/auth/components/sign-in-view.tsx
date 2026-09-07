@@ -10,7 +10,7 @@ import { InteractiveGridPattern } from './interactive-grid';
 
 export const metadata: Metadata = {
   title: '登录',
-  description: '登录企业管理后台。'
+  description: '登录财务自动化平台。'
 };
 
 export default function SignInViewPage({ mode }: { mode: AuthMode }) {
@@ -40,7 +40,7 @@ export default function SignInViewPage({ mode }: { mode: AuthMode }) {
           >
             <path d='M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3' />
           </svg>
-          企业管理后台
+          财务自动化平台
         </div>
         <InteractiveGridPattern
           className={cn(
@@ -53,7 +53,7 @@ export default function SignInViewPage({ mode }: { mode: AuthMode }) {
             <p className='text-lg'>
               &ldquo;集中管理企业数据、团队和业务模块，让日常工作更加清晰高效。&rdquo;
             </p>
-            <footer className='text-sidebar-foreground/70 text-sm'>企业管理平台</footer>
+            <footer className='text-sidebar-foreground/70 text-sm'>财务自动化平台</footer>
           </blockquote>
         </div>
       </div>

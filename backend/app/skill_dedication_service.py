@@ -8,9 +8,11 @@ from sqlalchemy.orm import Session
 from .audit_service import record_audit
 from .auth import UserContext
 from .auth_models import User
+from .authorization import refresh_active_user
 from .contracts import SkillDedicationRead
 from .models import SkillDedicatedUser, utcnow
 from .registry import registry
+from .scheduler import acquire_claim_lock
 
 
 def _require_admin(actor: UserContext) -> None:
@@ -32,6 +34,7 @@ def _department_user(db: Session, actor: UserContext, user_id: str) -> User:
             User.id == user_id,
             User.department_id == actor.department_id,
         )
+        .execution_options(populate_existing=True)
     )
     if user is None:
         # 跨部门用户与不存在的用户使用同一响应，避免泄露用户信息。
@@ -92,6 +95,9 @@ def set_skill_dedication(
 ) -> SkillDedicationRead:
     _require_admin(actor)
     _require_skill(skill_id)
+    acquire_claim_lock(db)
+    actor = refresh_active_user(db, actor)
+    _require_admin(actor)
     target = _department_user(db, actor, user_id)
     row = _find_dedication(db, actor, skill_id)
     old_user_id = row.user_id if row is not None else ""

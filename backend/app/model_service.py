@@ -143,6 +143,7 @@ def _verify_tool_calling(
     # MiniMax OpenAI 兼容端点不支持 tool_choice 对象形式（仅 none/auto），
     # 且 M3 思考默认开启会占用 max_tokens；改用 system 指令强制调用工具。
     is_minimax = provider.id == "minimax"
+    is_go = provider.id == "opencode_go"
     payload: dict[str, Any] = {
         "model": model,
         "messages": (
@@ -153,7 +154,7 @@ def _verify_tool_calling(
                 },
                 {"role": "user", "content": "ping"},
             ]
-            if is_minimax
+            if is_minimax or is_go
             else [{"role": "user", "content": "ping"}]
         ),
         "tools": [
@@ -170,10 +171,16 @@ def _verify_tool_calling(
                 },
             }
         ],
-        "max_tokens": 1024 if is_minimax else 32,
+        "max_tokens": 4096 if is_go else (1024 if is_minimax else 32),
         "temperature": 0,
     }
-    if not is_minimax:
+    if is_go:
+        # Go serves several reasoning models; forcing a function or temperature
+        # can be rejected even when the model supports tools. Validate the actual
+        # returned tool call after requesting it explicitly in the system message.
+        payload["tool_choice"] = "auto"
+        payload.pop("temperature")
+    elif not is_minimax:
         payload["tool_choice"] = {
             "type": "function",
             "function": {"name": "tool_call_supported"},

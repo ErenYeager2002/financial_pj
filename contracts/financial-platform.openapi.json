@@ -1097,6 +1097,174 @@
         "title": "ArRecoveryRequest",
         "type": "object"
       },
+      "ArResultDate": {
+        "properties": {
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "available",
+              "empty",
+              "pending",
+              "unavailable"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "date",
+          "state",
+          "message"
+        ],
+        "title": "ArResultDate",
+        "type": "object"
+      },
+      "ArResultGroup": {
+        "properties": {
+          "ar": {
+            "title": "Ar",
+            "type": "string"
+          },
+          "categories": {
+            "items": {
+              "enum": [
+                "written",
+                "skipped",
+                "hold",
+                "conflict",
+                "exception"
+              ],
+              "type": "string"
+            },
+            "title": "Categories",
+            "type": "array"
+          },
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "records": {
+            "items": {
+              "$ref": "#/components/schemas/ArResultItem"
+            },
+            "title": "Records",
+            "type": "array"
+          },
+          "so": {
+            "title": "So",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "date",
+          "ar",
+          "so",
+          "categories",
+          "records"
+        ],
+        "title": "ArResultGroup",
+        "type": "object"
+      },
+      "ArResultItem": {
+        "properties": {
+          "categories": {
+            "items": {
+              "enum": [
+                "written",
+                "skipped",
+                "hold",
+                "conflict",
+                "exception"
+              ],
+              "type": "string"
+            },
+            "title": "Categories",
+            "type": "array"
+          },
+          "final_state": {
+            "title": "Final State",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "record_id": {
+            "title": "Record Id",
+            "type": "string"
+          },
+          "sod": {
+            "title": "Sod",
+            "type": "string"
+          }
+        },
+        "required": [
+          "record_id",
+          "sod",
+          "categories",
+          "reason",
+          "final_state"
+        ],
+        "title": "ArResultItem",
+        "type": "object"
+      },
+      "ArResultPage": {
+        "properties": {
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Counts",
+            "type": "object"
+          },
+          "dates": {
+            "items": {
+              "$ref": "#/components/schemas/ArResultDate"
+            },
+            "title": "Dates",
+            "type": "array"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/ArResultGroup"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "next_offset": {
+            "title": "Next Offset",
+            "type": "integer"
+          },
+          "record_total": {
+            "title": "Record Total",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "record_total",
+          "next_offset",
+          "dates"
+        ],
+        "title": "ArResultPage",
+        "type": "object"
+      },
       "AssistantConversationRead": {
         "properties": {
           "messages": {
@@ -10435,6 +10603,39 @@
       }
     },
     "/api/admin/users/{user_id}": {
+      "delete": {
+        "operationId": "admin_delete_user_api_admin_users__user_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Admin Delete User",
+        "tags": [
+          "admin-users"
+        ]
+      },
       "patch": {
         "operationId": "admin_update_user_api_admin_users__user_id__patch",
         "parameters": [
@@ -10771,6 +10972,27 @@
       "post": {
         "description": "给服务端 Pi Runtime 提供受部门模型配置约束的 SSE 上游。",
         "operationId": "stream_agent_model_api_assistant_model_post",
+        "parameters": [
+          {
+            "description": "可选的模型会话标识；按当前用户隔离并脱敏后用于上游提示缓存。",
+            "in": "header",
+            "name": "X-Financial-Model-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "可选的模型会话标识；按当前用户隔离并脱敏后用于上游提示缓存。",
+              "title": "X-Financial-Model-Session"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -13365,6 +13587,79 @@
         "summary": "Supplement Workflow Batch Fetched Data"
       }
     },
+    "/api/workflow-batches/{batch_id}/result-details": {
+      "get": {
+        "operationId": "get_batch_result_details_api_workflow_batches__batch_id__result_details_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "pattern": "^(all|written|skipped|hold|conflict|exception)$",
+              "title": "Category",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 5,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArResultPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Batch Result Details"
+      }
+    },
     "/api/workflow-batches/{batch_id}/retry": {
       "post": {
         "operationId": "retry_workflow_batch_session_api_workflow_batches__batch_id__retry_post",
@@ -14533,6 +14828,79 @@
           }
         },
         "summary": "Reset Workflow Session"
+      }
+    },
+    "/api/workflows/{workflow_id}/result-details": {
+      "get": {
+        "operationId": "get_workflow_result_details_api_workflows__workflow_id__result_details_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workflow_id",
+            "required": true,
+            "schema": {
+              "title": "Workflow Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "pattern": "^(all|written|skipped|hold|conflict|exception)$",
+              "title": "Category",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 5,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArResultPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Workflow Result Details"
       }
     }
   }

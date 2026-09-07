@@ -1,9 +1,18 @@
 import { NextResponse } from 'next/server';
-import { updateAdminUser } from '@/features/admin/api/server';
+import { deleteAdminUser, updateAdminUser } from '@/features/admin/api/server';
 import { PlatformApiError } from '@/features/platform-api/errors';
 import { platformRouteError } from '@/features/platform-api/route-handler';
 
 type Params = { params: Promise<{ userId: string }> };
+
+export async function DELETE(_request: Request, { params }: Params) {
+  try {
+    await deleteAdminUser((await params).userId);
+    return new NextResponse(null, { status: 204 });
+  } catch (error) {
+    return platformRouteError(error, '平台用户删除失败。');
+  }
+}
 
 export async function PATCH(request: Request, { params }: Params) {
   try {

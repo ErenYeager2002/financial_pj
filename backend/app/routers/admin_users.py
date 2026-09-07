@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
 from ..admin_user_service import (
     create_department_user,
+    delete_department_user,
     list_department_users,
     replace_department_user_permissions,
     reset_department_user_password,
@@ -53,6 +54,17 @@ def admin_update_user(
 ) -> AdminUserRead:
     require_admin(current)
     return update_department_user(db, current, user_id, body)
+
+
+@router.delete("/{user_id}", status_code=204, response_class=Response)
+def admin_delete_user(
+    user_id: str,
+    db: Session = Depends(get_db),
+    current: UserContext = Depends(get_current_user),
+) -> Response:
+    require_admin(current)
+    delete_department_user(db, current, user_id)
+    return Response(status_code=204)
 
 
 @router.post("/{user_id}/reset-password", response_model=AdminUserRead)

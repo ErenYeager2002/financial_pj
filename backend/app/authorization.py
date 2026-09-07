@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import replace
 from collections.abc import Iterable
 
 from fastapi import HTTPException, status
@@ -11,6 +12,14 @@ from .auth import UserContext
 from .auth_models import User, UserSkillPermission
 
 PERMISSION_CAPABILITIES = {"can_run", "can_upload", "can_create_draft"}
+
+
+def refresh_active_user(db: Session, user: UserContext) -> UserContext:
+    """Recheck an authenticated caller after waiting for a mutation/claim lock."""
+    stored = db.get(User, user.user_id, populate_existing=True)
+    if stored is None or stored.status != "active" or stored.department_id != user.department_id:
+        raise HTTPException(status_code=403, detail="平台用户已停用，不能执行此操作。")
+    return replace(user, role=stored.role, display_name=stored.display_name, username=stored.username)
 
 
 def get_skill_permission(

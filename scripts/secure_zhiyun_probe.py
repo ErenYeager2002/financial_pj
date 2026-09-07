@@ -123,10 +123,13 @@ def main() -> int:
         print(f"ERROR: {reason or '智云只读任务检查失败，请检查取数服务及运行环境。'}", file=sys.stderr)
         return 1
     finally:
-        if client is not None:
-            client.close()
         password = ""
         payload.clear()
+        if client is not None:
+            try:
+                client.session.close()
+            except Exception:  # cleanup must not overwrite the probe outcome
+                print("WARNING: 任务检查连接清理失败。", file=sys.stderr)
 
 
 if __name__ == "__main__":

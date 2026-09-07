@@ -79,7 +79,7 @@ def workflow_owner_context(db: Session, workflow: object) -> UserContext:
     Skill permission remain authoritative for starting another action.
     """
     owner_id = str(getattr(workflow, "owner_id", ""))
-    owner = db.get(User, owner_id)
+    owner = db.get(User, owner_id, populate_existing=True)
     if owner is None or owner.status != "active":
         raise HTTPException(status_code=403, detail="任务所属账号已停用或不存在，无法开始新动作。")
     task_department = str(getattr(workflow, "department_id", ""))

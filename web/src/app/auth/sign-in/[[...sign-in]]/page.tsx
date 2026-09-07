@@ -6,7 +6,7 @@ import { getPlatformSession } from '@/features/auth/api/service';
 
 export const metadata: Metadata = {
   title: '登录',
-  description: '登录企业管理后台。'
+  description: '登录财务自动化平台。'
 };
 
 export default async function Page() {

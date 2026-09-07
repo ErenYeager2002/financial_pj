@@ -83,13 +83,13 @@ export default function AppSidebar({ navGroups, session }: AppSidebarProps): Rea
           <SidebarMenuItem>
             <SidebarMenuButton
               size='lg'
-              tooltip='财务 Skill 平台'
-              render={<Link href='/dashboard/overview' aria-label='财务 Skill 平台' />}
+              tooltip='财务自动化平台'
+              render={<Link href='/dashboard/overview' aria-label='财务自动化平台' />}
             >
               <span className='flex size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground'>
                 <Icons.logo className='size-4' />
               </span>
-              <span className='font-semibold'>财务 Skill 平台</span>
+              <span className='font-semibold'>财务自动化平台</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

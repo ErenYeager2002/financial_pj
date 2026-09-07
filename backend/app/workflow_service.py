@@ -30,7 +30,7 @@ from .assistant_profile_service import resolve_assistant_config
 from .ar_execution_contract import ExecutionCancelled, ExecutionLeaseLost, ExecutionPhaseFailed
 from .audit_service import record_audit
 from .auth import UserContext
-from .authorization import assert_skill_permission
+from .authorization import assert_skill_permission, refresh_active_user
 from .fetched_bundle_service import (
     FetchedBundleError,
     FetchedBundleReplayAdapter,
@@ -2843,6 +2843,8 @@ def create_workflow(
     assert_workflow_skill_execution_enabled(request.skill_id)
     assert_skill_permission(db, user, request.skill_id)
     acquire_claim_lock(db)
+    user = refresh_active_user(db, user)
+    assert_skill_permission(db, user, request.skill_id)
     assert_skill_accepting_new_work(db, request.skill_id, acquire_lock=False)
     llm = resolve_runtime_config(db, user, request.model_connection_id, request.model)
     if not llm:
@@ -2932,6 +2934,10 @@ def start_workflow(
     if request.files or request.replace_roles:
         assert_skill_permission(db, user, request.skill_id, "can_upload")
     acquire_claim_lock(db)
+    user = refresh_active_user(db, user)
+    assert_skill_permission(db, user, request.skill_id)
+    if request.files or request.replace_roles:
+        assert_skill_permission(db, user, request.skill_id, "can_upload")
     assert_skill_accepting_new_work(db, request.skill_id, acquire_lock=False)
     parsed_date = _parse_date(request.reconciliation_date)
     if not parsed_date:
@@ -3062,6 +3068,10 @@ def start_workflow_batch(
     if request.files or request.replace_roles:
         assert_skill_permission(db, user, request.skill_id, "can_upload")
     acquire_claim_lock(db)
+    user = refresh_active_user(db, user)
+    assert_skill_permission(db, user, request.skill_id)
+    if request.files or request.replace_roles:
+        assert_skill_permission(db, user, request.skill_id, "can_upload")
     assert_skill_accepting_new_work(db, request.skill_id, acquire_lock=False)
     if len(request.reconciliation_dates) > 31:
         raise HTTPException(status_code=422, detail="单个批次最多选择 31 个核销日期。")
@@ -3887,8 +3897,8 @@ def reset_workflow(
     workflow: WorkflowSession,
     actor: UserContext,
 ) -> WorkflowSession:
-    workflow_owner_context(db, workflow)
     acquire_claim_lock(db)
+    workflow_owner_context(db, workflow)
     _assert_single_flight_available(
         db,
         workflow.skill_id,

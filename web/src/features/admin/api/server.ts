@@ -86,6 +86,13 @@ export async function updateAdminUser(userId: string, value: unknown): Promise<A
   });
 }
 
+export async function deleteAdminUser(userId: string): Promise<void> {
+  await requirePlatformAdmin();
+  await platformServerRequest<void>(`/api/admin/users/${checkedUserId(userId)}`, {
+    method: 'DELETE'
+  });
+}
+
 export async function resetAdminUserPassword(userId: string, value: unknown): Promise<AdminUser> {
   await requirePlatformAdmin();
   const body = objectBody(value);

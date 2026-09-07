@@ -69,6 +69,60 @@ def read_formal_ledger_bundle(db: Session, source: WorkflowSession) -> tuple[dic
     return payload, record, contents
 
 
+def _confirmed_empty_fetch_dates(
+    db: Session, workflow: WorkflowSession, workspace: Path, rows: dict,
+) -> set[str]:
+    """Recognize the pinned fetcher's empty-day marker, never a processing result."""
+    from .fetched_bundle_service import assert_bundle_consumable
+    from .workflow_service import FETCHED_DATASET_COUNT_KEYS
+
+    context = json.loads(workflow.context_json or "{}")
+    fetched_data = context.get("fetched_data") or {}
+    bundle_id = workflow.fetched_bundle_id
+    if not bundle_id or fetched_data.get("review_status") != "confirmed":
+        return set()
+    dates = (
+        json.loads(workflow.batch.reconciliation_dates_json)
+        if workflow.batch is not None else [workflow.reconciliation_date]
+    )
+    allowed_fields = {
+        "hexiao_date", "first_run_at", "last_run_at", "stage",
+        "payment_count", "empty_batch", "note",
+    }
+    candidates = sorted(day for day, row in rows.items() if (
+        day in dates and isinstance(row, dict) and set(row) <= allowed_fields
+        and row.get("hexiao_date") == day and row.get("stage") == "classified"
+        and row.get("empty_batch") is True
+        and type(row.get("payment_count")) is int and row["payment_count"] == 0
+        and row.get("note") == "空批：那天没有任何核销"
+    ))
+    if not candidates:
+        return set()
+    bundle = assert_bundle_consumable(
+        db, bundle_id=bundle_id, owner_id=workflow.owner_id, dates=candidates,
+    )
+    if (bundle.department_id, bundle.skill_id) != (workflow.department_id, workflow.skill_id):
+        raise ValueError("空日期取数包与当前任务的业务范围不一致。")
+    export = workspace / "01_智云导出"
+    empty_dates = set()
+    for member in bundle.files:
+        if member.dataset != "summary" or member.reconciliation_date not in candidates:
+            continue
+        path = export / member.relative_name
+        if path.is_symlink() or not path.is_file() or not path.resolve().is_relative_to(workspace.resolve()):
+            raise ValueError("空日期的取数摘要缺失或超出当前工作区。")
+        raw = path.read_bytes()
+        if hashlib.sha256(raw).hexdigest() != member.sha256:
+            raise ValueError("空日期的取数摘要与已确认取数包不一致。")
+        summary = json.loads(raw)
+        if isinstance(summary, dict) and all(
+            type(summary.get(key)) is int and summary[key] == 0
+            for key in FETCHED_DATASET_COUNT_KEYS.values()
+        ):
+            empty_dates.add(member.reconciliation_date)
+    return empty_dates
+
+
 def inherit_formal_ledgers(db: Session, workflow: WorkflowSession, workspace: Path) -> dict:
     material = workflow.material_set
     if material is not None and not material.source_workflow_id and material.parent_set_id:
@@ -118,11 +172,22 @@ def inherit_formal_ledgers(db: Session, workflow: WorkflowSession, workspace: Pa
     if local_batch.is_file():
         fetched = json.loads(local_batch.read_text(encoding="utf-8"))
         inherited = json_ledgers["跑批台账.json"]
-        for day, row in (fetched.get("runs") or {}).items():
-            if row != inherited.get("runs", {}).get(day) and row.get("stage") != "fetched":
+        pending = {
+            day: row for day, row in (fetched.get("runs") or {}).items()
+            if row != inherited.get("runs", {}).get(day) and (
+                not isinstance(row, dict) or row.get("stage") != "fetched"
+            )
+        }
+        empty_dates = _confirmed_empty_fetch_dates(db, workflow, workspace, pending) if pending else set()
+        for day in pending:
+            if day not in empty_dates:
                 raise ValueError("当前任务已存在取数之后的跑批记录，禁止替换正式台账")
         current = (fetched.get("runs") or {}).get(workflow.reconciliation_date)
         if current and workflow.reconciliation_date not in inherited.get("runs", {}):
+            # Initialization only inherits this date's fetch fact. Later dates
+            # remain pending in the platform even if the fetcher called them done.
+            if workflow.reconciliation_date in empty_dates:
+                current = {**current, "stage": "fetched"}
             inherited.setdefault("runs", {})[workflow.reconciliation_date] = current
         contents["跑批台账.json"] = json.dumps(inherited, ensure_ascii=False, indent=2).encode("utf-8")
     for name, content in contents.items():

@@ -1,7 +1,7 @@
 'use client';
 
 import { type FormEvent, useMemo, useState } from 'react';
-import { IconHistory, IconPlus, IconShield, IconUserCog } from '@tabler/icons-react';
+import { IconHistory, IconPlus, IconShield, IconTrash, IconUserCog } from '@tabler/icons-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -92,6 +92,7 @@ const ACTION_LABELS: Record<string, string> = {
   'skill_release.review': '审核 Skill 版本',
   'skill_release.rollback': '回退 Skill 版本',
   'user.create': '创建平台用户',
+  'user.delete': '删除平台用户',
   'user.update': '更新平台用户'
 };
 
@@ -143,6 +144,10 @@ export function PlatformUserManagement({
   const [auditLoading, setAuditLoading] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [selected, setSelected] = useState<AdminUser | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<AdminUser | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+  const [notice, setNotice] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [role, setRole] = useState('finance_user');
   const [status, setStatus] = useState('active');
@@ -206,6 +211,31 @@ export function PlatformUserManagement({
     setUsers((current) => [...current, created]);
     setCreateOpen(false);
     setBusy(false);
+  }
+
+  async function deleteUser() {
+    if (!deleteTarget || deleting) return;
+    const target = deleteTarget;
+    setDeleting(true);
+    setDeleteError('');
+    setNotice('');
+    try {
+      const response = await fetch(`/api/platform/admin/users/${encodeURIComponent(target.id)}`, {
+        method: 'DELETE'
+      });
+      if (!response.ok) {
+        setDeleteError(await responseMessage(response, '平台用户删除失败。'));
+        return;
+      }
+      setUsers((current) => current.filter((user) => user.id !== target.id));
+      setSelected((current) => current?.id === target.id ? null : current);
+      setDeleteTarget(null);
+      setNotice(`已删除用户 ${target.display_name}，历史记录已保留。`);
+    } catch {
+      setDeleteError('未能确认删除结果，请刷新用户列表后核对。');
+    } finally {
+      setDeleting(false);
+    }
   }
 
   async function saveUser() {
@@ -338,6 +368,7 @@ export function PlatformUserManagement({
         </TabsList>
 
         <TabsContent value='users' className='space-y-4'>
+          {notice && <p role='status' className='text-sm text-muted-foreground'>{notice}</p>}
           <div className='flex items-center justify-between gap-3'>
             <p className='text-sm text-muted-foreground'>
               当前部门 {session.department_id}，共 {users.length} 个平台用户。
@@ -388,10 +419,26 @@ export function PlatformUserManagement({
                     type='button'
                     variant='outline'
                     className='w-full'
+                    disabled={busy || deleting}
                     onClick={() => openUser(user)}
                   >
                     <IconUserCog />
                     管理账号与权限
+                  </Button>
+                  <Button
+                    type='button'
+                    variant='outline'
+                    className='w-full text-destructive hover:text-destructive'
+                    disabled={busy || deleting || user.id === session.user_id}
+                    title={user.id === session.user_id ? '不能删除当前登录的管理员' : undefined}
+                    aria-label={`删除用户 ${user.display_name}`}
+                    onClick={() => {
+                      setDeleteTarget(user);
+                      setDeleteError('');
+                    }}
+                  >
+                    <IconTrash />
+                    删除用户
                   </Button>
                 </CardContent>
               </Card>
@@ -581,6 +628,35 @@ export function PlatformUserManagement({
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => {
+          if (!open && !deleting) setDeleteTarget(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>删除用户 {deleteTarget?.display_name}</DialogTitle>
+            <DialogDescription>
+              确认删除账号 {deleteTarget?.username}？删除后将从用户列表移除，撤销登录会话和权限，
+              并停止该用户的任务提醒。历史任务、文件和审计记录保留。
+            </DialogDescription>
+          </DialogHeader>
+          <p className='text-sm text-muted-foreground'>
+            删除后不能在此恢复，原用户名不能重新注册。有未结束任务时，请先完成或取消任务。
+          </p>
+          {deleteError && <p role='alert' className='text-sm text-destructive'>{deleteError}</p>}
+          <DialogFooter>
+            <Button type='button' variant='outline' disabled={deleting} onClick={() => setDeleteTarget(null)}>
+              取消
+            </Button>
+            <Button type='button' variant='destructive' disabled={deleting} onClick={() => void deleteUser()}>
+              {deleting ? '删除中…' : '确认删除用户'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

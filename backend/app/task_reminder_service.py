@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from .audit_service import record_audit
 from .auth import UserContext
 from .auth_models import User
+from .authorization import refresh_active_user
 from .models import TaskDiscoveryCheck, TaskReminder, TaskReminderSubscription
 from .registry import registry
 from .redaction import sanitize_text
@@ -59,6 +60,7 @@ def _department_owner(db: Session, actor: UserContext, owner_id: str) -> User:
             User.department_id == actor.department_id,
             User.status == "active",
         )
+        .execution_options(populate_existing=True)
     )
     if owner is None:
         raise HTTPException(status_code=404, detail="负责人不存在、已禁用或不属于当前部门。")
@@ -75,6 +77,7 @@ def _subscription(
             TaskReminderSubscription.department_id == department_id,
             TaskReminderSubscription.skill_id == skill_id,
         )
+        .execution_options(populate_existing=True)
     )
 
 
@@ -186,6 +189,10 @@ def save_subscription(
     body: TaskReminderSubscriptionWrite,
 ) -> TaskReminderSubscriptionRead:
     _skill_name(skill_id)
+    acquire_claim_lock(db)
+    actor = refresh_active_user(db, actor)
+    if not actor.is_admin:
+        raise HTTPException(status_code=403, detail="只有管理员可以设置任务提醒负责人。")
     owner = _department_owner(db, actor, body.owner_id)
     subscription = _subscription(db, actor.department_id, skill_id)
     previous_owner_id = subscription.owner_id if subscription else ""
@@ -279,14 +286,16 @@ def enqueue_task_discovery(
     body: TaskDiscoveryCheckRequest,
 ) -> TaskDiscoveryCheckQueued:
     _skill_name(body.skill_id)
+    acquire_claim_lock(db)
+    actor = refresh_active_user(db, actor)
     subscription = _subscription(db, actor.department_id, body.skill_id)
     if subscription is None or not subscription.enabled:
         raise HTTPException(status_code=409, detail="该 Skill 尚未启用任务提醒。")
     if not actor.is_admin and subscription.owner_id != actor.user_id:
         raise HTTPException(status_code=403, detail="只有当前负责人或管理员可以发起检查。")
+    _department_owner(db, actor, subscription.owner_id)
     dates = _validated_business_dates(body.business_dates)
     dates_json = json.dumps(list(dates), ensure_ascii=False)
-    acquire_claim_lock(db)
     existing = db.scalar(
         select(TaskDiscoveryCheck).where(
             TaskDiscoveryCheck.subscription_id == subscription.id,
@@ -330,14 +339,20 @@ def retry_task_discovery(
     actor: UserContext,
     check_id: str,
 ) -> TaskDiscoveryCheckQueued:
-    check = db.get(TaskDiscoveryCheck, check_id)
+    acquire_claim_lock(db)
+    actor = refresh_active_user(db, actor)
+    check = db.get(TaskDiscoveryCheck, check_id, populate_existing=True)
     if check is None or check.department_id != actor.department_id:
         raise HTTPException(status_code=404, detail="任务检查记录不存在。")
     if not actor.is_admin and check.owner_id != actor.user_id:
         raise HTTPException(status_code=403, detail="只有当前负责人或管理员可以重试。")
     if check.state != "failed":
         raise HTTPException(status_code=409, detail="只有失败的检查可以重试。")
-    acquire_claim_lock(db)
+    subscription = _subscription(db, actor.department_id, check.skill_id)
+    if (subscription is None or not subscription.enabled or subscription.id != check.subscription_id
+            or subscription.owner_id != check.owner_id):
+        raise HTTPException(status_code=409, detail="任务提醒已停用或负责人已变更，不能重试旧检查。")
+    _department_owner(db, actor, check.owner_id)
     check.state = "queued"
     check.trigger = "manual"
     check.next_retry_at = None

@@ -270,6 +270,14 @@ export function ModelConnectionManagement({
               </label>
             ) : null}
 
+            {selectedProvider?.id === 'opencode_go' ? (
+              <p className='text-sm text-muted-foreground lg:col-span-2'>
+                使用 OpenCode Go 的 API Key，服务地址已内置。自动读取支持 Chat Completions
+                的兼容模型；MiniMax、千问、GPT、Grok 等其他协议模型，以及 Kimi K2.7 Code
+                暂不支持。
+              </p>
+            ) : null}
+
             {showManualModel ? (
               <label htmlFor='manual-model-name' className='grid gap-1.5 text-sm font-medium'>
                 模型名称{isCustomProvider ? '' : '（可选）'}

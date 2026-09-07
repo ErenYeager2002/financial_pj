@@ -752,7 +752,11 @@ def stream_pi_harness_model(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     reserve_agent_call(db, workflow, active_action, body.worker_id, "model_calls")
-    stream_context = open_agent_model_stream(config, payload)
+    stream_context = open_agent_model_stream(
+        config,
+        payload,
+        **({"session_id": f"workflow:{workflow.id}"} if config.provider == "opencode_go" else {}),
+    )
     stats = AgentModelStreamStats()
     try:
         response = stream_context.__enter__()

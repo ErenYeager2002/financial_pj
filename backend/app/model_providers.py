@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 import ipaddress
 import re
 import socket
+import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -204,6 +207,28 @@ PROVIDERS: tuple[ProviderDefinition, ...] = (
         ),
     ),
     ProviderDefinition(
+        id="opencode_go",
+        name="OpenCode Go",
+        protocol=PROTOCOL_CHAT_COMPLETIONS,
+        base_url="https://opencode.ai/zen/go/v1",
+        discovery_mode=DISCOVERY_API,
+        # Only documented Chat Completions models. The Go catalog also includes
+        # Responses and Anthropic Messages models, which this gateway cannot run.
+        # https://opencode.ai/docs/go/#endpoints (2026-09-06)
+        include_patterns=(
+            r"^glm-(?:5\.3-flash|5\.3|5\.2|5\.1)$",
+            # K2.7 Code requires thinking and does not support the forced-tool
+            # requests used by some platform flows. Keep it out until adapted.
+            r"^kimi-(?:k3|k2\.6)$",
+            r"^deepseek-v4-(?:pro|flash)$",
+            r"^mimo-v2\.5(?:-pro)?$",
+            r"^longcat-2\.0$",
+            r"^hy(?:4-preview|3)$",
+            r"^omen-alpha$",
+        ),
+        preferred_models=("deepseek-v4-flash", "glm-5.3-flash", "kimi-k2.6"),
+    ),
+    ProviderDefinition(
         id="custom_openai",
         name="自定义 OpenAI 兼容服务",
         protocol=PROTOCOL_CHAT_COMPLETIONS,
@@ -258,9 +283,11 @@ def filter_candidate_models(provider: ProviderDefinition, raw_models: list[str])
 def build_extra_body(provider_id: str, model: str) -> dict[str, Any]:
     if provider_id == "qwen" and _QWEN3_PATTERN.match(model):
         return {"enable_thinking": False}
-    if provider_id == "deepseek" and _DEEPSEEK_V4_PATTERN.match(model):
+    if provider_id in {"deepseek", "opencode_go"} and _DEEPSEEK_V4_PATTERN.match(model):
         return {"thinking": {"type": "disabled"}}
     if provider_id == "moonshot" and _KIMI_K2_PATTERN.match(model):
+        return {"thinking": {"type": "disabled"}}
+    if provider_id == "opencode_go" and model == "kimi-k2.6":
         return {"thinking": {"type": "disabled"}}
     if provider_id == "minimax" and _MINIMAX_M3_PATTERN.match(model):
         return {"thinking": {"type": "disabled"}}
@@ -313,6 +340,29 @@ def validate_https_base_url(base_url: str | None) -> str:
     return f"https://{host.lower()}{port}{parsed.path}{suffix}"
 
 
+def _request_headers(
+    provider: ProviderDefinition | None,
+    api_key: str,
+    session_id: str | None = None,
+) -> dict[str, str]:
+    headers = {"Authorization": f"Bearer {api_key}"}
+    if provider is not None and provider.id == "opencode_go":
+        # Keep cache identity stable within an Agent conversation, without sending
+        # internal user/workflow IDs or authentication tokens to the provider.
+        opaque_session = hmac.new(
+            api_key.encode("utf-8"),
+            (session_id or str(uuid.uuid4())).encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+        headers.update(
+            {
+                "User-Agent": "Financial-Skill-Platform/0.1",
+                "x-opencode-session": opaque_session,
+            }
+        )
+    return headers
+
+
 def secure_llm_request(
     method: str,
     provider: ProviderDefinition | None,
@@ -321,6 +371,8 @@ def secure_llm_request(
     api_key: str,
     json_body: dict[str, Any] | None = None,
     timeout: float = 30.0,
+    *,
+    session_id: str | None = None,
 ) -> httpx.Response:
     """统一模型 HTTP 入口。
 
@@ -331,7 +383,7 @@ def secure_llm_request(
     if is_custom:
         base_url = validate_https_base_url(base_url)
     kwargs: dict[str, Any] = {
-        "headers": {"Authorization": f"Bearer {api_key}"},
+        "headers": _request_headers(provider, api_key, session_id),
         "timeout": timeout,
     }
     if json_body is not None:
@@ -351,12 +403,14 @@ def secure_llm_stream_request(
     api_key: str,
     json_body: dict[str, Any] | None = None,
     timeout: float = 120.0,
+    *,
+    session_id: str | None = None,
 ) -> Iterator[httpx.Response]:
     """以流式方式访问模型服务，并复用与普通调用相同的地址校验。"""
     is_custom = provider is not None and not provider.base_url
     if is_custom:
         base_url = validate_https_base_url(base_url)
-    headers = {"Authorization": f"Bearer {api_key}"}
+    headers = _request_headers(provider, api_key, session_id)
     with httpx.Client(
         timeout=timeout,
         follow_redirects=not is_custom,
@@ -376,6 +430,8 @@ def chat_completion_request(
     api_key: str,
     json_body: dict[str, Any],
     timeout: float = 30.0,
+    *,
+    session_id: str | None = None,
 ) -> httpx.Response:
     """运行态统一入口：自定义 OpenAI 兼容服务每次真实调用都经过安全校验。"""
     provider = get_provider(provider_id)
@@ -387,6 +443,7 @@ def chat_completion_request(
         api_key,
         json_body,
         timeout,
+        session_id=session_id,
     )
 
 
@@ -396,6 +453,8 @@ def chat_completion_stream_request(
     api_key: str,
     json_body: dict[str, Any],
     timeout: float = 120.0,
+    *,
+    session_id: str | None = None,
 ) -> Iterator[httpx.Response]:
     """运行态流式入口；调用方必须在 with 块中消费响应。"""
     provider = get_provider(provider_id)
@@ -407,4 +466,5 @@ def chat_completion_stream_request(
         api_key,
         json_body,
         timeout,
+        session_id=session_id,
     )

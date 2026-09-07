@@ -136,7 +136,7 @@ def login(db: Session, username: str, password: str) -> User | None:
     user = get_user_by_username(db, username)
     if not user:
         return None
-    if user.status == "disabled":
+    if user.status != "active":
         return None
     if _user_locked(user):
         return None

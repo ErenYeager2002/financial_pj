@@ -171,7 +171,7 @@ def public_addrinfo(host, port, **kwargs):
 # ---------- 注册表与过滤单元测试 ----------
 
 
-def test_provider_registry_registers_seven_builtin_providers() -> None:
+def test_provider_registry_registers_builtin_providers() -> None:
     providers = list_public_providers(include_admin_only=False)
     assert [item.id for item in providers] == [
         "qwen",
@@ -181,6 +181,7 @@ def test_provider_registry_registers_seven_builtin_providers() -> None:
         "openai",
         "doubao",
         "minimax",
+        "opencode_go",
     ]
     assert all(item.protocol == "chat_completions" for item in providers)
     assert all(not item.admin_only for item in providers)
@@ -549,6 +550,7 @@ def test_model_providers_endpoint_hides_admin_only_from_normal_users() -> None:
             "openai",
             "doubao",
             "minimax",
+            "opencode_go",
         ]
         assert all(not item["admin_only"] for item in public.json())
         assert all(

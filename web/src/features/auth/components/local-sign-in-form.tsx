@@ -56,7 +56,7 @@ export default function LocalSignInForm() {
   return (
     <div className='w-full rounded-xl border bg-card p-6 text-card-foreground shadow-sm'>
       <div className='mb-6 space-y-1 text-center'>
-        <h1 className='text-2xl font-semibold'>登录财务 Skill 平台</h1>
+        <h1 className='text-2xl font-semibold'>登录财务自动化平台</h1>
         <p className='text-sm text-muted-foreground'>请输入管理员分配的用户名和密码</p>
       </div>
       {error && (

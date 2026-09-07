@@ -516,7 +516,8 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        delete?: never;
+        /** Admin Delete User */
+        delete: operations["admin_delete_user_api_admin_users__user_id__delete"];
         options?: never;
         head?: never;
         /** Admin Update User */
@@ -1571,6 +1572,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/workflow-batches/{batch_id}/result-details": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Batch Result Details */
+        get: operations["get_batch_result_details_api_workflow_batches__batch_id__result_details_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/workflow-batches/{batch_id}/retry": {
         parameters: {
             query?: never;
@@ -1963,6 +1981,23 @@ export interface paths {
         put?: never;
         /** Reset Workflow Session */
         post: operations["reset_workflow_session_api_workflows__workflow_id__reset_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workflows/{workflow_id}/result-details": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Workflow Result Details */
+        get: operations["get_workflow_result_details_api_workflows__workflow_id__result_details_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2480,6 +2515,63 @@ export interface components {
             checkpoint_fingerprint: string;
             /** Failed Action Id */
             failed_action_id: string;
+        };
+        /** ArResultDate */
+        ArResultDate: {
+            /** Date */
+            date: string;
+            /** Message */
+            message: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "available" | "empty" | "pending" | "unavailable";
+        };
+        /** ArResultGroup */
+        ArResultGroup: {
+            /** Ar */
+            ar: string;
+            /** Categories */
+            categories: ("written" | "skipped" | "hold" | "conflict" | "exception")[];
+            /** Date */
+            date: string;
+            /** Id */
+            id: string;
+            /** Records */
+            records: components["schemas"]["ArResultItem"][];
+            /** So */
+            so: string;
+        };
+        /** ArResultItem */
+        ArResultItem: {
+            /** Categories */
+            categories: ("written" | "skipped" | "hold" | "conflict" | "exception")[];
+            /** Final State */
+            final_state: string;
+            /** Reason */
+            reason: string;
+            /** Record Id */
+            record_id: string;
+            /** Sod */
+            sod: string;
+        };
+        /** ArResultPage */
+        ArResultPage: {
+            /** Counts */
+            counts?: {
+                [key: string]: number;
+            };
+            /** Dates */
+            dates: components["schemas"]["ArResultDate"][];
+            /** Groups */
+            groups?: components["schemas"]["ArResultGroup"][];
+            /** Next Offset */
+            next_offset: number;
+            /** Record Total */
+            record_total: number;
+            /** Total */
+            total: number;
         };
         /** AssistantConversationRead */
         AssistantConversationRead: {
@@ -5952,6 +6044,10 @@ export type ArEvidencePage = components['schemas']['ArEvidencePage'];
 export type ArEvidenceSummary = components['schemas']['ArEvidenceSummary'];
 export type ArExecutionRead = components['schemas']['ArExecutionRead'];
 export type ArRecoveryRequest = components['schemas']['ArRecoveryRequest'];
+export type ArResultDate = components['schemas']['ArResultDate'];
+export type ArResultGroup = components['schemas']['ArResultGroup'];
+export type ArResultItem = components['schemas']['ArResultItem'];
+export type ArResultPage = components['schemas']['ArResultPage'];
 export type AssistantConversationRead = components['schemas']['AssistantConversationRead'];
 export type AssistantConversationSummary = components['schemas']['AssistantConversationSummary'];
 export type AssistantMessageRead = components['schemas']['AssistantMessageRead'];
@@ -7241,6 +7337,35 @@ export interface operations {
             };
         };
     };
+    admin_delete_user_api_admin_users__user_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     admin_update_user_api_admin_users__user_id__patch: {
         parameters: {
             query?: never;
@@ -7475,7 +7600,10 @@ export interface operations {
     stream_agent_model_api_assistant_model_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description 可选的模型会话标识；按当前用户隔离并脱敏后用于上游提示缓存。 */
+                "X-Financial-Model-Session"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -9319,6 +9447,41 @@ export interface operations {
             };
         };
     };
+    get_batch_result_details_api_workflow_batches__batch_id__result_details_get: {
+        parameters: {
+            query?: {
+                category?: string;
+                offset?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArResultPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     retry_workflow_batch_session_api_workflow_batches__batch_id__retry_post: {
         parameters: {
             query?: never;
@@ -10095,6 +10258,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkflowRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_workflow_result_details_api_workflows__workflow_id__result_details_get: {
+        parameters: {
+            query?: {
+                category?: string;
+                offset?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArResultPage"];
                 };
             };
             /** @description Validation Error */

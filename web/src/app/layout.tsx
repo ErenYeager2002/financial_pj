@@ -21,28 +21,28 @@ export const metadata: Metadata = {
     ? { metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL) }
     : {}),
   title: {
-    default: '企业管理后台',
-    template: '%s | 企业管理后台'
+    default: '财务自动化平台',
+    template: '%s | 财务自动化平台'
   },
-  description: '基于 Next.js、shadcn/ui 和 TypeScript 构建的企业管理后台。',
+  description: '统一管理财务工具、业务材料与执行任务。',
   openGraph: {
-    title: '企业管理后台',
-    description: '基于 Next.js、shadcn/ui 和 TypeScript 构建的企业管理后台。',
-    siteName: '企业管理后台',
+    title: '财务自动化平台',
+    description: '统一管理财务工具、业务材料与执行任务。',
+    siteName: '财务自动化平台',
     type: 'website',
     images: [
       {
         url: '/shadcn-dashboard.png',
         width: 3200,
         height: 1600,
-        alt: '企业管理后台概览页'
+        alt: '财务自动化平台概览页'
       }
     ]
   },
   twitter: {
     card: 'summary_large_image',
-    title: '企业管理后台',
-    description: '基于 Next.js、shadcn/ui 和 TypeScript 构建的企业管理后台。',
+    title: '财务自动化平台',
+    description: '统一管理财务工具、业务材料与执行任务。',
     images: ['/shadcn-dashboard.png']
   }
 };
