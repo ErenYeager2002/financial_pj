@@ -144,6 +144,7 @@ class ArExecution:
 
     def script(self, name: str, arguments: list[str], *, accepted=(0,)) -> str:
         from .ar_process_evidence import run_recorded_script
+        from .ar_lab_execution import cached_command
 
         lock_execution(self.db, self.action, self.workflow)
         self.verify_input_binding()
@@ -152,6 +153,7 @@ class ArExecution:
             raise ExecutionCancelled("任务已请求取消，未启动下一脚本")
         self.db.commit()
         self.db.info.pop("ar_execution_lock", None)
+        name, arguments = cached_command(self, name, arguments)
         return run_recorded_script(self.scripts, name, arguments, action=self.action, workflow=self.workflow,
                                    accepted_returncodes=accepted)
 
@@ -180,6 +182,9 @@ class ArExecution:
                 self.service._run_shifted_details_audit(self.scripts, str(self.workspace), dates, script_runner=self.script)
         self.script("inspect_inputs.py", ["--workspace", str(self.workspace)])
         self.script("verify_sources.py", ["snapshot", "--workspace", str(self.workspace)])
+        from .ar_lab_execution import AR_LAB_SKILL_ID, build_cache
+        if self.workflow.skill_id == AR_LAB_SKILL_ID:
+            return {"inputs_checked": True, "ar_read_cache": build_cache(self, self.workspace, self.ledgers)}
         return {"inputs_checked": True}
 
     def classify_receipts(self) -> dict[str, Any]:
@@ -376,6 +381,9 @@ class ArExecution:
                 "files": self._workbook_fingerprints(stage)}
 
     def verify_reconciliation(self) -> dict[str, Any]:
+        from .ar_lab_execution import AR_LAB_SKILL_ID, build_cache
+
+        optimized = self.workflow.skill_id == AR_LAB_SKILL_ID
         stage, checked = self.staging()
         self._require_staged_fingerprints(stage, "write_receipt_flow")
         review = stage / "execution-review"
@@ -391,6 +399,11 @@ class ArExecution:
             review.rename(archive)
         review.mkdir()
         for folder in ("01_智云导出", "02_我的表副本", "03_台账"):
+            if optimized and folder == "02_我的表副本":
+                # Lab classifiers receive explicit read-only workbook paths.
+                # Actual writes and readback retain the normal staged files.
+                (review / folder).mkdir()
+                continue
             source = stage / folder
             if source.exists():
                 shutil.copytree(source, review / folder, ignore=shutil.ignore_patterns("备份"))
@@ -403,9 +416,12 @@ class ArExecution:
                                                    *self.service._annual_ledger_arguments(
                                                        annual_ledgers_in_copy(self.workspace, stage, self.ledgers))])
         arguments = ["--workspace", str(review), "--hexiao-date", self.date]
-        ledgers = annual_ledgers_in_copy(self.workspace, review, self.ledgers)
+        ledgers = annual_ledgers_in_copy(self.workspace, stage if optimized else review, self.ledgers)
+        if optimized:
+            self.context["ar_read_cache"] = build_cache(self, stage, ledgers)
         ledger_args = self.service._annual_ledger_arguments(ledgers)
-        self.script("classify_hexiao.py", [*arguments, *ledger_args])
+        flow_source = ["--flow-source-workspace", str(stage)] if optimized else []
+        self.script("classify_hexiao.py", [*arguments, *ledger_args, *flow_source])
         rechecked = review / "04_产出" / f"写入计划_校验后_{self.tag}.json"
         self.script("validate_plan.py", [*arguments, "--out", str(rechecked), *ledger_args], accepted=(0, 1))
         plan = json.loads(rechecked.read_text(encoding="utf-8"))
@@ -417,6 +433,7 @@ class ArExecution:
             raise ValueError("写后复核出现新增冲突，需核对实际执行结果")
         self._require_staged_fingerprints(stage, "write_receipt_flow")
         return {"review_workspace": str(review), "counts": plan.get("counts") or {},
+                **({"ar_read_cache": self.context["ar_read_cache"]} if optimized else {}),
                 "checked_fingerprint": self.service.sha256_file(rechecked),
                 "files": self._workbook_fingerprints(stage)}
 

@@ -1,11 +1,13 @@
 """Keep legacy whole-task rebuilding away from staged AR execution facts."""
 from __future__ import annotations
 
+from .ar_skill_identity import is_ar_skill
+
 import json
 
 
 def legacy_rebuild_block_reason(workflow) -> str:
-    if workflow.skill_id != "ar-hexiao-daily":
+    if not is_ar_skill(workflow.skill_id):
         return ""
     context = json.loads(workflow.context_json or "{}")
     if (context.get("ar_execution") or context.get("ar_failure")

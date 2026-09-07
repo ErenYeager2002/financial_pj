@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .ar_skill_identity import is_ar_skill
+
 import hashlib
 import json
 import os
@@ -1135,6 +1137,18 @@ def _validated_snapshot_selection(
     return source, valid
 
 
+def _replay_source_skill_ids(db: Session, user: UserContext, skill_id: str) -> list[str]:
+    from .ar_skill_identity import AR_SKILL_ID, AR_LAB_SKILL_ID
+    from .authorization import get_skill_permission
+
+    ids = [skill_id]
+    if skill_id == AR_LAB_SKILL_ID:
+        permission = get_skill_permission(db, user.user_id, AR_SKILL_ID)
+        if user.is_admin or (permission and permission.can_run):
+            ids.append(AR_SKILL_ID)
+    return ids
+
+
 def _resolve_replay_selection(
     db: Session,
     *,
@@ -1147,11 +1161,17 @@ def _resolve_replay_selection(
     if not bundle_id and not legacy_id:
         return "", False
     assert_snapshot_replay_enabled(request.skill_id)
+    source_skill_id = request.skill_id
+    allowed_sources = _replay_source_skill_ids(db, user, request.skill_id)
+    if len(allowed_sources) > 1:
+        source = db.get(FetchedBundle, bundle_id) if bundle_id else db.get(WorkflowSession, legacy_id)
+        if source is not None and source.owner_id == user.user_id and source.skill_id in allowed_sources:
+            source_skill_id = source.skill_id
     try:
         resolved = resolve_replay_bundle(
             db,
             owner_id=user.user_id,
-            skill_id=request.skill_id,
+            skill_id=source_skill_id,
             dates=dates,
             bundle_id=bundle_id,
             source_workflow_id=legacy_id,
@@ -1173,7 +1193,7 @@ def list_fetched_snapshot_options(
         db.scalars(
             select(FetchedBundle)
             .where(
-                FetchedBundle.skill_id == skill_id,
+                FetchedBundle.skill_id.in_(_replay_source_skill_ids(db, user, skill_id)),
                 FetchedBundle.owner_id == user.user_id,
                 or_(
                     FetchedBundle.preview_available.is_(True),
@@ -2222,7 +2242,7 @@ def _mark_fetched_snapshot_retained(workflow: WorkflowSession) -> None:
 
 def _cleanup_terminal_fetched_snapshot(db: Session, workflow: WorkflowSession) -> None:
     """Remove raw fetch files while retaining completed previews for review."""
-    if workflow.skill_id != "ar-hexiao-daily":
+    if not is_ar_skill(workflow.skill_id):
         return
     storage_root = _workflow_storage_root(db, workflow)
     batch = db.get(WorkflowBatch, workflow.batch_id) if workflow.batch_id else None
@@ -2705,7 +2725,7 @@ def reusable_workflow_files(
     # snapshot launcher.  Keep the normal live-execution gate for other
     # workflow Skills, while allowing the explicitly development-gated AR
     # snapshot path to load its input copies.
-    if skill_id == "ar-hexiao-daily":
+    if is_ar_skill(skill_id):
         if not settings.ar_hexiao_execution_enabled:
             assert_snapshot_replay_enabled(skill_id)
     else:
@@ -2780,7 +2800,7 @@ def _assert_single_flight_available(
     exclude_workflow_id: str = "",
     exclude_batch_id: str = "",
 ) -> None:
-    if skill_id != "ar-hexiao-daily":
+    if not is_ar_skill(skill_id):
         return
     from .ar_execution_contract import INVESTIGATION_ACTION
 
@@ -3986,7 +4006,7 @@ def _new_action(
     input_extra: dict[str, Any] | None = None,
 ) -> WorkflowAction:
     state = "queued"
-    if workflow.skill_id == "ar-hexiao-daily":
+    if is_ar_skill(workflow.skill_id):
         from .ar_execution_runner import execution_version
         from .workflow_action_state import isolated_action_state
 
@@ -7330,7 +7350,7 @@ def _transition_reconciliation_plan_result(
         workflow.context_json = _json(context)
         return
     auto_apply = bool(context.get("started_from_form")) and (
-        workflow.skill_id == "ar-hexiao-daily"
+        is_ar_skill(workflow.skill_id)
         or not bool(context.get("requires_confirmation", True))
     )
     if auto_apply:
@@ -7540,7 +7560,7 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
             workflow.artifacts_json = _json(artifacts)
             stop = bool(context.get("stop_after_action"))
             auto_apply = bool(context.get("started_from_form")) and (
-                workflow.skill_id == "ar-hexiao-daily"
+                is_ar_skill(workflow.skill_id)
                 or not bool(context.get("requires_confirmation", True))
             )
             summary = result.get("summary", {})

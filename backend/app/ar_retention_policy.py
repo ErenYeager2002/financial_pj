@@ -1,6 +1,8 @@
 """Retention holds for unresolved AR executions, separate from replay permission."""
 from __future__ import annotations
 
+from .ar_skill_identity import is_ar_skill
+
 import json
 
 from sqlalchemy import or_, select
@@ -18,7 +20,7 @@ def _hold(code: str, message: str) -> dict:
 
 def workflow_retention_hold(workflow: WorkflowSession) -> dict | None:
     """A terminal workflow alone does not release its recovery evidence."""
-    if workflow.skill_id != "ar-hexiao-daily":
+    if not is_ar_skill(workflow.skill_id):
         return None
     try:
         context = json.loads(workflow.context_json or "{}")

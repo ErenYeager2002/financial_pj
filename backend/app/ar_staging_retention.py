@@ -1,6 +1,8 @@
 """Archive completed AR evidence before retiring its expired staging copy."""
 from __future__ import annotations
 
+from .ar_skill_identity import AR_SKILL_IDS
+
 import hashlib
 import json
 import os
@@ -341,7 +343,7 @@ def maintain_expired_staging(db) -> bool:
         WorkflowAction.name == "ar_complete_reconciliation", WorkflowAction.state == "succeeded",
         WorkflowAction.finished_at <= cutoff)
     ids = list(db.scalars(select(WorkflowSession.id).where(
-        WorkflowSession.skill_id == "ar-hexiao-daily", WorkflowSession.state == "succeeded",
+        WorkflowSession.skill_id.in_(AR_SKILL_IDS), WorkflowSession.state == "succeeded",
         WorkflowSession.id.in_(completed),
         ~WorkflowSession.context_json.contains('"staging_retention_complete": true', autoescape=True),
     ).order_by(WorkflowSession.updated_at, WorkflowSession.id).limit(100)))

@@ -270,6 +270,15 @@ const experiences: SkillExecutionExperience[] = [
   }
 ];
 
+const originalArExperience = experiences.find(experience => experience.skillId === 'ar-hexiao-daily')!;
+experiences.push({
+  ...originalArExperience,
+  key: 'workflow-ar-hexiao-daily-lab',
+  skillId: 'ar-hexiao-daily-lab',
+  creationTitle: '创建应收核销优化测试任务',
+  purpose: '使用独立材料测试优化版，与原工具分别保存任务及结果。'
+});
+
 const registry = new Map(experiences.map((experience) => [experience.skillId, experience]));
 
 export function executionExperienceForSkill(skillId: string): SkillExecutionExperience | null {

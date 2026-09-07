@@ -5,6 +5,7 @@ SUPPORTING_SKILL_IDS = frozenset({"env-doctor", "task-clarifier"})
 BUSINESS_EXECUTION_EXPERIENCE_IDS = frozenset(
     {
         "ar-hexiao-daily",
+        "ar-hexiao-daily-lab",
         "reconcile-bank",
         "receivables-merge-and-split",
         "labor-invoice-check",

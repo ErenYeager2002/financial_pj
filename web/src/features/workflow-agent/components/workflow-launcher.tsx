@@ -1,5 +1,6 @@
 'use client';
 
+import { isArSkill } from '@/features/workflow-agent/ar-skill-identity';
 import * as React from 'react';
 import Link from 'next/link';
 import { format, startOfDay } from 'date-fns';
@@ -185,8 +186,8 @@ export function WorkflowLauncher({
   const suppressDateClickRef = React.useRef(false);
   const selectedSkill = skills.find((skill) => skill.id === skillId);
   const executionModes = skillExecutionModes(selectedSkill);
-  const requiresZhiyunCredential = selectedSkill?.id === 'ar-hexiao-daily' && !useSnapshot;
-  const supportsSnapshotReplay = selectedSkill?.id === 'ar-hexiao-daily';
+  const requiresZhiyunCredential = isArSkill(selectedSkill?.id) && !useSnapshot;
+  const supportsSnapshotReplay = isArSkill(selectedSkill?.id);
   const replayableOptions = React.useMemo(
     () =>
       snapshotOptions.filter(
@@ -567,7 +568,7 @@ export function WorkflowLauncher({
       setDateError(dateRangeError);
       return;
     }
-    const rerunSuccessfulDates = skillId === 'ar-hexiao-daily';
+    const rerunSuccessfulDates = isArSkill(skillId);
     setWorking(true);
     setError('');
     setDateError('');

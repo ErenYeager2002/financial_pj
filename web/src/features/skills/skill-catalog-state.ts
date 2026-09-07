@@ -1,3 +1,4 @@
+import { isArSkill } from '@/features/workflow-agent/ar-skill-identity';
 import type { SkillDedication, SkillSummary } from '@/features/platform-api/types';
 import { executionExperienceForSkill } from './execution-experience';
 
@@ -44,7 +45,7 @@ export function skillRiskLabels(skill: Pick<SkillSummary, 'id' | 'risk'>): strin
   if (skill.risk.requires_confirmation) labels.push('需要确认');
   // ar-hexiao-daily follows the current controlled auto-write path after its
   // pre-write checks; it does not enter an administrator approval stage.
-  if (skill.risk.requires_approval && skill.id !== 'ar-hexiao-daily') labels.push('需要审批');
+  if (skill.risk.requires_approval && !isArSkill(skill.id)) labels.push('需要审批');
   return labels;
 }
 

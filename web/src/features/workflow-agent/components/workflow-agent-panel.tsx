@@ -1,5 +1,6 @@
 'use client';
 
+import { isArSkill } from '@/features/workflow-agent/ar-skill-identity';
 import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -361,7 +362,7 @@ export function WorkflowAgentPanel({
       )}
 
       {workflow.stage === 'awaiting_apply_confirmation' &&
-        workflow.skill_id !== 'ar-hexiao-daily' && (
+        !isArSkill(workflow.skill_id) && (
           <Alert>
             <AlertTitle>核销日清已经生成</AlertTitle>
             <AlertDescription className='flex flex-wrap items-center justify-between gap-3'>

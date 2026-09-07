@@ -1,6 +1,8 @@
 """Validate the fixed post-fetch contract before accepting an AR task."""
 from __future__ import annotations
 
+from .ar_skill_identity import is_ar_skill
+
 import json
 from pathlib import Path
 from typing import Any
@@ -82,7 +84,7 @@ def validate_snapshot(root: Path) -> str:
 
     manifest_path = snapshot_file(root, "tool.yaml", limit=256 * 1024, label="Skill 声明")
     manifest = SkillManifest.model_validate(yaml.safe_load(manifest_path.read_text(encoding="utf-8")))
-    if manifest.id != "ar-hexiao-daily" or manifest.execution is None:
+    if not is_ar_skill(manifest.id) or manifest.execution is None:
         raise SnapshotCompatibilityError("分阶段核销契约只能用于声明双执行模式的应收核销 Skill。")
     if set(manifest.execution.modes) != {"workflow", "pi_harness"}:
         raise SnapshotCompatibilityError("新版应收核销必须保留 Workflow 与 Pi Harness 两种固定执行方式。")
@@ -106,4 +108,8 @@ def validate_snapshot(root: Path) -> str:
         "workbook_finalize.py", "formula_compare.py", "xlsx_patch.py", "audit_shifted_details.py",
     ):
         snapshot_file(root, f"vendor/scripts/{name}", limit=4 * 1024 * 1024, label=f"必要脚本 {name}")
+    from .ar_skill_identity import AR_LAB_SKILL_ID
+    if manifest.id == AR_LAB_SKILL_ID:
+        for name in ("workbook_read_cache.py", "run_read_cached.py"):
+            snapshot_file(root, f"vendor/scripts/{name}", limit=256 * 1024, label="优化测试必要脚本")
     return contract

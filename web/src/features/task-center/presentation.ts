@@ -1,3 +1,5 @@
+import { isArSkill } from '@/features/workflow-agent/ar-skill-identity';
+
 export type TaskCenterEmptyState = {
   title: string;
   description: string;
@@ -19,7 +21,7 @@ const STATE_LABELS: Record<string, string> = {
 };
 
 export function taskCenterTypeLabel(referenceType: string, skillId: string): string {
-  if (skillId === 'ar-hexiao-daily') {
+  if (isArSkill(skillId)) {
     return referenceType === 'workflow_batch' ? '应收核销批次' : '应收核销日期';
   }
   return TYPE_LABELS[referenceType] ?? '任务';
