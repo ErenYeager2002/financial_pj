@@ -139,8 +139,6 @@ def validate_production_values(values: dict[str, str]) -> None:
     origin, host = normalize_public_origin(require(values, "PLATFORM_PUBLIC_ORIGIN", OUTPUT))
     if values.get("PLATFORM_HOST") != host:
         raise RuntimeError("PLATFORM_HOST 必须与 PLATFORM_PUBLIC_ORIGIN 的域名一致。")
-    if values.get("FINANCIAL_CLERK_AUTHORIZED_PARTIES") != origin:
-        raise RuntimeError("Clerk authorized party 必须与平台 HTTPS origin 完全一致。")
     if values.get("FINANCIAL_TRUSTED_ORIGINS") != origin:
         raise RuntimeError("可信来源必须与平台 HTTPS origin 完全一致。")
     bind_address = normalize_bind_address(require(values, "PLATFORM_BIND_ADDRESS", OUTPUT))
@@ -168,10 +166,7 @@ def validate_production_values(values: dict[str, str]) -> None:
     )
     for key in (
         "POSTGRES_PASSWORD",
-        "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
-        "CLERK_SECRET_KEY",
         "FINANCIAL_PI_HARNESS_TOKEN",
-        "FINANCIAL_CLERK_ISSUER",
     ):
         require(values, key, OUTPUT)
     if len(values["FINANCIAL_PI_HARNESS_TOKEN"]) < 32:
@@ -220,10 +215,6 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def build_values(args: argparse.Namespace) -> dict[str, str]:
-    next_env_path = NEXT_ROOT / ".env.local"
-    backend_env_path = PROJECT_ROOT / ".env.runtime.local"
-    next_env = read_env(next_env_path)
-    backend_env = read_env(backend_env_path)
     existing = read_env(OUTPUT)
 
     origin, host = normalize_public_origin(
@@ -281,15 +272,9 @@ def build_values(args: argparse.Namespace) -> dict[str, str]:
         "POSTGRES_PASSWORD": existing.get("POSTGRES_PASSWORD") or secrets.token_urlsafe(36),
         "FINANCIAL_PI_HARNESS_TOKEN": existing.get("FINANCIAL_PI_HARNESS_TOKEN")
         or secrets.token_urlsafe(48),
-        "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY": require(
-            next_env, "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY", next_env_path
-        ),
-        "CLERK_SECRET_KEY": require(next_env, "CLERK_SECRET_KEY", next_env_path),
-        "FINANCIAL_AUTH_MODE": "clerk",
-        "FINANCIAL_CLERK_ISSUER": require(
-            backend_env, "FINANCIAL_CLERK_ISSUER", backend_env_path
-        ),
-        "FINANCIAL_CLERK_AUTHORIZED_PARTIES": origin,
+        "FINANCIAL_AUTH_MODE": "session",
+        "FINANCIAL_TASK_DISCOVERY_ENABLED": "true",
+        "FINANCIAL_AR_HEXIAO_EXECUTION_ENABLED": "true",
         "FINANCIAL_TRUSTED_ORIGINS": origin,
         "PLATFORM_PUBLIC_ORIGIN": origin,
         "PLATFORM_HOST": host,

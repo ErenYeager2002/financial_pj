@@ -87,14 +87,14 @@ class Settings:
     # Read-only reminder discovery is independently gated from reconciliation.
     task_discovery_enabled: bool = _env_bool(
         "FINANCIAL_TASK_DISCOVERY_ENABLED",
-        False,
+        True,
     )
     task_discovery_holidays: tuple[str, ...] = _csv_env("FINANCIAL_TASK_DISCOVERY_HOLIDAYS")
-    # AR reconciliation stays available to synthetic tests only until the
-    # production read-only gate is explicitly lifted.
+    # AR reconciliation is available by default, like other published tools.
+    # An explicit false value remains available for maintenance pauses.
     ar_hexiao_execution_enabled: bool = _env_bool(
         "FINANCIAL_AR_HEXIAO_EXECUTION_ENABLED",
-        os.getenv("FINANCIAL_ENV", "development").strip().lower() == "test",
+        True,
     )
     # Existing Zhiyun snapshots may be replayed only by development/test
     # deployments.  This is deliberately separate from the live execution
@@ -118,7 +118,7 @@ class Settings:
     login_lockout_seconds: int = max(1, int(os.getenv("FINANCIAL_LOGIN_LOCKOUT_SECONDS", "300")))
     bootstrap_admin_username: str = os.getenv("FINANCIAL_BOOTSTRAP_ADMIN_USERNAME", "admin")
     bootstrap_admin_password: str = os.getenv("FINANCIAL_BOOTSTRAP_ADMIN_PASSWORD", "")
-    auth_mode: str = os.getenv("FINANCIAL_AUTH_MODE", "session").strip().lower()
+    auth_mode: str = "session"
     clerk_issuer: str = os.getenv("FINANCIAL_CLERK_ISSUER", "").rstrip("/")
     clerk_jwks_url: str = os.getenv("FINANCIAL_CLERK_JWKS_URL", "")
     clerk_jwt_key: str = os.getenv("FINANCIAL_CLERK_JWT_KEY", "").replace("\\n", "\n")

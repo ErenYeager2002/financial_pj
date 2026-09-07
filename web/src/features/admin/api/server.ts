@@ -6,7 +6,6 @@ import type {
   AdminUser,
   AuditEvent,
   AuditEventPage,
-  FeatureControl,
   PlatformSession,
   SkillPermission
 } from '@/features/platform-api/types';
@@ -188,20 +187,4 @@ export async function listAdminAuditEventPage({
     params.set('before_id', String(beforeId));
   }
   return platformServerRequest<AuditEventPage>(`/api/admin/audit-events/page?${params}`);
-}
-
-export async function listFeatureControls(): Promise<FeatureControl[]> {
-  await requirePlatformAdmin();
-  return platformServerRequest<FeatureControl[]>('/api/admin/feature-controls');
-}
-
-export async function updateFeatureControl(key: string, enabled: boolean): Promise<FeatureControl> {
-  await requirePlatformAdmin();
-  if (!/^[a-z0-9-]{1,128}$/.test(key)) {
-    throw new PlatformApiError(400, '功能开关标识格式无效。');
-  }
-  return platformServerRequest<FeatureControl>(
-    `/api/admin/feature-controls/${encodeURIComponent(key)}`,
-    { method: 'PUT', body: JSON.stringify({ enabled }) }
-  );
 }

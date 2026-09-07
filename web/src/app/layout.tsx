@@ -9,7 +9,6 @@ import { cookies } from 'next/headers';
 import NextTopLoader from 'nextjs-toploader';
 import { NuqsAdapter } from 'nuqs/adapters/next/app';
 import '../styles/globals.css';
-import { authMode } from '@/features/auth/auth-mode';
 
 const META_THEME_COLORS = {
   light: '#ffffff',
@@ -84,7 +83,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             disableTransitionOnChange
             enableColorScheme
           >
-            <Providers activeThemeValue={themeToApply} authMode={authMode()}>
+            <Providers activeThemeValue={themeToApply}>
               <Toaster />
               {children}
             </Providers>

@@ -1,7 +1,6 @@
 import { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import SignInViewPage from '@/features/auth/components/sign-in-view';
-import { authMode } from '@/features/auth/auth-mode';
 import { getPlatformSession } from '@/features/auth/api/service';
 
 export const metadata: Metadata = {
@@ -19,5 +18,5 @@ export default async function Page() {
   if (session) {
     redirect(session.must_change_password ? '/auth/change-password' : '/dashboard/overview');
   }
-  return <SignInViewPage mode={authMode()} />;
+  return <SignInViewPage />;
 }

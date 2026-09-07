@@ -9,8 +9,5 @@ export default async function ChangePasswordPage() {
   } catch {
     redirect('/auth/sign-in');
   }
-  if (session.auth_provider === 'clerk') {
-    redirect('/dashboard/overview');
-  }
   return <main className='flex min-h-screen items-center justify-center p-4'><ChangePasswordForm mustChangePassword={session.must_change_password} /></main>;
 }

@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import math
+import os
 import re
 import time
 from contextlib import asynccontextmanager
@@ -74,7 +75,6 @@ from .registry import RegisteredSkill, registry
 from .resource_policy import assert_owner
 from .runtime_health_service import runtime_health
 from .routers import admin_approvals as admin_approvals_router
-from .routers import admin_feature_controls as admin_feature_controls_router
 from .routers import admin_observability as admin_observability_router
 from .routers import admin_skill_dedications as admin_skill_dedications_router
 from .routers import admin_skills as admin_skills_router
@@ -179,30 +179,19 @@ from .workflow_service import (
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    if settings.auth_mode not in {"session", "hybrid", "clerk"}:
-        raise RuntimeError("FINANCIAL_AUTH_MODE 必须是 session、hybrid 或 clerk。")
     if (
         settings.environment == "production"
-        and settings.auth_mode in {"session", "hybrid"}
         and not settings.session_cookie_secure
+        and os.getenv("FINANCIAL_ALLOW_HTTP", "false").strip().lower() != "true"
     ):
         raise RuntimeError(
             "生产环境必须设置 FINANCIAL_SESSION_COOKIE_SECURE=true（并要求 HTTPS）。"
         )
-    if settings.auth_mode in {"hybrid", "clerk"} and not settings.clerk_issuer:
-        raise RuntimeError("启用 Clerk 认证时必须设置 FINANCIAL_CLERK_ISSUER。")
-    if (
-        settings.environment == "production"
-        and settings.auth_mode in {"hybrid", "clerk"}
-        and not settings.clerk_authorized_parties
-    ):
-        raise RuntimeError("生产环境启用 Clerk 时必须设置 FINANCIAL_CLERK_AUTHORIZED_PARTIES。")
     settings.ensure_directories()
     init_db()
     registry.refresh()
-    if settings.auth_mode in {"session", "hybrid"}:
-        with SessionLocal() as db:
-            bootstrap_admin(db)
+    with SessionLocal() as db:
+        bootstrap_admin(db)
     yield
 
 
@@ -237,7 +226,6 @@ app.include_router(auth_router.router)
 app.include_router(profile_router.router)
 app.include_router(pi_harness_router.router)
 app.include_router(admin_approvals_router.router)
-app.include_router(admin_feature_controls_router.router)
 app.include_router(admin_observability_router.router)
 app.include_router(admin_skill_dedications_router.router)
 app.include_router(admin_skills_router.router)

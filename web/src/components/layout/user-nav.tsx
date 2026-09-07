@@ -12,17 +12,8 @@ import {
 import { UserAvatarProfile } from '@/components/user-avatar-profile';
 import type { PlatformSession } from '@/features/platform-api/types';
 import { platformAvatarUser } from '@/features/profile/avatar';
-import { useClerk } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
 
-function ClerkSignOutItem() {
-  const { signOut } = useClerk();
-  return (
-    <DropdownMenuItem onClick={() => signOut({ redirectUrl: '/auth/sign-in' })}>
-      退出登录
-    </DropdownMenuItem>
-  );
-}
 
 export function UserNav({ session }: { session: PlatformSession }) {
   const router = useRouter();
@@ -60,11 +51,7 @@ export function UserNav({ session }: { session: PlatformSession }) {
           </DropdownMenuGroup>
           <DropdownMenuSeparator />
           <DropdownMenuGroup>
-            {session.auth_provider === 'clerk' ? (
-              <ClerkSignOutItem />
-            ) : (
-              <DropdownMenuItem onClick={() => void localSignOut()}>退出登录</DropdownMenuItem>
-            )}
+            <DropdownMenuItem onClick={() => void localSignOut()}>退出登录</DropdownMenuItem>
           </DropdownMenuGroup>
         </DropdownMenuContent>
       </DropdownMenu>

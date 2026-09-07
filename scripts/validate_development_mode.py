@@ -138,19 +138,10 @@ def validate() -> None:
     backend_environment = compose.get("x-backend-environment", {})
     if str(backend_environment.get("FINANCIAL_ENV")) != "development":
         raise AssertionError("development backend must set FINANCIAL_ENV=development")
-    if str(backend_environment.get("FINANCIAL_AUTH_MODE")) != "${FINANCIAL_AUTH_MODE:-clerk}":
-        raise AssertionError("development backend must expose the selected authentication mode")
-    for key in (
-        "FINANCIAL_CLERK_ISSUER",
-        "FINANCIAL_CLERK_AUTHORIZED_PARTIES",
-        "FINANCIAL_DEV_CLERK_AUTO_PROVISION_ADMIN",
-    ):
-        if key not in backend_environment:
-            raise AssertionError(f"development backend is missing {key}")
+    if str(backend_environment.get("FINANCIAL_AUTH_MODE")) != "session":
+        raise AssertionError("development backend must use session authentication")
     next_environment = _environment(next_service)
     for key in (
-        "CLERK_SECRET_KEY",
-        "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
         "FINANCIAL_AUTH_MODE",
         "FINANCIAL_SESSION_COOKIE",
     ):
@@ -159,11 +150,11 @@ def validate() -> None:
     if str(backend_environment.get("FINANCIAL_SESSION_COOKIE_SECURE")).lower() != "false":
         raise AssertionError("localhost development must use a non-secure session cookie")
     execution_flag = str(backend_environment.get("FINANCIAL_AR_HEXIAO_EXECUTION_ENABLED", ""))
-    if not execution_flag.endswith(":-false}"):
-        raise AssertionError("real AR reconciliation execution must be disabled by default")
+    if not execution_flag.endswith(":-true}"):
+        raise AssertionError("AR reconciliation execution must be enabled by default")
     discovery_flag = str(backend_environment.get("FINANCIAL_TASK_DISCOVERY_ENABLED", ""))
-    if not discovery_flag.endswith(":-false}"):
-        raise AssertionError("real task discovery must be disabled by default")
+    if not discovery_flag.endswith(":-true}"):
+        raise AssertionError("task discovery must be enabled by default")
 
     for service_name, service in services.items():
         for port in service.get("ports", []):

@@ -30,7 +30,6 @@ import type {
   SkillSummary
 } from '@/features/platform-api/types';
 import { formatDate } from '@/lib/format';
-import type { AuthMode } from '@/features/auth/auth-mode';
 
 interface PlatformUserManagementProps {
   session: PlatformSession;
@@ -39,7 +38,6 @@ interface PlatformUserManagementProps {
   initialAuditPage: AuditEventPage;
   initialAuditFilters: AuditFilters;
   initialAuditTab: boolean;
-  authMode: AuthMode;
 }
 
 interface AuditFilters {
@@ -135,8 +133,7 @@ export function PlatformUserManagement({
   skills,
   initialAuditPage,
   initialAuditFilters,
-  initialAuditTab,
-  authMode
+  initialAuditTab
 }: PlatformUserManagementProps) {
   const [users, setUsers] = useState(initialUsers);
   const [auditEvents, setAuditEvents] = useState(initialAuditPage.items ?? []);
@@ -151,9 +148,7 @@ export function PlatformUserManagement({
   const [displayName, setDisplayName] = useState('');
   const [role, setRole] = useState('finance_user');
   const [status, setStatus] = useState('active');
-  const [clerkUserId, setClerkUserId] = useState('');
   const [resetPassword, setResetPassword] = useState('');
-  const [clerkOrganizationId, setClerkOrganizationId] = useState('');
   const [permissions, setPermissions] = useState<Record<string, PermissionState>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -175,9 +170,7 @@ export function PlatformUserManagement({
     setDisplayName(user.display_name);
     setRole(user.role);
     setStatus(user.status);
-    setClerkUserId(user.clerk_user_id ?? '');
     setResetPassword('');
-    setClerkOrganizationId(user.clerk_organization_id ?? '');
     setPermissions(permissionsFor(user, skills));
     setError('');
   }
@@ -249,8 +242,6 @@ export function PlatformUserManagement({
         display_name: displayName,
         role,
         status,
-        clerk_user_id: clerkUserId || null,
-        clerk_organization_id: clerkOrganizationId || null
       })
     });
     if (!response.ok) {
@@ -704,32 +695,12 @@ export function PlatformUserManagement({
                     <option value='disabled'>禁用</option>
                   </select>
                 </label>
-                <label htmlFor='edit-clerk-user' className='grid gap-1 text-sm'>
-                  Clerk User ID
-                  <Input
-                    id='edit-clerk-user'
-                    value={clerkUserId}
-                    onChange={(event) => setClerkUserId(event.target.value)}
-                    maxLength={128}
-                    placeholder='留空表示不绑定'
-                  />
-                </label>
-                <label htmlFor='edit-clerk-org' className='grid gap-1 text-sm md:col-span-2'>
-                  Clerk Organization ID
-                  <Input
-                    id='edit-clerk-org'
-                    value={clerkOrganizationId}
-                    onChange={(event) => setClerkOrganizationId(event.target.value)}
-                    maxLength={128}
-                    placeholder='可选，用于限制组织'
-                  />
-                </label>
                 <div className='md:col-span-2'>
                   <Button type='button' onClick={() => void saveUser()} disabled={busy}>
                     {busy ? '保存中…' : '保存账号信息'}
                   </Button>
                 </div>
-                {authMode !== 'clerk' && <div className='space-y-2 border-t pt-4 md:col-span-2'>
+                <div className='space-y-2 border-t pt-4 md:col-span-2'>
                   <h3 className='font-medium'>重置为一次性密码</h3>
                   <p className='text-sm text-muted-foreground'>
                     重置后立即撤销该用户的现有会话，并要求下次登录修改密码。审计记录不保存密码内容。
@@ -753,7 +724,7 @@ export function PlatformUserManagement({
                       重置密码并撤销会话
                     </Button>
                   </div>
-                </div>}
+                </div>
               </section>
 
               {role === 'finance_user' ? (

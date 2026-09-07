@@ -4,7 +4,6 @@ import { PlatformUserManagement } from '@/features/admin/components/platform-use
 import { platformServerRequest } from '@/features/platform-api/server-client';
 import type { PlatformSession } from '@/features/platform-api/types';
 import { listSkillCatalog } from '@/features/skills/api/server';
-import { authMode } from '@/features/auth/auth-mode';
 
 export const metadata = {
   title: '用户与权限'
@@ -58,7 +57,6 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
           initialAuditPage={auditPage}
           initialAuditFilters={auditFilters}
           initialAuditTab={raw.tab === 'audit'}
-          authMode={authMode()}
         />
       </div>
     </PageContainer>

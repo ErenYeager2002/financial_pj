@@ -7,11 +7,11 @@
 - 运行时 Skill 使用独立 `skill-data` 持久卷；API 可原子发布，Worker 只读挂载；
 - Worker 只加入 `internal` 数据网络，不能直接访问公网；需要联网的 Skill 子进程只能通过出站代理；
 - 出站代理的 `strict` 模式只接受 HTTPS CONNECT，并按精确 FQDN 和 443 端口放行；`internal` 模式只允许显式配置的 RFC1918 IPv4、HTTP 协议和端口；空目标列表默认拒绝全部目标；
-- FastAPI 和 Next.js 可访问外部 Clerk，浏览器只访问同一 HTTPS 入口；
+- 平台仅使用账号密码和服务端会话登录，浏览器只访问同一 HTTPS 入口；
 - `ar-hexiao-daily` 可按任务选择 Workflow 或 Pi Harness；两种方式都只通过平台受控 Worker 执行真实取数和工作副本写入。
 
 AI 助手生产默认使用服务端 Pi Agent Runtime（`AGENT_RUNTIME=pi`）。如需灰度旧实现，才设置
-`AGENT_RUNTIME=legacy`；在该模式下把测试账号的 Clerk User ID 填入 `AGENT_RUNTIME_PI_USERS`
+`AGENT_RUNTIME=legacy`；在该模式下把测试账号的平台用户 ID 填入 `AGENT_RUNTIME_PI_USERS`
 （逗号分隔），这些账号会继续使用 Pi，其余账号使用旧实现。`AGENT_RUNTIME_FALLBACK=legacy`
 时，Pi 在尚未调用业务工具就发生故障时自动回退旧实现；如果 Pi 已经调用工具，则不会重放
 旧流程，避免重复改变任务状态。
@@ -23,10 +23,10 @@ Pi 只加载平台按当前用户过滤出的业务工具，模型密钥仍由 F
 写入型工作流仍保留发起人的写入确认和变更复核。执行失败时，任务卡片直接显示员工、Skill、
 失败步骤和原因。
 
-生产配置中的 `FINANCIAL_AR_HEXIAO_EXECUTION_ENABLED=false` 会在工作流创建、旧消息入口、
-批次重试、Agent 动作和 Workflow Worker 入口统一拒绝该 Skill 的真实执行；读取已有任务状态
-仍可用。当前本机联调配置已显式设为 `true`，因此可进行真实流程联调；正式环境只有在完成
-智云连接和写入副本验收后才应设为 `true`。不要仅依赖前端按钮禁用来保证这项限制。
+应收核销与其他已发布工具一样默认启用，`FINANCIAL_AR_HEXIAO_EXECUTION_ENABLED` 默认值为 `true`。
+用户仍需具备工具权限，并提供有效凭据和业务材料；写前校验、工作副本、回读和幂等规则保持不变。
+如需维护暂停，可显式设置 `false`；后端会统一拒绝新的核销执行，已有任务状态仍可读取。
+新建配置不再自动关闭核销。启用开关不会自动启动 Worker、创建任务或执行财务写入。
 
 先生成被 Git 忽略且限制 ACL 的 `.env`：
 
@@ -117,3 +117,7 @@ curl.exe -k -I https://localhost:8443/auth/sign-in
 ```
 
 创建两个脏工作树的源码回滚快照时，使用 `scripts/create_source_rollback.py`。快照只收集 Git tracked diff 和未忽略的 untracked 文件；生产 `.env`、凭据密钥及其他忽略文件不会进入归档。
+
+## 登录与任务提醒
+
+功能开关页面及管理接口已移除。平台只使用账号密码登录，不再加载 Clerk 登录组件或接受 Clerk 身份令牌。历史用户绑定字段保留用于数据兼容，不再参与登录。任务提醒默认开启，停用的旧功能开关记录不再覆盖部署配置；提醒仍依赖任务发现 Worker、负责人订阅和有效业务凭据，不会自动创建核销任务。

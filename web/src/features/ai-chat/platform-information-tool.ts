@@ -9,7 +9,6 @@ const ADMIN_RESOURCES = new Set<PlatformInformationResource>([
   'approvals',
   'model_connections',
   'model_providers',
-  'feature_controls',
   'skill_releases',
   'skill_source_bindings',
   'skill_availability',
@@ -44,7 +43,6 @@ export type PlatformInformationResource =
   | 'approvals'
   | 'model_connections'
   | 'model_providers'
-  | 'feature_controls'
   | 'skill_releases'
   | 'skill_source_bindings'
   | 'skill_availability'
@@ -361,8 +359,6 @@ export function platformInformationPath(
       return '/api/model-connections';
     case 'model_providers':
       return '/api/model-providers';
-    case 'feature_controls':
-      return '/api/admin/feature-controls';
     case 'skill_releases':
       return '/api/admin/skill-releases';
     case 'skill_source_bindings':
@@ -416,7 +412,6 @@ export function createPlatformInformationTool(
         Type.Literal('approvals'),
         Type.Literal('model_connections'),
         Type.Literal('model_providers'),
-        Type.Literal('feature_controls'),
         Type.Literal('skill_releases'),
         Type.Literal('skill_source_bindings'),
         Type.Literal('skill_availability'),

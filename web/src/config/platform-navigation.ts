@@ -66,11 +66,6 @@ const ADMIN_GROUPS: PlatformNavigationGroup[] = [
         title: '模型连接',
         url: '/dashboard/model-connections',
         icon: 'settings'
-      },
-      {
-        title: '功能开关',
-        url: '/dashboard/feature-controls',
-        icon: 'settings'
       }
     ]
   },

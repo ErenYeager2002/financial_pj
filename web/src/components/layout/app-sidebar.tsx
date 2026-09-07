@@ -29,7 +29,6 @@ import { useMediaQuery } from '@/hooks/use-media-query';
 import type { NavGroup } from '@/types';
 import type { PlatformSession } from '@/features/platform-api/types';
 import { platformAvatarUser } from '@/features/profile/avatar';
-import { useClerk } from '@clerk/nextjs';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import * as React from 'react';
@@ -40,15 +39,6 @@ interface AppSidebarProps {
   session: PlatformSession;
 }
 
-function ClerkLogoutItem() {
-  const { signOut } = useClerk();
-  return (
-    <DropdownMenuItem onClick={() => signOut({ redirectUrl: '/auth/sign-in' })}>
-      <Icons.logout aria-hidden className='mr-2 h-4 w-4' />
-      退出登录
-    </DropdownMenuItem>
-  );
-}
 
 function LocalLogoutItem() {
   const router = useRouter();
@@ -195,7 +185,7 @@ export default function AppSidebar({ navGroups, session }: AppSidebarProps): Rea
                 </DropdownMenuGroup>
                 <DropdownMenuSeparator />
                 <DropdownMenuGroup>
-                  {session.auth_provider === 'clerk' ? <ClerkLogoutItem /> : <LocalLogoutItem />}
+                  <LocalLogoutItem />
                 </DropdownMenuGroup>
               </DropdownMenuContent>
             </DropdownMenu>

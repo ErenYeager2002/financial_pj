@@ -65,10 +65,6 @@ function Initialize-DevelopmentEnv {
 
     $SourceValues = Read-EnvValues $ProductionEnvFile
     $Keys = @(
-        "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
-        "CLERK_SECRET_KEY",
-        "FINANCIAL_AUTH_MODE",
-        "FINANCIAL_CLERK_ISSUER",
         "FINANCIAL_NETWORK_POLICY_MODE",
         "FINANCIAL_EGRESS_PROXY_TARGETS",
         "FINANCIAL_EGRESS_PROXY_ALLOWLIST",
@@ -85,30 +81,12 @@ function Initialize-DevelopmentEnv {
         $Value = if ($SourceValues.ContainsKey($Key)) { $SourceValues[$Key] } else { "" }
         $Lines += "${Key}=${Value}"
     }
-    $Lines += "FINANCIAL_DEV_AR_HEXIAO_EXECUTION_ENABLED=false"
-    $Lines += "FINANCIAL_DEV_TASK_DISCOVERY_ENABLED=false"
+    $Lines += "FINANCIAL_DEV_AR_HEXIAO_EXECUTION_ENABLED=true"
+    $Lines += "FINANCIAL_DEV_TASK_DISCOVERY_ENABLED=true"
+    $Lines += "FINANCIAL_AUTH_MODE=session"
     $Lines += "FINANCIAL_TASK_DISCOVERY_HOLIDAYS="
     Set-Content -LiteralPath $DevEnvFile -Value $Lines -Encoding utf8
     Write-Host "已创建开发配置：deploy\development\.env（未复制生产数据）。"
-}
-
-function Assert-DevelopmentCredentials {
-    $Values = Read-EnvValues $DevEnvFile
-    $AuthMode = if ($Values.ContainsKey("FINANCIAL_AUTH_MODE")) {
-        $Values["FINANCIAL_AUTH_MODE"]
-    } else {
-        "clerk"
-    }
-    if ($AuthMode -notin @("session", "clerk", "hybrid")) {
-        throw "FINANCIAL_AUTH_MODE 只能是 session、clerk 或 hybrid。"
-    }
-    if ($AuthMode -in @("clerk", "hybrid")) {
-        foreach ($Key in @("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY", "CLERK_SECRET_KEY", "FINANCIAL_CLERK_ISSUER")) {
-            if (-not $Values.ContainsKey($Key) -or [string]::IsNullOrWhiteSpace($Values[$Key])) {
-                throw "当前认证模式缺少 Clerk 配置：$Key。"
-            }
-        }
-    }
 }
 
 function Ensure-DevelopmentPiHarnessToken {
@@ -333,7 +311,6 @@ if ($ValidateOnly) {
 
 Initialize-DevelopmentEnv
 Ensure-DevelopmentPiHarnessToken
-Assert-DevelopmentCredentials
 $LanAddress = ""
 if ($Lan) {
     if (-not (Test-Path -LiteralPath $LanComposeFile)) {

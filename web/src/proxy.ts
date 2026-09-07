@@ -1,20 +1,9 @@
-import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
-import { NextFetchEvent, NextRequest, NextResponse } from 'next/server';
-import { authMode } from '@/features/auth/auth-mode';
+import { NextRequest, NextResponse } from 'next/server';
 
-const isProtectedRoute = createRouteMatcher(['/dashboard(.*)', '/api/platform(.*)']);
-
-const clerkProxy = clerkMiddleware(async (auth, req: NextRequest) => {
-  if (isProtectedRoute(req)) await auth.protect();
-});
-
-export default async function proxy(req: NextRequest, event: NextFetchEvent) {
-  const mode = authMode();
+export default async function proxy(req: NextRequest) {
   const cookieName = process.env.FINANCIAL_SESSION_COOKIE?.trim() || 'financial_session';
-  if (mode === 'clerk' || (mode === 'hybrid' && !req.cookies.has(cookieName))) {
-    return clerkProxy(req, event);
-  }
-  if (!isProtectedRoute(req)) return NextResponse.next();
+  const path = req.nextUrl.pathname;
+  if (!(path === '/dashboard' || path.startsWith('/dashboard/') || path === '/api/platform' || path.startsWith('/api/platform/'))) return NextResponse.next();
   const sessionToken = req.cookies.get(cookieName)?.value;
   if (!sessionToken) {
     if (req.nextUrl.pathname.startsWith('/api/')) {
@@ -38,7 +27,6 @@ export default async function proxy(req: NextRequest, event: NextFetchEvent) {
     return NextResponse.json({ detail: '财务平台暂时不可用。' }, { status: 503 });
   }
   if (sessionResponse.status === 401) {
-    if (mode === 'hybrid') return clerkProxy(req, event);
     return NextResponse.redirect(new URL('/auth/sign-in', req.url));
   }
   if (!sessionResponse.ok) {
@@ -55,8 +43,6 @@ export const config = {
     // Skip Next.js internals and all static files, unless found in search params
     '/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)',
     // Always run for API routes
-    '/(api|trpc)(.*)',
-    // Required by Clerk's auto-proxy
-    '/__clerk/:path*'
+    '/(api|trpc)(.*)'
   ]
 };

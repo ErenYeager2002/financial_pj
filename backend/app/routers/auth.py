@@ -58,11 +58,6 @@ def auth_login(
     response: Response,
     db: Session = Depends(get_db),
 ) -> SessionRead:
-    if settings.auth_mode == "clerk":
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="本地登录未启用。",
-        )
     user = login(db, body.username, body.password)
     if not user:
         record_audit(db, action="auth.login", outcome="failed")
@@ -96,8 +91,6 @@ def auth_change_password(
     user: UserContext = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> SessionRead:
-    if user.auth_provider == "clerk":
-        raise HTTPException(status_code=409, detail="当前账号密码由 Clerk 管理。")
     stored = db.get(User, user.user_id)
     if stored is None:
         raise HTTPException(status_code=404, detail="用户不存在。")
