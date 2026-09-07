@@ -275,8 +275,8 @@ experiences.push({
   ...originalArExperience,
   key: 'workflow-ar-hexiao-daily-lab',
   skillId: 'ar-hexiao-daily-lab',
-  creationTitle: '创建应收核销优化测试任务',
-  purpose: '使用独立材料测试优化版，与原工具分别保存任务及结果。'
+  creationTitle: '创建应收核销日清极速版任务',
+  purpose: '使用独立材料运行极速版，与原工具分别保存任务及结果。'
 });
 
 const registry = new Map(experiences.map((experience) => [experience.skillId, experience]));
