@@ -3,7 +3,7 @@
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { WorkflowBatchRead, WorkflowRead } from '@/features/platform-api/types';
-import { useId, useState, type JSX } from 'react';
+import { useId, useState, type JSX, type ReactNode } from 'react';
 import { RESULT_COLORS, WorkflowResultDetails, type ResultFilter } from './workflow-result-details';
 
 type ResultSource = Pick<
@@ -72,10 +72,14 @@ function metricValue(
 
 export function WorkflowResultSummary({
   source,
-  title
+  title,
+  controls,
+  emptyMessage
 }: {
   source: ResultSource;
   title: string;
+  controls?: ReactNode;
+  emptyMessage?: string;
 }): JSX.Element | null {
   const [selection, setSelection] = useState<{ sourceId: string; filter: ResultFilter } | null>(null);
   const filter = selection?.sourceId === source.id ? selection.filter : null;
@@ -94,10 +98,16 @@ export function WorkflowResultSummary({
     return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null;
   };
   const accrualCount = noticeCount('跨月计提SOD数');
-  if (!hasResults && !emptyDay && !accrualCount) return null;
+  if (!hasResults && !emptyDay && !accrualCount && !emptyMessage) return null;
   const pending = ['unallocated_pending', 'conflicts_pending', 'exceptions'].some(key => {
     const value = source.result_metrics?.[key]?.value ?? source.result_summary?.[LEGACY_KEYS[key]];
     return typeof value === 'number' && value > 0;
+  });
+
+  const pendingKnown = emptyDay || ['unallocated_pending', 'conflicts_pending', 'exceptions'].every(key => {
+    const metric = source.result_metrics?.[key];
+    if (metric) return metric.state === 'value' && typeof metric.value === 'number';
+    return !final && typeof source.result_summary?.[LEGACY_KEYS[key]] === 'number';
   });
 
   const coverage = (key: string) => metricValue(source, key, true).value;
@@ -106,13 +116,19 @@ export function WorkflowResultSummary({
       <CardHeader className='pb-3'>
         <div className='flex flex-wrap items-center justify-between gap-2'>
           <CardTitle className='text-base'>{title}</CardTitle>
-          <div className='flex items-center gap-2'>
-            {pending && <Badge variant='outline' className='border-amber-600/40 text-amber-700 dark:text-amber-300'>有待处理项</Badge>}
-            <Badge variant='outline'>{scopeLabel(source.result_scope)}</Badge>
+          <div className='result-summary-tools'>
+            {controls && <div className='result-summary-controls'>{controls}</div>}
+            <div className='result-summary-status'>
+              <Badge variant='outline' className={pending ? 'border-amber-600/40 text-amber-700 dark:text-amber-300' : pendingKnown ? 'border-emerald-600/30 text-emerald-700 dark:text-emerald-300' : 'text-muted-foreground'}>
+                {pending ? '有待处理项' : pendingKnown ? '无待处理项' : '待处理项待核实'}
+              </Badge>
+              <Badge variant='outline'>{scopeLabel(source.result_scope)}</Badge>
+            </div>
           </div>
         </div>
       </CardHeader>
       <CardContent className='space-y-3'>
+        {!hasResults && !emptyDay && !accrualCount && <p className='text-sm text-muted-foreground'>{emptyMessage}</p>}
         {emptyDay ? <p className='text-sm text-muted-foreground'>当日无核销记录</p> : hasResults && (
           <div className='grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 lg:grid-cols-5'>
             {definitions.map(([key, label]) => {
@@ -123,8 +139,8 @@ export function WorkflowResultSummary({
                 <span className='flex items-center gap-2 text-sm'>{label}{final && <span aria-hidden='true' className='text-xs'>{expanded ? '▴' : '▾'}</span>}</span>
                 <span className='mt-1 block text-xl font-semibold tabular-nums break-words'>{item.value}</span>
               </>;
-              return <div key={key} className={colors?.text}>
-                {final ? <button type='button' className={`min-h-11 min-w-11 w-full rounded-md border p-2 text-left transition-[filter] hover:brightness-95 dark:hover:brightness-110 focus-visible:outline-2 focus-visible:outline-ring ${colors?.surface ?? ''} ${expanded ? 'ring-1 ring-current' : ''}`}
+              return <div key={key} className={`min-w-0 ${colors?.text ?? ''}`}>
+                {final ? <button type='button' className={`h-full min-h-11 min-w-0 w-full rounded-md border p-2 text-left transition-[filter] hover:brightness-95 dark:hover:brightness-110 focus-visible:outline-2 focus-visible:outline-ring ${colors?.surface ?? ''} ${expanded ? 'ring-1 ring-current' : ''}`}
                   aria-label={`${expanded ? '收起' : '展开'}${label}明细`} aria-expanded={expanded} aria-controls={detailsId} title={item.meaning}
                   onClick={() => setSelection(expanded ? null : { sourceId: source.id, filter: FILTERS[key] })}>{content}</button> : content}
               </div>;

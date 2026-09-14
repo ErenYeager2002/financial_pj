@@ -6,7 +6,7 @@ import { listSkillSummaries } from '@/features/skills/api/server';
 import { SkillCatalog } from '@/features/skills/components/skill-catalog';
 
 export const metadata = {
-  title: 'Skill 中心'
+  title: '工具中心'
 };
 
 export default async function Page(): Promise<React.JSX.Element> {
@@ -22,7 +22,7 @@ export default async function Page(): Promise<React.JSX.Element> {
 
   return (
     <PageContainer
-      pageTitle='Skill 中心' headingLevel={1} compact
+      pageTitle='工具中心' headingLevel={1} compact
     >
       <SkillCatalog skills={skills} adminDedications={adminDedications} />
     </PageContainer>

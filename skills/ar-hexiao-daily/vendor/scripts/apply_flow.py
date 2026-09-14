@@ -243,6 +243,12 @@ def write_flow_items(
     import openpyxl
     import xlsx_patch
 
+    if any(it.get("monthly_schema") for it in items):
+        if any(not it.get("monthly_schema") for it in items):
+            return [], ["禁止混用月度与旧版流转计划"]
+        import flow_monthly
+        return flow_monthly.write(workspace, items, in_place=in_place, phase=phase)
+
     aliases = common.load_aliases()
     write_items = [it for it in items if (it.get("verdict") or "") == "write"]
 

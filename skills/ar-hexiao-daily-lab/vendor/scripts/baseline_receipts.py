@@ -372,7 +372,8 @@ def check(item: dict, rows: dict) -> dict:
 
 def merge_journal(existing: dict, checked: dict) -> dict:
     """Called only after successful write/readback, or in isolated review copies."""
-    updated = copy.deepcopy(existing)
+    import receipt_history
+    updated = receipt_history.merge(existing, checked)
     writes = checked.get("write") or []
     handled = set()
     for item in writes:
@@ -428,7 +429,7 @@ def validate_journal(groups: dict) -> None:
         if not isinstance(group, dict) or not isinstance(group.get("events"), dict) or (cents(group.get("baseline_receivable")) or 0) <= 0:
             raise ValueError("回款身份台账缺少历史应收或事件集合")
         scope = group.get("receivable_group_scope")
-        if group.get("scope_only") and (not scope or group["events"]):
+        if group.get("scope_only") and ((not scope and not group.get("ordinary_events")) or group["events"]):
             raise ValueError("普通应收组口径登记不能包含保留应收回款事件")
         if scope and (not isinstance(scope, dict) or scope.get("basis") != "so_latest_delivery" or
                       key != group_key(scope.get("so"), scope.get("ledger_sod")) or
@@ -436,6 +437,22 @@ def validate_journal(groups: dict) -> None:
                       not isinstance(scope.get("source_sods"), list) or not scope["source_sods"] or
                       scope.get("ledger_sod") not in scope["source_sods"]):
             raise ValueError("回款身份台账的 SO 交付额范围与原始应收组不一致")
+        ordinary = group.get("ordinary_events") or {}
+        if not isinstance(ordinary, dict):
+            raise ValueError("普通回款身份登记结构无效")
+        ordinary_signatures = set()
+        for identity, event in ordinary.items():
+            try:
+                parts = json.loads(identity)
+                sig = event['signature']
+                if (len(parts) != 4 or group_key(parts[1], parts[2]) != key or not all(parts)
+                        or len(sig) != 3 or (cents(sig[0]) or 0) <= 0
+                        or not common.norm_date(sig[1]) or not sig[2]
+                        or tuple(sig) in ordinary_signatures):
+                    raise ValueError("普通回款身份或金额无效")
+                ordinary_signatures.add(tuple(sig))
+            except (ValueError, TypeError, KeyError, IndexError) as exc:
+                raise ValueError("普通回款身份无法核实") from exc
         slots = set()
         for identity, event in group["events"].items():
             if (not isinstance(event, dict) or identity != event.get("event_key")

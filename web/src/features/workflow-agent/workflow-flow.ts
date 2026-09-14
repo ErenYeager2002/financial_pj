@@ -26,7 +26,7 @@ const FLOW_NODES: Array<{ key: string; label: string }> = [
   { key: 'queued', label: '提交任务' },
   { key: 'copy_inputs', label: '读取材料' },
   { key: 'fetch_zhiyun', label: '智云取数' },
-  { key: 'review_fetched_data', label: '检查取数数据' },
+  { key: 'review_fetched_data', label: '校验取数数据' },
   { key: 'audit_shifted_details', label: '检查跨日明细' },
   { key: 'inspect_inputs', label: '检查输入文件' },
   { key: 'snapshot_sources', label: '建立校验基线' },

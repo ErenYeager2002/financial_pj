@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 
 import httpx
-from fastapi import APIRouter, Depends, Header, HTTPException, Response
+from fastapi import BackgroundTasks, APIRouter, Depends, Header, HTTPException, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -15,6 +15,8 @@ from ..agent_model_gateway import (
     resolve_agent_model_config,
     save_agent_model_trace,
 )
+from ..assistant_title_service import generate_titles
+from ..assistant_workflow_service import AssistantWorkflowPrepare, AssistantWorkflowStart
 from ..assistant_chat_service import (
     append_message,
     get_conversation,
@@ -66,10 +68,13 @@ router = APIRouter(tags=["assistant"])
     response_model=list[AssistantConversationSummary],
 )
 def assistant_conversations(
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ) -> list[AssistantConversationSummary]:
-    return list_conversations(db, user)
+    conversations = list_conversations(db, user)
+    background_tasks.add_task(generate_titles, user, [item.session_id for item in conversations if item.preview == "新对话"])
+    return conversations
 
 
 @router.get(
@@ -103,6 +108,7 @@ def assistant_conversation(
 def append_assistant_conversation_message(
     session_id: str,
     body: AssistantMessageWrite,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ) -> AssistantMessageRead:
@@ -115,6 +121,8 @@ def append_assistant_conversation_message(
         body.data,
     )
     db.commit()
+    if body.role == "user":
+        background_tasks.add_task(generate_titles, user, [session_id])
     return message
 
 
@@ -365,3 +373,33 @@ def delete_admin_profile(
     )
     db.commit()
     return Response(status_code=204)
+
+
+@router.get("/api/assistant/ar/materials")
+def assistant_ar_materials(skill_id: str, db: Session = Depends(get_db), user: UserContext = Depends(get_current_user)):
+    from ..assistant_workflow_service import inspect_materials
+    return inspect_materials(db, user, skill_id)[0]
+
+
+@router.post("/api/assistant/ar/prepare")
+def assistant_ar_prepare(body: AssistantWorkflowPrepare, db: Session = Depends(get_db), user: UserContext = Depends(get_current_user)):
+    from ..assistant_workflow_service import prepare
+    return prepare(db, user, body)
+
+
+@router.post("/api/assistant/ar/start")
+def assistant_ar_start(body: AssistantWorkflowStart, db: Session = Depends(get_db), user: UserContext = Depends(get_current_user)):
+    from ..assistant_workflow_service import start
+    return start(db, user, body)
+
+
+@router.get("/api/assistant/ar/task")
+def assistant_ar_task(task_id: str, db: Session = Depends(get_db), user: UserContext = Depends(get_current_user)):
+    from ..assistant_workflow_service import task_status
+    return task_status(db, user, task_id)
+
+
+@router.get("/api/assistant/ar/request")
+def assistant_ar_request_status(session_id: str, db: Session = Depends(get_db), user: UserContext = Depends(get_current_user)):
+    from ..assistant_workflow_service import request_status
+    return request_status(db, user, session_id)

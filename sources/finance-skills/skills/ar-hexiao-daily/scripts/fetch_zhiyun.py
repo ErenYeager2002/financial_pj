@@ -69,7 +69,7 @@ def _assert_platform_network_url(url: str) -> None:
     if os.environ.get("FINANCIAL_NETWORK_ACCESS") != "1" or host not in allowed:
         raise RuntimeError("网络目标不在平台批准的精确域名白名单中。")
 APP_ID = "6ff4fb2e-e68c-4ee9-83a0-836de8f72c11"
-EXPORT_SCHEMA_VERSION = "2026-09-03-delivery-local-v8"
+EXPORT_SCHEMA_VERSION = "2026-09-08-settlement-orders-v9"
 CREDENTIAL_SERVICE = "codex.ar-hexiao-daily.zhiyun"
 
 WS_HUIKUAN = "6555d2b1f9460e517040ba6c"  # 回款记录（唯一入口）
@@ -544,6 +544,41 @@ def extract_related_orders(
     return out
 
 
+def settlement_related_orders(
+    client: ZhiyunClient, rows: Sequence[dict], controls: Sequence[dict]
+) -> List[dict]:
+    """保留结算直接提取路径；无 SO 时再读结算的订单关联子表。"""
+    related = extract_related_orders(rows, controls, REL_JIESUAN)
+    if related or not rows:
+        return related
+    order_cid = client.id_by_name(controls, "订单")
+    if not order_cid:
+        return []
+    worksheet_id = client.datasource_of(WS_HUIKUAN, REL_JIESUAN)
+    if not worksheet_id:
+        raise FetchError("无法定位结算数据源，不能完整读取结算关联订单")
+
+    by_so: Dict[str, dict] = {}
+    for row in rows:
+        row_id = str(row.get("rowid") or "").strip()
+        if not row_id:
+            raise FetchError("结算记录缺少 rowid，不能完整读取关联订单")
+        order_rows, order_controls = client.relation_rows(
+            worksheet_id, row_id, order_cid
+        )
+        # 只使用订单自己的交付额等字段，不把结算总额分配到每个 SO。
+        orders = extract_related_orders(order_rows, order_controls, REL_JIESUAN)
+        if len(orders) != len(order_rows):
+            raise FetchError("结算关联订单存在无法识别的 SO，不能使用不完整订单集合")
+        for order in orders:
+            so = order["so"]
+            previous = by_so.get(so)
+            if previous is not None and previous != order:
+                raise FetchError(f"结算关联订单 {so} 的重复记录字段不一致，不能任选或累加")
+            by_so.setdefault(so, order)
+    return list(by_so.values())
+
+
 def lookup_order_delivery_date(
     client: ZhiyunClient,
     worksheet_id: str,
@@ -919,7 +954,7 @@ def fetch_day(
         related = extract_related_orders(xd_rows, xd_ctrls, REL_XIADAN)
         if not related and cid_jiesuan:
             js_rows, js_ctrls = client.relation_rows(WS_HUIKUAN, rid, cid_jiesuan)
-            related = extract_related_orders(js_rows, js_ctrls, REL_JIESUAN)
+            related = settlement_related_orders(client, js_rows, js_ctrls)
             if related:
                 settlement_recovered_ars.append(rec["ar"])
                 settlement_rows_used += len(related)

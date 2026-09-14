@@ -139,6 +139,12 @@ def _year_subplan(plan: dict, year: int, path: Path) -> dict:
         "ledger_path": str(path),
         "ledger_sha256": check.get("sha256") or "",
     }
+    # Row numbers are year-scoped; allocation dependencies remain batch-scoped.
+    # Every year's write precheck still completes before any workbook is written.
+    sub["_sequence_checked_items"] = [
+        dict(item) for bucket in ("write", "skip", "conflict")
+        for item in (plan.get(bucket) or [])
+    ]
     sub["counts"] = {key: len(sub[key]) for key in ("write", "skip", "conflict")}
     return sub
 
@@ -395,7 +401,7 @@ def main(argv=None) -> int:
         return 0
 
     try:
-        final_flow_plan = build_flow_plan.finalize_plan_after_ledger(flow_plan_data, plan)
+        final_flow_plan = build_flow_plan.finalize_plan_after_ledger(flow_plan_data, plan, workspace=ws)
     except Exception as e:
         flow_warnings.append(
             f"流转状态计划生成未完成（{type(e).__name__}），盈亏已写入。"

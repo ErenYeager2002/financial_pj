@@ -9,7 +9,7 @@ interface Params {
 }
 
 function checkedService(value: string): string {
-  if (value !== 'zhiyun') {
+  if (!['zhiyun', 'kingdee'].includes(value)) {
     throw new PlatformApiError(404, '不支持的业务系统凭据。');
   }
   return value;
@@ -38,7 +38,7 @@ export async function GET(_request: Request, { params }: Params): Promise<Respon
       await platformServerRequest<ServiceCredentialRead>(`/api/service-credentials/${service}`)
     );
   } catch (error) {
-    return platformRouteError(error, '智云登录凭据状态加载失败。');
+    return platformRouteError(error, '业务系统登录凭据状态加载失败。');
   }
 }
 
@@ -58,6 +58,6 @@ export async function PUT(request: Request, { params }: Params): Promise<Respons
       })
     );
   } catch (error) {
-    return platformRouteError(error, '智云登录凭据保存失败。');
+    return platformRouteError(error, '业务系统登录凭据保存失败。');
   }
 }

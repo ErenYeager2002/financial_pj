@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { isArSkill } from '@/features/workflow-agent/ar-skill-identity';
 import { Icons } from '@/components/icons';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -177,6 +178,7 @@ export function WorkflowFetchedDataDialog({
   const [soInput, setSoInput] = React.useState('');
   const [showSupplementForm, setShowSupplementForm] = React.useState(false);
   const [submitting, setSubmitting] = React.useState('');
+  const automaticReview = isArSkill(batch?.skill_id ?? workflow?.skill_id ?? '');
   const isBatch = Boolean(batch);
   const batchReviewWorkflow = batch ? batchFetchedDataWorkflow(batch.workflows) : undefined;
   const resourceId = batch?.id ?? workflow?.id ?? '';
@@ -419,7 +421,9 @@ export function WorkflowFetchedDataDialog({
             <Alert className='mb-4'>
               <AlertTitle>本日没有核销记录</AlertTitle>
               <AlertDescription>
-                {batch
+                {automaticReview
+                  ? '自动校验确认本日无核销记录后跳过，不执行本日核销判定和写入；多日批次继续下一天。'
+                  : batch
                   ? '确认后将标记本日已完成并跳过，不执行核销判定和写入，批次继续执行下一天。'
                   : '确认后将标记本日已完成并跳过，不执行核销判定和写入。'}
               </AlertDescription>
@@ -945,7 +949,7 @@ export function WorkflowFetchedDataDialog({
           )}
         </div>
 
-        {stage === 'awaiting_fetched_data_confirmation' && (
+        {!automaticReview && stage === 'awaiting_fetched_data_confirmation' && (
           <section
             data-testid='fetched-data-review-actions'
             className='max-h-[42dvh] shrink-0 overflow-y-auto border-t bg-background px-5 py-3'

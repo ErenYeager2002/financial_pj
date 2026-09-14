@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { copyNumber } from '@/lib/copy-number';
 import type { ArResultPage } from '@/features/platform-api/generated';
 
 export const RESULT_CATEGORIES = [
@@ -38,10 +39,10 @@ function CopyNumber({ value, label }: { value: string; label: string }) {
   const [message, setMessage] = useState('');
   return <span className='inline-flex max-w-full flex-wrap items-center gap-1'>
     {!value && <span className='text-xs'>{label} 未识别</span>}
-    {value && <button type='button' className='min-h-11 min-w-11 break-all text-left font-mono text-xs hover:text-primary focus-visible:outline-2 focus-visible:outline-ring'
-      aria-label={`复制${label} ${value}`} title='点击复制' onClick={async () => {
-        try { await navigator.clipboard.writeText(value); setMessage('已复制'); }
-        catch { setMessage('复制失败，请选择编号复制'); }
+    {value && <button type='button' className='min-h-11 min-w-11 select-text break-all text-left font-mono text-xs hover:text-primary focus-visible:outline-2 focus-visible:outline-ring'
+      aria-label={`复制${label} ${value}`} title='点击复制' onClick={async (event) => {
+        const copied = await copyNumber(value, event.currentTarget);
+        setMessage(copied ? '已复制' : '已选中编号，请按 Ctrl+C / ⌘C 或长按复制');
       }}>{value}</button>}
     {message && <span role='status' className='text-xs text-muted-foreground'>{message}</span>}
   </span>;

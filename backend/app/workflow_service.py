@@ -15,7 +15,7 @@ import zipfile
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 from zoneinfo import ZoneInfo
 
 import yaml
@@ -220,7 +220,7 @@ CONFIRM_REPLIES = {"确认", "可以", "可以写", "按这个写", "没问题�
 WRITE_STAGING_DIR = "03_写入暂存区"
 BATCH_PUBLISH_TRANSACTION_DIR = ".批次发布事务"
 FETCH_SNAPSHOT_DIR = "01_智云导出"
-FETCH_SNAPSHOT_VERSION = "2026-09-03-delivery-local-v8"
+FETCH_SNAPSHOT_VERSION = "2026-09-08-settlement-orders-v9"
 FETCHED_DATASET_SPECS = (
     ("payments", "回款记录", "回款记录"),
     ("orders", "订单交付", "订单交付"),
@@ -374,6 +374,7 @@ def _complete_empty_reconciliation_date(
     fetched_data["empty_day_skipped"] = True
     fetched_data["empty_day_skip_reason"] = "取数结果确认无核销记录"
     context["fetched_data"] = fetched_data
+    context["empty_day_skipped"] = True
     context["current_step"] = "completed"
     context["current_step_label"] = "当天无核销记录，已确认并跳过"
     context.pop("step_error", None)
@@ -1725,9 +1726,9 @@ def confirm_fetched_data_review(
     actor: UserContext,
     *,
     queue_plan: bool = True,
+    automatic: bool = False,
 ) -> WorkflowSession:
-    # The human confirmation can queue the next executable action, so the
-    # task owner's current account and Skill permission must still be valid.
+    # Both manual and automatic acceptance must recheck the task owner.
     workflow_owner_context(db, workflow)
     if workflow.execution_mode == "pi_harness" and queue_plan:
         raise HTTPException(
@@ -1749,57 +1750,95 @@ def confirm_fetched_data_review(
     )
     if existing_plan_action is not None:
         return workflow
-    if workflow.stage != "awaiting_fetched_data_confirmation":
-        raise HTTPException(status_code=409, detail="当前任务不在取数检查阶段。")
     context = _load(workflow.context_json, {})
     fetched_data = context.get("fetched_data", {})
     fetched_data = fetched_data if isinstance(fetched_data, dict) else {}
+    if fetched_data.get("review_status") == "confirmed" and workflow.stage == "preparing":
+        return workflow
+    if workflow.stage != "awaiting_fetched_data_confirmation":
+        raise HTTPException(status_code=409, detail="当前任务不在取数检查阶段。")
     bundle_pipeline = _uses_fetched_bundle_pipeline(db, workflow.id)
     bundle_id = str(fetched_data.get("bundle_id") or workflow.fetched_bundle_id or "")
     if bundle_pipeline and not bundle_id:
         raise HTTPException(status_code=409, detail="取数包标识缺失，不能确认继续。")
     if not bundle_pipeline and not fetched_data.get("available"):
         raise HTTPException(status_code=409, detail="智云取数尚未完成，不能确认继续。")
+    if automatic and not is_ar_skill(workflow.skill_id):
+        raise ValueError("自动取数校验仅适用于应收核销。")
+    dates = sorted({workflow.reconciliation_date, *[
+        str(item) for item in fetched_data.get("dates", []) if item
+    ]})
+    if automatic and not bundle_id:
+        for selected_date in dates:
+            if _validated_snapshot_for_date(db, workflow, selected_date) is None:
+                raise HTTPException(
+                    status_code=409, detail="取数文件、日期、版本或哈希校验失败，不能继续核销。",
+                )
     if bundle_id:
         try:
+            if automatic:
+                assert_bundle_preview_mirror(
+                    db, bundle_id=bundle_id, owner_id=workflow.owner_id,
+                    dates=dates,
+                    mirror=_controlled_context_workspace(
+                        _workflow_storage_root(db, workflow), workflow,
+                    ) / FETCH_SNAPSHOT_DIR,
+                )
             confirm_bundle(db, bundle_id=bundle_id, actor=actor)
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
     fetched_data["review_status"] = "confirmed"
-    fetched_data["reviewed_by"] = actor.user_id
+    fetched_data["review_method"] = "automatic" if automatic else "manual"
+    fetched_data["reviewed_by"] = "system" if automatic else actor.user_id
     fetched_data["reviewed_at"] = datetime.now(UTC).isoformat()
     context["fetched_data"] = fetched_data
+    if automatic:
+        record_audit(
+            db, actor_id=workflow.owner_id, actor_role="worker",
+            department_id=workflow.department_id,
+            action="workflow.fetched_data.auto_validated",
+            resource_type="workflow", resource_id=workflow.id,
+            details={"review_method": "automatic", "bundle_id": bundle_id},
+        )
     if _is_confirmed_empty_reconciliation_date(fetched_data, workflow.reconciliation_date):
         _complete_empty_reconciliation_date(db, workflow, context)
         if workflow.batch_id:
             _advance_batch(db, workflow, _pass_through_batch_result(workflow, context))
         sync_reminder_from_workflow(db, workflow)
-        db.commit()
-        db.refresh(workflow)
+        if not automatic:
+            db.commit()
+            db.refresh(workflow)
         return workflow
     context["current_step"] = "inspect_inputs"
     context["current_step_label"] = "取数数据已确认，等待检查输入文件"
     workflow.context_json = _json(context)
     if queue_plan:
-        _queue_action(db, workflow, "build_reconciliation_plan")
+        queue = _new_action if automatic else _queue_action
+        queue(db, workflow, "build_reconciliation_plan")
     workflow.stage = "preparing"
     workflow.state = "running"
     workflow.progress = 20
-    workflow.progress_message = "取数数据已确认，等待继续生成核销日清"
+    workflow.progress_message = (
+        "取数自动校验通过，正在继续生成核销日清"
+        if automatic else "取数数据已确认，等待继续生成核销日清"
+    )
     workflow.error_message = ""
     _message(
         db,
         workflow,
         "assistant",
         (
+            "取数自动校验通过，后台将继续处理，可随时查看本次取数。"
+            if automatic else
             "工作人员已确认本次智云取数完整，后台将继续检查输入文件并生成核销日清。"
             if queue_plan
             else "Pi Harness 已确认本次智云取数完整，等待执行核销判定。"
         ),
-        {"kind": "fetched_data_review_confirmed"},
+        {"kind": "fetched_data_review_confirmed", "automatic": automatic},
     )
-    db.commit()
-    db.refresh(workflow)
+    if not automatic:
+        db.commit()
+        db.refresh(workflow)
     return workflow
 
 
@@ -3070,6 +3109,9 @@ def start_workflow_batch(
     db: Session,
     request: WorkflowBatchStart,
     user: UserContext,
+    *,
+    before_start: Callable[[], None] | None = None,
+    on_created: Callable[[WorkflowBatch], None] | None = None,
 ) -> WorkflowBatch:
     """Create an ordered multi-date batch without widening a child's write scope."""
     skill = registry.get(request.skill_id)
@@ -3093,6 +3135,8 @@ def start_workflow_batch(
     if request.files or request.replace_roles:
         assert_skill_permission(db, user, request.skill_id, "can_upload")
     assert_skill_accepting_new_work(db, request.skill_id, acquire_lock=False)
+    if before_start is not None:
+        before_start()
     if len(request.reconciliation_dates) > 31:
         raise HTTPException(status_code=422, detail="单个批次最多选择 31 个核销日期。")
 
@@ -3335,6 +3379,8 @@ def start_workflow_batch(
                     "material_set_id": material_set_id,
                 },
             )
+        if on_created is not None:
+            on_created(batch)
         db.commit()
 
     except Exception:
@@ -3353,7 +3399,11 @@ def _workflow_error_detail(workflow: WorkflowSession, reason: object) -> TaskErr
     error_code, category = classify_task_error(raw_reason, step_key=step_key, stage=workflow.stage)
     write_status = "unknown"
     recovery_allowed: bool | None = None
-    if step_key == "fetch_zhiyun" or workflow.stage == "supplementing_fetched_data":
+    if step_key == "finalize_batch":
+        safe_reason = "每日核销已完成，批次报告汇总失败。"
+        error_code, category = "WORKFLOW_BATCH_REPORT_FAILED", "unknown"
+        recovery_allowed = True
+    elif step_key == "fetch_zhiyun" or workflow.stage == "supplementing_fetched_data":
         if (
             TRANSIENT_FETCH_FAILURE.search(raw_reason)
             or "超时" in raw_reason
@@ -3434,7 +3484,10 @@ def _workflow_error_detail(workflow: WorkflowSession, reason: object) -> TaskErr
 
 def _workflow_public_error(workflow: WorkflowSession, detail: TaskErrorDetail) -> dict[str, Any]:
     date_label = workflow.reconciliation_date or "当前日期"
-    if detail.error_code == "WORKFLOW_FETCH_UNAVAILABLE":
+    if detail.step_key == "finalize_batch":
+        message = "批次报告汇总失败：各日期已完成的核销结果保留，请修复原因后仅恢复报告汇总。"
+        error_type = "batch_report_failed"
+    elif detail.error_code == "WORKFLOW_FETCH_UNAVAILABLE":
         message = (
             f"{date_label} 取数未完成：智云暂时无法访问，本次取数未完成。请稍后点击“重试失败日期”。"
         )
@@ -3876,6 +3929,12 @@ def update_workflow_files(
     user: UserContext,
     replace_roles: list[str] | None = None,
 ) -> WorkflowSession:
+    acquire_claim_lock(db)
+    from .workflow_material_lock import assert_material_editable
+    try:
+        assert_material_editable(db, user, workflow.skill_id)
+    except MaterialVersionConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     workflow_owner_context(db, workflow)
     editable_stages = {
         "awaiting_date",
@@ -6895,7 +6954,11 @@ def _finalize_batch_reports(
     empty_dates = []
     for child in batch.workflows:
         child_context = _load(child.context_json, {})
-        if not child_context.get("empty_day_skipped") or not child.fetched_bundle_id:
+        fetched = child_context.get("fetched_data")
+        fetched = fetched if isinstance(fetched, dict) else {}
+        # Older first-day completion stored the flag only inside fetched_data.
+        empty_marked = child_context.get("empty_day_skipped") is True or fetched.get("empty_day_skipped") is True
+        if not empty_marked or not child.fetched_bundle_id:
             continue
         bundle = db.scalar(
             select(FetchedBundle).where(
@@ -7293,11 +7356,11 @@ def _transition_legacy_fetch_result(
         workflow.progress_message = "取数完成后按取消请求停止"
     else:
         context["current_step"] = "review_fetched_data"
-        context["current_step_label"] = "智云取数完成，等待工作人员检查"
+        context["current_step_label"] = ("智云取数完成，正在自动校验" if is_ar_skill(workflow.skill_id) else "智云取数完成，等待工作人员检查")
         workflow.stage = "awaiting_fetched_data_confirmation"
         workflow.state = "waiting_confirmation"
         workflow.progress = max(workflow.progress, 20)
-        workflow.progress_message = "智云取数完成，等待工作人员检查并确认"
+        workflow.progress_message = ("智云取数完成，正在自动校验" if is_ar_skill(workflow.skill_id) else "智云取数完成，等待工作人员检查并确认")
     workflow.context_json = _json(context)
     return fetched_dates or [workflow.reconciliation_date]
 
@@ -7504,22 +7567,29 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
                     _new_action(db, workflow, "build_fetch_preview")
             workflow.context_json = _json(context)
         elif action.name == "build_fetch_preview":
+            from .ar_execution_runner import lock_execution
+
+            action._ar_claim_worker_id = action.worker_id
+            lock_execution(db, action, workflow)
+            if _load(workflow.context_json, {}).get("stop_after_action"):
+                raise ExecutionCancelled("取数完成，按取消请求停止")
             result = _build_fetch_preview_action(db, action, workflow)
             context = _load(workflow.context_json, {})
             context.update(result)
             context["current_step"] = "review_fetched_data"
-            context["current_step_label"] = "智云取数完成，等待工作人员检查"
+            context["current_step_label"] = ("智云取数完成，正在自动校验" if is_ar_skill(workflow.skill_id) else "智云取数完成，等待工作人员检查")
             workflow.context_json = _json(context)
             workflow.stage = "awaiting_fetched_data_confirmation"
             workflow.state = "waiting_confirmation"
             workflow.progress = max(workflow.progress, 20)
-            workflow.progress_message = "智云取数完成，等待工作人员检查并确认"
+            workflow.progress_message = ("智云取数完成，正在自动校验" if is_ar_skill(workflow.skill_id) else "智云取数完成，等待工作人员检查并确认")
             _message(
                 db,
                 workflow,
                 "assistant",
                 f"核销日期 {_date_label(workflow.reconciliation_date)} 的智云数据已经取回。"
-                "请先查看取数数据；确认完整后再继续生成核销日清。",
+                + ("系统自动校验通过后继续处理，可随时查看本次取数。"
+                 if is_ar_skill(workflow.skill_id) else "请先查看取数数据；确认完整后再继续生成核销日清。"),
                 {"kind": "fetched_data_preview_ready"},
             )
         elif action.name.startswith("ar_"):
@@ -7574,16 +7644,18 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
                 reply = "智云取数已经完成，但按取消请求，本次不会继续核销判断或写入。"
             elif result.get("awaiting_fetched_data_confirmation"):
                 context["current_step"] = "review_fetched_data"
-                context["current_step_label"] = "智云取数完成，等待工作人员检查"
+                context["current_step_label"] = ("智云取数完成，正在自动校验" if is_ar_skill(workflow.skill_id) else "智云取数完成，等待工作人员检查")
                 workflow.context_json = _json(context)
                 fetched_data = context.get("fetched_data", {})
                 workflow.stage = "awaiting_fetched_data_confirmation"
                 workflow.state = "waiting_confirmation"
                 workflow.progress = 20
-                workflow.progress_message = "智云取数完成，等待工作人员检查并确认"
+                workflow.progress_message = ("智云取数完成，正在自动校验" if is_ar_skill(workflow.skill_id) else "智云取数完成，等待工作人员检查并确认")
                 reply = (
                     f"核销日期 {_date_label(workflow.reconciliation_date)} 的智云数据已经取回。"
-                    "请先查看取数数据；确认完整后再继续生成核销日清。"
+                    + ("系统自动校验通过后继续处理，可随时查看本次取数。"
+                       if is_ar_skill(workflow.skill_id)
+                       else "请先查看取数数据；确认完整后再继续生成核销日清。")
                 )
             elif result.get("empty_day_skipped"):
                 _complete_empty_reconciliation_date(db, workflow, context, announce=False)
@@ -7674,7 +7746,7 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
             stop = bool(context.get("stop_after_action"))
             context["current_step"] = "stopped" if stop else "review_fetched_data"
             context["current_step_label"] = (
-                "编号补取完成，按取消请求停止" if stop else "编号补取完成，等待工作人员再次检查"
+                "编号补取完成，按取消请求停止" if stop else ("编号补取完成，正在自动校验" if is_ar_skill(workflow.skill_id) else "编号补取完成，等待工作人员再次检查")
             )
             workflow.context_json = _json(context)
             preview_dates_to_prime = [result_date]
@@ -7684,7 +7756,7 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
             workflow.progress_message = (
                 "编号补取完成后按取消请求停止"
                 if stop
-                else "编号补取完成，等待工作人员再次检查并确认"
+                else ("编号补取完成，正在自动校验" if is_ar_skill(workflow.skill_id) else "编号补取完成，等待工作人员再次检查并确认")
             )
             _message(
                 db,
@@ -7693,7 +7765,9 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
                 (
                     "SO/AR 编号补取已经完成，但按取消请求不会继续处理。"
                     if stop
-                    else "SO/AR 编号补取已经完成。请重新检查取数数据；确认完整后再继续。"
+                    else ("SO/AR 编号补取已完成，自动校验通过后继续处理。"
+                          if is_ar_skill(workflow.skill_id)
+                          else "SO/AR 编号补取已经完成。请重新检查取数数据；确认完整后再继续。")
                 ),
                 {"kind": "fetched_data_supplement_completed"},
             )
@@ -7801,14 +7875,30 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
             batch.updated_at = datetime.now(UTC)
         else:
             raise RuntimeError(f"不支持的工作流动作：{action.name}")
+        if preview_dates_to_prime:
+            _prime_fetched_data_previews(db, workflow, preview_dates_to_prime)
+            preview_dates_to_prime = []
+        if is_ar_skill(workflow.skill_id) and workflow.stage == "awaiting_fetched_data_confirmation":
+            context = _load(workflow.context_json, {})
+            if context.get("stop_after_action"):
+                context["current_step"] = "stopped"
+                context["current_step_label"] = "取数完成，按取消请求停止"
+                workflow.context_json = _json(context)
+                workflow.stage = "cancelled"
+                workflow.state = "cancelled"
+                workflow.progress_message = context["current_step_label"]
+            else:
+                confirm_fetched_data_review(
+                    db, workflow, workflow_owner_context(db, workflow),
+                    queue_plan=reconciliation_runner(workflow.execution_mode).worker_chains_next_action(),
+                    automatic=True,
+                )
         action.result_json = _json(result)
         action.state = "succeeded"
         action.finished_at = datetime.now(UTC)
         workflow.error_message = ""
         if workflow.state == "cancelled":
             finalize_requested_batch_cancellation(db, workflow.batch_id)
-        if preview_dates_to_prime:
-            _prime_fetched_data_previews(db, workflow, preview_dates_to_prime)
     except ExecutionCancelled as exc:
         # This signal is raised only while holding the current action's claim
         # lock, before a new script or publication has started.
@@ -7847,9 +7937,14 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
         action.state = "failed"
         action.error_message = public_error["message"]
         action.finished_at = datetime.now(UTC)
-        workflow.state = "failed"
-        workflow.stage = "failed"
-        workflow.progress_message = "动作执行超时"
+        if action.name == "finalize_batch":
+            workflow.state = "succeeded"
+            workflow.stage = "completed"
+            workflow.progress_message = "每日核销已完成，范围报告生成超时"
+        else:
+            workflow.state = "failed"
+            workflow.stage = "failed"
+            workflow.progress_message = "动作执行超时"
         _store_workflow_error(workflow, detail)
         if action.name == "finalize_batch" and workflow.batch_id:
             batch = db.get(WorkflowBatch, workflow.batch_id)

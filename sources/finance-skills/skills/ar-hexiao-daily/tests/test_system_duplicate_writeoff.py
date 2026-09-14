@@ -601,5 +601,5 @@ def test_fetch_contract_exposes_record_identity_and_new_version():
     assert F.MINGXI_COLS[0] == "核销记录NUM"
     assert "订单已核销金额" in F.XIADAN_COLS
     assert "交付额/本币" in F.XIADAN_COLS
-    assert F.EXPORT_SCHEMA_VERSION == "2026-09-03-delivery-local-v8"
+    assert F.EXPORT_SCHEMA_VERSION == "2026-09-08-settlement-orders-v9"
     assert "项目交付日期" in F.XIADAN_COLS

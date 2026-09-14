@@ -104,8 +104,11 @@ function checkedRunCreate(value: unknown): RunCreate {
       files[role] = checkedId(fileValue, '文件标识', UUID);
       continue;
     }
-    if (!Array.isArray(fileValue) || fileValue.length === 0 || fileValue.length > 20) {
-      throw new PlatformApiError(400, '每个文件用途必须包含 1 到 20 个文件。');
+    const consolidationReports = skillId === 'consolidated-statements' && role === 'reports';
+    const maximumFiles = consolidationReports ? 24 : 20;
+    const minimumFiles = consolidationReports && value.parameters.fetch_kingdee === true ? 0 : 1;
+    if (!Array.isArray(fileValue) || fileValue.length < minimumFiles || fileValue.length > maximumFiles) {
+      throw new PlatformApiError(400, `每个文件用途必须包含 ${minimumFiles} 到 ${maximumFiles} 个文件。`);
     }
     files[role] = fileValue.map((item) => {
       if (typeof item !== 'string') throw new PlatformApiError(400, '文件标识格式无效。');

@@ -29,8 +29,10 @@ def run(workspace: Path, checked: Path) -> dict:
     result["manual_count"] = sum(item.get("verdict") == "hand" for item in flow["items"])
     for phase in ("prefill", "status"):
         try:
-            phase_plan = flow if phase == "prefill" else build_flow_plan.finalize_plan_after_ledger(flow, plan)
+            phase_plan = flow if phase == "prefill" else build_flow_plan.finalize_plan_after_ledger(flow, plan, workspace=workspace)
             if phase == "status":
+                result["manual_items"] = phase_plan["manual_items"]
+                result["manual_count"] = len(result["manual_items"])
                 (workspace / "04_产出" / f"流转状态回填计划_{tag}.json").write_text(
                     json.dumps(phase_plan, ensure_ascii=False, indent=2), encoding="utf-8",
                 )

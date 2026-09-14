@@ -153,9 +153,17 @@ class ArExecution:
             raise ExecutionCancelled("任务已请求取消，未启动下一脚本")
         self.db.commit()
         self.db.info.pop("ar_execution_lock", None)
+        original_name, original_arguments = name, list(arguments)
         name, arguments = cached_command(self, name, arguments)
-        return run_recorded_script(self.scripts, name, arguments, action=self.action, workflow=self.workflow,
-                                   accepted_returncodes=accepted)
+        stdout = run_recorded_script(self.scripts, name, arguments, action=self.action, workflow=self.workflow,
+                                     accepted_returncodes=accepted)
+        if original_name in {"classify_hexiao.py", "build_execution_report.py"}:
+            workspace = original_arguments[original_arguments.index("--workspace") + 1]
+            self.service._run_script(Path(__file__).parent, "ar_history_guard.py", [
+                "--scripts", str(self.scripts), "--workspace", workspace, "--date", self.date,
+                "--mode", "classify" if original_name == "classify_hexiao.py" else "report",
+            ])
+        return stdout
 
     def verify_input_binding(self) -> None:
         from .workflow_material_service import current_material_set

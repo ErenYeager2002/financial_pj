@@ -400,6 +400,10 @@ def restore_material_set(
     skill_id: str,
     material_set_id: str,
 ) -> WorkflowMaterialSet:
+    from .scheduler import acquire_claim_lock
+    from .workflow_material_lock import assert_material_editable
+    acquire_claim_lock(db)
+    assert_material_editable(db, user, skill_id)
     target = db.scalar(
         select(WorkflowMaterialSet).where(
             WorkflowMaterialSet.id == material_set_id,

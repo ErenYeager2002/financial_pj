@@ -28,6 +28,7 @@ import common  # noqa: E402
 import amount_policy  # noqa: E402
 import settlement_status  # noqa: E402
 import baseline_receipts as BR  # noqa: E402
+import fallback_sequence as FS
 import fallback_allocation_ledger as FAL  # noqa: E402
 import writeoff_duplicate_audit as WDA  # noqa: E402
 
@@ -45,8 +46,29 @@ BUSINESS_SETTLEMENT_TOL = float(amount_policy.BUSINESS_SETTLEMENT_TOLERANCE)
 
 
 def _whole_parent_gate_error(audit: dict) -> str:
+    try:
+        return _whole_parent_gate_error_checked(audit)
+    except (ValueError, TypeError, KeyError, OverflowError):
+        return "父回款金额审计字段无效，不能进入写入"
+
+
+def _whole_parent_gate_error_checked(audit: dict) -> str:
     """不只信任 status；按审计事实重算整笔回款的父 AR 守恒闸。"""
     if not audit.get("is_whole_payment"):
+        return ""
+    if audit.get("status") == "parent_allocation_required":
+        basis = audit.get("comparison_basis")
+        records = audit.get("order_records") or []
+        capacities = [BR.cents(row.get("capacity")) for row in records]
+        parent = BR.cents(audit.get("parent_total_local" if basis == "parent_allocation_local" else "parent_total_orig"))
+        if (basis not in {"parent_allocation_local", "parent_allocation_original"}
+                or not records or len({row.get("so") for row in records}) != len(records)
+                or not all(row.get("so") and row.get("source") == "delivery_capacity" for row in records)
+                or any(value is None or value < 0 for value in capacities)
+                or parent is None or parent <= 0 or audit.get("raw_record_count")
+                or audit.get("effective_order_amount_count") != 0
+                or sum(capacities) != BR.cents(audit.get("order_capacity_total"))):
+            return "无明细父回款的交付容量或实际金额来源核验失败"
         return ""
     try:
         detail_count = int(
@@ -61,6 +83,7 @@ def _whole_parent_gate_error(audit: dict) -> str:
     basis = audit.get("comparison_basis")
     allowed = {
         "order_written_off_local", "order_written_off_original",
+        "single_order_parent_local", "single_order_parent_original",
         "delivery_fallback_local", "delivery_fallback_original",
         # 兼容修复前已生成、但仍可能被只读复核的旧计划。
         "detail_local", "detail_original",
@@ -76,7 +99,7 @@ def _whole_parent_gate_error(audit: dict) -> str:
     threshold = BUSINESS_SETTLEMENT_TOL if threshold is None else abs(float(threshold))
     if delta is None:
         return "整笔回款缺少父总到账与订单金额的差额审计"
-    if basis.startswith("order_written_off") or basis.startswith("delivery_fallback"):
+    if basis.startswith(("order_written_off", "delivery_fallback", "single_order_parent")):
         order_total = common.to_number(audit.get("order_amount_total"))
         parent_total = common.to_number(
             audit.get("parent_total_local")
@@ -88,6 +111,10 @@ def _whole_parent_gate_error(audit: dict) -> str:
         expected_delta = round(float(parent_total) - float(order_total), 2)
         if abs(expected_delta - float(delta)) > 0.01:
             return "整笔回款审计中的父总到账、订单金额合计与差额不守恒"
+        if basis.startswith("single_order_parent"):
+            records = audit.get("order_records") or []
+            if len(records) != 1 or records[0].get("source") != "single_order_parent" or BR.cents(records[0].get("basis_amount")) != BR.cents(parent_total):
+                return "唯一订单的实际核销金额与父总到账不一致"
         if basis.startswith("delivery_fallback") and not audit.get("fallback_used"):
             return "整笔回款使用交付额兜底但缺少兜底审计标记"
     if float(delta) < -threshold:
@@ -138,6 +165,8 @@ def duplicate_audit_error(plan: dict, item: Optional[dict] = None) -> str:
         gate_error = _whole_parent_gate_error(audit)
         if gate_error:
             return f"父回款 {ar} 未通过父AR金额守恒检查：{gate_error}"
+        if status == "parent_allocation_required" and not current.get("parent_allocation_audit"):
+            return f"父回款 {ar} 缺少顺序分配审计，不能按交付额直接写入"
         local_error = _delivery_fallback_local_error(audit, current)
         if local_error:
             return f"父回款 {ar} 未通过写入币种检查：{local_error}"
@@ -835,6 +864,14 @@ def check_one(item: dict, rows: Dict[int, dict]) -> dict:
     - skip     ：已经填过且与计划一致 → 幂等跳过（重复跑不重复写）
     - conflict ：行号对不上 / 已填但不一致 / 值不合法 → 不写，交给人看
     """
+    import receipt_history
+    zero = receipt_history.check_zero(item, rows)
+    if zero is not None:
+        return zero
+    import receipt_correction
+    correction = receipt_correction.check(item, rows)
+    if correction is not None:
+        return correction
     scope_error = BR.check_scope(item, rows)
     if scope_error:
         return scope_error
@@ -1100,6 +1137,7 @@ def validate(
     ledger_path: Optional[Path] = None,
     *,
     allocation_errors: Optional[Dict[str, str]] = None,
+    defer_sequence_guard: bool = False,
 ) -> dict:
     items = [dict(it) for it in (plan.get("auto") or [])]
     by_case_id = {
@@ -1113,6 +1151,18 @@ def validate(
     for it in items:
         audit_error = duplicate_audit_error(plan, it) or allocation_errors.get(it.get("ar"))
         scope_error = BR.check_scope(it, rows)
+        if it.get("code") == FS.ZERO:
+            audit = it.get("parent_allocation_audit") or {}
+            basis = it.get("zero_allocation_basis") or {}
+            actual = {str(ref): BR.normalized(row) for ref, row in rows.items() if row.get("SO") == it.get("so")}
+            received = sum(float(row.get("回款明细") or 0) for row in actual.values())
+            delivery = common.to_number(basis.get("delivery_local"))
+            valid = (not audit_error and not scope_error and bool(actual)
+                and actual == basis.get("before_rows") and delivery is not None
+                and abs(received + float(basis.get("reserved_local") or 0) - delivery) <= 0.011
+                and audit.get("allocated_local") == 0 and (it.get("fallback_batch_cases") or audit.get("reused")))
+            checked.append({**it, "_check": {"verdict": "skip" if valid else "conflict", "reason": audit_error or (scope_error or {}).get("reason") or ("核实本笔零分配及前序依赖" if valid else "零分配订单及前序回款基线不一致")}})
+            continue
         original_ref = it.get("ledger_row_ref")
         operation_type = (it.get("row_operation") or {}).get("type")
         is_split_chain = operation_type == "split_payment_chain"
@@ -1130,7 +1180,7 @@ def validate(
             res = {"verdict": "conflict", "reason": audit_error}
         elif scope_error:
             res = scope_error
-        elif it.get("baseline_receipt_audit"):
+        elif it.get("receipt_correction") or it.get("zero_delivery_audit") or it.get("baseline_receipt_audit"):
             res = check_one(it, rows)
         elif it.get("code") == settlement_status.SO_ALREADY_SETTLED:
             settlement = settlement_status.inspect_so(it.get("so"), (
@@ -1217,7 +1267,12 @@ def validate(
         cur = rows.get(int(ref)) if ref else None
         if cur is not None:
             item["_identity"] = {"row": int(ref), "SO": cur["SO"], "SOD": cur["SOD"]}
+        import flow_monthly
+        item['flow_receipt_proof'] = flow_monthly.checked_receipt_proof(
+            item, rows, plan.get('hexiao_date'), plan.get('parent_fallback_allocations') or {})
         checked.append(item)
+    if not defer_sequence_guard:
+        FS.guard(checked, checked=True)
     buckets = {"write": [], "skip": [], "conflict": []}
     for c in checked:
         buckets[c["_check"]["verdict"]].append(c)
@@ -1256,8 +1311,19 @@ def recheck_so_skips(plan: dict, ledger_path: Path) -> List[str]:
         return [f"{ledger_path.name} 整单跳过计划缺少指纹或当前指纹已变化；请重新校验全部 SO 业务行。"]
     if plan.get("ledger_path") and Path(plan["ledger_path"]).resolve() != ledger_path.resolve():
         return ["整单跳过计划的盈亏表路径与当前表不同；请重新校验。"]
-    checked = validate({**plan, "auto": items}, read_ledger_rows(ledger_path))
-    return [f"{it.get('case_id')}: {it['_check']['reason']}" for it in checked["conflict"]]
+    # Recheck this year's settled rows, then evaluate their dependencies against
+    # the complete checked batch. A skip-only subset is not a complete component.
+    checked = validate({**plan, "auto": items}, read_ledger_rows(ledger_path),
+                       defer_sequence_guard=True)
+    refreshed = [it for bucket in ("write", "skip", "conflict") for it in checked[bucket]]
+    refreshed_ids = {it.get("case_id") for it in refreshed}
+    context = plan.get("_sequence_checked_items")
+    if context is None:
+        context = [it for bucket in ("write", "skip", "conflict") for it in (plan.get(bucket) or [])]
+    universe = [dict(it) for it in context if it.get("case_id") not in refreshed_ids] + refreshed
+    FS.guard(refreshed, checked=True, universe=universe)
+    return [f"{it.get('case_id')}: {it['_check']['reason']}" for it in refreshed
+            if it["_check"]["verdict"] == "conflict"]
 
 
 def validate_by_year(
@@ -1302,7 +1368,7 @@ def validate_by_year(
             continue
         subplan = {**plan, "auto": items}
         path = ledger_paths.get(year)
-        checked = validate(subplan, rows_by_year[year], ledger_path=path, allocation_errors=allocation_errors)
+        checked = validate(subplan, rows_by_year[year], ledger_path=path, allocation_errors=allocation_errors, defer_sequence_guard=True)
         for bucket in merged:
             merged[bucket].extend(checked.get(bucket) or [])
         if path is not None:
@@ -1311,6 +1377,9 @@ def validate_by_year(
                 "sha256": common.sha256_file(path),
             }
 
+    sequence_items = [item for bucket in merged.values() for item in bucket]
+    FS.guard(sequence_items, checked=True)
+    merged = {key: [item for item in sequence_items if item["_check"]["verdict"] == key] for key in merged}
     out = {
         "generated_at": dt.datetime.now().isoformat(timespec="seconds"),
         "hexiao_date": plan.get("hexiao_date") or "",

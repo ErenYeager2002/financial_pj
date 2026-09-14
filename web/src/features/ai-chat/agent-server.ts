@@ -9,6 +9,7 @@ import {
 } from '@financial-platform/agent-runtime';
 import { Type } from 'typebox';
 import { PlatformApiError } from '@/features/platform-api/errors';
+import { createArWorkflowTools } from '@/features/ai-chat/ar-workflow-tools';
 import { safeCatalog, type SafeSkill } from '@/features/ai-chat/safe-catalog';
 import { createPlatformInformationTool } from '@/features/ai-chat/platform-information-tool';
 import { listSelectableInputFilesByIds } from '@/features/files/api/server';
@@ -237,17 +238,18 @@ async function listRunningTasks(): Promise<RunningTask[]> {
 
 async function findTask(taskId: string): Promise<RunningTask | null> {
   try {
+    return await platformServerRequest<RunningTask>(
+      `/api/assistant/ar/task?task_id=${encodeURIComponent(taskId)}`
+    );
+  } catch (error) {
+    if (!(error instanceof PlatformApiError) || error.status !== 404) throw error;
+  }
+  try {
     return runTaskSummary(
       await platformServerRequest<RunDetail>(`/api/runs/${encodeURIComponent(taskId)}`)
     );
-  } catch {
-    // The same task-status tool also supports guided workflow sessions.
-  }
-  try {
-    return workflowTaskSummary(
-      await platformServerRequest<WorkflowRead>(`/api/workflows/${encodeURIComponent(taskId)}`)
-    );
-  } catch {
+  } catch (error) {
+    if (!(error instanceof PlatformApiError) || error.status !== 404) throw error;
     return null;
   }
 }
@@ -394,6 +396,8 @@ function createTools(
 
   return [
     platformInformationTool,
+    ...createArWorkflowTools(input, (path, body) => platformServerRequest<unknown>(path,
+      body ? { method: 'POST', body: JSON.stringify(body) } : undefined)),
     listTool,
     recommendTool,
     prepareTool,
@@ -421,7 +425,14 @@ function systemPrompt(
     'query_platform_information 不提供密码、API Key、会话令牌、服务凭据、文件正文或本地路径；不要向用户索要这些内容。列表较长时按页查询并说明当前页范围。',
     '用户询问正在运行、排队、失败或完成的任务时，优先调用 list_running_tasks 或 get_task_status，不要猜测状态。',
     '需要创建标准只读任务时，才能从授权目录中选择 Skill，并通过 prepare_task_draft 生成草稿；不能绕过平台校验直接执行。',
-    '文件只能使用下方 file_catalog 中的 alias，不能猜测文件 ID 或路径。',
+    '标准只读草稿的文件只能使用file_catalog中的alias。file_catalog只代表本次聊天附件，不代表平台工具input或业务材料为空；不能猜测文件ID或路径。',
+    '应收核销使用独立能力：标准版ar-hexiao-daily、极速版ar-hexiao-daily-lab。不要把这两项交给prepare_task_draft；只读草稿目录没有某项，不等于用户没有该业务权限。实际权限以应收工具返回为准。',
+    '用户提出核销执行请求时，先用inspect_ar_materials或prepare_ar_workflow查当前账号材料和凭据状态；平台当前业务材料版本可合法包含已校验输出，不要笼统认定输出不能作为输入，不要求用户重新上传已有材料。',
+    '用户说帮我做、执行、再跑一次、可以继续等是当前范围内的行动指令。结合此前对话确定日期和版本；已有明确授权不重复询问。用当前消息的执行原文准备计划，ready后调用start_ar_workflow，返回真实任务编号和链接；不能只说可以执行或自行宣称已执行。',
+    '用户明确要求再跑已成功日期时，prepare_ar_workflow设置rerun_successful_dates=true并引用其当前执行原文，不要再次确认同一个重跑要求。历史失败涉及财务写入时先查失败阶段和调查结果，不自动重试。',
+    '只有具体日期、版本或授权范围无法从对话确定，或工具报告真正缺项时才提问；工具返回无权限、缺凭据、材料变化等错误时准确说明原因，不将能力不支持说成账号无权限。不要要求在聊天中提供密码。',
+    '准备计划不代表已运行，后台启动不代表核销完成。多日期交由平台升序串行处理，不并发逐日启动。纯咨询、假设、引用或用户拒绝执行时不可启动；平台写前校验、审批、副本和回读约束始终保留。',
+    `当前平台日期（Asia/Shanghai）: ${new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Shanghai' }).format(new Date())}`,
     '涉及金额、明细或结果时，只能依据工具返回的数据，不要编造数字。',
     `authorized_skill_catalog: ${jsonText(skills)}`,
     `file_catalog: ${jsonText(files)}`,
@@ -496,6 +507,7 @@ export async function createAssistantTurn(input: AssistantTurnInput): Promise<As
     token
   );
   tokenRef.value = token;
+  let aborted = false;
 
   async function* events(): AsyncIterable<AgentEvent> {
     // 先把可见状态告诉前端，避免上下文查询期间页面看起来像卡死。
@@ -516,6 +528,7 @@ export async function createAssistantTurn(input: AssistantTurnInput): Promise<As
           ).catch(() => null)
         : Promise.resolve(null)
     ]);
+    if (aborted) return;
     const safeSkills = safeCatalog(skills);
     yield {
       type: 'tool_result',
@@ -542,6 +555,9 @@ export async function createAssistantTurn(input: AssistantTurnInput): Promise<As
   }
   return {
     events: events(),
-    abort: () => entry.runtime.abort(checked.sessionId, session.user_id)
+    abort: () => {
+      aborted = true;
+      entry.runtime.abort(checked.sessionId, session.user_id);
+    }
   };
 }

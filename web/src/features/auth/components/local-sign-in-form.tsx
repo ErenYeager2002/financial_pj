@@ -4,6 +4,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { IconArrowRight, IconLoader2 } from '@tabler/icons-react';
 import { useRouter } from 'next/navigation';
 import { FormEvent, useState } from 'react';
 
@@ -54,23 +55,28 @@ export default function LocalSignInForm() {
   }
 
   return (
-    <div className='w-full rounded-xl border bg-card p-6 text-card-foreground shadow-sm'>
-      <div className='mb-6 space-y-1 text-center'>
-        <h1 className='text-2xl font-semibold'>登录财务自动化平台</h1>
-        <p className='text-sm text-muted-foreground'>请输入管理员分配的用户名和密码</p>
+    <div className='w-full min-w-0'>
+      <div className='mb-8 space-y-2'>
+        <h1 className='text-2xl font-semibold tracking-tight'>登录账号</h1>
+        <p id='sign-in-description' className='text-sm leading-6 text-muted-foreground'>使用管理员分配的用户名和密码。</p>
       </div>
       {error && (
-        <Alert variant='destructive' className='mb-4'>
+        <Alert id='sign-in-error' variant='destructive' className='mb-5' role='alert'>
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
-      <form className='space-y-4' onSubmit={submit}>
+      <form className='space-y-5' onSubmit={submit} aria-describedby='sign-in-description' aria-busy={submitting}>
         <div className='space-y-2'>
           <Label htmlFor='sign-in-username'>用户名</Label>
           <Input
             id='sign-in-username'
             name='username'
             autoComplete='username'
+            autoCapitalize='none'
+            spellCheck={false}
+            placeholder='请输入用户名'
+            className='h-11 rounded-lg text-base'
+            aria-describedby={error ? 'sign-in-error' : undefined}
             value={username}
             onChange={(event) => setUsername(event.target.value)}
             disabled={submitting}
@@ -84,16 +90,24 @@ export default function LocalSignInForm() {
             name='password'
             type='password'
             autoComplete='current-password'
+            placeholder='请输入密码'
+            className='h-11 rounded-lg text-base'
+            aria-describedby={error ? 'sign-in-error' : undefined}
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             disabled={submitting}
             required
           />
         </div>
-        <Button type='submit' size='lg' className='w-full' disabled={submitting}>
+        <Button type='submit' size='lg' className='h-11 w-full rounded-lg bg-[color-mix(in_oklab,var(--primary)_80%,black)] text-primary-foreground hover:bg-[color-mix(in_oklab,var(--primary)_70%,black)]' disabled={submitting}>
+          {submitting ? <IconLoader2 className='size-4 animate-spin motion-reduce:animate-none' aria-hidden='true' /> : null}
           {submitting ? '正在登录…' : '登录'}
+          {!submitting ? <IconArrowRight className='size-4' aria-hidden='true' /> : null}
         </Button>
       </form>
+      <p className='mt-6 border-t pt-5 text-xs leading-6 text-muted-foreground'>
+        无法登录或忘记密码？请联系管理员。
+      </p>
     </div>
   );
 }

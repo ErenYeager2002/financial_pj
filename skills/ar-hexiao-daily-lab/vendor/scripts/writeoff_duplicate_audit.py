@@ -218,6 +218,34 @@ def _audit_whole_payment_orders(
         )
         return [], audit
 
+    if (source == "delivery_fallback" and len(orders) == 1 and parent_currency == "CNY"
+            and parent_cents is not None and 0 < parent_cents <= sum(chosen)
+            and all(value in (None, parent_cents) for value in (parent_local,parent_orig))):
+        # A single CNY order owns the entire actual parent receipt, including
+        # sub-yuan differences. Do not manufacture the missing cents from D.
+        source = "single_order_parent"
+        original_key = "_parent_receipt_original"
+        local_key = "_parent_receipt_local"
+        orders = [{**orders[0], original_key:_money(parent_cents), local_key:_money(parent_cents)}]
+        chosen = [parent_cents]
+        basis = basis.replace("delivery_fallback", source)
+        audit.update(status=source,fallback_used=False,reason="唯一人民币订单按父总到账实际金额核销")
+
+    if source == "delivery_fallback" and parent_cents < sum(chosen):
+        # Delivery is capacity, never evidence that this AR paid the full order.
+        audit.update(status="parent_allocation_required",
+                     comparison_basis=basis.replace("delivery_fallback", "parent_allocation"),
+                     fallback_used=True, logical_record_count=0, effective_detail_count=0,
+                     effective_order_amount_count=0, logical_total=0.0,
+                     order_capacity_total=_money(sum(chosen)),
+                     order_records=[{"so":order["so"], "capacity":_money(value), "source":"delivery_capacity"}
+                                    for order,value in zip(orders,chosen)],
+                     reason="没有逐 SO 实际核销金额，按父总到账和订单剩余未收进行顺序分配")
+        if parent_cents is None or parent_cents <= 0 or any(value < 0 for value in chosen):
+            audit.update(status="unresolved",error_code="E_PARENT_WRITEOFF_MISMATCH",
+                         reason="父总到账或订单交付容量无有效非负金额")
+        return [], audit
+
     logical: List[dict] = []
     for order, amount_cents in zip(orders, chosen):
         assert amount_cents is not None
@@ -369,7 +397,10 @@ def audit_parent_writeoffs(
         ),
     }
 
-    if is_whole_payment:
+    if is_whole_payment and (not physical_kept or any(
+        _field_present(order, "written_off") or _field_present(order, "written_off_local")
+        for order in payment.get("orders") or []
+    )):
         return _audit_whole_payment_orders(
             payment,
             audit,

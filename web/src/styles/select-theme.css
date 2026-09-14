@@ -1,0 +1,83 @@
+/* Shared theme tokens for native controls and portalled component menus. */
+select {
+  color: var(--foreground);
+  background-color: var(--background);
+  border-color: var(--input);
+  accent-color: var(--primary);
+  color-scheme: light;
+}
+.dark select { color-scheme: dark; }
+select option, select optgroup {
+  color: var(--popover-foreground);
+  background-color: var(--popover);
+}
+select:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+select[aria-invalid='true'] { border-color: var(--destructive); }
+select:disabled { cursor: not-allowed; opacity: 0.5; }
+select option:disabled { color: var(--muted-foreground); }
+
+/* Progressive enhancement keeps native values, events and form submission. */
+@supports (appearance: base-select) {
+  select:not([multiple]):not([size]),
+  select:not([multiple]):not([size])::picker(select) { appearance: base-select; }
+  select:not([multiple]):not([size]) { align-items: center; gap: 8px; }
+  select::picker(select) {
+    color: var(--popover-foreground);
+    background: var(--popover);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 4px;
+    margin-block: 4px;
+    max-block-size: min(320px, 60svh);
+    max-inline-size: calc(100vw - 24px);
+    overflow: auto;
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.14);
+  }
+  select::picker-icon { color: var(--muted-foreground); margin-inline-start: auto; }
+  select[data-slot='native-select']::picker-icon { display: none; }
+  select option {
+    min-block-size: 36px;
+    padding: 8px 12px;
+    border-radius: var(--radius-md);
+    white-space: normal;
+    overflow-wrap: anywhere;
+    cursor: pointer;
+  }
+  select option:checked {
+    color: var(--popover-foreground);
+    background: color-mix(in oklab, var(--primary) 12%, var(--popover));
+  }
+  select option:not(:disabled):is(:hover, :focus) {
+    color: var(--accent-foreground);
+    background: var(--accent);
+    outline: none;
+  }
+  select option::checkmark { color: var(--primary); }
+  select option:disabled { cursor: not-allowed; }
+  select optgroup { padding: 4px; }
+}
+
+[data-slot='select-trigger'], [data-slot='combobox-input'] {
+  color: var(--foreground);
+  background-color: var(--background);
+  border-color: var(--input);
+}
+:is([data-slot='select-content'], [data-slot='combobox-content'], [data-slot='dropdown-menu-content'], [data-slot='dropdown-menu-sub-content']) {
+  color: var(--popover-foreground);
+  background-color: var(--popover);
+  border-color: var(--border);
+}
+:is([data-slot='select-item'], [data-slot='combobox-item'], [data-slot='dropdown-menu-item']:not([data-variant='destructive'])):is([data-highlighted], :focus-visible) {
+  color: var(--accent-foreground);
+  background-color: var(--accent);
+}
+[data-slot='select-item'][data-selected] {
+  background-color: color-mix(in oklab, var(--primary) 12%, var(--popover));
+}
+
+.result-summary-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.result-summary-controls { flex: 1 1 240px; min-width: 0; }
+.result-summary-controls select { width: 210px; max-width: 100%; }
+.result-summary-status { display: flex; flex: 0 0 196px; align-items: center; justify-content: flex-end; gap: 8px; }
+.result-summary-status > :first-child { width: 116px; justify-content: center; }
+.result-summary-status > :last-child { width: 72px; justify-content: center; }

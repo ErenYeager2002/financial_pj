@@ -395,7 +395,7 @@ def main(argv=None) -> int:
         return 0
 
     try:
-        final_flow_plan = build_flow_plan.finalize_plan_after_ledger(flow_plan_data, plan)
+        final_flow_plan = build_flow_plan.finalize_plan_after_ledger(flow_plan_data, plan, workspace=ws)
     except Exception as e:
         flow_warnings.append(
             f"流转状态计划生成未完成（{type(e).__name__}），盈亏已写入。"

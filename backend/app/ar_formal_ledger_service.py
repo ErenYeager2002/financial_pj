@@ -136,15 +136,14 @@ def _only_adds_annual_materials(parent: WorkflowMaterialSet, child: WorkflowMate
 
 
 def inherit_formal_ledgers(db: Session, workflow: WorkflowSession, workspace: Path) -> dict:
-    from .ar_skill_identity import AR_LAB_SKILL_ID
+    from .ar_material_history import verify_updated_annual_materials
 
     material = workflow.material_set
+    selected_material = material
     selected_material_id = material.id if material is not None else None
     if material is not None and not material.source_workflow_id and material.parent_set_id:
         parent_id = material.parent_set_id
         seen = {material.id}
-        child = material
-        additive = workflow.skill_id == AR_LAB_SKILL_ID
         while parent_id:
             if parent_id in seen:
                 raise ValueError("业务材料历史存在循环引用，无法核对辅助台账来源")
@@ -154,20 +153,16 @@ def inherit_formal_ledgers(db: Session, workflow: WorkflowSession, workspace: Pa
                 workflow.owner_id, workflow.department_id, workflow.skill_id,
             ):
                 raise ValueError("业务材料父版本不存在或不属于当前业务范围")
-            additive = additive and _only_adds_annual_materials(parent, child)
             source = db.get(WorkflowSession, parent.source_workflow_id) if parent.source_workflow_id else None
             if parent.source_workflow_id and (source is None or (
                 source.owner_id, source.department_id, source.skill_id,
             ) != (workflow.owner_id, workflow.department_id, workflow.skill_id)):
                 raise ValueError("父材料引用的来源任务缺失或业务范围不一致，不能按旧版空历史处理")
             if source is not None:
-                if additive:
-                    # Validate the actual published ancestor against its bundle
-                    # below; the selected version only adds untouched years.
-                    material = parent
-                    break
-                raise ValueError("人工替换的材料存在核销历史，但辅助台账与当前工作簿的对应关系未核实；请先绑定对应历史台账，不能按空历史执行。")
-            child = parent
+                # Idle-time replacement is allowed. Bind to the verified source
+                # and compare receipt facts only when annual content changed.
+                material = parent
+                break
             parent_id = parent.parent_set_id
         else:
             return {"mode": "legacy_material", "parent_set_id": material.parent_set_id}
@@ -190,6 +185,8 @@ def inherit_formal_ledgers(db: Session, workflow: WorkflowSession, workspace: Pa
     published = sorted((item["role"], item["year"], item["file_id"], item["sha256"]) for item in publication["files"])
     if expected != published:
         raise ValueError("辅助台账对应的发布文件、年度或指纹与当前所选材料不一致")
+    material_differences = []
+    verified_updated_years = verify_updated_annual_materials(db, material, selected_material, differences=material_differences)
     json_ledgers = payload["json_ledgers"]
     folder = workspace / "03_台账"
     folder.mkdir(exist_ok=True)
@@ -221,6 +218,8 @@ def inherit_formal_ledgers(db: Session, workflow: WorkflowSession, workspace: Pa
             raise ValueError("当前任务已有不同的辅助台账，禁止覆盖")
     for name, content in contents.items():
         (folder / name).write_bytes(content)
+    (folder / "业务材料历史差异.json").write_text(json.dumps({"schema_version": 1, "differences": material_differences}, ensure_ascii=False, indent=2), encoding="utf-8")
     return {"mode": "published_bundle", "source_workflow_id": source.id,
             "file_id": record.id, "sha256": record.sha256,
-            "bound_material_set_id": material.id, "selected_material_set_id": selected_material_id}
+            "bound_material_set_id": material.id, "selected_material_set_id": selected_material_id,
+            "verified_updated_years": verified_updated_years, "material_history_differences": material_differences}

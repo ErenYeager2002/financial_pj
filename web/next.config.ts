@@ -13,6 +13,7 @@ const baseConfig: NextConfig = {
   distDir: process.env.NEXT_DIST_DIR || '.next',
   output: process.env.BUILD_STANDALONE === 'true' ? 'standalone' : undefined,
   experimental: {
+    cpus: 2,
     optimizePackageImports: ['@tabler/icons-react'],
     webpackMemoryOptimizations: true
   },

@@ -3,7 +3,6 @@
 import * as React from 'react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Icons } from '@/components/icons';
@@ -14,6 +13,7 @@ import {
   type WorkflowFlowState
 } from '@/features/workflow-agent/workflow-flow';
 import type { WorkflowRead } from '@/features/platform-api/types';
+import { isTerminalWorkflow, isWaitingWorkflow } from '@/features/workflow-agent/workflow-batch-selection';
 import { formatDate } from '@/lib/format';
 import { taskErrorCategoryLabel } from '@/features/workflows/step-display';
 
@@ -21,6 +21,7 @@ interface WorkflowProgressCardProps {
   workflow: WorkflowRead;
   onOpenFetchedData?: () => void;
   compact?: boolean;
+  waitingMessage?: string;
 }
 
 function nodeIcon(state: WorkflowFlowState): React.JSX.Element {
@@ -40,14 +41,19 @@ function writeStatusLabel(value: unknown): string {
 
 export function WorkflowProgressCard({
   workflow,
-  onOpenFetchedData,
-  compact = false
+  compact = false,
+  waitingMessage
 }: WorkflowProgressCardProps): React.JSX.Element {
-  const nodes = workflowFlow(workflow);
-  const groups = workflowSummaryFlow(workflow);
+  const waiting = isWaitingWorkflow(workflow) && (
+    !isTerminalWorkflow(workflow) || (workflow.state === 'cancelled' && workflow.progress === 0)
+  );
+  const progress = waiting ? 0 : workflow.progress;
+  const nodes = workflowFlow(workflow).map(node => waiting ? { ...node, state: 'pending' as const } : node);
+  const groups = workflowSummaryFlow(workflow).map(group => waiting ? { ...group, state: 'pending' as const } : group);
   const error = workflowError(workflow);
   const isFailed = workflow.state === 'failed' || workflow.stage === 'failed';
   const currentLabel =
+    waitingMessage ||
     workflow.current_step_label ||
     (error
       ? `已在${error.step}中断`
@@ -68,12 +74,12 @@ export function WorkflowProgressCard({
               error ? 'destructive' : workflow.state === 'succeeded' ? 'secondary' : 'outline'
             }
           >
-            {workflow.progress}%
+            {progress}%
           </Badge>
         </div>
         <Progress
-          value={workflow.progress}
-          aria-label={`任务进度 ${workflow.progress}%`}
+          value={progress}
+          aria-label={`任务进度 ${progress}%`}
           className='mt-3'
         />
       </CardHeader>
@@ -100,7 +106,7 @@ export function WorkflowProgressCard({
             </li>
           ))}
         </ol>
-        <details className='mt-3 rounded-md border px-3 py-2'>
+        <details open className='mt-3 rounded-md border px-3 py-2'>
           <summary className='cursor-pointer text-sm font-medium'>查看细分步骤</summary>
           <ol
             className='mt-3 grid gap-2 sm:grid-cols-3 lg:grid-cols-5'
@@ -125,19 +131,6 @@ export function WorkflowProgressCard({
                   <span className='min-w-0 break-words sm:mt-2 sm:block'>
                     {node.label}
                   </span>
-                  {(node.key === 'fetch_zhiyun' || node.key === 'review_fetched_data') &&
-                    workflow.fetched_data_available &&
-                    onOpenFetchedData && (
-                      <Button
-                        type='button'
-                        size='xs'
-                        variant='outline'
-                        className='relative mt-2 w-full sm:text-xs'
-                        onClick={onOpenFetchedData}
-                      >
-                        查看取数数据
-                      </Button>
-                    )}
                 </div>
               </li>
             ))}

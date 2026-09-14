@@ -311,7 +311,7 @@ def write_plan(
                     "改前": {k: _norm(before.get(k)) for k in FIVE} if step_index == 0 else {k: "" for k in FIVE},
                     "改后": {k: _norm(five.get(k)) for k in FIVE},
                     "派生列_改前": {},
-                    "派生列_改后": {k: _norm(derived.get(k)) for k in DERIVED if k in derived},
+                    "派生列_改后": {k: _norm(derived.get(k)) for k in DERIVED if k in derived or it.get("receipt_correction")},
                     "派生列_公式": {"差异": formula if "差异" in derived else ""},
                     "操作": f"分笔回款链第 {step_index + 1} 笔（独立父回款）",
                     "新增行号": applied_r if step_index > 0 else "",
@@ -321,7 +321,9 @@ def write_plan(
         for k in FIVE:
             v = five.get(k)
             if v is None:
-                continue  # 部分核销时计提留空——留空就是留空，不写 0
+                if it.get('receipt_correction'):
+                    edits.append((r, cols[k], None))
+                continue  # An authorized correction may explicitly clear old values.
             if k == "收款时间":
                 v = common.norm_date(v) or v
             elif k in ("计提", "回款明细"):
@@ -338,6 +340,8 @@ def write_plan(
             edits.append(
                 (r, cols["差异"], xlsx_patch.FormulaValue(formula, target_diff))
             )
+        if it.get('receipt_correction') and '差异' not in derived and '差异' in cols:
+            edits.append((r, cols['差异'], None))
         sod = five.get("实收SOD") or it.get("sod")
         if sod:
             edits.append((r, cols["SOD"], sod))
@@ -375,8 +379,8 @@ def write_plan(
                 "SOD": sod,
                 "改前": {k: _norm(before.get(k)) for k in FIVE},
                 "改后": {k: _norm(five.get(k)) for k in FIVE},
-                "派生列_改前": {k: _norm(before.get(k)) for k in DERIVED if k in derived},
-                "派生列_改后": {k: _norm(derived.get(k)) for k in DERIVED if k in derived},
+                "派生列_改前": {k: _norm(before.get(k)) for k in DERIVED if k in derived or it.get("receipt_correction")},
+                "派生列_改后": {k: _norm(derived.get(k)) for k in DERIVED if k in derived or it.get("receipt_correction")},
                 "派生列_公式": {
                     "差异": formula if "差异" in derived else "",
                 },
@@ -565,12 +569,14 @@ def verify_written(out: Path, items: List[dict]) -> List[str]:
             problems.append(f"第 {r} 行写完却读不到")
             continue
         for k in FIVE:
-            if five.get(k) is None:
+            if five.get(k) is None and not it.get('receipt_correction'):
                 continue
             if _norm(row.get(k)) != _norm(five.get(k)):
                 problems.append(
                     f"第 {r} 行 {k}：期望 {_norm(five.get(k))!r} 实际 {_norm(row.get(k))!r}"
                 )
+        if it.get('receipt_correction') and not (it.get('derived_cols') or {}) and _norm(row.get('差异')) not in ('','None'):
+            problems.append(f'第 {r} 行纠正后差异应为空')
         derived = it.get("derived_cols") or {}
         for k in DERIVED:
             if k not in derived:
@@ -764,6 +770,9 @@ def _comparison_objects(items: List[dict]) -> List[dict]:
         for key in DERIVED:
             if key in derived:
                 expected[key] = derived[key]
+        if item.get('receipt_correction'):
+            expected.update({key:five.get(key) for key in FIVE})
+            expected['差异'] = derived.get('差异')
 
         operation = item.get("row_operation") or {}
         if operation.get("type") == BR.OPERATION:

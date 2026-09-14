@@ -33,6 +33,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import * as React from 'react';
 import { Icons } from '../icons';
+import { BrandIcon } from '@/components/brand-icon';
 
 interface AppSidebarProps {
   navGroups: NavGroup[];
@@ -67,7 +68,7 @@ export default function AppSidebar({ navGroups, session }: AppSidebarProps): Rea
   }, [isOpen]);
 
   return (
-    <Sidebar collapsible='icon'>
+    <Sidebar collapsible='offcanvas'>
       <SidebarHeader className='group-data-[collapsible=icon]:pt-4'>
         <SidebarMenu>
           <SidebarMenuItem>
@@ -76,9 +77,7 @@ export default function AppSidebar({ navGroups, session }: AppSidebarProps): Rea
               tooltip='财务自动化平台'
               render={<Link href='/dashboard/overview' aria-label='财务自动化平台' />}
             >
-              <span className='flex size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground'>
-                <Icons.logo className='size-4' />
-              </span>
+              <BrandIcon className='size-9' />
               <span className='font-semibold'>财务自动化平台</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
@@ -192,7 +191,7 @@ export default function AppSidebar({ navGroups, session }: AppSidebarProps): Rea
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>
-      <SidebarRail />
+      <SidebarRail className='group-data-[collapsible=offcanvas]:hidden' />
     </Sidebar>
   );
 }

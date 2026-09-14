@@ -1,5 +1,7 @@
 'use client';
 
+import { watchAssistantTurn } from '@/features/ai-chat/turn-recovery';
+
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -25,7 +27,6 @@ import type {
   TaskDraft
 } from '@/features/platform-api/types';
 import { createClientId } from '@/lib/client-id';
-import { formatDate } from '@/lib/format';
 
 interface AssistantWorkspaceProps {
   initialConfigured: boolean;
@@ -172,11 +173,14 @@ export function AssistantWorkspace({
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyCheckedAt, setHistoryCheckedAt] = useState('');
   const [historical, setHistorical] = useState(false);
-  const [working, setWorking] = useState(false);
-  const [toolMessage, setToolMessage] = useState('');
+  const [streamWorking, setWorking] = useState(false);
+  const [backgroundWorking, setBackgroundWorking] = useState(false);
+  const working = streamWorking || backgroundWorking;
+  const [, setToolMessage] = useState('');
   const [pendingMessage, setPendingMessage] = useState('');
   const [error, setError] = useState('');
   const turnControllerRef = useRef<AbortController | null>(null);
+  const turnReadyRef = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -270,6 +274,28 @@ export function AssistantWorkspace({
   }, []);
 
   useEffect(() => {
+    if (!sessionId || historyLoading || streamWorking) return;
+    setBackgroundWorking(true);
+    return watchAssistantTurn(sessionId, {
+      update: (value, active) => {
+        if (!isRecord(value) || !Array.isArray(value.messages)) return;
+        const conversation = value as unknown as AssistantConversation;
+        const recovered = conversationMessages(conversation);
+        setMessages(active ? [...recovered, {
+          id: `background-${sessionId}`, role: 'assistant', content: '正在后台生成回复，完成后会自动显示。'
+        }] : recovered);
+        setBackgroundWorking(active);
+        setHistorical(!active);
+        setHistoryCheckedAt(new Date().toISOString());
+        setError(!active && recovered.at(-1)?.role === 'user'
+          ? '未找到这条消息的已保存回复。请先核实任务状态，避免重复发送执行指令。'
+          : '');
+      },
+      error: setError
+    });
+  }, [sessionId, historyLoading, streamWorking]);
+
+  useEffect(() => {
     if (!sessionId) return;
     const state: PersistedAssistantState = {
       input,
@@ -287,6 +313,21 @@ export function AssistantWorkspace({
       // A full or restricted browser storage must not block the conversation.
     }
   }, [draft, input, pendingMessage, selectedFileNames, selectedFiles, sessionId]);
+
+  useEffect(() => {
+    if (!conversations.some(item => item.preview === '新对话')) return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      void fetch('/api/platform/assistant/conversations', { cache: 'no-store', signal: controller.signal })
+        .then(async response => {
+          if (response.ok && !controller.signal.aborted) {
+            const items = await response.json() as AssistantConversationSummary[];
+            if (!controller.signal.aborted) setConversations(items);
+          }
+        }).catch(() => {});
+    }, 10000);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [conversations]);
 
   async function refreshConversationList() {
     setHistoryListLoading(true);
@@ -447,6 +488,8 @@ export function AssistantWorkspace({
     const controller = new AbortController();
     turnControllerRef.current = controller;
 
+    let resolveTurnReady!: () => void;
+    turnReadyRef.current = new Promise<void>(resolve => { resolveTurnReady = resolve; });
     let response: Response;
     try {
       response = await fetch('/api/platform/assistant/turn', {
@@ -458,7 +501,7 @@ export function AssistantWorkspace({
           file_ids: selectedFiles
         }),
         signal: controller.signal
-      });
+      }).finally(resolveTurnReady);
     } catch {
       if (controller.signal.aborted) {
         setToolMessage('');
@@ -559,10 +602,20 @@ export function AssistantWorkspace({
     void refreshConversationList();
   }
 
-  function stopMessage() {
-    if (!turnControllerRef.current) return;
+  async function stopMessage() {
+    if (!sessionId) return;
     setToolMessage('正在停止…');
-    turnControllerRef.current.abort();
+    try {
+      await turnReadyRef.current;
+      const response = await fetch('/api/platform/assistant/turn', {
+        method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: sessionId })
+      });
+      if (!response.ok) throw new Error(await responseMessage(response, '停止生成失败。'));
+      turnControllerRef.current?.abort();
+    } catch (stopError) {
+      setError(stopError instanceof Error ? stopError.message : '停止生成失败。');
+    }
   }
 
   function openTaskWizard() {
@@ -595,8 +648,7 @@ export function AssistantWorkspace({
   const hasContext =
     selectedNames.length > 0 ||
     Boolean(pendingMessage) ||
-    Boolean(draft) ||
-    (working && Boolean(toolMessage));
+    Boolean(draft);
   const notice = !configured ? (
     <Alert variant='destructive'>
       <Icons.warning />
@@ -631,13 +683,7 @@ export function AssistantWorkspace({
         <option value=''>当前新对话</option>
         {conversations.map((conversation) => (
           <option key={conversation.session_id} value={conversation.session_id}>
-            {formatDate(conversation.updated_at ?? undefined, {
-              month: 'numeric',
-              day: 'numeric',
-              hour: '2-digit',
-              minute: '2-digit'
-            })}{' '}
-            · {conversation.preview || '未命名会话'}
+            {conversation.preview || '新对话'}
           </option>
         ))}
       </select>
@@ -700,7 +746,6 @@ export function AssistantWorkspace({
         hasContext ? (
           <AssistantContextPanel
             selectedFileNames={selectedNames}
-            toolMessage={toolMessage}
             pendingMessage={pendingMessage}
             draft={draft}
             onOpenTask={openTaskWizard}

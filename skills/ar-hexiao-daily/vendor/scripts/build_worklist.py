@@ -346,6 +346,10 @@ def build_workbook(
         if raw is None:
             raw = fp.get("updated_suggest") or ""
         pol = flow_status_policy(raw)
+        if fp.get("monthly_schema"):
+            raw = "待写后确认"
+            pol = {"填法":"同月追加；跨月新行承接剩余预收", "公式策略":"完整数字减法，例如 =8000-3000-5000",
+                   "颜色标注":"保留已有标注", "人话":"单号展示SO交付额；预收仅扣减已验证的本次核销额，盈亏完成后确认实际月份行和余额"}
         wsum.append([
             ar, mode, s.get("so_count") or 0, s.get("行数") or 0,
             (raw if raw else "（空白）"),

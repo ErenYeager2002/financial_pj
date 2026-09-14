@@ -12,7 +12,7 @@ from .credential_service import decrypt_secret, encrypt_secret
 from .models import ServiceCredential
 from .schemas import ServiceCredentialRead
 
-SUPPORTED_SERVICES = {"zhiyun"}
+SUPPORTED_SERVICES = {"zhiyun", "kingdee"}
 
 
 def _account_hint(account: str) -> str:

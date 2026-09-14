@@ -6,12 +6,12 @@ function PageSkeleton() {
     <div
       role='status'
       aria-label='页面加载中'
-      className='flex flex-1 animate-pulse flex-col gap-4 p-4 md:px-6'
+      className='flex min-w-0 flex-1 animate-pulse flex-col gap-4 p-4 md:px-6'
     >
       <div className='flex items-center justify-between'>
         <div>
           <div className='bg-muted mb-2 h-8 w-48 rounded' />
-          <div className='bg-muted h-4 w-96 rounded' />
+          <div className='bg-muted h-4 w-96 max-w-full rounded' />
         </div>
       </div>
       <div className='bg-muted mt-6 h-40 w-full rounded-lg' />
@@ -58,16 +58,16 @@ export default function PageContainer({
   const hasHeader = pageTitle || pageHeaderAction;
 
   return (
-    <div className={compact ? 'platform-page' : 'flex flex-1 flex-col px-4 pt-2 pb-4 md:px-6 md:pt-4'}>
+    <div className={compact ? 'platform-page' : 'flex min-w-0 flex-1 flex-col px-4 pt-2 pb-4 md:px-6 md:pt-4'}>
       {hasHeader && (
-        <div className={compact ? 'mb-6 flex flex-wrap items-start justify-between gap-4' : 'mb-4 flex items-start justify-between gap-4'}>
+        <div className={compact ? 'mb-6 flex flex-wrap items-start justify-between gap-4' : 'mb-4 flex flex-wrap items-start justify-between gap-4'}>
           <Heading
             title={pageTitle ?? ''}
             description={pageDescription ?? ''}
             level={headingLevel}
             compact={compact}
           />
-          {pageHeaderAction && <div className='shrink-0'>{pageHeaderAction}</div>}
+          {pageHeaderAction && <div className='flex min-w-0 max-w-full flex-wrap gap-2'>{pageHeaderAction}</div>}
         </div>
       )}
       {content}

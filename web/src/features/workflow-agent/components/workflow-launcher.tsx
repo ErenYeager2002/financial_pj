@@ -1,5 +1,7 @@
 'use client';
 
+import { useMaterialEditLock } from '@/features/workflow-agent/hooks/use-material-edit-lock';
+
 import { isArSkill } from '@/features/workflow-agent/ar-skill-identity';
 import * as React from 'react';
 import Link from 'next/link';
@@ -162,6 +164,7 @@ export function WorkflowLauncher({
       ? (initialReusableFiles.material_version ?? null)
       : null
   );
+  const materialLock = useMaterialEditLock(skillId);
   const [materialsLoading, setMaterialsLoading] = React.useState(false);
   const [materialsError, setMaterialsError] = React.useState('');
   const [materialsRefreshKey, setMaterialsRefreshKey] = React.useState(0);
@@ -463,7 +466,7 @@ export function WorkflowLauncher({
   ) {
     const selected = Array.from(event.target.files ?? []);
     event.target.value = '';
-    if (!selected.length || uploadingRole) return;
+    if (!selected.length || uploadingRole || materialLock.locked) return;
     const uploads = multiple ? selected : selected.slice(0, 1);
     const previousFiles = materials[role] ?? [];
     setUploadingRole(role);
@@ -516,7 +519,7 @@ export function WorkflowLauncher({
   }
 
   async function removeMaterial(role: string, material: WorkflowMaterialFile) {
-    if (working || uploadingRole || deletingFileId) return;
+    if (working || uploadingRole || deletingFileId || materialLock.locked) return;
     const message =
       material.source === 'saved'
         ? `确认本次任务不再使用“${material.name}”吗？旧任务中的文件不会被删除。`
@@ -543,7 +546,7 @@ export function WorkflowLauncher({
       .filter((item) => startOfDay(item) <= today)
       .toSorted((left, right) => left.getTime() - right.getTime())
       .map((item) => format(item, 'yyyy-MM-dd'));
-    if (!skillId || working || uploadingRole || deletingFileId) return;
+    if (!skillId || working || uploadingRole || deletingFileId || materialLock.locked) return;
     if (!dates.length) {
       setDateError('请至少选择一个核销日期。');
       return;
@@ -856,6 +859,7 @@ export function WorkflowLauncher({
               <div>
                 <div className='flex items-center gap-2'>
                   <p className='text-sm font-medium'>任务材料</p>
+                  {materialLock.locked && <p role='status' className='text-sm text-muted-foreground'>{materialLock.reason}</p>}
                   {materialVersion !== null && (
                     <Badge variant='secondary'>当前业务版本 V{materialVersion}</Badge>
                   )}
@@ -900,7 +904,7 @@ export function WorkflowLauncher({
                                       : '删除本次上传文件'
                                   }
                                   disabled={
-                                    Boolean(uploadingRole) || Boolean(deletingFileId) || working
+                                    Boolean(uploadingRole) || Boolean(deletingFileId) || working || materialLock.locked
                                   }
                                   onClick={() => void removeMaterial(input.role, material)}
                                 >
@@ -931,6 +935,7 @@ export function WorkflowLauncher({
                           accept={input.extensions?.map((item) => `.${item}`).join(',')}
                           multiple={input.multiple}
                           disabled={
+                            materialLock.locked ||
                             materialsLoading ||
                             Boolean(uploadingRole) ||
                             Boolean(deletingFileId) ||
@@ -978,7 +983,7 @@ export function WorkflowLauncher({
             className='min-h-10 w-full sm:w-auto'
             onClick={() => void start()}
             disabled={
-              working ||
+              working || materialLock.locked ||
               Boolean(uploadingRole) ||
               Boolean(deletingFileId) ||
               materialsLoading ||

@@ -4,6 +4,7 @@ FOUNDATION_SKILL_IDS = frozenset({"xlsx", "docx", "pdf", "pptx"})
 SUPPORTING_SKILL_IDS = frozenset({"env-doctor", "task-clarifier"})
 BUSINESS_EXECUTION_EXPERIENCE_IDS = frozenset(
     {
+        "consolidated-statements",
         "ar-hexiao-daily",
         "ar-hexiao-daily-lab",
         "reconcile-bank",

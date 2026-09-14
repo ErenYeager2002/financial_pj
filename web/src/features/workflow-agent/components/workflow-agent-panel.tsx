@@ -1,5 +1,7 @@
 'use client';
 
+import { useMaterialEditLock } from '@/features/workflow-agent/hooks/use-material-edit-lock';
+
 import { isArSkill } from '@/features/workflow-agent/ar-skill-identity';
 import * as React from 'react';
 import Link from 'next/link';
@@ -88,6 +90,7 @@ export function WorkflowAgentPanel({
 }: WorkflowAgentPanelProps): React.JSX.Element {
   const router = useRouter();
   const [workflow, setWorkflow] = React.useState(initialWorkflow);
+  const materialLock = useMaterialEditLock(workflow.skill_id);
   const [error, setError] = React.useState('');
   const [activity, setActivity] = React.useState('');
   const [confirmationBusy, setConfirmationBusy] = React.useState(false);
@@ -215,7 +218,7 @@ export function WorkflowAgentPanel({
   ) {
     const selected = Array.from(event.target.files ?? []);
     event.target.value = '';
-    if (!selected.length || uploadingRole) return;
+    if (!selected.length || uploadingRole || materialLock.locked) return;
     const uploads = role === 'receipt_flow_table' ? selected.slice(0, 1) : selected;
     setUploadingRole(role);
     setError('');
@@ -261,7 +264,7 @@ export function WorkflowAgentPanel({
     fileId: string,
     fileName: string
   ) {
-    if (!filesEditable || deletingFileId || uploadingRole) return;
+    if (!filesEditable || deletingFileId || uploadingRole || materialLock.locked) return;
     if (!window.confirm(`确认从本次任务中移除“${fileName}”吗？`)) return;
     setDeletingFileId(fileId);
     setError('');
@@ -335,10 +338,10 @@ export function WorkflowAgentPanel({
         workflow={workflow}
         onOpenFetchedData={() => setFetchedDataOpen(true)}
       />
-      {workflow.fetched_data_available && isTerminal(workflow) && (
+      {workflow.fetched_data_available && (
         <div className='flex justify-end'>
           <Button type='button' variant='outline' onClick={() => setFetchedDataOpen(true)}>
-            查看已保存的取数数据
+            查看本次取数
           </Button>
         </div>
       )}
@@ -349,7 +352,7 @@ export function WorkflowAgentPanel({
         onWorkflowChange={setWorkflow}
       />
 
-      {workflow.stage === 'awaiting_fetched_data_confirmation' && (
+      {workflow.stage === 'awaiting_fetched_data_confirmation' && !isArSkill(workflow.skill_id) && (
         <Alert>
           <AlertTitle>请检查智云取数数据</AlertTitle>
           <AlertDescription className='flex flex-wrap items-center justify-between gap-3'>
@@ -450,7 +453,7 @@ export function WorkflowAgentPanel({
                         className='sr-only'
                         accept='.xlsx,.xlsm,.xls'
                         multiple={item.role === 'profit_loss_ledgers'}
-                        disabled={Boolean(uploadingRole) || Boolean(deletingFileId)}
+                        disabled={materialLock.locked || Boolean(uploadingRole) || Boolean(deletingFileId)}
                         onChange={(event) => void uploadMaterial(item.role, event)}
                       />
                     </label>
@@ -481,7 +484,7 @@ export function WorkflowAgentPanel({
                             className='min-h-11 min-w-11 shrink-0 text-muted-foreground hover:text-destructive'
                             aria-label={`从任务移除 ${typeof entry.name === 'string' ? entry.name : '文件'}`}
                             title='从本次任务移除'
-                            disabled={Boolean(uploadingRole) || Boolean(deletingFileId)}
+                            disabled={materialLock.locked || Boolean(uploadingRole) || Boolean(deletingFileId)}
                             onClick={() =>
                               void removeMaterial(
                                 item.role,

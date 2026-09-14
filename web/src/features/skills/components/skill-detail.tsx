@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { ConsolidationSetup } from '@/features/consolidation/components/consolidation-setup';
 import { Icons } from '@/components/icons';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -101,6 +102,8 @@ export function SkillDetailView({
             )}
           </CardContent>
         </Card>
+      ) : showExecution && skill.id === 'consolidated-statements' ? (
+        <ConsolidationSetup />
       ) : showExecution ? (
         <SkillRunSetup
           skill={skill}
@@ -124,7 +127,7 @@ export function SkillDetailView({
 
       <div className='flex justify-end'>
         <Link href='/dashboard/skills' className={cn(buttonVariants({ variant: 'outline' }))}>
-          返回 Skill 中心
+          返回工具中心
         </Link>
       </div>
     </div>

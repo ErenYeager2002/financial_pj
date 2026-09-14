@@ -31,7 +31,7 @@ const EMPLOYEE_GROUPS: PlatformNavigationGroup[] = [
     label: '我的工作',
     items: [
       { title: '工作台', url: '/dashboard/overview', icon: 'dashboard', shortcut: ['d', 'd'] },
-      { title: 'Skill 中心', url: '/dashboard/skills', icon: 'forms', shortcut: ['s', 'k'] },
+      { title: '工具中心', url: '/dashboard/skills', icon: 'forms', shortcut: ['s', 'k'] },
       { title: '我的任务', url: '/dashboard/runs', icon: 'clock', shortcut: ['r', 'r'] },
       { title: '文件中心', url: '/dashboard/files', icon: 'page', shortcut: ['f', 'f'] },
       { title: 'AI 助手', url: '/dashboard/ai-chat', icon: 'sparkles', shortcut: ['a', 'i'] }

@@ -8,6 +8,7 @@ from fastapi import HTTPException
 from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session, aliased
 
+from .assistant_title_service import cached_title
 from .auth import UserContext
 from .contracts import AssistantConversationRead, AssistantConversationSummary, AssistantMessageRead
 from .models import AssistantMessage, utcnow
@@ -31,6 +32,7 @@ def _serialize(message: AssistantMessage) -> AssistantMessageRead:
         data = {}
     if not isinstance(data, dict):
         data = {}
+    data.pop("_assistant_workflow_v1", None)
     safe_data = visible_value(data)
     return AssistantMessageRead(
         id=message.id,
@@ -97,13 +99,14 @@ def list_conversations(
 ) -> list[AssistantConversationSummary]:
     latest = aliased(AssistantMessage)
     latest_content = (
-        select(latest.content)
+        select(latest.data_json)
         .where(
             latest.session_id == AssistantMessage.session_id,
             latest.owner_id == user.user_id,
             latest.department_id == user.department_id,
+            latest.role == "user",
         )
-        .order_by(desc(latest.created_at), desc(latest.id))
+        .order_by(latest.created_at, latest.id)
         .limit(1)
         .scalar_subquery()
     )
@@ -127,7 +130,7 @@ def list_conversations(
             session_id=session_id,
             message_count=int(message_count),
             updated_at=updated_at,
-            preview=str(visible_value(str(preview or "")))[:160],
+            preview=cached_title(preview),
         )
         for session_id, message_count, updated_at, preview in rows
     ]
@@ -147,7 +150,8 @@ def append_message(
         raise HTTPException(status_code=422, detail="AI 消息内容长度无效。")
     if role not in {"user", "assistant", "system"}:
         raise HTTPException(status_code=422, detail="AI 消息角色无效。")
-    payload = data if isinstance(data, dict) else {}
+    payload = dict(data) if isinstance(data, dict) else {}
+    payload.pop("_assistant_workflow_v1", None)
     data_json = json.dumps(payload, ensure_ascii=False, default=str, separators=(",", ":"))
     if len(data_json.encode("utf-8")) > MAX_DATA_BYTES:
         raise HTTPException(status_code=422, detail="AI 消息附加数据过大。")

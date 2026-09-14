@@ -8,6 +8,7 @@ import math
 from pathlib import Path
 from typing import Dict, Iterable, Optional, Tuple
 
+import fallback_sequence as FS
 import amount_policy
 import baseline_receipts
 
@@ -153,6 +154,11 @@ def eligible_entries(checked: dict) -> Dict[str, dict]:
                 if amount > 0 and abs(amount - float(planned)) <= float(amount_policy.TECHNICAL_EPSILON):
                     completed.append(row["so"])
             out[ar] = {**audit, "applied_cases": cases, "applied_sos": sorted(completed)}
+        elif not allocated and audit.get("processing_order") and audit.get("allocations") and all(
+            any(it.get("ar") == ar and it.get("so") == row["so"] and it.get("code") == FS.ZERO
+                for it in checked.get("skip") or []) for row in audit["allocations"]
+        ):
+            out[ar] = {**audit, "applied_cases": {}, "applied_sos": []}
         elif allocated and all((ar, so) in successful for so in allocated):
             # Compatibility with old checked plans that have no case-level fields.
             out[ar] = dict(audit)

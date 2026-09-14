@@ -69,7 +69,8 @@ def _assert_platform_network_url(url: str) -> None:
     if os.environ.get("FINANCIAL_NETWORK_ACCESS") != "1" or host not in allowed:
         raise RuntimeError("网络目标不在平台批准的精确域名白名单中。")
 APP_ID = "6ff4fb2e-e68c-4ee9-83a0-836de8f72c11"
-EXPORT_SCHEMA_VERSION = "2026-09-03-delivery-local-v8"
+EXPORT_SCHEMA_VERSION = "2026-09-08-settlement-orders-v9"
+FETCH_READ_CONCURRENCY = 4
 CREDENTIAL_SERVICE = "codex.ar-hexiao-daily.zhiyun"
 
 WS_HUIKUAN = "6555d2b1f9460e517040ba6c"  # 回款记录（唯一入口）
@@ -307,6 +308,7 @@ class ZhiyunClient:
         self._tpl_cache: Dict[str, List[dict]] = {}
         # Per-login, exact-request cache; no disk persistence or cross-user reuse.
         self._read_cache: dict[str, Any] = {}
+        self._prefetched_search: Dict[Tuple[str, str], Tuple[Any, Any]] = {}
 
     def post(self, path: str, body: dict, timeout: int = 90) -> dict:
         import copy
@@ -331,6 +333,44 @@ class ZhiyunClient:
         if cacheable and isinstance(result, (dict, list)) and result and len(self._read_cache) < 512:
             self._read_cache[cache_key] = copy.deepcopy(result)
         return result
+
+    def prefetch_search_rows(self, worksheet_id: str, keywords: Sequence[str]) -> None:
+        """有界预取独立查询；主线程仍按原顺序解析并执行原错误策略。"""
+        from concurrent.futures import ThreadPoolExecutor
+        import threading
+
+        if FETCH_READ_CONCURRENCY <= 1:
+            return
+        pending = list(dict.fromkeys(keywords))
+        if len(pending) <= 1:
+            return
+        local = threading.local()
+        clients: List[ZhiyunClient] = []
+        lock = threading.Lock()
+
+        def read(keyword: str):
+            if not hasattr(local, "client"):
+                child = ZhiyunClient(self.base, "", page_size=self.page_size)
+                child.headers = dict(self.headers)
+                local.client = child
+                with lock:
+                    clients.append(child)
+            try:
+                return keyword, local.client.search_rows(worksheet_id, keyword), None
+            except Exception as exc:
+                return keyword, None, exc
+
+        try:
+            with ThreadPoolExecutor(max_workers=FETCH_READ_CONCURRENCY) as pool:
+                # 每次只提交一个并发窗口，避免无限排队；各查询内部仍串行分页。
+                for offset in range(0, len(pending), FETCH_READ_CONCURRENCY):
+                    for keyword, rows, error in pool.map(
+                        read, pending[offset:offset + FETCH_READ_CONCURRENCY]
+                    ):
+                        self._prefetched_search[(worksheet_id, keyword)] = (rows, error)
+        finally:
+            for child in clients:
+                child.session.close()
 
     # ── 模板 / 字段 ──────────────────────────────────────────────
     def controls(self, worksheet_id: str) -> List[dict]:
@@ -429,6 +469,12 @@ class ZhiyunClient:
 
     def search_rows(self, worksheet_id: str, keyword: str, page_size: int = 200) -> List[dict]:
         """全文检索（用于按 SO 找订单明细）。调用方必须再做精确过滤。"""
+        key = (worksheet_id, keyword)
+        if key in self._prefetched_search:
+            rows, error = self._prefetched_search.pop(key)
+            if error is not None:
+                raise error
+            return rows
         rows: List[dict] = []
         page = 1
         while page <= 20:
@@ -552,6 +598,41 @@ def extract_related_orders(
             "source": source,
         })
     return out
+
+
+def settlement_related_orders(
+    client: ZhiyunClient, rows: Sequence[dict], controls: Sequence[dict]
+) -> List[dict]:
+    """保留结算直接提取路径；无 SO 时再读结算的订单关联子表。"""
+    related = extract_related_orders(rows, controls, REL_JIESUAN)
+    if related or not rows:
+        return related
+    order_cid = client.id_by_name(controls, "订单")
+    if not order_cid:
+        return []
+    worksheet_id = client.datasource_of(WS_HUIKUAN, REL_JIESUAN)
+    if not worksheet_id:
+        raise FetchError("无法定位结算数据源，不能完整读取结算关联订单")
+
+    by_so: Dict[str, dict] = {}
+    for row in rows:
+        row_id = str(row.get("rowid") or "").strip()
+        if not row_id:
+            raise FetchError("结算记录缺少 rowid，不能完整读取关联订单")
+        order_rows, order_controls = client.relation_rows(
+            worksheet_id, row_id, order_cid
+        )
+        # 只使用订单自己的交付额等字段，不把结算总额分配到每个 SO。
+        orders = extract_related_orders(order_rows, order_controls, REL_JIESUAN)
+        if len(orders) != len(order_rows):
+            raise FetchError("结算关联订单存在无法识别的 SO，不能使用不完整订单集合")
+        for order in orders:
+            so = order["so"]
+            previous = by_so.get(so)
+            if previous is not None and previous != order:
+                raise FetchError(f"结算关联订单 {so} 的重复记录字段不一致，不能任选或累加")
+            by_so.setdefault(so, order)
+    return list(by_so.values())
 
 
 def lookup_order_delivery_date(
@@ -774,7 +855,9 @@ def historical_writeoffs_for_sos(
     names, opts = client.name_map(ctrls), client.option_maps(ctrls)
     out: List[List[Any]] = []
     seen_record_ids = set()
-    for wanted_so in sorted({str(x or "").strip() for x in sos if str(x or "").strip()}):
+    wanted_sos = sorted({str(x or "").strip() for x in sos if str(x or "").strip()})
+    client.prefetch_search_rows(worksheet_id, wanted_sos)
+    for wanted_so in wanted_sos:
         try:
             hits = client.search_rows(worksheet_id, wanted_so)
         except Exception as exc:
@@ -929,10 +1012,16 @@ def fetch_day(
         related = extract_related_orders(xd_rows, xd_ctrls, REL_XIADAN)
         if not related and cid_jiesuan:
             js_rows, js_ctrls = client.relation_rows(WS_HUIKUAN, rid, cid_jiesuan)
-            related = extract_related_orders(js_rows, js_ctrls, REL_JIESUAN)
+            related = settlement_related_orders(client, js_rows, js_ctrls)
             if related:
                 settlement_recovered_ars.append(rec["ar"])
                 settlement_rows_used += len(related)
+        if ws_xiadan:
+            client.prefetch_search_rows(ws_xiadan, [
+                v["so"] for v in related
+                if not str(v.get("delivery_date") or "").strip()
+                and v["so"] not in delivery_date_cache
+            ])
         for v in related:
             so = v["so"]
             if so not in all_so:
@@ -1042,6 +1131,7 @@ def fetch_day(
     if ws_sodline and all_so:
         sl_ctrls = client.controls(ws_sodline)
         sl_names, sl_opts = client.name_map(sl_ctrls), client.option_maps(sl_ctrls)
+        client.prefetch_search_rows(ws_sodline, all_so)
         for so in all_so:
             try:
                 hits = client.search_rows(ws_sodline, so)

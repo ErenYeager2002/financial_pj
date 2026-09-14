@@ -30,7 +30,7 @@ export default async function DashboardLayout({
     redirect('/auth/sign-in');
   }
   if (session.must_change_password) redirect('/auth/change-password');
-  const defaultOpen = cookieStore.get('sidebar_state')?.value === 'true';
+  const defaultOpen = cookieStore.get('sidebar_state')?.value !== 'false';
   const navGroups = getNavGroups(session.role);
   return (
     <KBar navGroups={navGroups}>

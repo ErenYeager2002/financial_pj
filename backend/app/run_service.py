@@ -333,6 +333,10 @@ def create_run(db: Session, request: RunCreate, user: UserContext) -> RunRecord:
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=[error.message for error in errors],
         )
+    if request.skill_id == "consolidated-statements" and parameters.get("parent_run_id"):
+        parent = get_run_or_404(db, parameters["parent_run_id"], user)
+        if parent.owner_id != user.user_id or parent.skill_id != request.skill_id or _load(parent.parameters_json).get("period") != parameters.get("period"):
+            raise HTTPException(status_code=422, detail="补充版本必须属于同一用户、月份和报表工具。")
     files, file_hash = validate_files(db, skill, request.files, user)
     payload_hash = hashlib.sha256(
         (_json(parameters) + _json(files) + skill.skill_hash).encode("utf-8")

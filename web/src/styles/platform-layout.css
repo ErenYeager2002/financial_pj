@@ -84,8 +84,13 @@
 .platform-step-strip {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  border-block: 1px solid var(--border);
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
 }
+.platform-step-strip > li { min-width: 0; }
+.platform-step-strip > li > div { height: 100%; }
 .platform-step-strip > li + li { border-top: 1px solid var(--border); }
 .platform-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .platform-task-main { container: task-main / inline-size; }
@@ -232,4 +237,12 @@
   .simple-file-table th:nth-child(2) { width: 18%; }
   .simple-file-table th:nth-child(3) { width: 20%; }
   .simple-file-table th:last-child { width: 16%; }
+}
+
+/* Date navigation follows its sibling progress panel on wide layouts. */
+.platform-date-task-list { max-height: 60svh; }
+@container platform-page (min-width: 880px) {
+  .platform-date-task-card { align-self: stretch; display: flex; flex-direction: column; min-height: 220px; }
+  .platform-date-task-content { flex: 1; min-height: 0; contain: size; }
+  .platform-date-task-list { height: 100%; max-height: none; }
 }

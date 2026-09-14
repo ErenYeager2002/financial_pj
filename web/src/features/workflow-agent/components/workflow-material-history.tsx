@@ -1,5 +1,7 @@
 'use client';
 
+import { useMaterialEditLock } from '@/features/workflow-agent/hooks/use-material-edit-lock';
+
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -24,6 +26,7 @@ export function WorkflowMaterialHistory({
   allowRestore = false
 }: WorkflowMaterialHistoryProps): React.JSX.Element {
   const router = useRouter();
+  const materialLock = useMaterialEditLock(skillId);
   const queryClient = useQueryClient();
   const [expanded, setExpanded] = React.useState(false);
   const materialQuery = useQuery({
@@ -46,7 +49,7 @@ export function WorkflowMaterialHistory({
 
   async function restore(version: WorkflowMaterialSet) {
     if (
-      restoreMutation.isPending ||
+      materialLock.locked || restoreMutation.isPending ||
       !window.confirm(
         `确认把 V${version.version} 的文件组合恢复为新的当前版本吗？历史版本不会被修改。`
       )
@@ -70,6 +73,7 @@ export function WorkflowMaterialHistory({
         {loading ? '（加载中…）' : allowRestore ? `（${versions.length} 个版本）` : ''}
       </summary>
       <div className='space-y-3 border-t p-3'>
+        {allowRestore && materialLock.locked && <p role='status' className='text-sm text-muted-foreground'>{materialLock.reason}</p>}
         {error && (
           <p className='text-sm text-destructive'>
             {error instanceof Error ? error.message : '业务材料版本加载失败。'}
@@ -98,7 +102,7 @@ export function WorkflowMaterialHistory({
                   type='button'
                   size='sm'
                   variant='outline'
-                  disabled={restoreMutation.isPending}
+                  disabled={materialLock.locked || restoreMutation.isPending}
                   onClick={() => void restore(version)}
                 >
                   {restoreMutation.isPending && restoreMutation.variables === version.id

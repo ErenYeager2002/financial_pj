@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
+import signal
+import shutil
 import queue
 import subprocess
 import sys
@@ -112,6 +115,9 @@ def build_execution_request(ctx: ExecutionContext) -> tuple[dict[str, Any], Path
         "files": request_files,
         "output_dir": str(outputs_dir.resolve()),
     }
+    if ctx.run.skill_id == "consolidated-statements":
+        from .consolidation_store import inherited_metadata
+        payload["source_metadata"] = inherited_metadata(ctx)
     request_path = ctx.workspace / "request.json"
     request_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return payload, request_path
@@ -151,6 +157,30 @@ def _pump_stream(stream: Any, label: str, output: queue.Queue[tuple[str, str | N
 
 class SubprocessAdapter:
     def execute(self, ctx: ExecutionContext) -> dict[str, Any]:
+        isolated = ctx.run.skill_id == "consolidated-statements" and os.name == "posix"
+        self._browser_process = None
+        try:
+            return self._execute(ctx)
+        finally:
+            if isolated:
+                process = self._browser_process
+                if process is not None:
+                    try:
+                        os.killpg(process.pid, signal.SIGTERM)
+                    except ProcessLookupError:
+                        pass
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        pass
+                    try:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    process.wait(timeout=5)
+                shutil.rmtree(ctx.workspace / "browser_tmp", ignore_errors=True)
+
+    def _execute(self, ctx: ExecutionContext) -> dict[str, Any]:
         _, request_path = build_execution_request(ctx)
         result_path = ctx.workspace / "result.json"
         entrypoint = (ctx.skill_dir / (ctx.manifest.handler.entrypoint or "")).resolve()
@@ -165,10 +195,25 @@ class SubprocessAdapter:
                 "PYTHONUTF8": "1",
             }
         )
+        login = None
+        if ctx.run.skill_id == "consolidated-statements" and _json_load(ctx.run.parameters_json).get("fetch_kingdee"):
+            from .service_credential_service import has_service_credential, resolve_service_credential
+            login = {}
+            if has_service_credential(ctx.db, ctx.run.owner_id, ctx.run.department_id, "kingdee"):
+                account, password = resolve_service_credential(ctx.db, ctx.run.owner_id, ctx.run.department_id, "kingdee")
+                login = {"account": account, "password": password}
+                del account, password
+        isolated_browser = ctx.run.skill_id == "consolidated-statements" and os.name == "posix"
+        browser_tmp = ctx.workspace / "browser_tmp"
+        if isolated_browser:
+            browser_tmp.mkdir(mode=0o700, exist_ok=True)
+            env["TMPDIR"] = str(browser_tmp.resolve())
         ctx.emit("执行器已启动", progress=5, state="running", event_type="state")
         process = subprocess.Popen(
             command,
+            start_new_session=isolated_browser,
             cwd=str(ctx.skill_dir),
+            stdin=subprocess.PIPE if login is not None else subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -176,6 +221,44 @@ class SubprocessAdapter:
             errors="replace",
             env=env,
         )
+        if isolated_browser:
+            self._browser_process = process
+
+        def stop_child():
+            if isolated_browser:
+                try:
+                    os.killpg(process.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+            else:
+                process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                if isolated_browser:
+                    try:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                else:
+                    process.kill()
+                process.wait(timeout=5)
+            if isolated_browser:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                shutil.rmtree(browser_tmp, ignore_errors=True)
+
+        if login is not None:
+            try:
+                process.stdin.write(json.dumps(login) + "\n")
+                process.stdin.close()
+            except (BrokenPipeError, OSError):
+                stop_child()
+                raise RuntimeError("采集进程启动失败") from None
+            finally:
+                login.clear()
         output: queue.Queue[tuple[str, str | None]] = queue.Queue()
         streams = {"stdout": process.stdout, "stderr": process.stderr}
         for label, stream in streams.items():
@@ -191,14 +274,10 @@ class SubprocessAdapter:
         while open_streams or process.poll() is None:
             ctx.db.refresh(ctx.run)
             if ctx.run.cancel_requested:
-                process.terminate()
-                try:
-                    process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    process.kill()
+                stop_child()
                 raise InterruptedError("任务已被员工取消。")
             if time.monotonic() - started > timeout:
-                process.kill()
+                stop_child()
                 raise TimeoutError(f"Skill 执行超过 {timeout} 秒。")
             try:
                 label, line = output.get(timeout=0.2)
@@ -213,6 +292,8 @@ class SubprocessAdapter:
                 if len(stderr_lines) > 100:
                     stderr_lines.pop(0)
         return_code = process.wait()
+        if isolated_browser:
+            shutil.rmtree(browser_tmp, ignore_errors=True)
         if return_code != 0:
             detail = "\n".join(stderr_lines[-20:]) or f"退出码 {return_code}"
             raise RuntimeError(f"Skill 执行失败：{detail}")
@@ -234,11 +315,17 @@ class SubprocessAdapter:
         return [str(entrypoint), "--request", str(request_path), "--result", str(result_path)]
 
     def register_artifacts(self, ctx: ExecutionContext, result: dict[str, Any]) -> dict[str, Any]:
+        consolidation = ctx.run.skill_id == "consolidated-statements"
+        if consolidation:
+            result["output_files"].sort(key=lambda item: item.get("name") == "报表来源与核验记录.json")
         artifacts: list[dict[str, Any]] = []
         for item in result.get("output_files", []):
             if not isinstance(item, dict) or not item.get("path"):
                 continue
             path = Path(item["path"])
+            if consolidation and path.name == "报表来源与核验记录.json":
+                from .consolidation_store import link_sources
+                link_sources(ctx)
             record = register_output(
                 ctx.db,
                 path,
@@ -259,6 +346,9 @@ class SubprocessAdapter:
                 }
             )
         result["output_files"] = artifacts
+        if consolidation:
+            from .consolidation_store import persist
+            persist(ctx, result)
         ctx.db.commit()
         return result
 

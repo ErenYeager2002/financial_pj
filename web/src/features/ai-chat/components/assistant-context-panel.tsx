@@ -6,7 +6,6 @@ import type { TaskDraft } from '@/features/platform-api/types';
 
 interface AssistantContextPanelProps {
   selectedFileNames: string[];
-  toolMessage: string;
   pendingMessage: string;
   draft: TaskDraft | null;
   onOpenTask: () => void;
@@ -14,12 +13,11 @@ interface AssistantContextPanelProps {
 
 export function AssistantContextPanel({
   selectedFileNames,
-  toolMessage,
   pendingMessage,
   draft,
   onOpenTask
 }: AssistantContextPanelProps) {
-  if (!selectedFileNames.length && !toolMessage && !pendingMessage && !draft) return null;
+  if (!selectedFileNames.length && !pendingMessage && !draft) return null;
 
   return (
     <aside
@@ -45,19 +43,6 @@ export function AssistantContextPanel({
                 另外 {selectedFileNames.length - 6} 个文件
               </p>
             )}
-          </CardContent>
-        </Card>
-      )}
-
-      {toolMessage && (
-        <Card>
-          <CardHeader>
-            <CardTitle className='text-base'>当前状态</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className='text-sm text-muted-foreground' role='status'>
-              {toolMessage}
-            </p>
           </CardContent>
         </Card>
       )}

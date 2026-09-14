@@ -54,7 +54,7 @@ export function AssistantTranscript({ messages, historical = false, checkedAt }:
             : '待核实'}
         </p>
       )}
-      <div className='mx-auto w-full max-w-[840px] space-y-6'>
+      <div className='w-full space-y-6'>
         {messages.map((message) => (
           <div
             key={message.id}
@@ -63,8 +63,8 @@ export function AssistantTranscript({ messages, historical = false, checkedAt }:
             <div
               className={
                 message.role === 'user'
-                  ? 'min-w-0 max-w-[90%] sm:max-w-[82%] break-words whitespace-pre-wrap rounded-lg bg-muted px-3 py-2 text-sm leading-6'
-                  : 'min-w-0 max-w-full break-words text-[15px] leading-6'
+                  ? 'min-w-0 max-w-[90%] sm:max-w-[78%] break-words whitespace-pre-wrap rounded-2xl rounded-tr-sm bg-muted px-4 py-3 text-sm leading-6'
+                  : 'min-w-0 max-w-[90%] break-words rounded-2xl rounded-tl-sm border bg-background px-4 py-3 text-[15px] leading-6 sm:max-w-[78%]'
               }
             >
               {message.content ? (

@@ -555,6 +555,15 @@ async def upload_file(
     skill = registry.get(skill_id, include_unpublished=user.is_admin) if skill_id else None
     if skill_id and not skill:
         raise HTTPException(status_code=422, detail="上传文件关联的 Skill 不存在或当前不可用。")
+    if skill and skill.manifest.handler.adapter == "workflow":
+        from .scheduler import acquire_claim_lock
+        from .workflow_material_lock import assert_material_editable
+        acquire_claim_lock(db)
+        try:
+            assert_material_editable(db, user, skill_id)
+        except MaterialVersionConflict as exc:
+            db.rollback()
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
     record = await save_upload(
         db,
         upload,
@@ -738,6 +747,17 @@ def remove_uploaded_file(
     user: UserContext = Depends(get_current_user),
 ) -> None:
     record = db.get(FileRecord, file_id)
+    if record and record.owner_id == user.user_id and record.department_id == user.department_id and record.skill_id:
+        skill = registry.get(record.skill_id, include_unpublished=user.is_admin)
+        if skill and skill.manifest.handler.adapter == "workflow":
+            from .scheduler import acquire_claim_lock
+            from .workflow_material_lock import assert_material_editable
+            acquire_claim_lock(db)
+            try:
+                assert_material_editable(db, user, record.skill_id)
+            except MaterialVersionConflict as exc:
+                db.rollback()
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
     delete_upload(db, file_id, user)
     record_audit(
         db,
@@ -954,6 +974,17 @@ def cancel_workflow_session(
     user: UserContext = Depends(get_current_user),
 ) -> WorkflowRead:
     return serialize_workflow(cancel_workflow(db, workflow_id, user))
+
+
+@app.get("/api/workflows/material-edit-state")
+def get_material_edit_state(
+    skill_id: str,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> dict:
+    from .workflow_material_lock import material_edit_state
+    assert_skill_permission(db, user, skill_id)
+    return material_edit_state(db, user, skill_id)
 
 
 @app.get("/api/workflows/reusable-files", response_model=WorkflowReusableFilesRead)

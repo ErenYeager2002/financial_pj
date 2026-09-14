@@ -78,8 +78,11 @@ def verify_flow(workspace: Path, baseline: Path, actual: Path, checked: dict) ->
     shutil.copy2(before, expected)
     flow = json.loads((workspace / "04_产出" / "流转写入计划_校验后.json").read_text(encoding="utf-8"))
     for phase in ("prefill", "status"):
-        phase_plan = flow if phase == "prefill" else build_flow_plan.finalize_plan_after_ledger(flow, checked)
+        phase_plan = flow if phase == "prefill" else build_flow_plan.finalize_plan_after_ledger(flow, checked, workspace=proof)
         items = phase_plan.get("items") or []
+        if phase == "status" and (result.get("manual_items") != phase_plan.get("manual_items")
+                                  or result.get("manual_count") != len(phase_plan["manual_items"])):
+            raise ValueError("流转人工项目与固定基线的逐笔判定不一致")
         for item in items:
             if item.get("verdict") == "write":
                 resolved = apply_flow._resolve_flow_path(proof, item.get("file") or "")

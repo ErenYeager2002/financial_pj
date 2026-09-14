@@ -4,9 +4,151 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 import fetch_zhiyun as F
+
+
+class SettlementClient:
+    id_by_name = staticmethod(F.ZhiyunClient.id_by_name)
+
+    def __init__(self, orders):
+        self.orders = orders
+        self.calls = []
+
+    def datasource_of(self, worksheet, relation):
+        assert (worksheet, relation) == (F.WS_HUIKUAN, F.REL_JIESUAN)
+        return "settlements"
+
+    def relation_rows(self, worksheet, row, control):
+        self.calls.append((worksheet, row, control))
+        assert worksheet == "settlements" and control == "orders"
+        value = self.orders[row]
+        if isinstance(value, Exception):
+            raise value
+        return value, [
+            {"controlId": "so", "controlName": "SO"},
+            {"controlId": "amount", "controlName": "交付额/本币"},
+        ]
+
+
+def test_settlement_nested_orders_keep_order_amounts_and_deduplicate():
+    client = SettlementClient({
+        "s1": [{"so": "SO26000001", "amount": 10},
+               {"so": "SO26000002", "amount": 20}],
+        "s2": [{"so": "SO26000001", "amount": 10}],
+    })
+    controls = [
+        {"controlId": "orders", "controlName": "订单"},
+        {"controlId": "amount", "controlName": "交付额/本币"},
+    ]
+    result = F.settlement_related_orders(
+        client, [{"rowid": "s1", "amount": 999}, {"rowid": "s2"}], controls,
+    )
+    assert [v["so"] for v in result] == ["SO26000001", "SO26000002"]
+    assert [v["deliver_local"] for v in result] == ["10", "20"]
+    assert all(v["written_off"] == "" for v in result)
+    assert all(v["source"] == "结算" for v in result)
+
+
+def test_settlement_direct_order_does_not_query_nested_relation():
+    client = SettlementClient({})
+    rows = [{"so": "SO26000001", "amount": 10}]
+    controls = [{"controlId": "so", "controlName": "SO"},
+                {"controlId": "amount", "controlName": "交付额/本币"}]
+    assert F.settlement_related_orders(client, rows, controls) == (
+        F.extract_related_orders(rows, controls, F.REL_JIESUAN)
+    )
+    assert client.calls == []
+
+
+@pytest.mark.parametrize("orders", [
+    {"s1": [{"so": "SO26000001", "amount": 10}],
+     "s2": [{"so": "SO26000001", "amount": 20}]},
+    {"s1": [{"so": "SO26000001"}], "s2": [{"so": ""}]},
+    {"s1": [{"so": "SO26000001"}], "s2": F.FetchError("read failed")},
+])
+def test_settlement_nested_conflict_or_incomplete_read_blocks(orders):
+    with pytest.raises(F.FetchError):
+        F.settlement_related_orders(
+            SettlementClient(orders), [{"rowid": "s1"}, {"rowid": "s2"}],
+            [{"controlId": "orders", "controlName": "订单"}],
+        )
+
+
+def test_settlement_without_order_relation_remains_empty():
+    client = SettlementClient({})
+    assert F.settlement_related_orders(client, [{"rowid": "s1"}], []) == []
+    assert client.calls == []
+
+
+@pytest.mark.parametrize("source", ["下单", "结算", "结算订单"])
+def test_fetch_day_routes_settlement_fallback_and_exports_each_so(source, monkeypatch, tmp_path):
+    order_controls = [
+        {"controlId": "so", "controlName": "SO"},
+        {"controlId": "amount", "controlName": "交付额/本币"},
+        {"controlId": "date", "controlName": "项目交付日期"},
+    ]
+    orders = [{"so": "SO26000001", "amount": 10, "date": "2026-09-01"},
+              {"so": "SO26000002", "amount": 20, "date": "2026-09-01"}]
+
+    class Client(F.ZhiyunClient):
+        def __init__(self):
+            self.calls = []
+
+        def controls(self, worksheet):
+            if worksheet == F.WS_HUIKUAN:
+                return [
+                    {"controlId": name, "controlName": name, "dataSource": name}
+                    for name in (F.REL_XIADAN, F.REL_JIESUAN, F.REL_HEXIAO_MINGXI)
+                ]
+            return order_controls
+
+        def filter_rows_by_date(self, *args):
+            return [{"rowid": "payment", F.F_HK["ar"]: "AR_TEST_001",
+                     F.F_HK["hexiao_date"]: "2026-09-07"}], 1
+
+        def relation_rows(self, worksheet, row, control):
+            self.calls.append((worksheet, row, control))
+            if control == F.REL_XIADAN:
+                return (orders if source == "下单" else []), order_controls
+            if control == F.REL_JIESUAN:
+                assert source != "下单"
+                if source == "结算":
+                    return orders, order_controls
+                return [{"rowid": "settlement"}], [
+                    {"controlId": "orders", "controlName": "订单"},
+                ]
+            if control == "orders":
+                assert (worksheet, row, source) == ("结算", "settlement", "结算订单")
+                return orders, order_controls
+            assert control == F.REL_HEXIAO_MINGXI
+            return [], []
+
+        def search_rows(self, worksheet, so):
+            assert worksheet == F.REL_HEXIAO_MINGXI
+            assert so in {"SO26000001", "SO26000002"}
+            return []
+
+    captured = {}
+
+    def publish(_out, _tag, datasets, summary):
+        captured.update({name: rows for name, _headers, rows in datasets})
+        return summary
+
+    monkeypatch.setattr(F, "publish_day_exports", publish)
+    client = Client()
+    summary = F.fetch_day(client, "2026-09-07", tmp_path)
+    assert summary["无下单行的AR"] == []
+    assert summary["从结算找回单号的AR数"] == (0 if source == "下单" else 1)
+    assert [row[1] for row in captured["订单交付_20260907.xlsx"]] == [
+        "SO26000001", "SO26000002",
+    ]
+    assert [row[5] for row in captured["订单交付_20260907.xlsx"]] == ["10", "20"]
+    assert captured["核销明细_20260907.xlsx"] == []
+    assert any(control == "orders" for _, _, control in client.calls) == (source == "结算订单")
 
 
 def test_resolve_date_yesterday():

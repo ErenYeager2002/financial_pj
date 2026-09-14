@@ -46,6 +46,20 @@ const foundation = (skillId: string, creationTitle: string): SkillExecutionExper
 });
 
 const experiences: SkillExecutionExperience[] = [
+  {
+    key: 'consolidated-statements',
+    skillId: 'consolidated-statements',
+    classification: 'business',
+    family: 'report',
+    creationTitle: '按月生成合并报表',
+    purpose: '按本部字段汇总八主体三张报表，生成合并及母公司底稿。',
+    inputHeading: '会计月份及公司原始报表',
+    inputHint: '选择月份，上传外部公司报表，并按需从金蝶取数。',
+    reviewTitle: '编制口径',
+    reviewItems: ['山东管理费用计入成本', '不做抵销及其他人工调整'],
+    workerChecks: ['公司、月份、单位、字段及来源唯一性', '资产、利润和现金余额勾稽'],
+    resultHighlights: ['六张主表', '汇总公式及独立核验记录']
+  },
   foundation('xlsx', '处理 Excel 文件'),
   foundation('docx', '处理 Word 文件'),
   foundation('pdf', '处理 PDF 文件'),

@@ -171,6 +171,27 @@ def write_report(payload: dict, target: Path, initial_result: dict, checked_plan
     for sheet in list(workbook):
         if sheet.title != "流转表怎么填":
             workbook.remove(sheet)
+    flow_result = payload.get("flow") or {}
+    status = (flow_result.get("phases") or {}).get("status") or {}
+    actual_flow = {x.get("AR"):x for x in status.get("changes", [])}
+    manual_flow = {x.get("ar"):x.get("reason") for x in flow_result.get("manual_items", [])}
+    flow_sheet = workbook["流转表怎么填"]
+    for cells in flow_sheet.iter_rows(min_row=2):
+        ar = cells[0].value
+        actual = actual_flow.get(ar)
+        if actual and flow_result.get("flow_written"):
+            cells[1].value = "已写入"
+            cells[4].value = actual.get("是否更新应收款") or "是"
+            cells[5].value = actual.get("单号") or ""
+            cells[6].value = actual.get("操作") or "月度登记"
+            cells[7].value = actual.get("预收公式") or ""
+            cells[10].value = str(actual.get("sheet") or "") + " 第" + str(actual.get("行号")) + "行"
+            cells[11].value = "预收余额：" + str(actual.get("预收余额"))
+        elif cells[4].value == "待写后确认":
+            cells[1].value = "手填" if ar in manual_flow or not flow_result.get("flow_written") else "未新增登记"
+            cells[4].value = "未新增更新"
+            cells[5].value = ""
+            cells[11].value = manual_flow.get(ar) or flow_result.get("reason") or "本次未新增流转登记，以实际材料为准"
     summary = workbook.create_sheet("任务范围", 0)
     summary.append(["项目", "结果"])
     summary.append(["核销日期", payload["reconciliation_date"]])

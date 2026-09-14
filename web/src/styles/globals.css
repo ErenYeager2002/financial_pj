@@ -11,6 +11,7 @@
 
 @import './theme.css';
 @import './platform-layout.css';
+@import './select-theme.css';
 
 @layer base {
   * {

@@ -2,6 +2,7 @@
 
 import { ThemeProvider as NextThemesProvider, useTheme } from 'next-themes';
 import { useEffect } from 'react';
+import { BrandFavicon } from './brand-favicon';
 import type { ThemeProviderProps } from 'next-themes';
 
 type ThemeColors = {
@@ -28,6 +29,7 @@ export default function ThemeProvider({
   return (
     <NextThemesProvider {...props}>
       <ThemeColorSync themeColors={themeColors} />
+      <BrandFavicon />
       {children}
     </NextThemesProvider>
   );

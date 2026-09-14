@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { isArSkill } from '@/features/workflow-agent/ar-skill-identity';
 import Link from 'next/link';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -113,11 +114,27 @@ function BatchOutputCard({ batch }: { batch: WorkflowBatchRead }): React.JSX.Ele
   );
 }
 
+function DateTaskList({ children }: { children: React.ReactNode }): React.JSX.Element {
+  return (
+    <div
+      role='list'
+      aria-label='批次日期任务列表'
+      tabIndex={0}
+      className='platform-date-task-list flex flex-col gap-2 overflow-y-auto overscroll-contain rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&>*]:shrink-0'
+      style={{ scrollbarGutter: 'stable' }}
+    >
+      {children}
+    </div>
+  );
+}
+
 export function WorkflowBatchProgress({
   initialBatch
 }: WorkflowBatchProgressProps): React.JSX.Element {
   const [batch, setBatch] = React.useState(initialBatch);
-  const [selectedWorkflowId, setSelectedWorkflowId] = React.useState<string | null>(null);
+  const [selectedWorkflowId, setSelectedWorkflowId] = React.useState<string | null>(() => preferredWorkflowForBatch(initialBatch)?.id ?? null);
+  const [resultWorkflowId, setResultWorkflowId] = React.useState('');
+  const resultWorkflow = batch.workflows.find(workflow => workflow.id === resultWorkflowId);
   const [manualSelection, setManualSelection] = React.useState(false);
   const [error, setError] = React.useState('');
   const [refreshing, setRefreshing] = React.useState(false);
@@ -276,14 +293,14 @@ export function WorkflowBatchProgress({
                   type='button'
                   variant='default'
                   className={
-                    batch.fetched_data_review_status === 'confirmed'
+                    (isArSkill(batch.skill_id) || batch.fetched_data_review_status === 'confirmed')
                       ? 'bg-primary text-primary-foreground shadow-sm hover:bg-primary/90'
                       : 'bg-amber-600 text-white shadow-sm hover:bg-amber-700'
                   }
                   onClick={() => setFetchedDataOpen(true)}
                 >
-                  {batch.fetched_data_review_status === 'confirmed'
-                    ? '查看批次取数数据'
+                  {(isArSkill(batch.skill_id) || batch.fetched_data_review_status === 'confirmed')
+                    ? '查看本次取数'
                     : '检查批次取数数据'}
                 </Button>
               )}
@@ -344,12 +361,12 @@ export function WorkflowBatchProgress({
       )}
 
       <div className='platform-batch-grid'>
-        <Card>
+        <Card className='platform-date-task-card'>
           <CardHeader>
             <CardTitle className='text-base'><h2>日期任务</h2></CardTitle>
           </CardHeader>
-          <CardContent className='space-y-2'>
-            <PaginatedCollection ariaLabel='批次日期任务列表' contentClassName='space-y-2'>
+          <CardContent className='platform-date-task-content'>
+            <DateTaskList>
                 {batch.workflows.map((workflow) => {
                   const status = workflowStatusInBatch(batch.state, batch.workflows, workflow);
                   const selected = selectedWorkflow?.id === workflow.id;
@@ -411,7 +428,7 @@ export function WorkflowBatchProgress({
                     </div>
                   );
                 })}
-            </PaginatedCollection>
+            </DateTaskList>
           </CardContent>
         </Card>
 
@@ -444,57 +461,56 @@ export function WorkflowBatchProgress({
               )}
             </div>
 
-            {batchIsTerminal && !isTerminalWorkflow(selectedWorkflow) ? (
-              <Card>
-                <CardContent className='py-6'>
-                  <p className='font-medium'>
-                    {batch.state === 'failed'
-                      ? '批次已在前一失败日期停止，这一天尚未开始。'
-                      : batch.state === 'cancelled'
-                        ? '批次已取消，这一天不会继续执行。'
-                        : '批次已经完成，这一天不再继续执行。'}
-                  </p>
-                </CardContent>
-              </Card>
-            ) : isWaitingWorkflow(selectedWorkflow) ? (
-              <Card>
-                <CardContent className='py-6'>
-                  <p className='font-medium'>这一天正在等待前置日期完成。</p>
-                </CardContent>
-              </Card>
-            ) : (
-              <>
-                <WorkflowProgressCard
-                  compact
-                  workflow={selectedWorkflow}
-                  onOpenFetchedData={() => setFetchedDataOpen(true)}
-                />
-                {selectedWorkflow.state === 'failed' && (
-                  <WorkflowRecoveryActions key={selectedWorkflow.id} workflow={selectedWorkflow} onRecovered={() => refresh()} />
-                )}
-                {batch.workflows.length > 1 && (
-                  <details className='rounded-lg border px-4 py-3'>
-                    <summary className='cursor-pointer text-sm'>
-                      查看 {selectedWorkflow.reconciliation_date} 结果
-                    </summary>
-                    <div className='mt-3'>
-                      <WorkflowResultSummary source={selectedWorkflow} title='当日核销结果' />
-                    </div>
-                  </details>
-                )}
-              </>
+            <WorkflowProgressCard
+              compact
+              workflow={selectedWorkflow}
+              waitingMessage={
+                selectedWorkflow.state === 'cancelled'
+                  ? '这一天已取消，不会继续执行。'
+                  : batchIsTerminal && !isTerminalWorkflow(selectedWorkflow)
+                  ? batch.state === 'failed'
+                    ? '批次已在前一失败日期停止，这一天尚未开始。'
+                    : batch.state === 'cancelled'
+                      ? '批次已取消，这一天不会继续执行。'
+                      : '批次已经完成，这一天不再继续执行。'
+                  : isWaitingWorkflow(selectedWorkflow)
+                    ? selectedWorkflow.batch_sequence > 1
+                      ? '这一天正在等待前置日期完成。'
+                      : '这一天尚未开始，正在等待执行。'
+                    : undefined
+              }
+              onOpenFetchedData={() => setFetchedDataOpen(true)}
+            />
+            {selectedWorkflow.state === 'failed' && (
+              <WorkflowRecoveryActions key={selectedWorkflow.id} workflow={selectedWorkflow} onRecovered={() => refresh()} />
             )}
           </div>
         )}
 
       </div>
 
-      {(batch.state === 'succeeded' || batch.result_scope === 'batch') && (
-        <WorkflowResultSummary
-          source={batch}
-          title='本批次核销结果'
-        />
-      )}
+      <WorkflowResultSummary
+        key={resultWorkflow?.id ?? batch.id}
+        source={resultWorkflow ?? batch}
+        title='本批次核销结果'
+        emptyMessage={resultWorkflow ? '这一天尚无可展示的核销结果。' : '本批次尚无可展示的汇总结果，可选择具体日期查看。'}
+        controls={
+          <label className='flex flex-wrap items-center gap-2 text-sm'>
+            <span>结果范围</span>
+            <select
+              aria-label='核销结果日期'
+              value={resultWorkflow?.id ?? ''}
+              onChange={event => setResultWorkflowId(event.target.value)}
+              className='min-h-11 max-w-full rounded-md border bg-background px-3 text-foreground'
+            >
+              <option value=''>全部日期（汇总）</option>
+              {batch.workflows.map(workflow => <option key={workflow.id} value={workflow.id}>
+                {workflow.reconciliation_date}（第 {workflow.batch_sequence} 天）
+              </option>)}
+            </select>
+          </label>
+        }
+      />
 
       <BatchOutputCard batch={batch} />
 
