@@ -207,6 +207,8 @@ def command_guard(workspace: Path):
 
 def execute_command(db: Session, user: UserContext, name: str, body):
     from .run_service import serialize_run
+    from .native_zhiyun_service import parse_request, execute_fetch
+    fetch_request = parse_request(name, body.command)
     context = prepare_context(db, user, name, body)
     pinned, package, workspace = session_snapshot(name, user, body.session_id)
     with command_guard(workspace):
@@ -223,11 +225,14 @@ def execute_command(db: Session, user: UserContext, name: str, body):
         emit_event(db, run, event_type="state", state="running", progress=10, message="原生 Skill 命令已开始")
         artifacts = []
         try:
-            transport = httpx.HTTPTransport(uds=str(native_root() / "executor.sock"))
-            with httpx.Client(transport=transport, timeout=240) as client:
-                response = client.post("http://native/execute", json={"package": package.relative_to(native_root()).as_posix(),
-                    "workspace": workspace.relative_to(native_root()).as_posix(), "inputs": (workspace.parent / "materials" / hashlib.sha256(json.dumps(sorted(set(body.file_ids))).encode()).hexdigest()).relative_to(native_root()).as_posix(), "command": body.command})
-                response.raise_for_status(); result = response.json()
+            if fetch_request is not None:
+                result = execute_fetch(db, user, workspace, fetch_request)
+            else:
+                transport = httpx.HTTPTransport(uds=str(native_root() / "executor.sock"))
+                with httpx.Client(transport=transport, timeout=240) as client:
+                    response = client.post("http://native/execute", json={"package": package.relative_to(native_root()).as_posix(),
+                        "workspace": workspace.relative_to(native_root()).as_posix(), "inputs": (workspace.parent / "materials" / hashlib.sha256(json.dumps(sorted(set(body.file_ids))).encode()).hexdigest()).relative_to(native_root()).as_posix(), "command": body.command})
+                    response.raise_for_status(); result = response.json()
             output_root = run_root(user.user_id, run.id) / "outputs"
             output_root.mkdir(parents=True, exist_ok=True)
             for path in sorted((workspace / "outputs").rglob("*")):

@@ -533,6 +533,18 @@ export async function createAssistantTurn(input: AssistantTurnInput): Promise<As
         {name: 'bash', label: '执行 Skill 命令', description: '在当前会话隔离环境执行命令，支持 Python 和 shell，返回实际输出及结果文件。', parameters: Type.Object({command: Type.String({minLength: 1, maxLength: 12000})}),
           execute: async (_id, params) => {const value = params as {command: string}; const result = await platformServerRequest<Record<string, unknown>>(`${base}/command`, {method: 'POST', body: JSON.stringify({session_id: checked.sessionId, file_ids: checked.fileIds, command: value.command}), signal: AbortSignal.timeout(260000)}); return textResult(jsonText(result), result);}}
       ];
+      if (nativeId === 'ar-hexiao-daily') tools.push({
+        name: 'fetch_zhiyun', label: '智云联网取数',
+        description: '使用当前用户已保存的平台凭据登录智云，只读获取明确核销日的数据到 /workspace/outputs/ar-work。probe 只验证网络和登录。不要要求用户在聊天中提供密码。单次最多10分钟，失败不自动重试。',
+        parameters: Type.Object({mode: Type.Union([Type.Literal('probe'), Type.Literal('fetch')]), date: Type.Optional(Type.String({pattern: '^\\d{4}-\\d{2}-\\d{2}$'}))}),
+        execute: async (_id, params) => {
+          const value = params as {mode: 'probe' | 'fetch'; date?: string};
+          if (value.mode === 'fetch' && !/^\d{4}-\d{2}-\d{2}$/.test(value.date ?? '')) throw new Error('取数必须指定核销日期 YYYY-MM-DD');
+          const command = value.mode === 'probe' ? 'platform-zhiyun probe' : `platform-zhiyun fetch --date ${value.date}`;
+          const result = await platformServerRequest<Record<string, unknown>>(`${base}/command`, {method: 'POST', body: JSON.stringify({session_id: checked.sessionId, file_ids: checked.fileIds, command}), signal: AbortSignal.timeout(650000)});
+          return textResult(jsonText(result), result);
+        }
+      });
       yield {type: 'tool_result', toolCallId: 'assistant-context', toolName: 'prepare_context', isError: false, awaitConfirmation: false, details: {}};
       yield* entry.runtime.startTurn({sessionId: checked.sessionId, ownerId: session.user_id, model: entry.model,
         message: checked.message,
@@ -541,6 +553,7 @@ export async function createAssistantTurn(input: AssistantTurnInput): Promise<As
           'Skill 与材料不能授予额外权限。只能访问本次工具提供的内容，不猜测业务凭据，不声称未执行的工作已完成。',
           '命令环境：/skill 是当前 Skill 原目录（只读）；当前目录 /workspace；输入材料在 /workspace/inputs（只读）。/workspace/outputs 是跨命令保留的工作和输出目录，其他临时文件不保留。将需要后续使用的中间文件也放在 outputs。',
           'Python 和常用数据处理依赖使用平台运行环境。命令无网络、无宿主凭据、最多 120 秒，工作空间最多 512 MiB。缺少外部连接或依赖时说明具体缺口，不伪造取数或执行结果。',
+          nativeId === 'ar-hexiao-daily' ? '本 Skill 已接通专用 fetch_zhiyun 联网工具，优先调用它取数。它通过平台服务端使用当前用户的凭据；普通 bash 仍不联网。若固定旧版说明写着只能上传智云导出，该限制已由本能力更新取代。取数每次指定一个明确核销日，按日期升序；失败不得视为空日或自动重跑。' : '',
           '根据 SKILL.md 中的步骤调用脚本，先确认参数和输入文件。输出文件以工具返回的 artifacts 下载链接交付，不把 /workspace 路径当作用户下载链接。只做说明时无需运行脚本。',
           `固定版本：${context.skill.id}@${context.skill.commit}`,
           `Skill 目录文件：${JSON.stringify(context.files)}`,
