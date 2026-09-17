@@ -40,7 +40,7 @@ from .models import (
     WorkflowAction,
     WorkflowSession,
 )
-from .registry import SkillManifest, registry, validate_declared_operational_profile
+from .registry import SkillManifest, registry, validate_declared_operational_profile, validate_conversation_files
 from .settings import settings
 from .skill_availability_service import disable_after_drain, transition_availability
 from .skill_execution_experiences import validate_published_execution_experience
@@ -353,7 +353,8 @@ def _validate_content(content: Path) -> tuple[SkillManifest, dict[str, Any], dic
     if manifest.status == "published" and manifest.ui is None:
         raise HTTPException(status_code=422, detail="发布 Skill 必须配置员工展示信息。")
     try:
-        validate_published_execution_experience(manifest.id, manifest.status)
+        validate_conversation_files(manifest, content)
+        validate_published_execution_experience(manifest.id, manifest.status, manifest.conversation.mode)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if manifest.handler.entrypoint:
@@ -648,7 +649,8 @@ def _activate_release(
     manifest = SkillManifest.model_validate(_json(record.manifest_json))
     manifest.status = "published"
     try:
-        validate_published_execution_experience(manifest.id, manifest.status)
+        validate_conversation_files(manifest, content)
+        validate_published_execution_experience(manifest.id, manifest.status, manifest.conversation.mode)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     temp = (settings.skill_dir / f".release-{record.id}").resolve()
@@ -660,6 +662,9 @@ def _activate_release(
     target_moved = False
     temp_activated = False
     try:
+        existing = registry.get(record.skill_id, include_unpublished=True)
+        if existing is not None:
+            manifest.catalog_module = existing.manifest.catalog_module
         shutil.copytree(content, temp)
         (temp / ".release.json").unlink(missing_ok=True)
         (temp / "tool.yaml").write_text(

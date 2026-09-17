@@ -396,9 +396,6 @@ class FlowLedger:
 
             # 对照表的 B 列语义是「系统客户名称」，所以转换后只与智云客户名称
             # 比较；销售名称仍按原有直接匹配规则处理，避免把客户别名误当销售名。
-            normalized_form = re.sub(r"\s+", "", str(row.get("form") or "")).casefold()
-            if normalized_form not in _FORMULA_ORIGINAL_FORMS:
-                return ""
             customer_name = str(customer or "").strip()
             if not customer_name:
                 return ""

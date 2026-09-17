@@ -15,15 +15,9 @@ def guard_decisions(result, differences, classifier):
         differences_for_order = conflicts.get((row.get('ledger_year', row.get('target_ledger_year')), row.get('so')), [])
         if not differences_for_order:
             continue
-        if (row.get('receipt_correction') or {}).get('policy') == 'verified-current-receipt-v1':
-            row['material_history_conflicts'] = differences_for_order
-            continue
-        locations = sorted({str(r['row']) for d in differences_for_order for r in d['current_rows']})
-        reason = ('所选盈亏表与已核销历史存在金额、日期或收款方式冲突：明细第'
-                  + '、'.join(locations) + '行；保留原值，相关订单暂不写入，其他订单继续')
-        row.update(bucket='hold', code='E_MATERIAL_HISTORY_CONFLICT', reason=reason,
-                   five_cols={}, derived_cols={}, material_history_conflicts=differences_for_order)
-        row.pop('row_operation', None)
+        # Prior reports describe prior materials. They are evidence to review,
+        # never an independent veto over a plan derived from the current file.
+        row['material_history_conflicts'] = differences_for_order
     if hasattr(classifier, 'FS'):
         classifier.FS.guard(records)
     for bucket in ('auto', 'hold', 'exception'):
@@ -53,7 +47,7 @@ def append_history_report(workspace, tag, differences):
     sheet.append(['年度', '单号', 'SOD', '处理', '原记录行', '当前行', '历史金额', '历史日期', '历史方式', '当前记录', '说明'])
     for d in differences:
         old = d['expected']
-        sheet.append([d['year'], d['so'], d['sod'], '已按本次核销结果覆盖并回读' if (d['year'],d['so'],d['sod']) in corrected else ('冲突，尚未核实覆盖条件' if d['status'] == 'conflict' else '缺少历史记录，按本次取数逐条判定'),
+        sheet.append([d['year'], d['so'], d['sod'], '已按本次核销结果覆盖并回读' if (d['year'],d['so'],d['sod']) in corrected else ('历史值与当前表不同，以本次核销判定为准' if d['status'] == 'conflict' else '缺少历史记录，按本次取数逐条判定'),
                       ','.join(map(str, d['previous_rows'])), ','.join(str(r['row']) for r in d['current_rows']),
                       old['amount'], old['date'], old['method'],
                       '\n'.join(f"第{r['row']}行：{r['amount']} / {r['date']} / {r['method']}" for r in d['current_rows']),

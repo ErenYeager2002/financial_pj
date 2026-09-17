@@ -124,6 +124,14 @@ def write_plan(
     wb.close()
 
     before_rows = read_ledger_rows(src)
+    import current_receipt_group as CG
+    by_case = {it["case_id"]: it for it in items}
+    for it in items:
+        if it.get("current_receipt_group"):
+            checked = CG.check(it, before_rows)
+            error = CG.source_error(it, by_case)
+            if checked["verdict"] != "write" or error:
+                raise ValueError(error or checked["reason"])
     for it in items:
         if (it.get("row_operation") or {}).get("type") == BR.OPERATION:
             verdict = BR.check(it, before_rows)
@@ -211,6 +219,18 @@ def write_plan(
         derived = it.get("derived_cols") or {}
         before = before_rows.get(r, {})
         op = it.get("row_operation") or {}
+        if op.get("type") == CG.OPERATION:
+            proof = it["current_receipt_group"]
+            it['_current_group_expected_rows'] = {str(final_original_row(int(ref))): row for ref,row in proof['after_rows'].items()}
+            it['_current_group_event_rows'] = [final_original_row(int(ref)) for ref in proof['event_rows'][it['current_receipt_event']]]
+            for ref in proof['event_rows'][it['current_receipt_event']]:
+                wanted = proof['after_rows'][ref]
+                for key in CG.FIVE:
+                    value = wanted[key]
+                    if key == '收款时间': value = common.norm_date(value) or value
+                    edits.append((int(ref), cols[key], value))
+                changes.append({'案例ID':it['case_id'],'行号':final_original_row(int(ref)), 'SO':it['so'],'SOD':it['sod'], '改前':{key:_norm(proof['before_rows'][ref][key]) for key in FIVE},'改后':{key:_norm(wanted[key]) for key in FIVE}, '操作':'整组回款纠正，保留原应收行'})
+            continue
         if op.get("type") == BR.OPERATION:
             if "差异" in derived:
                 if "差异" not in cols:
@@ -562,6 +582,15 @@ def verify_written(out: Path, items: List[dict]) -> List[str]:
     formula_ws = formula_wb["明细"]
     formula_cols = locate_columns(formula_ws, common.load_aliases())
     for it in items:
+        if it.get('current_receipt_group'):
+            expected = it.get('_current_group_expected_rows') or it['current_receipt_group']['after_rows']
+            actual = {str(ref):BR.normalized(row) for ref,row in rows.items() if row.get('SO')==it['so']}
+            if actual != expected:
+                problems.append(f"{it['case_id']} 整组回款的金额、日期、空值或结账状态回读不一致")
+            refs = it.get('_current_group_event_rows') or list(map(int,it['current_receipt_group']['event_rows'][it['current_receipt_event']]))
+            if sum(BR.cents(rows.get(ref,{}).get('回款明细')) or 0 for ref in refs) != BR.cents(it['split_payment_source']['amount_local']):
+                problems.append(f"{it['case_id']} 分散行回款合计与本次来源不一致")
+            continue
         r = int(it.get("_applied_row_ref") or it["ledger_row_ref"])
         five = it.get("five_cols") or {}
         row = rows.get(r)
@@ -756,6 +785,13 @@ def _comparison_objects(items: List[dict]) -> List[dict]:
     """把本次实际写入计划展开成需要和上传盈亏表逐项核对的订单对象。"""
     objects: List[dict] = []
     for item in items:
+        if item.get('current_receipt_group'):
+            proof=item['current_receipt_group']
+            refs=proof['event_rows'][item['current_receipt_event']]
+            final_refs=item.get('_current_group_event_rows') or list(map(int,refs))
+            for ref,final_ref in zip(refs,final_refs):
+                objects.append({'item':item,'object_type':'整组回款纠正','planned_row':final_ref,'expected':proof['after_rows'][ref]})
+            continue
         five = item.get("five_cols") or {}
         derived = item.get("derived_cols") or {}
         sod = five.get("实收SOD") or item.get("sod") or ""

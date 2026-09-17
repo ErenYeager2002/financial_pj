@@ -149,8 +149,12 @@ export function skillCatalogDetailHref(skillId: string): string {
 }
 
 export function skillCatalogActionFor(
-  skill: Pick<SkillSummary, 'id' | 'action_label' | 'execution_mode'>
+  skill: Pick<SkillSummary, 'id' | 'action_label' | 'execution_mode'> & Partial<Pick<SkillSummary, 'interaction_mode' | 'catalog_module'>>
 ): SkillCatalogAction {
+  if (skill.interaction_mode === 'chat') {
+    const center = skill.catalog_module === 'installed_skills' ? 'installed-skills' : 'skills';
+    return { kind: 'run', href: `/dashboard/${center}/${encodeURIComponent(skill.id)}/run`, label: '开始对话' };
+  }
   const experience = executionExperienceForSkill(skill.id);
   if (!experience) return { kind: 'unavailable', href: null, label: '暂不可运行' };
 

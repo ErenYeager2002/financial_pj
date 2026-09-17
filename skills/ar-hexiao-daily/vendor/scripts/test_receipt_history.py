@@ -90,3 +90,103 @@ class HistoryTest(unittest.TestCase):
             item=classified['auto'][0]
             rows={int(k):v for k,v in BR.ledger_rows(ledger,'SO_TEST','SOD_TEST').items()}
             self.assertEqual(V.check_one(item,rows)['verdict'],'write',item)
+
+class MissingReceiptChainTest(HistoryTest):
+    def chain(self):
+        from classify_hexiao import classify_records
+        rec, ledger = self.make(amount=10, prior=20, arrival='2026-08-04', paid_date='2026-07-10')
+        rec['cumulative_received_local'] = 30
+        second = copy.deepcopy(rec)
+        second.update(ar='AR_SECOND', amount_local=15, amount_orig=15,
+                      cumulative_received_local=45,
+                      writeoff_sequence_key=['2026-08-05', 'HX_Z', 'DETAIL_Z'])
+        items = classify_records([rec, second], ledger, {})['auto']
+        rows = {int(k): v for k, v in BR.ledger_rows(ledger, 'SO_TEST', 'SOD_TEST').items()}
+        self.assertEqual(items[0]['receipt_correction']['kind'], 'missing')
+        self.assertEqual(items[0]['row_operation']['type'], 'split_payment_chain')
+        return items, rows, ledger
+
+    def test_missing_history_can_start_sequential_chain(self):
+        items, rows, _ = self.chain()
+        self.assertEqual(V.check_one(items[0], rows)['verdict'], 'write')
+
+    def test_changed_chain_evidence_is_rejected(self):
+        items, rows, _ = self.chain()
+        for field, value in [('current_received', 11), ('ar', 'OTHER'),
+                             ('remaining_after', 69), ('writeoff_sequence_key', ['2099-01-01', 'X'])]:
+            item = copy.deepcopy(items[0])
+            item['row_operation']['steps'][0][field] = value
+            self.assertEqual(V.check_one(item, rows)['verdict'], 'conflict', field)
+        item = copy.deepcopy(items[0])
+        item['row_operation']['final_unpaid']['receivable'] = 99
+        self.assertEqual(V.check_one(item, rows)['verdict'], 'conflict')
+
+    def test_chain_write_readback_and_idempotence(self):
+        import tempfile
+        from pathlib import Path
+        import openpyxl
+        import apply_to_copy as writer
+        items, _, ledger = self.chain()
+        with tempfile.TemporaryDirectory() as temp:
+            src, out = Path(temp)/'before.xlsx', Path(temp)/'after.xlsx'
+            book = openpyxl.Workbook(); sheet = book.active; sheet.title = '明细'
+            sheet.append(['新智云单号','实收金额','应收金额','计提','回款明细','是否结账','收款时间','收款方式(支/汇/现)','差异'])
+            for row in ledger.row_snapshot.values():
+                sheet.append([row.get(k) for k in ('so','sod','yingshou','jiti','huikuan','jiezhang','shoukuan_time','shoukuan_way','chayi')])
+            book.save(src); book.close(); original = src.read_bytes()
+            self.assertEqual(V.check_one(items[0], writer.read_ledger_rows(src))['verdict'], 'write')
+            writer.write_plan(src, out, items)
+            self.assertEqual(writer.verify_written(out, items), [])
+            rows = writer.read_ledger_rows(out)
+            self.assertEqual(V.check_one(items[0], rows)['verdict'], 'skip')
+            self.assertEqual(sum(r['应收金额'] or 0 for r in rows.values()), 100)
+            self.assertEqual(sum(r['回款明细'] or 0 for r in rows.values()), 45)
+            self.assertEqual([r['应收金额'] for r in rows.values() if r['是否结账']=='否'], [55])
+            self.assertEqual(src.read_bytes(), original)
+
+    def test_full_plan_checks_every_chain_members_source(self):
+        items, rows, _ = self.chain()
+        self.assertEqual(V.validate({'auto': items}, rows)['counts']['conflict'], 0)
+        for field, value in [('收款时间', '2099-01-01'), ('回款明细', 14), ('实收SOD', 'OTHER')]:
+            changed = copy.deepcopy(items)
+            for member in changed:
+                member['row_operation']['steps'][1]['five_cols'][field] = value
+            self.assertGreater(V.validate({'auto': changed}, rows)['counts']['conflict'], 0, field)
+
+
+class ReplacedMaterialHistoryTest(unittest.TestCase):
+    def fixture(self):
+        rec, ledger = HistoryTest().make()
+        # A later receipt is already present in the uploaded workbook. It must
+        # not be included when checking this earlier event's source cumulative.
+        ledger.row_snapshot[2]['yingshou'] = 50
+        ledger.row_snapshot[4] = {**ledger.row_snapshot[3], 'yingshou':30, 'huikuan':30,
+                                  'shoukuan_time':'2026-07-20'}
+        ledger.so_index['SO_TEST'].append(4);ledger.sod_index['SOD_TEST'].append(4)
+        ledger.baseline_receipt_state = {BR.group_key('SO_TEST','SOD_TEST'):{
+            'baseline_receivable':100, 'scope_only':True, 'events':{},
+            'ordinary_events':{BR.event_key(rec):{'signature':[20,'2026-08-05','冲预收']}}}}
+        return rec, ledger
+
+    def test_owned_earlier_receipt_rebinds_without_counting_later_money(self):
+        rec, ledger = self.fixture()
+        item = classify_one(rec,ledger,{},.01,2026)
+        self.assertEqual(item.get('receipt_correction',{}).get('kind'),'existing')
+        self.assertEqual(item['ledger_row_ref'],3)
+        self.assertFalse(item.get('row_operation'))
+        rows={int(k):v for k,v in BR.ledger_rows(ledger,'SO_TEST','SOD_TEST').items()}
+        self.assertEqual(V.check_one(item,rows)['verdict'],'write')
+        rows[3].update(item['five_cols'])
+        self.assertEqual(V.check_one(item,rows)['verdict'],'skip')
+        self.assertEqual(rows[4]['收款时间'],'2026-07-20')
+        self.assertEqual(sum(r['回款明细'] or 0 for r in rows.values()),50)
+
+    def test_rebind_still_rejects_changed_amount_and_duplicate_candidates(self):
+        import receipt_history as H
+        rec,ledger=self.fixture()
+        key=BR.group_key('SO_TEST','SOD_TEST')
+        ledger.baseline_receipt_state[key]['ordinary_events'][BR.event_key(rec)]['signature'][0]=21
+        self.assertIsNone(H.candidate(rec,{},ledger))
+        rec,ledger=self.fixture()
+        ledger.row_snapshot[4].update(huikuan=20,shoukuan_time='2026-07-10')
+        self.assertIsNone(H.candidate(rec,{},ledger))

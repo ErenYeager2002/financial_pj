@@ -858,6 +858,10 @@ def check_one(item: dict, rows: Dict[int, dict]) -> dict:
     - skip     ：已经填过且与计划一致 → 幂等跳过（重复跑不重复写）
     - conflict ：行号对不上 / 已填但不一致 / 值不合法 → 不写，交给人看
     """
+    import current_receipt_group
+    group = current_receipt_group.check(item, rows)
+    if group is not None:
+        return group
     import receipt_history
     zero = receipt_history.check_zero(item, rows)
     if zero is not None:
@@ -1107,6 +1111,10 @@ def parent_allocation_history_errors(plan: dict, rows: Dict[int, dict]) -> Dict[
         if not any(float(row.get("allocated") or 0.0) > float(amount_policy.TECHNICAL_EPSILON) for row in allocations):
             continue
         for allocation in allocations:
+            # A reused zero assignment has no pending money on this SO.
+            # Fresh allocation capacity and all positive assignments remain checked.
+            if reused and allocation.get("allocated_local") == 0 and allocation.get("allocated") == 0:
+                continue
             so = str(allocation.get("so") or "").strip()
             if reused and so in audit["applied_sos"]:
                 continue
@@ -1123,6 +1131,40 @@ def parent_allocation_history_errors(plan: dict, rows: Dict[int, dict]) -> Dict[
                 errors[ar] = error
                 break
     return errors
+
+
+def _history_chain_source_error(item: dict, by_case_id: dict) -> str:
+    """Verify every member of a chain introduced by a missing historical receipt."""
+    op = item.get("row_operation") or {}
+    if op.get("type") != "split_payment_chain":
+        return ""
+    steps = op.get("steps") or []
+    first = by_case_id.get(str((steps[0] if steps else {}).get("case_id") or "")) or {}
+    audit = first.get("receipt_correction") or {}
+    if not audit.get("history_mode") or audit.get("kind") != "missing":
+        return ""
+    for step in steps:
+        member = by_case_id.get(str(step.get("case_id") or ""))
+        if not member or any(step.get(k) != member.get(k) for k in ("ar", "so", "sod")):
+            return "历史补写分笔链的成员身份与原始记录不一致"
+        if member.get("row_operation") != op:
+            return "历史补写分笔链各成员的拆行计划不一致"
+        source = member.get("split_payment_source") or {}
+        order = source.get("writeoff_sequence_key") or source.get("fallback_sequence_key")
+        if step.get("writeoff_sequence_key") != list(order or []):
+            return "历史补写分笔链的步骤顺序与取数依据不一致"
+        for key, source_key in (("current_received", "amount_local"), ("cumulative_received", "cumulative_local")):
+            if BR.cents(step.get(key)) != BR.cents(source.get(source_key)):
+                return "历史补写分笔链的步骤金额与取数依据不一致"
+        if BR.cents(op.get("latest_delivery")) != BR.cents(source.get("delivery_local")):
+            return "历史补写分笔链的交付额与取数依据不一致"
+        five = dict(member.get("five_cols") or {})
+        five["回款明细"] = source.get("amount_local")
+        five["计提"] = op.get("latest_delivery") if step.get("settled") else None
+        derived = (member.get("derived_cols") or {}) if step.get("settled") else {}
+        if step.get("five_cols") != five or step.get("derived_cols") != derived:
+            return "历史补写分笔链的日期、方式或核销字段与原始记录不一致"
+    return ""
 
 
 def validate(
@@ -1142,8 +1184,11 @@ def validate(
     seen_rows: Dict[int, str] = {}
     if allocation_errors is None:
         allocation_errors = parent_allocation_history_errors(plan, rows)
+    import current_receipt_group
     for it in items:
-        audit_error = duplicate_audit_error(plan, it) or allocation_errors.get(it.get("ar"))
+        audit_error = (duplicate_audit_error(plan, it) or allocation_errors.get(it.get("ar"))
+                       or _history_chain_source_error(it, by_case_id)
+                       or current_receipt_group.source_error(it, by_case_id))
         scope_error = BR.check_scope(it, rows)
         if it.get("code") == FS.ZERO:
             audit = it.get("parent_allocation_audit") or {}
@@ -1174,7 +1219,7 @@ def validate(
             res = {"verdict": "conflict", "reason": audit_error}
         elif scope_error:
             res = scope_error
-        elif it.get("receipt_correction") or it.get("zero_delivery_audit") or it.get("baseline_receipt_audit"):
+        elif it.get("current_receipt_group") or it.get("receipt_correction") or it.get("zero_delivery_audit") or it.get("baseline_receipt_audit"):
             res = check_one(it, rows)
         elif it.get("code") == settlement_status.SO_ALREADY_SETTLED:
             settlement = settlement_status.inspect_so(it.get("so"), (
@@ -1267,6 +1312,8 @@ def validate(
         checked.append(item)
     if not defer_sequence_guard:
         FS.guard(checked, checked=True)
+        import receipt_sequence
+        receipt_sequence.guard(checked, checked=True)
     buckets = {"write": [], "skip": [], "conflict": []}
     for c in checked:
         buckets[c["_check"]["verdict"]].append(c)
@@ -1316,6 +1363,8 @@ def recheck_so_skips(plan: dict, ledger_path: Path) -> List[str]:
         context = [it for bucket in ("write", "skip", "conflict") for it in (plan.get(bucket) or [])]
     universe = [dict(it) for it in context if it.get("case_id") not in refreshed_ids] + refreshed
     FS.guard(refreshed, checked=True, universe=universe)
+    import receipt_sequence
+    receipt_sequence.guard(refreshed, checked=True, universe=universe)
     return [f"{it.get('case_id')}: {it['_check']['reason']}" for it in refreshed
             if it["_check"]["verdict"] == "conflict"]
 
@@ -1373,6 +1422,8 @@ def validate_by_year(
 
     sequence_items = [item for bucket in merged.values() for item in bucket]
     FS.guard(sequence_items, checked=True)
+    import receipt_sequence
+    receipt_sequence.guard(sequence_items, checked=True)
     merged = {key: [item for item in sequence_items if item["_check"]["verdict"] == key] for key in merged}
     out = {
         "generated_at": dt.datetime.now().isoformat(timespec="seconds"),

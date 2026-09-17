@@ -41,8 +41,13 @@ def run(workspace: Path, checked: Path) -> dict:
             report = workspace / "04_产出" / f"流转{'前置' if phase == 'prefill' else '状态'}变更清单_{tag}.xlsx"
             apply_flow.write_change_report(changes, report)
             eligible = sum(item.get("verdict") == "write" for item in items)
+            monthly_prefill = phase == "prefill" and any(item.get("monthly_schema") for item in items)
+            if monthly_prefill:
+                eligible = 0
             result["phases"][phase] = {
                 "state": "failed" if problems else "verified",
+                "applicable": not monthly_prefill,
+                "reason": "月度核销在状态阶段统一登记，前置阶段不适用" if monthly_prefill else "",
                 "eligible_count": eligible,
                 "changed_count": None if problems else len(changes),
                 "unchanged_count": None if problems else eligible - len(changes),

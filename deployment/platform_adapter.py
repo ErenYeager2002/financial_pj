@@ -123,12 +123,18 @@ class PlatformAdapter:
         self.active_counts()  # read-only DB connectivity, does not require business tasks to be idle
         code="import urllib.request,json; d=json.load(urllib.request.urlopen('http://127.0.0.1:8000/api/health',timeout=5)); assert d['status']=='ok' and not d['registry_errors']"
         self.command(['docker','exec',PROJECT+'-api-1','python','-c',code])
-        req=urllib.request.Request('http://127.0.0.1:8443/maintenance/ready',headers={'Host':'localhost'})
-        try:response=urllib.request.urlopen(req,timeout=5)
-        except urllib.error.HTTPError as exc:response=exc
-        try:
-            if response.status not in (200,401):raise DeploymentFailure('Frontend/API session service is not ready')
-        finally:response.close()
+        # The rebuilt gateway intentionally returns 503 for every application
+        # path during full maintenance. Verify gateway mode, then probe the
+        # actual Next-to-API session path inside the application network.
+        self.verify_mode(self.mode())
+        code = (
+            "import urllib.request,urllib.error\n"
+            "try:r=urllib.request.urlopen('http://next:3000/api/auth/session',timeout=5)\n"
+            "except urllib.error.HTTPError as e:r=e\n"
+            "assert r.status in (200,401), 'Frontend/API session service is not ready'\n"
+            "r.close()"
+        )
+        self.command(['docker','exec',PROJECT+'-api-1','python','-c',code])
         return {name:(c['Id'],c['RestartCount']) for name,c in containers.items()}
 
     def wait_healthy(self, plan):

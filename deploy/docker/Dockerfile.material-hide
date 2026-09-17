@@ -1,0 +1,2 @@
+FROM financial-platform-isolated-backend:material-hide-base-20260916
+COPY backend/app/main.py backend/app/workflow_service.py backend/app/ar_material_candidates.py /app/backend/app/

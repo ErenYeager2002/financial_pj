@@ -21,6 +21,7 @@ dependencies = [
   "pandas>=2.0,<3",
   "xlrd>=2.0,<3",
   "pdfplumber>=0.11,<1",
+  "PyMuPDF==1.27.2.3",
   "requests>=2.28,<3",
   "playwright>=1.54,<2",
   "cryptography>=45,<47",

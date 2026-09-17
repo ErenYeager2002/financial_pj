@@ -40,6 +40,10 @@ def money(value):
         result = Decimal(str(value).replace(',', ''))
     except (InvalidOperation, ValueError):
         raise ValueError('核销金额或预收余额缺失、不是有效数字') from None
+    if isinstance(value, float) and result.is_finite():
+        rounded = result.quantize(Decimal('.01'))
+        if abs(result - rounded) <= Decimal('0.00000001'):
+            result = rounded
     if not result.is_finite() or result != result.quantize(Decimal('.01')):
         raise ValueError('金额必须是有限的两位小数')
     return result
@@ -103,6 +107,15 @@ def checked_receipt_proof(row, ledger_rows, day, parents):
     """Attach receipt-specific evidence without changing the ledger disposition."""
     if (row.get('_check') or {}).get('verdict') != 'skip':
         return {}
+    import current_receipt_group
+    if row.get('current_receipt_group') and current_receipt_group.check(row,ledger_rows).get('verdict')=='skip':
+        records=row['current_receipt_group']['records']
+        if records and all(common.norm_date(r.get('hexiao_date'))==common.norm_date(day) for r in records):
+            return {'basis':'current_receipt_group_case','ar':row['ar'],'so':row['so'],'sod':row['sod'],
+                    'date':common.norm_date(day).isoformat(),'amount':number(actual_amount(row))}
+    import flow_current_parent_proof
+    current_proof=flow_current_parent_proof.proof(row,ledger_rows,day,parents)
+    if current_proof:return current_proof
     source=row.get('split_payment_source') or {}
     ar,so,sod=row.get('ar'),row.get('so'),row.get('sod')
     parent=parents.get(ar) or {}
@@ -137,7 +150,7 @@ def checked_receipt_proof(row, ledger_rows, day, parents):
 def valid_receipt_proof(row, date):
     proof=row.get('flow_receipt_proof') or {}
     try:
-        return (proof.get('basis') == 'published_parent_case'
+        return (proof.get('basis') in {'published_parent_case','current_material_parent_case','current_receipt_group_case'}
                 and all(proof.get(k)==row.get(k) for k in ('ar','so','sod'))
                 and proof.get('date')==date.isoformat() and money(proof.get('amount'))==actual_amount(row))
     except ValueError:
@@ -245,7 +258,7 @@ def finalize(items, checked):
                     raise ValueError('缺少核销事项身份')
                 deliveries[so] = number(amount)
                 event = (row.get('split_payment_source') or {}).get('writeoff_sequence_key')
-                parent_proof = valid_receipt_proof(row,date) and row['flow_receipt_proof']['basis']=='published_parent_case'
+                parent_proof = valid_receipt_proof(row,date)
                 if event and len(event)>=3 and (event[1] or event[2]):
                     if common.norm_date(event[0]) != date:
                         raise ValueError('核销事件日期与本次日期不一致')
@@ -370,6 +383,33 @@ def resolve_months(ws, cols, chain):
             raise ValueError('跨月承接金额不一致')
 
 
+BALANCE_NUMBER = r'(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?'
+
+def parsed_balance(raw):
+    """Return an explicit numeric chain, a balance, or a nonnumeric remark."""
+    from openpyxl.cell.rich_text import CellRichText
+    if isinstance(raw,CellRichText):raw=str(raw)
+    if raw is None or str(raw).strip()=='':return {'blank':True}
+    if not isinstance(raw,str):return {'remaining':money(raw)}
+    text=str(raw).strip().replace('－','-').replace('＝','=')
+    text=re.sub(r'^\s*(?:还剩|剩余|余额|预付)\s*[：:]?\s*','',text)
+    text=re.sub(r'[，,;；\s]*转(?:\d+月)?\s*$','',text).strip()
+    if re.fullmatch(BALANCE_NUMBER,text):return {'remaining':money(text)}
+    excel=text.startswith('=');text=text[1:] if excel else text
+    if not re.fullmatch(BALANCE_NUMBER+r'(?:-'+BALANCE_NUMBER+r')*(?:='+BALANCE_NUMBER+r'(?:-'+BALANCE_NUMBER+r')*)*',text):
+        if re.fullmatch(r'核销在\s*\d+\s*月',text):return {'remark':str(raw)}
+        raise ValueError('预收内容无法解析为数字扣减算式，需核实原始内容')
+    segments=text.split('=');first=[money(n) for n in segments[0].split('-')]
+    deductions=first[1:];remaining=first[0]-sum(deductions,Decimal(0))
+    for segment in segments[1:]:
+        nums=[money(n) for n in segment.split('-')]
+        if nums[0]!=remaining:raise ValueError('已有预收算式的中间结果或最终结果不一致')
+        deductions.extend(nums[1:]);remaining-=sum(nums[1:],Decimal(0))
+    if not excel and len(segments)==1 and deductions:
+        raise ValueError('预收数字减法缺少等式结果')
+    return {'opening':first[0],'deductions':deductions,'remaining':remaining}
+
+
 def legacy_month(ws, row, cols, history=None):
     date=common.norm_date(value(ws,row,cols,'日期'))
     start=money(value(ws,row,cols,'金额'))
@@ -381,26 +421,7 @@ def legacy_month(ws, row, cols, history=None):
     deductions=[]
     recovered=False
     relocate=False
-    if isinstance(raw,str) and raw.startswith('='):
-        if not re.fullmatch('='+NUMBER+'(?:-'+NUMBER+')*',raw):
-            raise ValueError('已有预收公式不是完整数字减法，需核实实际核销明细')
-        nums=[money(n) for n in raw[1:].split('-')]
-        if nums[0]!=start:
-            raise ValueError('已有预收公式起始金额不一致')
-        deductions=nums[1:]
-        remaining=start-sum(deductions,Decimal(0))
-    elif isinstance(raw,str) and '=' in raw:
-        if not re.fullmatch(NUMBER+'(?:-'+NUMBER+')*='+NUMBER,raw):
-            raise ValueError('已有预收算式不是完整数字减法等式')
-        expression, result = raw.split('=')
-        nums=[money(n) for n in expression.split('-')]
-        if nums[0]!=start:
-            raise ValueError('已有预收算式起始金额不一致')
-        deductions=nums[1:]
-        remaining=start-sum(deductions,Decimal(0))
-        if remaining!=money(result):
-            raise ValueError('已有预收算式结果与扣减金额不一致')
-    elif raw is None or raw=='':
+    if raw is None or raw=='':
         if SO.search(text):
             if (history and money(history['opening'])==start
                     and common.norm_date(history['date'])>=date
@@ -412,11 +433,18 @@ def legacy_month(ws, row, cols, history=None):
                 raise ValueError('预收为空且已有SO，缺少实际历史核销记录；单号交付额不能推算余额')
         remaining=start-sum(deductions,Decimal(0))
     else:
-        if isinstance(raw,str):
-            match=re.fullmatch(r'\s*(?:还剩|剩余|余额)\s*[：:]?\s*('+NUMBER+r')\s*',raw)
-            if match:raw=match.group(1)
-        remaining=money(raw)
-        if remaining!=start:deductions=[start-remaining]
+        parsed = parsed_balance(raw)
+        if 'remaining' not in parsed:
+            raise ValueError('预收仅有备注，缺少可核实的余额')
+        remaining = parsed['remaining']
+        deductions = list(parsed.get('deductions', [start - remaining]))
+        if 'opening' in parsed:
+            if parsed['opening'] > start:
+                raise ValueError('已有预收算式起始金额超过到账金额')
+            # A running balance may omit earlier deductions. Its current balance
+            # proves the aggregate already used, never any particular SO amount.
+            if parsed['opening'] < start:
+                deductions.insert(0, start - parsed['opening'])
     if remaining<0 or remaining>start or any(x<0 for x in deductions):
         raise ValueError('预收余额超出该行可用金额')
     # The order cell contains delivery amounts only. Prior deductions come solely
@@ -437,26 +465,33 @@ def legacy_month(ws, row, cols, history=None):
 
 
 def adopt_chain(ws, cols, item):
-    row=int(item['row_no']); first=legacy_month(ws,row,cols,item.get('monthly_receipt_history'))
-    chain={'sheet':ws.title,'months':[first]}
-    payer=first['signature'][1]
-    # Existing employee splits must be adjacent and uniquely explain the carry.
-    while row<ws.max_row:
-        next_row=row+1
-        if str(value(ws,next_row,cols,'收款形式') or '').strip()!='冲预收': break
-        if str(value(ws,next_row,cols,'公司名称') or '').strip()!=payer: break
-        following=legacy_month(ws,next_row,cols)
+    row=int(item['row_no']);first=legacy_month(ws,row,cols,item.get('monthly_receipt_history'))
+    chain={'sheet':ws.title,'months':[first]};payer=first['signature'][1];known={row}
+    while money(chain['months'][-1]['remaining'])>0:
         previous=chain['months'][-1]
-        if following['month']<=previous['month'] or money(following['start'])!=money(previous['remaining']):
-            raise ValueError('人工拆行的月份或结转余额不一致')
-        chain['months'].append(following);row=next_row
-    known={m['row'] for m in chain['months']}
-    for r in range(1,ws.max_row+1):
-        if r not in known and str(value(ws,r,cols,'收款形式') or '').strip()=='冲预收' and str(value(ws,r,cols,'公司名称') or '').strip()==payer:
-            if common.norm_date(value(ws,r,cols,'日期')) and money(value(ws,r,cols,'金额')) in {money(m['remaining']) for m in chain['months']}:
-                raise ValueError('存在非相邻的同名承接候选，不能自动重复拆行')
-    if re.search(r'转\d+月',str(value(ws,row,cols,'单号') or '')):
-        raise ValueError('原行标记已转月，但缺少可核实承接行')
+        marker=re.search(r'转([0-9]{1,2})月',str(value(ws,row,cols,'单号') or '')+' '+str(value(ws,row,cols,'预收') or ''))
+        target_month=None
+        if marker:
+            month=int(marker[1])
+            if not 1<=month<=12:raise ValueError('转月标记不是有效月份')
+            date=common.norm_date(previous['date']);year=date.year+(month<=date.month)
+            target_month=f'{year:04d}-{month:02d}'
+        candidates=[]
+        for r in range(1,ws.max_row+1):
+            if r in known or str(value(ws,r,cols,'收款形式') or '').strip()!='冲预收':continue
+            if str(value(ws,r,cols,'公司名称') or '').strip()!=payer:continue
+            day=common.norm_date(value(ws,r,cols,'日期'))
+            if not day or day.strftime('%Y-%m')<=previous['month']:continue
+            if target_month and day.strftime('%Y-%m')!=target_month:continue
+            try:amount=money(value(ws,r,cols,'金额'))
+            except ValueError:continue
+            if amount==money(previous['remaining']):candidates.append(r)
+        if len(candidates)>1:raise ValueError('同名、承接月份与余额存在多个候选，不能唯一确定结转行')
+        if not candidates:
+            if marker:raise ValueError('原行标记已转月，但缺少可核实承接行')
+            break
+        row=candidates[0];following=legacy_month(ws,row,cols)
+        chain['months'].append(following);known.add(row)
     return chain
 
 
@@ -479,6 +514,54 @@ def order_text(month):
     return '\n'.join(lines).strip()
 
 
+def references_above_insertion(formula, cell_row, insertion_row):
+    """Prove a stationary formula references only explicit cells above insertion."""
+    from html import unescape
+    from openpyxl.formula.tokenizer import Tokenizer
+    if cell_row >= insertion_row:
+        return False
+    text = unescape(formula)
+    if re.search(r'\b(?:INDIRECT|OFFSET)\s*\(', text, re.I):
+        return False
+    try:
+        tokens = Tokenizer('=' + text.lstrip('=')).items
+    except Exception:
+        return False
+    for token in tokens:
+        if token.type != 'OPERAND' or token.subtype != 'RANGE':
+            continue
+        for cell in token.value.split(':'):
+            match = re.fullmatch(r'\$?[A-Za-z]+\$?(\d+)', cell)
+            if not match or int(match[1]) > insertion_row:
+                return False
+    return True
+
+
+def formula_copy_shift_safe(formula, cell_row, insertion_row, *, grouped=False):
+    """Prove copy translation equals insertion semantics for every A1 reference."""
+    from html import unescape
+    from openpyxl.formula.tokenizer import Tokenizer
+    text=unescape(formula)
+    if re.search(r'\b(?:INDIRECT|OFFSET)\s*\(',text,re.I):return False
+    try:tokens=Tokenizer('='+text.lstrip('=')).items
+    except Exception:return False
+    for token in tokens:
+        if token.type!='OPERAND' or token.subtype!='RANGE':continue
+        for cell in token.value.split(':'):
+            match=re.fullmatch(r'\$?[A-Za-z]+(\$?)(\d+)',cell)
+            if not match:return False
+            absolute=bool(match[1]);row=int(match[2])
+            if grouped and cell_row<=insertion_row:
+                if (absolute and row>insertion_row) or (not absolute and row!=cell_row):return False
+            elif cell_row<insertion_row:
+                if row>insertion_row:return False
+            elif absolute:
+                if row>insertion_row:return False
+            elif (cell_row==insertion_row and row!=insertion_row) or (cell_row>insertion_row and row<=insertion_row):
+                return False
+    return True
+
+
 def insertion_guard(path, sheet, row):
     """Reject structures the existing lossless row patcher cannot safely relocate."""
     with zipfile.ZipFile(path) as z:
@@ -490,9 +573,10 @@ def insertion_guard(path, sheet, row):
             raise ValueError('目标流转页含表对象、图形或合并单元格，拆行需人工处理')
         for cell in re.finditer(r'<c\b[^>]*r="[A-Z]+(\d+)"[^>]*>(.*?)</c>',xml,re.S):
             for f in re.finditer(r'<f\b[^>]*>(.*?)</f>',cell.group(2),re.S):
-                refs=re.findall(r'([A-Za-z]+)(\$?)(\d+)',f.group(1))
-                # Same-row relative references move correctly with the copied row.
-                if any(absolute or int(n)!=int(cell.group(1)) for _,absolute,n in refs) or '!' in f.group(1):
+                grouped_formula = re.search(r'<f\b[^>]*\bt=["\'](?:shared|array)["\']', cell.group(2))
+                if not grouped_formula and references_above_insertion(f.group(1), int(cell.group(1)), row):
+                    continue
+                if not formula_copy_shift_safe(f.group(1), int(cell.group(1)), row, grouped=bool(grouped_formula)):
                     raise ValueError('目标页公式跨行引用，拆行需核实引用范围')
         for name in z.namelist():
             if name.endswith('.xml') and name!=target and (name.startswith('xl/worksheets/') or name.startswith('xl/charts/')):
@@ -500,8 +584,16 @@ def insertion_guard(path, sheet, row):
                 if sheet+'!' in text or sheet+"'!" in text:
                     raise ValueError('其他工作表引用目标流转页，不能直接拆行')
         for match in re.finditer(r'<definedName\b([^>]*)>(.*?)</definedName>',z.read('xl/workbook.xml').decode(),re.S):
-            if '_xlnm._FilterDatabase' not in match.group(1):
-                raise ValueError('工作簿有业务命名范围，拆行需核实范围引用')
+            if '_xlnm._FilterDatabase' in match.group(1):
+                continue
+            if '_xlnm.Print_Titles' in match.group(1):
+                from html import unescape
+                title=re.fullmatch(r"(.+)!(\$?\d+):(\$?\d+)",unescape(match.group(2)))
+                if title:
+                    target_sheet=title[1].strip("'").replace("''", "'")
+                    if target_sheet!=sheet or max(int(title[2].lstrip('$')),int(title[3].lstrip('$')))<=row:
+                        continue
+            raise ValueError('工作簿有业务命名范围，拆行需核实范围引用')
 
 
 
@@ -540,7 +632,12 @@ def write_file(src, out, items, *, validate_only=False, workbook=None):
                 root=chain['months'][0]['row']
                 if root!=int(item['row_no']): raise ValueError('三键定位与已有到账关联不一致')
             else:
-                chain=adopt_chain(ws,cols,item);state['receipts'][ar]=chain
+                chain=adopt_chain(ws,cols,item)
+                chain_rows={m['row'] for m in chain['months']}
+                if any(known['sheet']==sheet and chain_rows & {m['row'] for m in known['months'] if '_insert_after' not in m}
+                       for other,known in state['receipts'].items() if other!=ar):
+                    raise ValueError('结转行已归属另一笔到账，不能重复认领')
+                state['receipts'][ar]=chain
             root=chain['months'][0]['row']
             if any(other!=ar and known['sheet']==sheet and known['months'][0]['row']==root for other,known in state['receipts'].items()):
                 raise ValueError('原始行已关联另一笔到账')
@@ -613,7 +710,17 @@ def write_file(src, out, items, *, validate_only=False, workbook=None):
                 original_value=value(ws,last['row'],cols,'单号')
                 old_plain=str(original_value or '').strip()
                 if old.startswith(old_plain) and old_plain:
-                    runs=[xlsx_patch.RichTextRun(text,color) for text,color in _rich_signature(original_value)]
+                    original_runs = _rich_signature(original_value)
+                    original_text = ''.join(text for text, _ in original_runs)
+                    left = len(original_text) - len(original_text.lstrip())
+                    right = len(original_text.rstrip())
+                    runs = []
+                    offset = 0
+                    for fragment, color in original_runs:
+                        begin, end = max(left, offset), min(right, offset + len(fragment))
+                        if begin < end:
+                            runs.append(xlsx_patch.RichTextRun(fragment[begin-offset:end-offset], color))
+                        offset += len(fragment)
                     runs.append(xlsx_patch.RichTextRun(old[len(old_plain):]))
                     marker_value=xlsx_patch.RichTextValue(tuple(runs))
                 else:marker_value=old

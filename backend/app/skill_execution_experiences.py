@@ -11,6 +11,7 @@ BUSINESS_EXECUTION_EXPERIENCE_IDS = frozenset(
         "receivables-merge-and-split",
         "labor-invoice-check",
         "withholding-report-rename",
+        "pdf-compress",
         "compliance-spot-check",
         "dreame-ar-progress-diff",
         "dept-expense-alloc",
@@ -20,8 +21,8 @@ BUSINESS_EXECUTION_EXPERIENCE_IDS = frozenset(
 )
 
 
-def validate_published_execution_experience(skill_id: str, status: str) -> None:
-    if status != "published":
+def validate_published_execution_experience(skill_id: str, status: str, interaction_mode: str = "form") -> None:
+    if status != "published" or interaction_mode == "chat":
         return
     configured = (
         FOUNDATION_SKILL_IDS

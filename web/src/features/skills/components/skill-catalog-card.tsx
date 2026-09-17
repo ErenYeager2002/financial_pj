@@ -75,7 +75,7 @@ export function SkillCatalogCard({ skill, dedication }: SkillCatalogCardProps) {
           </Link>
         )}
         <Link
-          href={skillCatalogDetailHref(skill.id)}
+          href={skill.catalog_module === 'installed_skills' ? `/dashboard/installed-skills/${encodeURIComponent(skill.id)}` : skillCatalogDetailHref(skill.id)}
           className={cn(buttonVariants({ variant: 'outline' }), 'platform-action')}
         >
           查看详情

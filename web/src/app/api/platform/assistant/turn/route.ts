@@ -1,3 +1,4 @@
+import { checkedSkillScope } from '@/features/ai-chat/skill-chat-scope';
 import { beginTurn, attachTurn, finishTurn, stopTurn, turnStatus } from '@/features/ai-chat/turn-state';
 import { platformServerRequest } from '@/features/platform-api/server-client';
 import type { PlatformSession } from '@/features/platform-api/types';
@@ -18,7 +19,10 @@ function requestInput(value: unknown) {
     throw new PlatformApiError(400, '所选文件标识无效。');
   }
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(sessionId)) throw new PlatformApiError(400, 'AI 会话标识格式无效。');
-  return { sessionId, message, fileIds: fileIds as string[] };
+  let skillId: string | undefined;
+  try { skillId = checkedSkillScope(body.skill_id); }
+  catch { throw new PlatformApiError(400, '该 Skill 尚未开放对话执行。'); }
+  return { sessionId, message, fileIds: fileIds as string[], skillId };
 }
 
 function eventFrame(event: unknown): string {
@@ -72,11 +76,21 @@ export async function POST(request: Request): Promise<Response> {
         catch { connected = false; }
       };
       let assistantText = '';
+      let draftId: string | undefined;
+      const nativeRunIds: string[] = [];
       let streamError = '';
       let persistenceError = '';
       try {
         // Browser navigation detaches this subscriber, not the server's turn.
         for await (const event of turn.events) {
+          if (event.type === 'tool_result' && event.details && typeof event.details === 'object' && 'draft' in event.details) {
+            const draft = event.details.draft as { id?: string };
+            if (typeof draft?.id === 'string') draftId = draft.id;
+          }
+          if (event.type === 'tool_result' && input?.skillId?.startsWith('native--') && event.details && typeof event.details === 'object' && 'run' in event.details) {
+            const run = event.details.run as {id?: string};
+            if (typeof run?.id === 'string') nativeRunIds.push(run.id);
+          }
           if (event.type === 'text_delta') assistantText += event.delta;
           if (event.type === 'error') streamError = event.message;
           emit(event);
@@ -87,7 +101,7 @@ export async function POST(request: Request): Promise<Response> {
       } finally {
         const persistedText = assistantText.trim() || (entry!.stopped ? '已停止生成。' : streamError) || '本次请求已处理。';
         try {
-          await appendAssistantMessage(input!.sessionId, 'assistant', persistedText);
+          await appendAssistantMessage(input!.sessionId, 'assistant', persistedText, {...(draftId ? {draft_id: draftId} : {}), ...(nativeRunIds.length ? {native_run_ids: nativeRunIds} : {})});
         } catch {
           persistenceError = '回复已生成，但聊天记录暂时保存失败。请先核实任务状态，不要重复发送执行指令。';
           emit({ type: 'error', code: 'assistant_history_save_failed', message: persistenceError });

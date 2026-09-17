@@ -338,6 +338,16 @@ def _is_confirmed_empty_reconciliation_date(
     reconciliation_date: str,
 ) -> bool:
     """Only treat a date as empty when the complete fetch summary says so."""
+    # A zero parent-date summary cannot prove an earlier child date is empty.
+    # Let classification inspect later snapshots unless all are provably empty.
+    summaries = fetched_data.get("summary_by_date", {}) if isinstance(fetched_data, dict) else {}
+    if isinstance(summaries, dict):
+        for day, later in summaries.items():
+            if str(day) <= reconciliation_date:
+                continue
+            values = [later.get(key) for key in FETCHED_DATASET_COUNT_KEYS.values()] if isinstance(later, dict) else []
+            if not values or not all(type(value) is int and value == 0 for value in values):
+                return False
     summary = _fetched_summary_for_date(fetched_data, reconciliation_date)
     counts = [summary.get(key) for key in FETCHED_DATASET_COUNT_KEYS.values()]
     return bool(
@@ -2756,6 +2766,9 @@ def reusable_workflow_files(
     db: Session,
     skill_id: str,
     user: UserContext,
+    *,
+    include_candidates: bool = False,
+    candidate_page: int = 1,
 ) -> tuple[dict[str, list[dict[str, Any]]], list[str], dict[str, Any]]:
     skill = registry.get(skill_id)
     if not skill or skill.manifest.handler.adapter != "workflow":
@@ -2770,15 +2783,23 @@ def reusable_workflow_files(
     else:
         assert_workflow_skill_execution_enabled(skill_id)
     assert_skill_permission(db, user, skill_id)
-    files = _reusable_file_bindings(db, skill, user)
     material_set = current_material_set(db, user.user_id, user.department_id, skill_id)
+    files = ({} if include_candidates and is_ar_skill(skill_id) and material_set is None
+             else _reusable_file_bindings(db, skill, user))
     metadata = {
         "material_set_id": material_set.id if material_set else None,
         "material_version": material_set.version if material_set else None,
         "source_workflow_id": material_set.source_workflow_id if material_set else "",
         "published_at": material_set.published_at if material_set else None,
     }
-    return files, _missing_required_files(skill, files), metadata
+    missing = _missing_required_files(skill, files)
+    if include_candidates and is_ar_skill(skill_id):
+        from .ar_material_candidates import material_candidates
+        files, next_page = material_candidates(db, user, skill_id, files, page=candidate_page)
+        metadata["candidate_next_page"] = next_page
+        selected = {role: [entry for entry in entries if entry.get("selected", True)] for role, entries in files.items()}
+        missing = _missing_required_files(skill, selected)
+    return files, missing, metadata
 
 
 def _workflow_model_snapshot(
@@ -2966,6 +2987,25 @@ def create_workflow(
     return workflow
 
 
+def _assert_start_material_selection(db, user, request):
+    """Check the displayed version under the start lock; unchanged IDs need no upload permission."""
+    current = current_material_set(db, user.user_id, user.department_id, request.skill_id)
+    expected = request.expected_material_set_id
+    if expected is not None and expected != (current.id if current else ""):
+        raise HTTPException(status_code=409, detail="任务材料已有新版本，请刷新页面后重新选择。")
+    if not request.files and not request.replace_roles:
+        return
+    if is_ar_skill(request.skill_id) and current:
+        current_ids = _binding_ids(material_set_bindings(db, current))
+        roles = set(request.files) | set(request.replace_roles)
+        if roles <= set(FILE_ROLES) and all(
+            sorted(request.files.get(role, [])) == sorted(current_ids.get(role, []))
+            for role in roles
+        ):
+            return
+    assert_skill_permission(db, user, request.skill_id, "can_upload")
+
+
 def start_workflow(
     db: Session,
     request: WorkflowStart,
@@ -2990,13 +3030,11 @@ def start_workflow(
     else:
         assert_workflow_skill_execution_enabled(request.skill_id)
     assert_skill_permission(db, user, request.skill_id)
-    if request.files or request.replace_roles:
-        assert_skill_permission(db, user, request.skill_id, "can_upload")
+    _assert_start_material_selection(db, user, request)
     acquire_claim_lock(db)
     user = refresh_active_user(db, user)
     assert_skill_permission(db, user, request.skill_id)
-    if request.files or request.replace_roles:
-        assert_skill_permission(db, user, request.skill_id, "can_upload")
+    _assert_start_material_selection(db, user, request)
     assert_skill_accepting_new_work(db, request.skill_id, acquire_lock=False)
     parsed_date = _parse_date(request.reconciliation_date)
     if not parsed_date:
@@ -3127,13 +3165,11 @@ def start_workflow_batch(
     else:
         assert_workflow_skill_execution_enabled(request.skill_id)
     assert_skill_permission(db, user, request.skill_id)
-    if request.files or request.replace_roles:
-        assert_skill_permission(db, user, request.skill_id, "can_upload")
+    _assert_start_material_selection(db, user, request)
     acquire_claim_lock(db)
     user = refresh_active_user(db, user)
     assert_skill_permission(db, user, request.skill_id)
-    if request.files or request.replace_roles:
-        assert_skill_permission(db, user, request.skill_id, "can_upload")
+    _assert_start_material_selection(db, user, request)
     assert_skill_accepting_new_work(db, request.skill_id, acquire_lock=False)
     if before_start is not None:
         before_start()
@@ -5875,7 +5911,9 @@ def _execute_named_workflow_phase(
                 db,
                 bundle_id=bundle_id,
                 owner_id=workflow.owner_id,
-                dates=[workflow.reconciliation_date],
+                # Later parent snapshots can contain this day's child writeoffs.
+                # Stage the authorized batch; classification still runs one date.
+                dates=[str(item) for item in batch_dates],
                 target=target,
             )
         elif (
@@ -6819,8 +6857,12 @@ def _copy_verified_ar_report_inputs(
     from .ar_formal_ledger_service import read_formal_ledger_bundle
     from .ar_publication import published_report
 
+    from .ar_empty_day_completion import is_completed_empty_day
+
     execution = context.get("ar_execution") or {}
     if execution.get("schema_version") != CONTRACT_VERSION:
+        return
+    if is_completed_empty_day(context, child.reconciliation_date):
         return
     if (execution.get("publication") != "verified" or not context.get("formal_ledgers")
             or "complete_reconciliation" not in (execution.get("completed") or [])):
@@ -6886,6 +6928,12 @@ def _prepare_batch_report_workspace(
         for child in sorted(batch.workflows, key=lambda item: item.batch_sequence):
             child_workspace = _controlled_context_workspace(storage_root, child)
             child_context = _load(child.context_json, {})
+            from .ar_empty_day_completion import is_completed_empty_day
+
+            if is_completed_empty_day(child_context, child.reconciliation_date):
+                # The collector independently verifies the fetched preview before
+                # passing --empty-date. No daily financial report exists here.
+                continue
             verified_reports = (child_context.get("ar_execution") or {}).get("schema_version") == CONTRACT_VERSION
             archived = registered_archive(db, child, child_context) if verified_reports else None
             published_workspace = child_context.get("published_workspace")
@@ -7075,6 +7123,7 @@ def _advance_batch(
         batch.progress_message = "每日核销已完成，等待生成范围报告"
         batch.updated_at = datetime.now(UTC)
         if (reconciliation_runner(workflow.execution_mode).worker_finalizes_batch()
+                or context.get("empty_day_skipped")
                 or (context.get("ar_execution") and context.get("formal_ledgers"))):
             _new_action(
                 db,

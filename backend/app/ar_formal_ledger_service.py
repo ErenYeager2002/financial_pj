@@ -187,7 +187,32 @@ def inherit_formal_ledgers(db: Session, workflow: WorkflowSession, workspace: Pa
         raise ValueError("辅助台账对应的发布文件、年度或指纹与当前所选材料不一致")
     material_differences = []
     verified_updated_years = verify_updated_annual_materials(db, material, selected_material, differences=material_differences)
+    from .ar_material_rebinding import rebind_missing_baseline_events, differences_from_current_rows
+    from .ar_material_history import receipt_rows
+
     json_ledgers = payload["json_ledgers"]
+    current_rows = []
+    for member in selected_material.files:
+        if member.role != "profit_loss_ledgers":
+            continue
+        current_file = db.get(FileRecord, member.file_id)
+        if current_file is None or (current_file.owner_id, current_file.department_id, current_file.skill_id) != (
+            workflow.owner_id, workflow.department_id, workflow.skill_id,
+        ):
+            raise ValueError("当前核销材料的文件归属不一致")
+        current_path = Path(current_file.stored_path)
+        if current_path.is_symlink() or not current_path.is_file() or hashlib.sha256(current_path.read_bytes()).hexdigest() != member.sha256:
+            raise ValueError("当前核销材料文件缺失或指纹变化")
+        current_rows.extend(receipt_rows(current_path))
+    allocation_ledger = json_ledgers["父回款顺序分配台账.json"]
+    current_missing = differences_from_current_rows(allocation_ledger, current_rows)
+    rebound, history_rebindings = rebind_missing_baseline_events(
+        allocation_ledger, current_missing,
+    )
+    if history_rebindings:
+        contents["父回款顺序分配台账.json"] = json.dumps(
+            rebound, ensure_ascii=False, indent=2,
+        ).encode("utf-8")
     folder = workspace / "03_台账"
     folder.mkdir(exist_ok=True)
     local_batch = folder / "跑批台账.json"
@@ -222,4 +247,5 @@ def inherit_formal_ledgers(db: Session, workflow: WorkflowSession, workspace: Pa
     return {"mode": "published_bundle", "source_workflow_id": source.id,
             "file_id": record.id, "sha256": record.sha256,
             "bound_material_set_id": material.id, "selected_material_set_id": selected_material_id,
-            "verified_updated_years": verified_updated_years, "material_history_differences": material_differences}
+            "verified_updated_years": verified_updated_years, "material_history_differences": material_differences,
+            "history_rebindings": history_rebindings}

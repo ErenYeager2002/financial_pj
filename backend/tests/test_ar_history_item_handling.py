@@ -28,15 +28,15 @@ def test_row_reordering_and_duplicates_preserve_counts():
     assert history_differences([row(),row()], [row()], 2026)[0]['count'] == 1
 
 
-def test_conflict_is_held_while_missing_and_unrelated_continue():
+def test_history_differences_annotate_without_overruling_current_decisions():
     changes = history_differences([row(),row(so='SO2')], [row(method='冲预收'),row('0.00','','',so='SO2')], 2026)
     result = {'auto':[dict(so=so,ledger_year=2026,bucket='auto',five_cols={'amount':100}, row_operation={'x':1}) for so in ['SO1','SO2','SO3']], 'hold':[], 'exception':[]}
     fake = SimpleNamespace(_dist=lambda rows:{}, build_ar_summary=lambda rows:[])
     guard_decisions(result,changes,fake)
-    assert [r['so'] for r in result['auto']] == ['SO2','SO3']
-    held=result['hold'][0]
-    assert held['so']=='SO1' and held['five_cols']=={} and 'row_operation' not in held
-    assert '10' in held['reason']
+    assert [r['so'] for r in result['auto']] == ['SO1','SO2','SO3']
+    assert result['auto'][0]['material_history_conflicts']
+    assert result['auto'][0]['five_cols']=={'amount':100}
+    assert not result['hold']
     before=copy.deepcopy(result);guard_decisions(result,changes,fake);assert result==before
 
 
@@ -57,8 +57,8 @@ def test_real_classifier_dependency_guard_keeps_unrelated_orders():
     for r in records[:2]: r['fallback_batch_cases']=[x['case_id'] for x in records[:2]]
     result={'auto':records,'hold':[],'exception':[]}
     guard_decisions(result,changes,classifier)
-    assert [r['so'] for r in result['auto']]==['SO3']
-    assert {r['code'] for r in result['hold']}=={'E_MATERIAL_HISTORY_CONFLICT','E_FALLBACK_SEQUENCE_DEPENDENCY'}
+    assert [r['so'] for r in result['auto']]==['SO1','SO2','SO3']
+    assert not result['hold']
 
 
 def test_report_contains_exact_rows_and_preserves_existing_sheets():
@@ -76,5 +76,5 @@ def test_report_contains_exact_rows_and_preserves_existing_sheets():
         book=openpyxl.load_workbook(path)
         assert book['核销明细']['A1'].value=='既有内容'
         assert book['历史材料差异']['F2'].value=='10'
-        assert book['历史材料差异']['D2'].value=='冲突，尚未核实覆盖条件'
+        assert book['历史材料差异']['D2'].value=='历史值与当前表不同，以本次核销判定为准'
         book.close()

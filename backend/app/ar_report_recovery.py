@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from fastapi import HTTPException
 
 from .ar_execution_contract import CONTRACT_VERSION, next_phase
+from .ar_empty_day_completion import is_completed_empty_day
 
 
 def uses_verified_reports(batch) -> bool:
@@ -68,7 +69,7 @@ def report_recovery_status(batch) -> dict | None:
         fetched = context.get("fetched_data") or {}
         empty = context.get("empty_day_skipped") or fetched.get("empty_day_skipped")
         execution = context.get("ar_execution") or {}
-        if empty and not execution:
+        if (empty and not execution) or is_completed_empty_day(context, child.reconciliation_date):
             continue
         try:
             complete = (execution.get("schema_version") == CONTRACT_VERSION

@@ -12,7 +12,7 @@ import type {
   TaskDraft
 } from '@/features/platform-api/types';
 import { SkillRunSetup } from '@/features/run-setup/components/skill-run-setup';
-import { executionExperienceForSkill } from '@/features/skills/execution-experience';
+import { executionExperienceForSkill, standardChatExperience } from '@/features/skills/execution-experience';
 import { cn } from '@/lib/utils';
 
 interface SkillDetailViewProps {
@@ -35,7 +35,7 @@ export function SkillDetailView({
   showExecution = false,
   adminDedication
 }: SkillDetailViewProps) {
-  const experience = executionExperienceForSkill(skill.id);
+  const experience = executionExperienceForSkill(skill.id) ?? (skill.interaction_mode === 'chat' ? standardChatExperience(skill.id) : undefined);
 
   return (
     <div className='space-y-5'>
@@ -63,7 +63,12 @@ export function SkillDetailView({
         </div>
       </header>
 
-      {!experience ? (
+      {skill.interaction_mode === 'chat' && !(showExecution && draft) ? (
+        <section className='rounded-xl border p-5 space-y-3'>
+          <p className='text-sm text-muted-foreground'>通过对话说明任务、添加材料，并查看执行结果。</p>
+          <Link href={`/dashboard/${skill.catalog_module === 'installed_skills' ? 'installed-skills' : 'skills'}/${encodeURIComponent(skill.id)}/run`} className={cn(buttonVariants())}>开始对话</Link>
+        </section>
+      ) : !experience ? (
         <Alert variant='destructive'>
           <Icons.info />
           <AlertTitle>执行界面尚未配置</AlertTitle>
@@ -126,8 +131,8 @@ export function SkillDetailView({
       )}
 
       <div className='flex justify-end'>
-        <Link href='/dashboard/skills' className={cn(buttonVariants({ variant: 'outline' }))}>
-          返回工具中心
+        <Link href={skill.catalog_module === 'installed_skills' ? '/dashboard/installed-skills' : '/dashboard/skills'} className={cn(buttonVariants({ variant: 'outline' }))}>
+          {skill.catalog_module === 'installed_skills' ? '返回 Skill 中心' : '返回工具中心'}
         </Link>
       </div>
     </div>

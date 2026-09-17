@@ -1,0 +1,14 @@
+FROM financial-platform-isolated-next:ai-chat-builder-20260915 AS builder
+COPY web/src ./src
+COPY web/tests ./tests
+COPY web/public ./public
+RUN pnpm build
+FROM docker.m.daocloud.io/library/node:22-slim AS runner
+WORKDIR /app
+ENV NODE_ENV=production PORT=3000 HOSTNAME=0.0.0.0 NEXT_TELEMETRY_DISABLED=1
+COPY --from=builder --chown=node:node /app/web/public ./public
+COPY --from=builder --chown=node:node /app/web/.next/standalone ./
+COPY --from=builder --chown=node:node /app/web/.next/static ./.next/static
+USER node
+EXPOSE 3000
+CMD ["node", "server.js"]

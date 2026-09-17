@@ -192,7 +192,26 @@ async def lifespan(_: FastAPI):
     registry.refresh()
     with SessionLocal() as db:
         bootstrap_admin(db)
-    yield
+    async def recover_native_runs():
+        from .native_skill_service import reap_abandoned_runs
+        def recover():
+            with SessionLocal() as recovery_db:
+                reap_abandoned_runs(recovery_db)
+        while True:
+            try:
+                await asyncio.to_thread(recover)
+            except Exception:
+                logging.getLogger(__name__).exception("Native Skill recovery failed")
+            await asyncio.sleep(60)
+    native_recovery = asyncio.create_task(recover_native_runs())
+    try:
+        yield
+    finally:
+        native_recovery.cancel()
+        try:
+            await native_recovery
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(
@@ -583,6 +602,7 @@ async def upload_file(
             "size_bytes": record.size_bytes,
             "sha256": record.sha256,
             "skill_id": record.skill_id,
+            "role": role,
         },
     )
     db.commit()
@@ -987,13 +1007,34 @@ def get_material_edit_state(
     return material_edit_state(db, user, skill_id)
 
 
+@app.delete("/api/workflows/reusable-files")
+def remove_reusable_workflow_files(
+    skill_id: str,
+    file_id: str | None = None,
+    all_files: bool = False,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> dict[str, int]:
+    from .ar_material_candidates import remove_material_candidates
+    from .authorization import refresh_active_user
+    from .scheduler import acquire_claim_lock
+    assert_skill_permission(db, user, skill_id)
+    acquire_claim_lock(db)
+    user = refresh_active_user(db, user)
+    assert_skill_permission(db, user, skill_id)
+    count = remove_material_candidates(db, user, skill_id, file_id=file_id, all_files=all_files)
+    db.commit()
+    return {"removed_count": count}
+
+
 @app.get("/api/workflows/reusable-files", response_model=WorkflowReusableFilesRead)
 def get_reusable_workflow_files(
     skill_id: str,
+    candidate_page: int = Query(default=1, ge=1),
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ) -> WorkflowReusableFilesRead:
-    files, missing_roles, material = reusable_workflow_files(db, skill_id, user)
+    files, missing_roles, material = reusable_workflow_files(db, skill_id, user, include_candidates=True, candidate_page=candidate_page)
     return WorkflowReusableFilesRead(
         skill_id=skill_id,
         files=files,

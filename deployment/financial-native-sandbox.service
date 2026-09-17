@@ -1,0 +1,17 @@
+[Unit]
+Description=Financial platform native Skill sandbox
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /home/lee/financial-platform-isolated/releases/rebuild-e95b527/source/deployment/native_skill_sandbox.py
+Environment=FINANCIAL_NATIVE_ROOT=/home/lee/financial-platform-isolated/data/native-skills
+Environment=FINANCIAL_NATIVE_IMAGE=sha256:3a8a37578f6c81f3fb04076e9dc1c20c9983f3d160fb5b37c2f556d642e15e8b
+Restart=on-failure
+RestartSec=3
+UMask=0022
+TimeoutStopSec=240
+
+[Install]
+WantedBy=multi-user.target

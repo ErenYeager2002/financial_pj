@@ -126,8 +126,12 @@ class RecognitionTests(unittest.TestCase):
         rec,ledger=self.existing()
         rec.update(flow_hits=2,flow_matched_by='日期+金额(名字不符)')
         item=C.classify_one(rec,ledger,{},.01,2026)
-        self.assertIn('名字不符',item['reason'])
-        self.assertNotIn('同名',item['reason'])
+        self.assertEqual(item['bucket'],'auto')
+        import build_flow_plan
+        flow=build_flow_plan.build_plan({'auto':[item],'hexiao_date':rec['hexiao_date']})['items'][0]
+        self.assertEqual(flow['verdict'],'hand')
+        self.assertIn('名字不符',flow['reason'])
+        self.assertNotIn('同名',flow['reason'])
 
 
     def test_export_supplement_reuses_unique_order_date_and_rejects_conflict(self):

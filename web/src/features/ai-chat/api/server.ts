@@ -58,7 +58,8 @@ export function getAssistantConversation(sessionId: string): Promise<AssistantCo
 export function appendAssistantMessage(
   sessionId: string,
   role: 'user' | 'assistant',
-  content: string
+  content: string,
+  data: Record<string, unknown> = {}
 ): Promise<AssistantMessage> {
   if (!SESSION_ID.test(sessionId)) throw new PlatformApiError(400, 'AI 会话标识格式无效。');
   const cleanContent = content.trim();
@@ -69,7 +70,7 @@ export function appendAssistantMessage(
     `/api/assistant/conversations/${encodeURIComponent(sessionId)}/messages`,
     {
       method: 'POST',
-      body: JSON.stringify({ role, content: cleanContent })
+      body: JSON.stringify({ role, content: cleanContent, data })
     }
   );
 }

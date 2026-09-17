@@ -6,6 +6,7 @@ import os
 import re
 from playwright.sync_api import sync_playwright, TimeoutError, expect
 from engine import COMPANIES, KINDS, SourceError, parse_file
+from report_refresh import select_period, refresh_report, verify_balance_export, verify_visible_balance, select_profit_period, query_profit, verify_visible_profit, verify_profit_export
 
 LEDGERS = ["HEAD", "CULTURE", "SHANGHAI", "HUNAN_BRANCH", "HUNAN_TECH"]
 
@@ -25,10 +26,10 @@ def query_classified_balance(page, query):
     """A changed option requires a fresh query; two unstable queries stop export."""
     for attempt in range(2):
         set_classification(page)
-        query()
+        rows = query()
         try:
             set_classification(page, verify_only=True)
-            return
+            return rows
         except SourceError:
             if attempt:
                 raise SourceError("查询后重分类口径不稳定，停止导出") from None
@@ -155,16 +156,15 @@ def collect(period, output, credentials, existing, emit):
                             try:page.wait_for_load_state("networkidle",timeout=5000)
                             except TimeoutError:pass
                             if kind=="cf":dismiss_cash_notice(page)
-                            if kind=="bs":
-                                stage="确认重分类口径"
-                                set_classification(page)
                             selected=period_input(page)
                             stage="选择会计期间"
                             if not selected.input_value().startswith(period[:4]+"年"):
                                 raise SourceError("会计年需人工选择")
-                            selected.click()
                             target=page.get_by_text(str(int(period[4:]))+"期",exact=True).filter(visible=True)
-                            target.click()
+                            if kind=="is":
+                                profit_period_changed=select_profit_period(page,selected,target,period)
+                            else:
+                                select_period(page, selected, target, period)
                             expected=period[:4]+"年"+period[4:]+"期"
                             try:expect(selected).to_have_value(expected,timeout=3000)
                             except AssertionError:
@@ -174,16 +174,12 @@ def collect(period, output, credentials, existing, emit):
                                 select_cumulative(page)
                             stage="查询并导出"
                             def query_report():
-                                query=page.get_by_text("查询",exact=True).filter(visible=True)
-                                if query.count()==1 and query.is_visible():
-                                    query.click()
-                                else:
-                                    click_visible(page,"刷新")
-                                try:page.wait_for_load_state("networkidle",timeout=5000)
-                                except TimeoutError:pass
+                                return refresh_report(page, selected, period, kind)
                             if kind=="bs":
                                 stage="查询后复核重分类口径"
-                                query_classified_balance(page, query_report)
+                                refreshed_rows = query_classified_balance(page, query_report)
+                            elif kind=="is":
+                                refreshed_rows=query_profit(page,selected,period,profit_period_changed)
                             else:
                                 query_report()
                             if kind=="cf":dismiss_cash_notice(page)
@@ -192,9 +188,12 @@ def collect(period, output, credentials, existing, emit):
                             if kind=="bs":
                                 stage="导出前复核重分类口径"
                                 set_classification(page, verify_only=True)
+                            if kind=="bs":verify_visible_balance(page,refreshed_rows)
+                            if kind=="is":verify_visible_profit(page,refreshed_rows)
                             click_visible(page,"引出")
                             dialog=page.locator("#dialogShow").filter(visible=True)
                             dialog.get_by_text("引出报表",exact=True).wait_for(state="visible")
+                            expect(dialog.locator("input[readonly]").filter(visible=True)).to_have_value(expected,timeout=30000)
                             periods=page.locator("input[readonly]:visible").evaluate_all("(es)=>es.map(e=>e.value).filter(v=>/^20\\d{2}年\\d{1,2}期$/.test(v))")
                             if not periods or any(v!=expected for v in periods):raise SourceError("导出期间不匹配")
                             if kind=="bs":
@@ -207,10 +206,23 @@ def collect(period, output, credentials, existing, emit):
                                 download.delete();raise SourceError("下载文件公司或期间不符")
                             path=output/name
                             download.save_as(path);download.delete()
+                            if kind in {"bs","is"}:
+                                stage="核对导出与刷新数据"
+                                try:
+                                    (verify_balance_export if kind=="bs" else verify_profit_export)(path,refreshed_rows)
+                                except SourceError:
+                                    path.rename(path.with_stem(path.stem+"_核验失败"))
+                                    raise
                             parsed,problems=parse_file(path,period,bs_reclassified=kind=="bs")
                             if len(parsed)!=1 or parsed[0].company!=code or parsed[0].kind!=kind or problems:
                                 # Keep the original export as evidence, but never mark it normalized.
                                 issues.append({"company":code,"kind":kind,"message":"已导出，但字段或金额列口径待核实","status":"needs_review"})
+                            if kind in {"bs","is"}:
+                                import hashlib
+                                evidence=output.parent/"取数诊断"
+                                evidence.mkdir(exist_ok=True)
+                                proof={"company":code,"kind":kind,"period":period,"refresh_action":"query.click" if kind=="is" else "toolbarap.fresh","verification":"response_page_export_equal","reclassified":kind=="bs","tax_reclassified":False,"source_sha256":hashlib.sha256(path.read_bytes()).hexdigest()}
+                                (evidence/(code+"_"+kind+"_verified.json")).write_text(json.dumps(proof,ensure_ascii=False,indent=2),encoding="utf-8")
                             files.append(path)
                             break
                         except Exception as exc:

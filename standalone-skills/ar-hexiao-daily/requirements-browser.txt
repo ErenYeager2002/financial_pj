@@ -1,0 +1,4 @@
+-r requirements.txt
+playwright==1.62.0
+selenium>=4.25,<5
+keyring>=25,<26

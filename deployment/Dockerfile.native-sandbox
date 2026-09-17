@@ -1,0 +1,5 @@
+FROM financial-platform-isolated-backend:skill-centers-20260916
+USER root
+RUN python -c "import shutil; shutil.rmtree('/app');"
+WORKDIR /workspace
+USER 10001

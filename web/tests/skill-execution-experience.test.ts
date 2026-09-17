@@ -8,6 +8,9 @@ import {
 
 const publishedBusinessSkills = [
   'ar-hexiao-daily',
+  'ar-hexiao-daily-lab',
+  'consolidated-statements',
+  'pdf-compress',
   'reconcile-bank',
   'receivables-merge-and-split',
   'labor-invoice-check',

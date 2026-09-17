@@ -16,6 +16,7 @@ import uuid
 from sqlalchemy import select, text
 
 from . import models
+from .ar_skill_identity import is_ar_skill
 from .audit_service import record_audit
 from .database import SessionLocal
 from .resource_policy import run_root, upload_root, workflow_root
@@ -188,6 +189,10 @@ def plan(db, *, check_files=True):
     candidates, reasons = [], Counter()
     for f in files:
         if f.kind not in {'input', 'output'}: continue
+        # Uploaded AR workbooks are a reusable candidate library. Only outputs
+        # follow latest-success retention; users may explicitly delete inputs.
+        if f.kind == 'input' and is_ar_skill(f.skill_id):
+            reasons['ar_material_candidate'] += 1; continue
         keys = file_groups[f.id]
         inferred = {groups[key]['scope'] for key in keys}
         group_scope = _scope(f)

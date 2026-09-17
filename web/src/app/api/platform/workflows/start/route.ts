@@ -13,6 +13,7 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 function parseBody(value: unknown): {
   skill_id: string;
+  expected_material_set_id?: string;
   reconciliation_date: string;
   files: Record<string, string[]>;
   replace_roles: string[];
@@ -24,6 +25,10 @@ function parseBody(value: unknown): {
     throw new PlatformApiError(400, '任务请求格式无效。');
   }
   const body = value as Record<string, unknown>;
+  const expectedMaterialSet = body.expected_material_set_id;
+  if (expectedMaterialSet !== undefined && (typeof expectedMaterialSet !== 'string' || expectedMaterialSet.length > 64 || (expectedMaterialSet !== '' && !ID.test(expectedMaterialSet)))) {
+    throw new PlatformApiError(400, '材料版本标识格式无效。');
+  }
   const skillId = typeof body.skill_id === 'string' ? body.skill_id.trim() : '';
   const reconciliationDate =
     typeof body.reconciliation_date === 'string' ? body.reconciliation_date.trim() : '';
@@ -63,6 +68,7 @@ function parseBody(value: unknown): {
   }
   return {
     skill_id: skillId,
+    ...(typeof expectedMaterialSet === 'string' ? { expected_material_set_id: expectedMaterialSet } : {}),
     reconciliation_date: reconciliationDate,
     files: parseWorkflowFileBindings(body.files),
     replace_roles: parseWorkflowReplaceRoles(body.replace_roles),

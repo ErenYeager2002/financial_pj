@@ -49,6 +49,13 @@ export async function uploadFileForSkill(
   if (!upload.name || upload.size <= 0) throw new PlatformApiError(400, '请选择非空文件。');
   if (upload.size > MAX_UPLOAD_BYTES) throw new PlatformApiError(413, '文件不能超过 100 MB。');
 
+  if (/^native--[a-z][a-z0-9-]{0,71}$/.test(skillId)) {
+    await platformServerRequest(`/api/native-skills/${encodeURIComponent(skillId.slice(8))}`);
+    const form = new FormData();
+    form.set('role', role);
+    form.set('upload', upload);
+    return platformServerRequest<PlatformFile>('/api/files', { method: 'POST', body: form });
+  }
   const skill = uploadableSkill(await getSkillCatalogItem(skillId), allowWorkflow);
   const spec = skill.file_inputs?.find((item) => item.role === role);
   if (!spec) throw new PlatformApiError(400, '该 Skill 不接受此文件用途。');

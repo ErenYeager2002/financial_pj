@@ -1,5 +1,10 @@
 'use client';
 
+import type { FileInputSpec } from '@/features/platform-api/generated';
+
+import { Suspense } from 'react';
+import { RunDetailView } from '@/features/runs/components/run-detail';
+import { skillSessionPrefix, belongsToSkillSession } from '../skill-chat-scope';
 import { watchAssistantTurn } from '@/features/ai-chat/turn-recovery';
 
 import { FormEvent, useEffect, useRef, useState } from 'react';
@@ -34,6 +39,9 @@ interface AssistantWorkspaceProps {
   isAdmin: boolean;
   profile?: AdminAssistantProfile;
   connections?: ModelConnection[];
+  skillId?: string;
+  skillName?: string;
+  fileInputs?: FileInputSpec[];
 }
 
 const WELCOME_MESSAGE: ChatMessage = {
@@ -43,7 +51,6 @@ const WELCOME_MESSAGE: ChatMessage = {
     '你好，我是财务平台 AI 助手。你可以直接问我业务问题、查看正在运行的任务，或描述想使用的 Skill。'
 };
 
-const CHAT_SESSION_STORAGE_KEY = 'financial-platform-assistant-session';
 const CHAT_UI_STATE_PREFIX = 'financial-platform-assistant-state';
 
 type PersistedAssistantState = {
@@ -52,6 +59,8 @@ type PersistedAssistantState = {
   selectedFileNames?: Record<string, string>;
   pendingMessage?: string;
   draft?: unknown;
+  runId?: string;
+  invalidatedDraftId?: string;
 };
 
 async function responseMessage(response: Response, fallback: string): Promise<string> {
@@ -157,11 +166,24 @@ export function AssistantWorkspace({
   initialModel,
   isAdmin,
   profile,
-  connections = []
+  connections = [],
+  skillId,
+  skillName,
+  fileInputs = []
 }: AssistantWorkspaceProps) {
   const router = useRouter();
   const [configured, setConfigured] = useState(initialConfigured);
   const [input, setInput] = useState('');
+  const CHAT_SESSION_STORAGE_KEY = skillId ? `financial-platform-assistant-session:${skillId}` : 'financial-platform-assistant-session';
+  const welcomeMessage: ChatMessage = skillId
+    ? { id: 'welcome', role: 'assistant', content: skillId.startsWith('native--') ? `请上传材料并说明任务，我会按${skillName || '当前 Skill'}的步骤执行，并在本页提供结果。` : `请上传材料并告诉我需要怎样处理${skillName || '当前工具'}。我会依据此 Skill 的说明确认材料和参数，再生成可执行方案。` }
+    : WELCOME_MESSAGE;
+  const [runId, setRunId] = useState('');
+  const [nativeRuns, setNativeRuns] = useState<Array<{id: string; state: string; result?: Record<string, unknown>}>>([]);
+  const nativeSelectionRef = useRef('');
+  const invalidDraftRef = useRef<string | null>(null);
+  const [startingRun, setStartingRun] = useState(false);
+  const [uploadWorking, setUploadWorking] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
   const [selectedFileNames, setSelectedFileNames] = useState<Record<string, string>>({});
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME_MESSAGE]);
@@ -175,7 +197,7 @@ export function AssistantWorkspace({
   const [historical, setHistorical] = useState(false);
   const [streamWorking, setWorking] = useState(false);
   const [backgroundWorking, setBackgroundWorking] = useState(false);
-  const working = streamWorking || backgroundWorking;
+  const working = streamWorking || backgroundWorking || startingRun || uploadWorking;
   const [, setToolMessage] = useState('');
   const [pendingMessage, setPendingMessage] = useState('');
   const [error, setError] = useState('');
@@ -196,16 +218,14 @@ export function AssistantWorkspace({
                 { cache: 'no-store' }
               ).catch(() => null)
             : Promise.resolve(null),
-          fetch('/api/platform/assistant/conversations/latest', { cache: 'no-store' }).catch(
-            () => null
-          ),
+          skillId ? Promise.resolve(null) : fetch('/api/platform/assistant/conversations/latest', { cache: 'no-store' }).catch(() => null),
           fetch('/api/platform/assistant/conversations', { cache: 'no-store' }).catch(() => null)
         ]);
         if (cancelled) return;
 
         const listPayload = await parseJsonResponse<unknown>(listResponse);
         if (Array.isArray(listPayload)) {
-          setConversations(listPayload as AssistantConversationSummary[]);
+          setConversations((listPayload as AssistantConversationSummary[]).filter(item => belongsToSkillSession(item.session_id, skillId)));
           setHistoryListError('');
         } else {
           setHistoryListError('历史会话加载失败。');
@@ -220,12 +240,13 @@ export function AssistantWorkspace({
             conversation = latestPayload as unknown as AssistantConversation;
           }
         }
-        if (conversation?.messages?.length) {
+        if (conversation?.messages?.length && belongsToSkillSession(conversation.session_id, skillId)) {
           setSessionId(conversation.session_id);
           window.localStorage.setItem(CHAT_SESSION_STORAGE_KEY, conversation.session_id);
           setMessages(conversationMessages(conversation));
           const storedState = readPersistedAssistantState(conversation.session_id);
           if (storedState) {
+            invalidDraftRef.current = storedState.invalidatedDraftId || null;
             setInput(typeof storedState.input === 'string' ? storedState.input : '');
             setSelectedFiles(
               Array.isArray(storedState.selectedFiles)
@@ -245,17 +266,18 @@ export function AssistantWorkspace({
               typeof storedState.pendingMessage === 'string' ? storedState.pendingMessage : ''
             );
             setDraft(draftFromDetails({ draft: storedState.draft }));
+            setRunId(storedState.runId || "");
           }
           setHistorical(true);
           setHistoryCheckedAt(new Date().toISOString());
         } else {
-          setMessages([WELCOME_MESSAGE]);
+          setMessages([welcomeMessage]);
           setHistorical(false);
         }
       } catch {
         if (!cancelled) {
           setHistoryListError('历史会话加载失败。');
-          setMessages([WELCOME_MESSAGE]);
+          setMessages([welcomeMessage]);
           setHistorical(false);
         }
       } finally {
@@ -271,12 +293,13 @@ export function AssistantWorkspace({
       cancelled = true;
       turnControllerRef.current?.abort();
     };
-  }, []);
+  }, [skillId]);
 
   useEffect(() => {
     if (!sessionId || historyLoading || streamWorking) return;
     setBackgroundWorking(true);
-    return watchAssistantTurn(sessionId, {
+    const recovery = new AbortController();
+    const stopWatching = watchAssistantTurn(sessionId, {
       update: (value, active) => {
         if (!isRecord(value) || !Array.isArray(value.messages)) return;
         const conversation = value as unknown as AssistantConversation;
@@ -284,6 +307,20 @@ export function AssistantWorkspace({
         setMessages(active ? [...recovered, {
           id: `background-${sessionId}`, role: 'assistant', content: '正在后台生成回复，完成后会自动显示。'
         }] : recovered);
+        if (skillId && !active) {
+          const last = conversation.messages?.at(-1);
+          const savedId = last?.role === 'assistant' ? last.data?.draft_id : undefined;
+          if (typeof savedId === 'string' && invalidDraftRef.current !== savedId) {
+            void fetch(`/api/platform/task-drafts/${encodeURIComponent(savedId)}`, { cache: 'no-store', signal: recovery.signal })
+              .then(async response => {
+                if (!response.ok) return;
+                const saved = await response.json() as TaskDraft & { run_id?: string };
+                if (recovery.signal.aborted || saved.skill_id !== skillId || invalidDraftRef.current === savedId) return;
+                setDraft(saved);
+                if (saved.run_id) setRunId(saved.run_id);
+              }).catch(() => undefined);
+          }
+        }
         setBackgroundWorking(active);
         setHistorical(!active);
         setHistoryCheckedAt(new Date().toISOString());
@@ -293,7 +330,31 @@ export function AssistantWorkspace({
       },
       error: setError
     });
-  }, [sessionId, historyLoading, streamWorking]);
+    return () => { recovery.abort(); stopWatching(); };
+  }, [sessionId, historyLoading, streamWorking, skillId]);
+
+  useEffect(() => {
+    if (!skillId?.startsWith('native--') || !sessionId || historyLoading) return;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const refresh = async () => {
+      try {
+        const response = await fetch(`/api/platform/assistant/native-skills/${encodeURIComponent(skillId.slice('native--'.length))}/runs?session_id=${encodeURIComponent(sessionId)}`, {cache: 'no-store', signal: controller.signal});
+        if (response.ok) {
+          const runs = await response.json() as Array<{id: string; state: string; result?: Record<string, unknown>}>;
+          if (!controller.signal.aborted) {
+            setNativeRuns(runs);
+            const selected = runs.find(run => run.id === nativeSelectionRef.current);
+            const latest = runs[0]?.state === 'running' ? runs[0] : runs.find(run => Array.isArray(run.result?.output_files) && run.result.output_files.length) ?? runs[0];
+            if (selected || latest) setRunId((selected || latest)!.id);
+          }
+          if (!controller.signal.aborted && (streamWorking || backgroundWorking || runs.some(run => run.state === 'running'))) timer = setTimeout(refresh, 2000);
+        }
+      } catch { /* Main conversation and task view retain their own errors. */ }
+    };
+    void refresh();
+    return () => { controller.abort(); if(timer) clearTimeout(timer); };
+  }, [skillId, sessionId, historyLoading, streamWorking, backgroundWorking]);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -302,7 +363,7 @@ export function AssistantWorkspace({
       selectedFiles,
       selectedFileNames,
       pendingMessage,
-      draft
+      draft, runId, invalidatedDraftId: invalidDraftRef.current || undefined
     };
     try {
       window.localStorage.setItem(
@@ -312,7 +373,7 @@ export function AssistantWorkspace({
     } catch {
       // A full or restricted browser storage must not block the conversation.
     }
-  }, [draft, input, pendingMessage, selectedFileNames, selectedFiles, sessionId]);
+  }, [draft, input, pendingMessage, selectedFileNames, selectedFiles, sessionId, runId]);
 
   useEffect(() => {
     if (!conversations.some(item => item.preview === '新对话')) return;
@@ -322,7 +383,7 @@ export function AssistantWorkspace({
         .then(async response => {
           if (response.ok && !controller.signal.aborted) {
             const items = await response.json() as AssistantConversationSummary[];
-            if (!controller.signal.aborted) setConversations(items);
+            if (!controller.signal.aborted) setConversations(items.filter(item => belongsToSkillSession(item.session_id, skillId)));
           }
         }).catch(() => {});
     }, 10000);
@@ -336,7 +397,7 @@ export function AssistantWorkspace({
         cache: 'no-store'
       });
       if (!response.ok) throw new Error('历史会话加载失败。');
-      setConversations((await response.json()) as AssistantConversationSummary[]);
+      setConversations(((await response.json()) as AssistantConversationSummary[]).filter(item => belongsToSkillSession(item.session_id, skillId)));
       setHistoryListError('');
     } catch (listError) {
       setHistoryListError(listError instanceof Error ? listError.message : '历史会话加载失败。');
@@ -346,7 +407,7 @@ export function AssistantWorkspace({
   }
 
   async function selectConversation(nextSessionId: string) {
-    if (!nextSessionId || nextSessionId === sessionId || working) return;
+    if (!nextSessionId || nextSessionId === sessionId || working || !belongsToSkillSession(nextSessionId, skillId)) return;
     setHistoryLoading(true);
     setError('');
     try {
@@ -379,6 +440,8 @@ export function AssistantWorkspace({
         typeof storedState?.pendingMessage === 'string' ? storedState.pendingMessage : ''
       );
       setDraft(draftFromDetails({ draft: storedState?.draft }));
+      setRunId(storedState?.runId || "");
+      invalidDraftRef.current = storedState?.invalidatedDraftId || null;
       setHistorical(true);
       setHistoryCheckedAt(new Date().toISOString());
     } catch (conversationError) {
@@ -394,12 +457,15 @@ export function AssistantWorkspace({
     if (working) return;
     turnControllerRef.current?.abort();
     setSessionId('');
+    invalidDraftRef.current = null;
     window.localStorage.removeItem(CHAT_SESSION_STORAGE_KEY);
-    setMessages([WELCOME_MESSAGE]);
+    setMessages([welcomeMessage]);
     setInput('');
     setSelectedFiles([]);
     setSelectedFileNames({});
     setDraft(null);
+    setRunId('');
+    setNativeRuns([]); nativeSelectionRef.current = '';
     setPendingMessage('');
     setToolMessage('');
     setError('');
@@ -419,6 +485,7 @@ export function AssistantWorkspace({
   }, [selectedFiles]);
 
   function handleSelectedFileIdsChange(nextFileIds: string[]) {
+    if (skillId && draft) { invalidDraftRef.current = draft.id; setDraft(null); setPendingMessage('材料已变更，请发送处理要求以更新执行方案。'); }
     setSelectedFiles((current) => {
       const next = new Set(nextFileIds);
       if (
@@ -444,6 +511,7 @@ export function AssistantWorkspace({
   }
 
   function removeSelectedFile(fileId: string) {
+    if (skillId && draft) { invalidDraftRef.current = draft.id; setDraft(null); setPendingMessage('材料已变更，请发送处理要求以更新执行方案。'); }
     setSelectedFiles((current) => current.filter((item) => item !== fileId));
     setSelectedFileNames((current) => {
       const next = { ...current };
@@ -465,7 +533,7 @@ export function AssistantWorkspace({
       return;
     }
 
-    const activeSessionId = sessionId || createClientId();
+    const activeSessionId = sessionId || `${skillSessionPrefix(skillId)}${createClientId()}`;
     if (!sessionId) {
       setSessionId(activeSessionId);
       window.localStorage.setItem(CHAT_SESSION_STORAGE_KEY, activeSessionId);
@@ -498,7 +566,8 @@ export function AssistantWorkspace({
         body: JSON.stringify({
           session_id: activeSessionId,
           message,
-          file_ids: selectedFiles
+          file_ids: selectedFiles,
+          skill_id: skillId
         }),
         signal: controller.signal
       }).finally(resolveTurnReady);
@@ -543,6 +612,7 @@ export function AssistantWorkspace({
           );
         }
         if (event.type === 'tool_result') {
+          if (skillId?.startsWith('native--') && isRecord(event.details) && isRecord(event.details.run) && typeof event.details.run.id === 'string') setRunId(event.details.run.id);
           const nextDraft = draftFromDetails(event.details);
           const clarification = clarificationFromDetails(event.details);
           if (nextDraft) {
@@ -618,7 +688,21 @@ export function AssistantWorkspace({
     }
   }
 
-  function openTaskWizard() {
+  async function openTaskWizard() {
+    if (skillId && draft) {
+      if (startingRun) return;
+      setStartingRun(true);
+      setError('');
+      try {
+        const response = await fetch(`/api/platform/task-drafts/${encodeURIComponent(draft.id)}/confirm`, { method: 'POST' });
+        if (!response.ok) throw new Error(await responseMessage(response, '任务启动失败。'));
+        const run = await response.json();
+        setRunId(run.id);
+        setDraft({ ...draft, state: 'consumed' });
+      } catch (error) { setError(error instanceof Error ? error.message : '任务启动失败。'); }
+      finally { setStartingRun(false); }
+      return;
+    }
     if (!draft) return;
     router.push(
       `/dashboard/skills/${encodeURIComponent(draft.skill_id)}/run?draft=${encodeURIComponent(draft.id)}`
@@ -702,6 +786,7 @@ export function AssistantWorkspace({
   );
 
   return (
+    <div className="space-y-4">
     <AssistantShell
       header={
         <AssistantHeader
@@ -727,6 +812,9 @@ export function AssistantWorkspace({
       }
       composer={
         <AssistantComposer
+          skillId={skillId}
+          fileInputs={fileInputs}
+          onUploadWorkingChange={setUploadWorking}
           configured={configured}
           historyLoading={historyLoading}
           working={working}
@@ -748,10 +836,16 @@ export function AssistantWorkspace({
             selectedFileNames={selectedNames}
             pendingMessage={pendingMessage}
             draft={draft}
-            onOpenTask={openTaskWizard}
+            onOpenTask={() => void openTaskWizard()}
+            executeInPlace={Boolean(skillId)}
+            startingRun={working}
+            selectedFileNamesById={selectedFileNames}
           />
         ) : undefined
       }
     />
+    {nativeRuns.length > 1 && <label className="flex flex-wrap items-center gap-2 text-sm">本会话执行记录<select aria-label="本会话执行记录" value={runId} onChange={event => {nativeSelectionRef.current = event.target.value; setRunId(event.target.value);}} className="rounded-md border border-input bg-background px-3 py-2 text-foreground">{nativeRuns.map((run,index) => <option key={run.id} value={run.id}>第 {nativeRuns.length-index} 次 · {run.state === 'succeeded' ? '已完成' : run.state === 'running' ? '执行中' : '未完成'}</option>)}</select></label>}
+    {runId && <section aria-label="本次任务结果"><Suspense fallback={<p>正在读取任务进度…</p>}><RunDetailView key={runId} runId={runId} /></Suspense></section>}
+    </div>
   );
 }

@@ -1,3 +1,7 @@
+import { getAssistantStatus, getAdminAssistantProfile, listAdminModelConnections } from '@/features/ai-chat/api/server';
+import { AssistantWorkspace } from '@/features/ai-chat/components/assistant-workspace';
+import { platformServerRequest } from '@/features/platform-api/server-client';
+import type { PlatformSession } from '@/features/platform-api/types';
 import { notFound } from 'next/navigation';
 import PageContainer from '@/components/layout/page-container';
 import { getTaskDraft } from '@/features/ai-chat/api/server';
@@ -37,6 +41,13 @@ export default async function Page({ params, searchParams }: PageProps) {
   } catch (error) {
     if (error instanceof PlatformApiError && error.status === 404) notFound();
     throw error;
+  }
+
+  if (skill.interaction_mode === 'chat' && !draftId) {
+    const [status, session] = await Promise.all([getAssistantStatus(), platformServerRequest<PlatformSession>('/api/session')]);
+    const isAdmin = session.role === 'skill_admin';
+    const [profile, connections] = isAdmin ? await Promise.all([getAdminAssistantProfile(), listAdminModelConnections()]) : [undefined, undefined];
+    return <PageContainer pageTitle={skill.name} headingLevel={1} compact><AssistantWorkspace skillId={skillId} skillName={skill.name} fileInputs={skill.file_inputs} initialConfigured={status.configured} initialModel={status.model} isAdmin={isAdmin} profile={profile} connections={connections} /></PageContainer>;
   }
 
   return (

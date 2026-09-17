@@ -122,7 +122,7 @@ export type WorkflowDefinition = GeneratedWorkflowDefinition;
 export type WorkflowFetchedData = GeneratedWorkflowFetchedData;
 export type WorkflowMaterialSet = GeneratedWorkflowMaterialSet;
 export type WorkflowRead = GeneratedWorkflowRead;
-export type WorkflowReusableFilesRead = GeneratedWorkflowReusableFilesRead;
+export type WorkflowReusableFilesRead = GeneratedWorkflowReusableFilesRead & { candidate_next_page?: number | null };
 export type WorkflowBatchRead = import('./generated').WorkflowBatchRead;
 export type WorkflowAgentContext = GeneratedWorkflowAgentContext;
 

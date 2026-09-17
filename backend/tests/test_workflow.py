@@ -3971,10 +3971,12 @@ def test_batch_prepare_workspace_uses_a_date_and_action_scoped_directory(
     assert not future_root.exists()
 
 
-def test_batch_prepare_workspace_stages_only_its_date_from_the_shared_bundle(
+def test_batch_prepare_workspace_stages_selected_dates_for_shifted_children(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
+    import app.ar_execution_runner as runner
+    monkeypatch.setattr(runner, "execution_version", lambda workflow: "")
     workflow_id = str(uuid.uuid4())
     action_id = str(uuid.uuid4())
     batch_id = f"BAT-20260901-{uuid.uuid4().hex[:8].upper()}"
@@ -4048,7 +4050,7 @@ def test_batch_prepare_workspace_stages_only_its_date_from_the_shared_bundle(
 
     assert Path(result["workspace"]) != prior_workspace.resolve()
     assert staged == [
-        (["2026-08-19"], Path(result["workspace"]) / workflow_service.FETCH_SNAPSHOT_DIR)
+        (["2026-08-17", "2026-08-19"], Path(result["workspace"]) / workflow_service.FETCH_SNAPSHOT_DIR)
     ]
 
 
@@ -5260,3 +5262,12 @@ def test_multi_date_batch_skips_confirmed_empty_date_and_starts_next(monkeypatch
         assert calls == [(1, "2026-07-20"), (2, "2026-07-21")]
 
     _finish_all_ar_workflows()
+
+
+def test_empty_parent_day_requires_later_snapshots_to_be_empty():
+    zero = {key: 0 for key in workflow_service.FETCHED_DATASET_COUNT_KEYS.values()}
+    nonempty = {**zero, next(iter(zero)): 1}
+    fetched = {"summary_by_date": {"2026-08-29": zero, "2026-08-30": nonempty}}
+    assert not workflow_service._is_confirmed_empty_reconciliation_date(fetched, "2026-08-29")
+    fetched["summary_by_date"]["2026-08-30"] = zero
+    assert workflow_service._is_confirmed_empty_reconciliation_date(fetched, "2026-08-29")

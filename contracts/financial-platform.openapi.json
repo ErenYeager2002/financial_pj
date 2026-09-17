@@ -88,6 +88,15 @@
         "additionalProperties": true,
         "description": "管理员 Skill DTO；员工接口不得返回这些执行和来源字段。",
         "properties": {
+          "catalog_module": {
+            "default": "tools",
+            "enum": [
+              "tools",
+              "installed_skills"
+            ],
+            "title": "Catalog Module",
+            "type": "string"
+          },
           "category": {
             "default": "其他",
             "title": "Category",
@@ -97,6 +106,9 @@
             "default": "",
             "title": "Commit Sha",
             "type": "string"
+          },
+          "conversation": {
+            "$ref": "#/components/schemas/ConversationSpec"
           },
           "description": {
             "title": "Description",
@@ -1494,6 +1506,29 @@
         "title": "AssistantRecommendation",
         "type": "object"
       },
+      "AssistantSkillInstructions": {
+        "properties": {
+          "instructions": {
+            "title": "Instructions",
+            "type": "string"
+          },
+          "skill_id": {
+            "title": "Skill Id",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "skill_id",
+          "version",
+          "instructions"
+        ],
+        "title": "AssistantSkillInstructions",
+        "type": "object"
+      },
       "AssistantStatus": {
         "properties": {
           "configured": {
@@ -1510,6 +1545,85 @@
           "configured"
         ],
         "title": "AssistantStatus",
+        "type": "object"
+      },
+      "AssistantWorkflowPrepare": {
+        "properties": {
+          "authorization_quote": {
+            "default": "",
+            "maxLength": 1000,
+            "title": "Authorization Quote",
+            "type": "string"
+          },
+          "message": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          },
+          "reconciliation_dates": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 31,
+            "minItems": 1,
+            "title": "Reconciliation Dates",
+            "type": "array"
+          },
+          "rerun_successful_dates": {
+            "default": false,
+            "title": "Rerun Successful Dates",
+            "type": "boolean"
+          },
+          "session_id": {
+            "pattern": "^[A-Za-z0-9_-]{1,128}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "skill_id": {
+            "enum": [
+              "ar-hexiao-daily",
+              "ar-hexiao-daily-lab"
+            ],
+            "title": "Skill Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "message",
+          "skill_id",
+          "reconciliation_dates"
+        ],
+        "title": "AssistantWorkflowPrepare",
+        "type": "object"
+      },
+      "AssistantWorkflowStart": {
+        "properties": {
+          "message": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          },
+          "plan_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Plan Id",
+            "type": "string"
+          },
+          "session_id": {
+            "pattern": "^[A-Za-z0-9_-]{1,128}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "message",
+          "plan_id"
+        ],
+        "title": "AssistantWorkflowStart",
         "type": "object"
       },
       "AuditEventPage": {
@@ -1660,6 +1774,33 @@
           "new_password"
         ],
         "title": "ChangePasswordRequest",
+        "type": "object"
+      },
+      "ConversationSpec": {
+        "additionalProperties": false,
+        "properties": {
+          "capabilities": {
+            "items": {
+              "enum": [
+                "prepare_task_draft",
+                "query_task_status"
+              ],
+              "type": "string"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "mode": {
+            "default": "form",
+            "enum": [
+              "form",
+              "chat"
+            ],
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "title": "ConversationSpec",
         "type": "object"
       },
       "ExecutionModeSpec": {
@@ -1845,19 +1986,6 @@
           "source"
         ],
         "title": "FeatureControlRead",
-        "type": "object"
-      },
-      "FeatureControlUpdateRequest": {
-        "properties": {
-          "enabled": {
-            "title": "Enabled",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "enabled"
-        ],
-        "title": "FeatureControlUpdateRequest",
         "type": "object"
       },
       "FetchedBundleRead": {
@@ -2361,6 +2489,171 @@
           "request_count"
         ],
         "title": "ModelUsageRead",
+        "type": "object"
+      },
+      "NativeSkillCommand": {
+        "properties": {
+          "command": {
+            "maxLength": 12000,
+            "minLength": 1,
+            "title": "Command",
+            "type": "string"
+          },
+          "file_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "File Ids",
+            "type": "array"
+          },
+          "session_id": {
+            "pattern": "^[A-Za-z0-9_-]{1,128}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "command"
+        ],
+        "title": "NativeSkillCommand",
+        "type": "object"
+      },
+      "NativeSkillContext": {
+        "properties": {
+          "files": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "inputs": {
+            "items": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "title": "Inputs",
+            "type": "array"
+          },
+          "instructions": {
+            "title": "Instructions",
+            "type": "string"
+          },
+          "skill": {
+            "$ref": "#/components/schemas/NativeSkillRead"
+          }
+        },
+        "required": [
+          "skill",
+          "instructions",
+          "files",
+          "inputs"
+        ],
+        "title": "NativeSkillContext",
+        "type": "object"
+      },
+      "NativeSkillContextRequest": {
+        "properties": {
+          "file_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "File Ids",
+            "type": "array"
+          },
+          "session_id": {
+            "pattern": "^[A-Za-z0-9_-]{1,128}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id"
+        ],
+        "title": "NativeSkillContextRequest",
+        "type": "object"
+      },
+      "NativeSkillFileRead": {
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "next_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Offset"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "total_chars": {
+            "title": "Total Chars",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path",
+          "content",
+          "offset",
+          "next_offset",
+          "total_chars"
+        ],
+        "title": "NativeSkillFileRead",
+        "type": "object"
+      },
+      "NativeSkillRead": {
+        "properties": {
+          "commit": {
+            "title": "Commit",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "installed_at": {
+            "title": "Installed At",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "source_path": {
+            "title": "Source Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "commit",
+          "source_path",
+          "installed_at"
+        ],
+        "title": "NativeSkillRead",
         "type": "object"
       },
       "ObservabilitySummary": {
@@ -4490,6 +4783,15 @@
             "title": "Action Label",
             "type": "string"
           },
+          "catalog_module": {
+            "default": "tools",
+            "enum": [
+              "tools",
+              "installed_skills"
+            ],
+            "title": "Catalog Module",
+            "type": "string"
+          },
           "categories": {
             "items": {
               "type": "string"
@@ -4556,6 +4858,15 @@
             "additionalProperties": true,
             "title": "Input Schema",
             "type": "object"
+          },
+          "interaction_mode": {
+            "default": "form",
+            "enum": [
+              "form",
+              "chat"
+            ],
+            "title": "Interaction Mode",
+            "type": "string"
           },
           "name": {
             "title": "Name",
@@ -4627,6 +4938,91 @@
           "risk"
         ],
         "title": "SkillDetail",
+        "type": "object"
+      },
+      "SkillInstallCandidate": {
+        "properties": {
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "skill_id": {
+            "title": "Skill Id",
+            "type": "string"
+          },
+          "source_path": {
+            "title": "Source Path",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "ready",
+              "installed",
+              "needs_adaptation",
+              "excluded"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "version": {
+            "default": "",
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "skill_id",
+          "source_path",
+          "state",
+          "reason"
+        ],
+        "title": "SkillInstallCandidate",
+        "type": "object"
+      },
+      "SkillInstallCatalog": {
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/SkillInstallCandidate"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "commit": {
+            "title": "Commit",
+            "type": "string"
+          },
+          "repository_url": {
+            "title": "Repository Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repository_url",
+          "commit",
+          "candidates"
+        ],
+        "title": "SkillInstallCatalog",
+        "type": "object"
+      },
+      "SkillInstallRequest": {
+        "properties": {
+          "expected_commit": {
+            "pattern": "^[0-9a-f]{40}$",
+            "title": "Expected Commit",
+            "type": "string"
+          },
+          "source_path": {
+            "pattern": "^skills/[a-z][a-z0-9-]{0,79}$",
+            "title": "Source Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_path",
+          "expected_commit"
+        ],
+        "title": "SkillInstallRequest",
         "type": "object"
       },
       "SkillOperationalProfileSpec": {
@@ -5526,6 +5922,15 @@
             "title": "Action Label",
             "type": "string"
           },
+          "catalog_module": {
+            "default": "tools",
+            "enum": [
+              "tools",
+              "installed_skills"
+            ],
+            "title": "Catalog Module",
+            "type": "string"
+          },
           "categories": {
             "items": {
               "type": "string"
@@ -5579,6 +5984,15 @@
           },
           "id": {
             "title": "Id",
+            "type": "string"
+          },
+          "interaction_mode": {
+            "default": "form",
+            "enum": [
+              "form",
+              "chat"
+            ],
+            "title": "Interaction Mode",
             "type": "string"
           },
           "name": {
@@ -10085,6 +10499,68 @@
         ]
       }
     },
+    "/api/admin/skill-sources/install-catalog": {
+      "post": {
+        "operationId": "admin_install_catalog_api_admin_skill_sources_install_catalog_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillInstallCatalog"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Admin Install Catalog",
+        "tags": [
+          "admin-skill-sources"
+        ]
+      }
+    },
+    "/api/admin/skill-sources/prepare-install": {
+      "post": {
+        "operationId": "admin_prepare_install_api_admin_skill_sources_prepare_install_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillInstallRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NativeSkillRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Admin Prepare Install",
+        "tags": [
+          "admin-skill-sources"
+        ]
+      }
+    },
     "/api/admin/skills/availability": {
       "get": {
         "operationId": "admin_list_skill_availability_api_admin_skills_availability_get",
@@ -10743,6 +11219,204 @@
         ]
       }
     },
+    "/api/assistant/ar/materials": {
+      "get": {
+        "operationId": "assistant_ar_materials_api_assistant_ar_materials_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Assistant Ar Materials",
+        "tags": [
+          "assistant"
+        ]
+      }
+    },
+    "/api/assistant/ar/prepare": {
+      "post": {
+        "operationId": "assistant_ar_prepare_api_assistant_ar_prepare_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantWorkflowPrepare"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Assistant Ar Prepare",
+        "tags": [
+          "assistant"
+        ]
+      }
+    },
+    "/api/assistant/ar/request": {
+      "get": {
+        "operationId": "assistant_ar_request_status_api_assistant_ar_request_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Assistant Ar Request Status",
+        "tags": [
+          "assistant"
+        ]
+      }
+    },
+    "/api/assistant/ar/start": {
+      "post": {
+        "operationId": "assistant_ar_start_api_assistant_ar_start_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantWorkflowStart"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Assistant Ar Start",
+        "tags": [
+          "assistant"
+        ]
+      }
+    },
+    "/api/assistant/ar/task": {
+      "get": {
+        "operationId": "assistant_ar_task_api_assistant_ar_task_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Assistant Ar Task",
+        "tags": [
+          "assistant"
+        ]
+      }
+    },
     "/api/assistant/conversations": {
       "get": {
         "operationId": "assistant_conversations_api_assistant_conversations_get",
@@ -10957,6 +11631,233 @@
         ]
       }
     },
+    "/api/assistant/native-skills/{skill_id}/command": {
+      "post": {
+        "operationId": "native_skill_command_api_assistant_native_skills__skill_id__command_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NativeSkillCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Native Skill Command",
+        "tags": [
+          "assistant"
+        ]
+      }
+    },
+    "/api/assistant/native-skills/{skill_id}/context": {
+      "post": {
+        "operationId": "native_skill_context_api_assistant_native_skills__skill_id__context_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NativeSkillContextRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NativeSkillContext"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Native Skill Context",
+        "tags": [
+          "assistant"
+        ]
+      }
+    },
+    "/api/assistant/native-skills/{skill_id}/file": {
+      "get": {
+        "operationId": "native_skill_file_api_assistant_native_skills__skill_id__file_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "title": "Path",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NativeSkillFileRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Native Skill File",
+        "tags": [
+          "assistant"
+        ]
+      }
+    },
+    "/api/assistant/native-skills/{skill_id}/runs": {
+      "get": {
+        "operationId": "native_skill_runs_api_assistant_native_skills__skill_id__runs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RunDetail"
+                  },
+                  "title": "Response Native Skill Runs Api Assistant Native Skills  Skill Id  Runs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Native Skill Runs",
+        "tags": [
+          "assistant"
+        ]
+      }
+    },
     "/api/assistant/prepare": {
       "post": {
         "operationId": "prepare_api_assistant_prepare_post",
@@ -11061,6 +11962,48 @@
           }
         },
         "summary": "List Assistant Skills",
+        "tags": [
+          "assistant"
+        ]
+      }
+    },
+    "/api/assistant/skills/{skill_id}/instructions": {
+      "get": {
+        "operationId": "assistant_skill_instructions_api_assistant_skills__skill_id__instructions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantSkillInstructions"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Assistant Skill Instructions",
         "tags": [
           "assistant"
         ]
@@ -11904,6 +12847,73 @@
           }
         },
         "summary": "Model Providers"
+      }
+    },
+    "/api/native-skills": {
+      "get": {
+        "operationId": "native_skill_list_api_native_skills_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/NativeSkillRead"
+                  },
+                  "title": "Response Native Skill List Api Native Skills Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Native Skill List",
+        "tags": [
+          "assistant"
+        ]
+      }
+    },
+    "/api/native-skills/{skill_id}": {
+      "get": {
+        "operationId": "native_skill_detail_api_native_skills__skill_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NativeSkillRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Native Skill Detail",
+        "tags": [
+          "assistant"
+        ]
       }
     },
     "/api/profile/avatar": {
@@ -13753,6 +14763,47 @@
           }
         },
         "summary": "Get Fetched Snapshot Options"
+      }
+    },
+    "/api/workflows/material-edit-state": {
+      "get": {
+        "operationId": "get_material_edit_state_api_workflows_material_edit_state_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Material Edit State Api Workflows Material Edit State Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Material Edit State"
       }
     },
     "/api/workflows/material-sets": {

@@ -109,6 +109,7 @@ class WorkflowStart(BaseModel):
     model: str | None = None
     execution_mode: WorkflowExecutionMode = "workflow"
     reconciliation_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    expected_material_set_id: str | None = Field(default=None, max_length=64)
     files: dict[str, list[str]] = Field(default_factory=dict)
     replace_roles: list[str] = Field(default_factory=list)
     fetched_bundle_id: str | None = Field(default=None, max_length=64)
@@ -127,6 +128,7 @@ class WorkflowBatchStart(BaseModel):
     model: str | None = None
     execution_mode: WorkflowExecutionMode = "workflow"
     reconciliation_dates: list[str] = Field(min_length=1, max_length=31)
+    expected_material_set_id: str | None = Field(default=None, max_length=64)
     files: dict[str, list[str]] = Field(default_factory=dict)
     replace_roles: list[str] = Field(default_factory=list)
     rerun_successful_dates: bool = False
@@ -153,6 +155,7 @@ class WorkflowReusableFilesRead(BaseModel):
     files: dict[str, Any] = Field(default_factory=dict)
     ready: bool
     missing_roles: list[str] = Field(default_factory=list)
+    candidate_next_page: int | None = None
     material_set_id: str | None = None
     material_version: int | None = None
     source_workflow_id: str = ""

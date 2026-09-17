@@ -51,3 +51,54 @@ class EmptyBatchReportTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+def test_proven_v2_empty_day_does_not_require_a_published_report(tmp_path):
+    context = {"empty_day_skipped": True,
+        "empty_day_evidence": {"schema": "ar-empty-day-v1", "date": "2026-08-01", "empty": True},
+        "ar_execution": {"schema_version": "ar-execution-v2", "reconciliation_date": "2026-08-01",
+            "completed": ["inspect_materials", "classify_receipts"],
+            "publication": "not_required_empty_day", "empty_day_skipped": True}}
+    child = NS(reconciliation_date="2026-08-01")
+    s._copy_verified_ar_report_inputs(Mock(), child, context, tmp_path, tmp_path)
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_unproven_v2_empty_marker_cannot_bypass_publication(tmp_path):
+    import pytest
+    context = {"empty_day_skipped": True, "ar_execution": {"schema_version": "ar-execution-v2"}}
+    with pytest.raises(RuntimeError, match="尚未完成发布"):
+        s._copy_verified_ar_report_inputs(Mock(), NS(reconciliation_date="2026-08-01"), context, tmp_path, tmp_path)
+
+
+def test_proof_is_bound_to_date_and_exact_completion():
+    from app.ar_empty_day_completion import is_completed_empty_day
+    import copy
+    context = {"empty_day_skipped": True,
+        "empty_day_evidence": {"schema": "ar-empty-day-v1", "date": "2026-08-01", "empty": True},
+        "ar_execution": {"schema_version": "ar-execution-v2", "reconciliation_date": "2026-08-01",
+            "completed": ["inspect_materials", "classify_receipts"],
+            "publication": "not_required_empty_day", "empty_day_skipped": True}}
+    assert is_completed_empty_day(context, "2026-08-01")
+    assert not is_completed_empty_day(context, "2026-08-02")
+    for key, value in [("publication", "not_published"), ("completed", ["inspect_materials"]), ("empty_day_skipped", False)]:
+        changed = copy.deepcopy(context); changed["ar_execution"][key] = value
+        assert not is_completed_empty_day(changed, "2026-08-01")
+
+
+def test_empty_completion_can_recover_only_the_range_report(monkeypatch):
+    from app.ar_report_recovery import report_recovery_status
+    from app import ar_execution_runner
+    context = {"empty_day_skipped": True,
+        "empty_day_evidence": {"schema": "ar-empty-day-v1", "date": "2026-08-01", "empty": True},
+        "ar_execution": {"schema_version": "ar-execution-v2", "reconciliation_date": "2026-08-01",
+            "completed": ["inspect_materials", "classify_receipts"],
+            "publication": "not_required_empty_day", "empty_day_skipped": True},
+        "ar_report_failure": {"action_id": "report", "process_exit_confirmed": True}}
+    action=NS(id="report", name="finalize_batch", state="failed", queued_at=1, finished_at=2, input_json="{}")
+    child=NS(id="day", batch_sequence=1, state="succeeded", reconciliation_date="2026-08-01", context_json=json.dumps(context), actions=[action])
+    batch=NS(workflows=[child], state="failed")
+    monkeypatch.setattr(ar_execution_runner, "execution_version", lambda _: "ar-execution-v2")
+    assert report_recovery_status(batch)["allowed"]
+    action.state="running"
+    assert not report_recovery_status(batch)["allowed"]

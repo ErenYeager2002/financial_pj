@@ -127,13 +127,13 @@ def candidate(rec: dict, result: dict, ledger) -> dict | None:
         result.pop("row_operation", None)
         return result
 
-    if rec.get("forced_code") or rec.get("customer_archive_failed") or rec.get("flow_hits") not in (None, 1):
+    if rec.get("forced_code") or rec.get("customer_archive_failed"):
         return None  # Preserve existing input and parent-payment hard gates.
     if delivery is None or amount is None or amount <= 0 or baseline <= 0:
         return conflict("交付额、原始应收或本次回款缺少有效正金额，不能生成保留应收方案")
     if len(nonblank) != 1 or any((cents(row[k]) or 0) < 0 for row in values for k in NUMERIC - {"差异"}):
         return conflict("原始应收行不能唯一识别或存在负金额，不能改写已有拆行结构")
-    if not identity or not day or not receipt["收款方式"]:
+    if not identity or not day or not posting_day or not receipt["收款方式"]:
         return conflict("本次回款缺少父 AR、核销记录标识、SOD 或收款信息，无法证明写入身份")
     if journal and cents(journal.get("baseline_receivable")) != baseline:
         return conflict("原始应收合计与已发布的历史基线不一致")
@@ -146,19 +146,20 @@ def candidate(rec: dict, result: dict, ledger) -> dict | None:
         return conflict("历史 SO 交付口径的应收组范围缺失或变化，禁止退回单个 SOD 金额")
     events = journal.get("events") or {}
     prior = events.get(identity)
-    paid_rows = [(ref, row) for ref, row in before.items() if row["应收金额"] is None and row["回款明细"] is not None]
+    paid_rows = [(ref, row) for ref, row in before.items() if (cents(row["回款明细"]) or 0)>0]
     paid_rows.sort(key=lambda pair: int(pair[0]))
-    for event in events.values():
-        slot = event.get("slot")
-        if not isinstance(slot, int) or slot < 0 or slot >= len(paid_rows):
-            return conflict("历史回款身份台账与实际拆分行不一致，需核对恢复条件")
-        actual = paid_rows[slot][1]
-        if signature(actual) != signature(event) or actual["是否结账"] != "是":
-            return conflict("历史回款行金额、日期、方式或结账状态与已发布证据不一致")
+    # A slot is a legacy display ordinal. Uploaded materials can move a receipt
+    # onto the main AR row, so bind each durable event to a unique signature.
+    bindings = {}; occupied = set()
+    for event_id,event in events.items():
+        found=[(ref,row) for ref,row in paid_rows if signature(row)==signature(event) and row["是否结账"]=="是"]
+        if len(found)!=1 or found[0][0] in occupied:
+            return conflict("历史回款事件在当前 SO/SOD 内无法按金额、日期、方式唯一重定位")
+        bindings[event_id]=found[0];occupied.add(found[0][0])
     if prior:
         if signature(prior) != signature(receipt):
             return conflict("本次回款身份已存在，但金额、日期或方式不一致；禁止重复写入或覆盖")
-        ref, actual = paid_rows[prior["slot"]]
+        ref, actual = bindings[identity]
         expected_settled = journal.get("settled", False)
         if expected_settled and any(row["是否结账"] != "是" for row in values):
             return conflict("回款已写但原始应收行尚未完成结账，需核对恢复条件")
@@ -174,9 +175,8 @@ def candidate(rec: dict, result: dict, ledger) -> dict | None:
                       five_cols={k: actual[k] for k in ("计提", "回款明细", "是否结账", "收款时间", "收款方式")},
                       derived_cols={}, reason=audit["reason"])
         return result
-    owned_slots = {event["slot"] for event in events.values()}
-    if any(signature(row) == signature(receipt) and slot not in owned_slots
-           for slot, (_, row) in enumerate(paid_rows)):
+    if any(signature(row) == signature(receipt) and ref not in occupied
+           for ref,row in paid_rows):
         return conflict("表内存在相同回款，但缺少本次父 AR 和核销记录的归属证据；不能直接跳过或新增")
     anchor_ref, anchor = nonblank[0]
     if anchor["回款明细"] is not None or anchor["是否结账"] == "是":

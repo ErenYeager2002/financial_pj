@@ -200,6 +200,31 @@ class PermissionSpec(BaseModel):
     manage: str = "skill_admin"
 
 
+class ConversationSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    mode: Literal["form", "chat"] = "form"
+    capabilities: list[Literal["prepare_task_draft", "query_task_status"]] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_capabilities(self):
+        if self.mode == "chat" and set(self.capabilities) != {"prepare_task_draft", "query_task_status"}:
+            raise ValueError("当前对话 Skill 必须声明 prepare_task_draft 和 query_task_status 两项能力")
+        return self
+
+
+def validate_conversation_files(manifest, directory: Path) -> None:
+    if manifest.conversation.mode != "chat":
+        return
+    base = directory.resolve()
+    instructions = (base / "SKILL.md").resolve()
+    if not instructions.is_relative_to(base) or not instructions.is_file():
+        raise ValueError("对话 Skill 必须包含包内 SKILL.md")
+    if not 0 < instructions.stat().st_size <= 131072:
+        raise ValueError("SKILL.md 必须为非空文本且不超过 128 KiB")
+    if not instructions.read_text(encoding="utf-8-sig").strip():
+        raise ValueError("SKILL.md 不能为空")
+
+
 class SkillManifest(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -216,6 +241,8 @@ class SkillManifest(BaseModel):
     output_schema: dict[str, Any] = Field(default_factory=lambda: {"type": "object"})
     handler: HandlerSpec
     execution: ExecutionSpec | None = None
+    catalog_module: Literal["tools", "installed_skills"] = "tools"
+    conversation: ConversationSpec = Field(default_factory=ConversationSpec)
     runtime: RuntimeSpec = Field(default_factory=RuntimeSpec)
     risk: RiskSpec = Field(default_factory=RiskSpec)
     operational_profile: SkillOperationalProfileSpec = Field(
@@ -231,6 +258,13 @@ class SkillManifest(BaseModel):
 
     @model_validator(mode="after")
     def validate_employee_metadata(self) -> SkillManifest:
+        if self.conversation.mode == "chat":
+            if not re.fullmatch(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*", self.id) or len(self.id) > 80:
+                raise ValueError("对话 Skill id 必须为不超过 80 字符的小写字母数字和连字符")
+            if self.handler.adapter != "python" or self.risk.level != "read_only" or self.risk.modifies_uploaded_files or self.runtime.network_access:
+                raise ValueError("当前标准对话仅支持离线、只读、不改原件的 Python Skill；其他能力尚未适配")
+            if len({f.role for f in self.file_inputs}) != len(self.file_inputs):
+                raise ValueError("输入文件 role 不能重复")
         if self.ui and len(set(self.ui.categories)) != len(self.ui.categories):
             raise ValueError("ui.categories 不能重复")
         stage_keys = [item.key for item in self.progress_stages]
@@ -334,6 +368,8 @@ class RegisteredSkill(BaseModel):
                 "requires_approval": self.manifest.risk.requires_approval,
                 "modifies_uploaded_files": self.manifest.risk.modifies_uploaded_files,
             },
+            "catalog_module": self.manifest.catalog_module,
+            "interaction_mode": self.manifest.conversation.mode,
             "execution_mode": (
                 "guided_workflow"
                 if self.manifest.handler.adapter == "workflow"
@@ -429,6 +465,7 @@ class SkillRegistry:
                     payload = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
                     validate_declared_operational_profile(payload)
                     manifest = SkillManifest.model_validate(payload)
+                    validate_conversation_files(manifest, manifest_path.parent)
                     if manifest.execution:
                         skill_dir = manifest_path.parent.resolve()
                         for mode in manifest.execution.modes.values():
@@ -442,7 +479,7 @@ class SkillRegistry:
                         raise ValueError("published Skill 必须配置 ui")
                     if manifest.status == "published":
                         validate_published_execution_experience(
-                            manifest.id, manifest.status
+                            manifest.id, manifest.status, manifest.conversation.mode
                         )
                         validate_runtime_network_policy(manifest.runtime)
                     registered = RegisteredSkill(

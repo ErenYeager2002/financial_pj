@@ -186,7 +186,7 @@ def plan_item_for_ar(ar: str, items: List[dict], summary_row: Optional[dict]) ->
         return {**base, "verdict": "hand", "reason": matched_by or "流转表未命中"}
 
     if hits and int(hits) > 1:
-        return {**base, "verdict": "hand", "reason": f"多命中 hits={hits}，须人工指定行"}
+        return {**base, "verdict": "hand", "reason": f"按{matched_by or '当前匹配条件'}多命中 hits={hits}，须人工指定行"}
 
     # hits == 1：准入必须是精确强三键集合（禁止 startswith 放宽）
     if matched_by not in STRONG:

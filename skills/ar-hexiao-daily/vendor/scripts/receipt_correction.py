@@ -15,7 +15,6 @@ def planned(item):
 def candidate(rec, result, ledger, rates=None, thr=0.01, year_now=None):
     if ledger is None or rec.get('_receipt_correction_shadow') or rec.get('forced_code') or rec.get('customer_archive_failed'):
         return None
-    if rec.get('flow_hits') not in (None, 1): return None
     import receipt_history
     history=receipt_history.candidate(rec,result,ledger)
     if history is not None:return history

@@ -53,6 +53,8 @@ class SkillSummary(BaseModel):
     output_summary: str
     action_label: str
     popular: bool = False
+    catalog_module: Literal["tools", "installed_skills"] = "tools"
+    interaction_mode: Literal["form", "chat"] = "form"
     execution_mode: Literal["standard", "guided_workflow"] = "standard"
     execution_modes: list[Literal["workflow", "pi_harness"]] = Field(default_factory=list)
     default_execution_mode: Literal["workflow", "pi_harness"] | None = None
@@ -831,3 +833,61 @@ def domain_contract_schemas() -> dict[str, Any]:
         schemas.update(schema.pop("$defs", {}))
         schemas[model.__name__] = schema
     return schemas
+
+
+class AssistantSkillInstructions(BaseModel):
+    skill_id: str
+    version: str
+    instructions: str
+
+
+class SkillInstallCandidate(BaseModel):
+    skill_id: str
+    source_path: str
+    version: str = ""
+    state: Literal["ready", "installed", "needs_adaptation", "excluded"]
+    reason: str
+
+
+class SkillInstallCatalog(BaseModel):
+    repository_url: str
+    commit: str
+    candidates: list[SkillInstallCandidate]
+
+
+class SkillInstallRequest(BaseModel):
+    source_path: str = Field(pattern=r"^skills/[a-z][a-z0-9-]{0,79}$")
+    expected_commit: str = Field(pattern=r"^[0-9a-f]{40}$")
+
+
+class NativeSkillRead(BaseModel):
+    id: str
+    name: str
+    description: str
+    commit: str
+    source_path: str
+    installed_at: str
+
+
+class NativeSkillContextRequest(BaseModel):
+    session_id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,128}$")
+    file_ids: list[str] = Field(default_factory=list, max_length=20)
+
+
+class NativeSkillContext(BaseModel):
+    skill: NativeSkillRead
+    instructions: str
+    files: list[str]
+    inputs: list[dict[str, str]]
+
+
+class NativeSkillCommand(NativeSkillContextRequest):
+    command: str = Field(min_length=1, max_length=12000)
+
+
+class NativeSkillFileRead(BaseModel):
+    path: str
+    content: str
+    offset: int
+    next_offset: int | None
+    total_chars: int

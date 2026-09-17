@@ -34,7 +34,7 @@ def reserve(p, reservations):
     for row in audit.get("allocations") or []:
         so = row["so"]
         original, local = row.get("allocated_orig"), row.get("allocated_local")
-        if audit.get("reused_successful_allocation"):
+        if audit.get("reused_successful_allocation") or audit.get("reconstructed_from_current_material"):
             if "applied_cases" not in audit:
                 continue
             paid = sum(c["amount_local"] for c in audit["applied_cases"].values() if c["so"] == so)

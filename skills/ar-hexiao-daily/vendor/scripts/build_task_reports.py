@@ -188,6 +188,35 @@ def _append_aggregated_sheet(
     return True
 
 
+def source_coverage_issues(out_dir: Path, days: list[dt.date]) -> list[tuple[str, str, str]]:
+    """Compare all selected source dates with their own daily dispositions."""
+    selected = {day.isoformat() for day in days}
+    expected = {day: set() for day in selected}
+    produced = {day: set() for day in selected}
+    for day in days:
+        path = out_dir / f"判定结果_{day.strftime('%Y%m%d')}.json"
+        if not path.is_file():
+            continue
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        for bucket in ("auto", "hold", "exception"):
+            produced[day.isoformat()].update(
+                f"{row['ar']}|{row['so']}" for row in payload.get(bucket, [])
+                if row.get("ar") and row.get("so")
+            )
+        sources = (payload.get("source_coverage") or {}).get("source_order_keys_by_date", {})
+        for source_day, keys in sources.items():
+            if source_day in selected:
+                expected[source_day].update(keys)
+        # Legacy results lack the audited source map. Never merge raw shifted
+        # rows into the new map: revoked/duplicate rows may be absent by design.
+        if "source_order_keys_by_date" not in (payload.get("source_coverage") or {}):
+            for source_day, info in (payload.get("shifted_detail_dates") or {}).items():
+                if source_day in selected:
+                    expected[source_day].update(info.get("order_keys") or [])
+    return [(day, *key.split("|", 1)) for day in sorted(selected)
+            for key in sorted(expected[day] - produced[day])]
+
+
 def build(
     workspace: Path,
     start: str,
@@ -274,6 +303,18 @@ def build(
         sheet.freeze_panes = "B2"
         sheet.auto_filter.ref = sheet.dimensions
         sheet.column_dimensions["A"].width = 14
+    coverage = wb.create_sheet("来源覆盖核验")
+    coverage.append(["核销日期", "到账号(AR)", "单号(SO)", "核验结果"])
+    issues = source_coverage_issues(out_dir, days)
+    for day, ar, so in issues:
+        coverage.append([day, ar, so, "来源有核销，未进入对应日期判定；未自动补写"])
+    if not issues:
+        coverage.append(["", "", "", "已记录来源中未发现跨日订单遗漏"])
+    else:
+        summary.append(["来源覆盖异常", f"{len(issues)} 个 AR/SO 未进入对应日期判定，详见来源覆盖核验"])
+    coverage.freeze_panes = "A2"
+    for col, width in zip("ABCD", (16, 22, 22, 65)):
+        coverage.column_dimensions[col].width = width
     target = out_dir / _task_report_name(days)
     wb.save(target)
     workbook_finalize.finalize_static_report(target)

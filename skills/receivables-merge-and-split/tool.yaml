@@ -1,7 +1,12 @@
 schema_version: 1
 id: receivables-merge-and-split
 name: 应收账款合并与销售拆分
-version: 1.1.5
+version: 1.2.1
+conversation:
+  mode: chat
+  capabilities:
+  - prepare_task_draft
+  - query_task_status
 status: published
 category: 应收管理
 description: 一次上传应收材料，按选择的模式完成应收台账合并、销售归属和按销售人员拆分。

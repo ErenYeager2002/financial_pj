@@ -47,6 +47,17 @@ const foundation = (skillId: string, creationTitle: string): SkillExecutionExper
 
 const experiences: SkillExecutionExperience[] = [
   {
+    key: 'pdf-compress', skillId: 'pdf-compress', classification: 'business', family: 'batch',
+    creationTitle: '把 PDF 压缩至 8MB 以内',
+    purpose: '生成小于 8MB 的 PDF 副本，保留全部页面和上传原件。',
+    inputHeading: '上传 PDF', inputHint: '每次上传一份 PDF，最大 100MB。已小于 8MB 的文件直接生成副本。',
+    reviewTitle: '压缩说明',
+    reviewItems: ['优先保留文字和页面结构', '必要时转为页面图像，文字不可选取，链接和表单交互不保留', '原件保留，可继续编辑或重新压缩'],
+    workerChecks: ['检查文件可读性、页数及最终大小', '只有小于 8MB 的结果才提供下载'],
+    resultHighlights: ['压缩后的 PDF', '原始大小、压缩后大小和处理方式'],
+    fileRoleLabels: { pdf_file: '待压缩 PDF' }
+  },
+  {
     key: 'consolidated-statements',
     skillId: 'consolidated-statements',
     classification: 'business',
@@ -307,4 +318,9 @@ export function registeredBusinessSkillIds(): string[] {
 
 export function isFoundationSkill(skillId: string): boolean {
   return registry.get(skillId)?.classification === 'foundation';
+}
+
+// Only used for a server-validated chat manifest, including an existing task draft.
+export function standardChatExperience(skillId: string): SkillExecutionExperience {
+  return { ...foundation(skillId, '核对对话任务'), classification: 'business', purpose: '核对已生成的任务草稿，确认后执行。' };
 }

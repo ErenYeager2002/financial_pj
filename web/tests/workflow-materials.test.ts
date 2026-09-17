@@ -83,3 +83,41 @@ test('只提交用户在本次任务中改动的文件用途', () => {
     }
   );
 });
+
+// Candidate choices must never leak into the immutable task binding payload.
+import { materialYear, toggleMaterialSelection, validateMaterialSelection } from '../src/features/workflow-agent/workflow-materials.ts';
+
+test('annual selection replaces only the same year and preserves other years', () => {
+  const entries = [
+    { id: 'old', name: '2026年盈亏.xlsx', source: 'saved' as const },
+    { id: 'new', name: '2026年盈亏新版.xlsx', source: 'uploaded' as const, selected: false },
+    { id: 'prior', name: '2025年盈亏.xlsx', source: 'saved' as const }
+  ];
+  const result = toggleMaterialSelection('profit_loss_ledgers', entries, 'new');
+  assert.deepEqual(selectedMaterialIds({ profit_loss_ledgers: result }), { profit_loss_ledgers: ['new', 'prior'] });
+  assert.deepEqual(selectedMaterialIds({ profit_loss_ledgers: toggleMaterialSelection('profit_loss_ledgers', result, 'new') }), { profit_loss_ledgers: ['prior'] });
+});
+
+test('flow candidates are mutually exclusive and unselected uploads are excluded', () => {
+  const entries = [
+    { id: 'a', name: '到账.xlsx', source: 'saved' as const },
+    { id: 'b', name: '到账新.xlsx', source: 'uploaded' as const, selected: false }
+  ];
+  assert.deepEqual(selectedMaterialIds({ receipt_flow_table: toggleMaterialSelection('receipt_flow_table', entries, 'b') }), { receipt_flow_table: ['b'] });
+  assert.deepEqual(selectedMaterialUpdates({ receipt_flow_table: entries }, new Set(['receipt_flow_table'])).files, { receipt_flow_table: ['a'] });
+});
+
+test('year recognition rejects missing or conflicting years and trusts bound metadata', () => {
+  assert.equal(materialYear({ name: '25年盈亏.xlsx' }), undefined);
+  assert.equal(materialYear({ name: '2025-2026年盈亏.xlsx' }), undefined);
+  assert.equal(materialYear({ name: '盈亏.xlsx', year: 2025 }), 2025);
+  assert.equal(materialYear({ name: '2026年盈亏2026备份.xlsx' }), 2026);
+});
+
+test('a task requires selected ledgers and exactly one flow', () => {
+  const ledger = { id: 'a', name: '2026年盈亏.xlsx', source: 'saved' as const };
+  const flow = { id: 'b', name: '到账.xlsx', source: 'saved' as const };
+  assert.equal(validateMaterialSelection({ profit_loss_ledgers: [ledger], receipt_flow_table: [flow] }), '');
+  assert.match(validateMaterialSelection({ profit_loss_ledgers: [ledger, { ...ledger, id: 'c' }], receipt_flow_table: [flow] }), /同一年/);
+  assert.match(validateMaterialSelection({ profit_loss_ledgers: [ledger], receipt_flow_table: [{ ...flow, selected: false }] }), /到账流转表/);
+});

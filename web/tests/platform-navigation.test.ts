@@ -29,6 +29,7 @@ test('财务员工只看到完成任务所需的生产导航', () => {
   );
   assert.deepEqual(itemTitles('finance_user'), [
     '工作台',
+    '工具中心',
     'Skill 中心',
     '我的任务',
     '文件中心',
@@ -46,6 +47,7 @@ test('Skill 管理员额外看到治理入口', () => {
   );
   assert.deepEqual(itemTitles('skill_admin'), [
     '工作台',
+    '工具中心',
     'Skill 中心',
     '我的任务',
     '文件中心',
@@ -54,7 +56,6 @@ test('Skill 管理员额外看到治理入口', () => {
     '发布与维护',
     '用户与权限',
     '模型连接',
-    '功能开关',
     '个人资料'
   ]);
 });
@@ -96,7 +97,8 @@ test('Skill 中心与 Skill 治理使用不同入口', () => {
   const governance = items.find((item) => item.title === 'Skill 治理');
   const releaseMaintenance = governance?.items?.find((item) => item.title === '发布与维护');
 
-  assert.equal(skillCenter?.url, '/dashboard/skills');
+  assert.equal(skillCenter?.url, '/dashboard/installed-skills');
+  assert.equal(items.find((item) => item.title === '工具中心')?.url, '/dashboard/skills');
   assert.equal(releaseMaintenance?.url, '/dashboard/skill-governance');
   assert.notEqual(skillCenter?.url, releaseMaintenance?.url);
 });
@@ -107,7 +109,8 @@ test('两种平台角色的菜单层级和链接符合生产规格', () => {
       label: '我的工作',
       items: [
         { title: '工作台', url: '/dashboard/overview', items: [] },
-        { title: 'Skill 中心', url: '/dashboard/skills', items: [] },
+        { title: '工具中心', url: '/dashboard/skills', items: [] },
+        { title: 'Skill 中心', url: '/dashboard/installed-skills', items: [] },
         { title: '我的任务', url: '/dashboard/runs', items: [] },
         { title: '文件中心', url: '/dashboard/files', items: [] },
         { title: 'AI 助手', url: '/dashboard/ai-chat', items: [] }
@@ -124,7 +127,8 @@ test('两种平台角色的菜单层级和链接符合生产规格', () => {
       label: '我的工作',
       items: [
         { title: '工作台', url: '/dashboard/overview', items: [] },
-        { title: 'Skill 中心', url: '/dashboard/skills', items: [] },
+        { title: '工具中心', url: '/dashboard/skills', items: [] },
+        { title: 'Skill 中心', url: '/dashboard/installed-skills', items: [] },
         { title: '我的任务', url: '/dashboard/runs', items: [] },
         { title: '文件中心', url: '/dashboard/files', items: [] },
         { title: 'AI 助手', url: '/dashboard/ai-chat', items: [] }
@@ -139,8 +143,7 @@ test('两种平台角色的菜单层级和链接符合生产规格', () => {
           items: [{ title: '发布与维护', url: '/dashboard/skill-governance' }]
         },
         { title: '用户与权限', url: '/dashboard/users', items: [] },
-        { title: '模型连接', url: '/dashboard/model-connections', items: [] },
-        { title: '功能开关', url: '/dashboard/feature-controls', items: [] }
+        { title: '模型连接', url: '/dashboard/model-connections', items: [] }
       ]
     },
     {

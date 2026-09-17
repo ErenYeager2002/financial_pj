@@ -365,6 +365,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/skill-sources/install-catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Admin Install Catalog */
+        post: operations["admin_install_catalog_api_admin_skill_sources_install_catalog_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/skill-sources/prepare-install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Admin Prepare Install */
+        post: operations["admin_prepare_install_api_admin_skill_sources_prepare_install_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/skills/availability": {
         parameters: {
             query?: never;
@@ -541,6 +575,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/assistant/ar/materials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Assistant Ar Materials */
+        get: operations["assistant_ar_materials_api_assistant_ar_materials_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/assistant/ar/prepare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Assistant Ar Prepare */
+        post: operations["assistant_ar_prepare_api_assistant_ar_prepare_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/assistant/ar/request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Assistant Ar Request Status */
+        get: operations["assistant_ar_request_status_api_assistant_ar_request_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/assistant/ar/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Assistant Ar Start */
+        post: operations["assistant_ar_start_api_assistant_ar_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/assistant/ar/task": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Assistant Ar Task */
+        get: operations["assistant_ar_task_api_assistant_ar_task_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/assistant/conversations": {
         parameters: {
             query?: never;
@@ -629,6 +748,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/assistant/native-skills/{skill_id}/command": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Native Skill Command */
+        post: operations["native_skill_command_api_assistant_native_skills__skill_id__command_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/assistant/native-skills/{skill_id}/context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Native Skill Context */
+        post: operations["native_skill_context_api_assistant_native_skills__skill_id__context_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/assistant/native-skills/{skill_id}/file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Native Skill File */
+        get: operations["native_skill_file_api_assistant_native_skills__skill_id__file_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/assistant/native-skills/{skill_id}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Native Skill Runs */
+        get: operations["native_skill_runs_api_assistant_native_skills__skill_id__runs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/assistant/prepare": {
         parameters: {
             query?: never;
@@ -678,6 +865,23 @@ export interface paths {
          * @description Return the Skill directory that the current Platform User may turn into a draft.
          */
         get: operations["list_assistant_skills_api_assistant_skills_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/assistant/skills/{skill_id}/instructions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Assistant Skill Instructions */
+        get: operations["assistant_skill_instructions_api_assistant_skills__skill_id__instructions_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1014,6 +1218,40 @@ export interface paths {
         };
         /** Model Providers */
         get: operations["model_providers_api_model_providers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/native-skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Native Skill List */
+        get: operations["native_skill_list_api_native_skills_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/native-skills/{skill_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Native Skill Detail */
+        get: operations["native_skill_detail_api_native_skills__skill_id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1607,6 +1845,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/workflows/material-edit-state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Material Edit State */
+        get: operations["get_material_edit_state_api_workflows_material_edit_state_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/workflows/material-sets": {
         parameters: {
             query?: never;
@@ -2022,6 +2277,12 @@ export interface components {
          */
         AdminSkillDetail: {
             /**
+             * Catalog Module
+             * @default tools
+             * @enum {string}
+             */
+            catalog_module: "tools" | "installed_skills";
+            /**
              * Category
              * @default 其他
              */
@@ -2031,6 +2292,7 @@ export interface components {
              * @default
              */
             commit_sha: string;
+            conversation?: components["schemas"]["ConversationSpec"];
             /** Description */
             description: string;
             /** @default null */
@@ -2636,6 +2898,15 @@ export interface components {
             /** Skill Id */
             skill_id: string;
         };
+        /** AssistantSkillInstructions */
+        AssistantSkillInstructions: {
+            /** Instructions */
+            instructions: string;
+            /** Skill Id */
+            skill_id: string;
+            /** Version */
+            version: string;
+        };
         /** AssistantStatus */
         AssistantStatus: {
             /** Configured */
@@ -2645,6 +2916,39 @@ export interface components {
              * @default
              */
             model: string;
+        };
+        /** AssistantWorkflowPrepare */
+        AssistantWorkflowPrepare: {
+            /**
+             * Authorization Quote
+             * @default
+             */
+            authorization_quote: string;
+            /** Message */
+            message: string;
+            /** Reconciliation Dates */
+            reconciliation_dates: string[];
+            /**
+             * Rerun Successful Dates
+             * @default false
+             */
+            rerun_successful_dates: boolean;
+            /** Session Id */
+            session_id: string;
+            /**
+             * Skill Id
+             * @enum {string}
+             */
+            skill_id: "ar-hexiao-daily" | "ar-hexiao-daily-lab";
+        };
+        /** AssistantWorkflowStart */
+        AssistantWorkflowStart: {
+            /** Message */
+            message: string;
+            /** Plan Id */
+            plan_id: string;
+            /** Session Id */
+            session_id: string;
         };
         /** AuditEventPage */
         AuditEventPage: {
@@ -2712,6 +3016,17 @@ export interface components {
             current_password: string;
             /** New Password */
             new_password: string;
+        };
+        /** ConversationSpec */
+        ConversationSpec: {
+            /** Capabilities */
+            capabilities?: ("prepare_task_draft" | "query_task_status")[];
+            /**
+             * Mode
+             * @default form
+             * @enum {string}
+             */
+            mode: "form" | "chat";
         };
         /** ExecutionModeSpec */
         ExecutionModeSpec: {
@@ -2798,11 +3113,6 @@ export interface components {
              * @enum {string}
              */
             source: "administrator" | "deployment";
-        };
-        /** FeatureControlUpdateRequest */
-        FeatureControlUpdateRequest: {
-            /** Enabled */
-            enabled: boolean;
         };
         /** FetchedBundleRead */
         FetchedBundleRead: {
@@ -3024,6 +3334,62 @@ export interface components {
             provider: string;
             /** Request Count */
             request_count: number;
+        };
+        /** NativeSkillCommand */
+        NativeSkillCommand: {
+            /** Command */
+            command: string;
+            /** File Ids */
+            file_ids?: string[];
+            /** Session Id */
+            session_id: string;
+        };
+        /** NativeSkillContext */
+        NativeSkillContext: {
+            /** Files */
+            files: string[];
+            /** Inputs */
+            inputs: {
+                [key: string]: string;
+            }[];
+            /** Instructions */
+            instructions: string;
+            skill: components["schemas"]["NativeSkillRead"];
+        };
+        /** NativeSkillContextRequest */
+        NativeSkillContextRequest: {
+            /** File Ids */
+            file_ids?: string[];
+            /** Session Id */
+            session_id: string;
+        };
+        /** NativeSkillFileRead */
+        NativeSkillFileRead: {
+            /** Content */
+            content: string;
+            /** Next Offset */
+            next_offset: number | null;
+            /** Offset */
+            offset: number;
+            /** Path */
+            path: string;
+            /** Total Chars */
+            total_chars: number;
+        };
+        /** NativeSkillRead */
+        NativeSkillRead: {
+            /** Commit */
+            commit: string;
+            /** Description */
+            description: string;
+            /** Id */
+            id: string;
+            /** Installed At */
+            installed_at: string;
+            /** Name */
+            name: string;
+            /** Source Path */
+            source_path: string;
         };
         /** ObservabilitySummary */
         ObservabilitySummary: {
@@ -4065,6 +4431,12 @@ export interface components {
         SkillDetail: {
             /** Action Label */
             action_label: string;
+            /**
+             * Catalog Module
+             * @default tools
+             * @enum {string}
+             */
+            catalog_module: "tools" | "installed_skills";
             /** Categories */
             categories: string[];
             /**
@@ -4092,6 +4464,12 @@ export interface components {
             input_schema?: {
                 [key: string]: unknown;
             };
+            /**
+             * Interaction Mode
+             * @default form
+             * @enum {string}
+             */
+            interaction_mode: "form" | "chat";
             /** Name */
             name: string;
             /** Operation Labels */
@@ -4116,6 +4494,41 @@ export interface components {
             tags?: string[];
             /** Version */
             version: string;
+        };
+        /** SkillInstallCandidate */
+        SkillInstallCandidate: {
+            /** Reason */
+            reason: string;
+            /** Skill Id */
+            skill_id: string;
+            /** Source Path */
+            source_path: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "ready" | "installed" | "needs_adaptation" | "excluded";
+            /**
+             * Version
+             * @default
+             */
+            version: string;
+        };
+        /** SkillInstallCatalog */
+        SkillInstallCatalog: {
+            /** Candidates */
+            candidates: components["schemas"]["SkillInstallCandidate"][];
+            /** Commit */
+            commit: string;
+            /** Repository Url */
+            repository_url: string;
+        };
+        /** SkillInstallRequest */
+        SkillInstallRequest: {
+            /** Expected Commit */
+            expected_commit: string;
+            /** Source Path */
+            source_path: string;
         };
         /** SkillOperationalProfileSpec */
         SkillOperationalProfileSpec: {
@@ -4495,6 +4908,12 @@ export interface components {
         SkillSummary: {
             /** Action Label */
             action_label: string;
+            /**
+             * Catalog Module
+             * @default tools
+             * @enum {string}
+             */
+            catalog_module: "tools" | "installed_skills";
             /** Categories */
             categories: string[];
             /**
@@ -4516,6 +4935,12 @@ export interface components {
             execution_modes?: ("workflow" | "pi_harness")[];
             /** Id */
             id: string;
+            /**
+             * Interaction Mode
+             * @default form
+             * @enum {string}
+             */
+            interaction_mode: "form" | "chat";
             /** Name */
             name: string;
             /** Operation Labels */
@@ -6020,17 +6445,20 @@ export type AssistantMessageRead = components['schemas']['AssistantMessageRead']
 export type AssistantMessageWrite = components['schemas']['AssistantMessageWrite'];
 export type AssistantPrepareRequest = components['schemas']['AssistantPrepareRequest'];
 export type AssistantRecommendation = components['schemas']['AssistantRecommendation'];
+export type AssistantSkillInstructions = components['schemas']['AssistantSkillInstructions'];
 export type AssistantStatus = components['schemas']['AssistantStatus'];
+export type AssistantWorkflowPrepare = components['schemas']['AssistantWorkflowPrepare'];
+export type AssistantWorkflowStart = components['schemas']['AssistantWorkflowStart'];
 export type AuditEventPage = components['schemas']['AuditEventPage'];
 export type AuditEventRead = components['schemas']['AuditEventRead'];
 export type BodyUploadAvatarApiProfileAvatarPost = components['schemas']['Body_upload_avatar_api_profile_avatar_post'];
 export type BodyUploadFileApiFilesPost = components['schemas']['Body_upload_file_api_files_post'];
 export type ChangePasswordRequest = components['schemas']['ChangePasswordRequest'];
+export type ConversationSpec = components['schemas']['ConversationSpec'];
 export type ExecutionModeSpec = components['schemas']['ExecutionModeSpec'];
 export type ExecutionSpec = components['schemas']['ExecutionSpec'];
 export type ExternalDataSourceSpec = components['schemas']['ExternalDataSourceSpec'];
 export type FeatureControlRead = components['schemas']['FeatureControlRead'];
-export type FeatureControlUpdateRequest = components['schemas']['FeatureControlUpdateRequest'];
 export type FetchedBundleRead = components['schemas']['FetchedBundleRead'];
 export type FileInputSpec = components['schemas']['FileInputSpec'];
 export type HttpValidationError = components['schemas']['HTTPValidationError'];
@@ -6043,6 +6471,11 @@ export type ModelConnectionRead = components['schemas']['ModelConnectionRead'];
 export type ModelProviderRead = components['schemas']['ModelProviderRead'];
 export type ModelSelectRequest = components['schemas']['ModelSelectRequest'];
 export type ModelUsageRead = components['schemas']['ModelUsageRead'];
+export type NativeSkillCommand = components['schemas']['NativeSkillCommand'];
+export type NativeSkillContext = components['schemas']['NativeSkillContext'];
+export type NativeSkillContextRequest = components['schemas']['NativeSkillContextRequest'];
+export type NativeSkillFileRead = components['schemas']['NativeSkillFileRead'];
+export type NativeSkillRead = components['schemas']['NativeSkillRead'];
 export type ObservabilitySummary = components['schemas']['ObservabilitySummary'];
 export type PermissionSpec = components['schemas']['PermissionSpec'];
 export type PlatformFile = components['schemas']['PlatformFile'];
@@ -6079,6 +6512,9 @@ export type SkillAvailabilityTransitionRequest = components['schemas']['SkillAva
 export type SkillDedicationRead = components['schemas']['SkillDedicationRead'];
 export type SkillDedicationWrite = components['schemas']['SkillDedicationWrite'];
 export type SkillDetail = components['schemas']['SkillDetail'];
+export type SkillInstallCandidate = components['schemas']['SkillInstallCandidate'];
+export type SkillInstallCatalog = components['schemas']['SkillInstallCatalog'];
+export type SkillInstallRequest = components['schemas']['SkillInstallRequest'];
 export type SkillOperationalProfileSpec = components['schemas']['SkillOperationalProfileSpec'];
 export type SkillPermissionRead = components['schemas']['SkillPermissionRead'];
 export type SkillPermissionWrite = components['schemas']['SkillPermissionWrite'];
@@ -6917,6 +7353,59 @@ export interface operations {
             };
         };
     };
+    admin_install_catalog_api_admin_skill_sources_install_catalog_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillInstallCatalog"];
+                };
+            };
+        };
+    };
+    admin_prepare_install_api_admin_skill_sources_prepare_install_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillInstallRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NativeSkillRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     admin_list_skill_availability_api_admin_skills_availability_get: {
         parameters: {
             query?: never;
@@ -7402,6 +7891,165 @@ export interface operations {
             };
         };
     };
+    assistant_ar_materials_api_assistant_ar_materials_get: {
+        parameters: {
+            query: {
+                skill_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    assistant_ar_prepare_api_assistant_ar_prepare_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistantWorkflowPrepare"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    assistant_ar_request_status_api_assistant_ar_request_get: {
+        parameters: {
+            query: {
+                session_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    assistant_ar_start_api_assistant_ar_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistantWorkflowStart"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    assistant_ar_task_api_assistant_ar_task_get: {
+        parameters: {
+            query: {
+                task_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     assistant_conversations_api_assistant_conversations_get: {
         parameters: {
             query?: never;
@@ -7545,6 +8193,144 @@ export interface operations {
             };
         };
     };
+    native_skill_command_api_assistant_native_skills__skill_id__command_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NativeSkillCommand"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    native_skill_context_api_assistant_native_skills__skill_id__context_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NativeSkillContextRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NativeSkillContext"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    native_skill_file_api_assistant_native_skills__skill_id__file_get: {
+        parameters: {
+            query: {
+                session_id: string;
+                path: string;
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NativeSkillFileRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    native_skill_runs_api_assistant_native_skills__skill_id__runs_get: {
+        parameters: {
+            query: {
+                session_id: string;
+            };
+            header?: never;
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunDetail"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     prepare_api_assistant_prepare_post: {
         parameters: {
             query?: never;
@@ -7627,6 +8413,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SkillDetail"][];
+                };
+            };
+        };
+    };
+    assistant_skill_instructions_api_assistant_skills__skill_id__instructions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantSkillInstructions"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -8259,6 +9076,57 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ModelProviderRead"][];
+                };
+            };
+        };
+    };
+    native_skill_list_api_native_skills_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NativeSkillRead"][];
+                };
+            };
+        };
+    };
+    native_skill_detail_api_native_skills__skill_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NativeSkillRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -9507,6 +10375,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkflowFetchedSnapshotRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_material_edit_state_api_workflows_material_edit_state_get: {
+        parameters: {
+            query: {
+                skill_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

@@ -33,6 +33,7 @@ from ..audit_service import record_audit
 from ..auth import UserContext, get_current_user, require_admin
 from ..contracts import (
     AdminAssistantProfile,
+    AssistantSkillInstructions,
     AssistantConversationRead,
     AssistantConversationSummary,
     AssistantMessageRead,
@@ -61,6 +62,27 @@ from ..schemas_assistant import (
 )
 
 router = APIRouter(tags=["assistant"])
+
+
+@router.get("/api/assistant/skills/{skill_id}/instructions", response_model=AssistantSkillInstructions)
+def assistant_skill_instructions(skill_id: str, db: Session = Depends(get_db),
+                                 user: UserContext = Depends(get_current_user)) -> dict[str, str]:
+    from ..registry import registry
+    if skill_id not in {item.id for item in list_agent_skill_details(db, user)}:
+        raise HTTPException(status_code=404, detail="当前账号没有可用的此项 Skill。")
+    skill = registry.get(skill_id)
+    if skill is None:
+        raise HTTPException(status_code=404, detail="Skill 不存在。")
+    if skill.manifest.conversation.mode != "chat":
+        raise HTTPException(status_code=409, detail="此 Skill 未声明对话执行能力。")
+    path = (skill.directory / "SKILL.md").resolve()
+    if not path.is_relative_to(skill.directory.resolve()) or not path.is_file():
+        raise HTTPException(status_code=409, detail="Skill 缺少可用的执行说明。")
+    if path.stat().st_size > 131072:
+        raise HTTPException(status_code=409, detail="Skill 执行说明超过长度限制。")
+    return {"skill_id": skill_id, "version": skill.manifest.version,
+            "instructions": path.read_text(encoding="utf-8-sig")}
+
 
 
 @router.get(
@@ -403,3 +425,32 @@ def assistant_ar_task(task_id: str, db: Session = Depends(get_db), user: UserCon
 def assistant_ar_request_status(session_id: str, db: Session = Depends(get_db), user: UserContext = Depends(get_current_user)):
     from ..assistant_workflow_service import request_status
     return request_status(db, user, session_id)
+
+
+from ..contracts import NativeSkillRead, NativeSkillContext, NativeSkillContextRequest, NativeSkillCommand, NativeSkillFileRead
+from .. import native_skill_service as native_skills
+
+@router.get("/api/native-skills", response_model=list[NativeSkillRead])
+def native_skill_list(user: UserContext = Depends(get_current_user)):
+    return native_skills.list_native_skills()
+
+@router.get("/api/native-skills/{skill_id}", response_model=NativeSkillRead)
+def native_skill_detail(skill_id: str, user: UserContext = Depends(get_current_user)):
+    return native_skills.installed_skill(skill_id)
+
+@router.post("/api/assistant/native-skills/{skill_id}/context", response_model=NativeSkillContext)
+def native_skill_context(skill_id: str, body: NativeSkillContextRequest, db: Session = Depends(get_db), user: UserContext = Depends(get_current_user)):
+    return native_skills.prepare_context(db, user, skill_id, body)
+
+@router.get("/api/assistant/native-skills/{skill_id}/file", response_model=NativeSkillFileRead)
+def native_skill_file(skill_id: str, session_id: str, path: str, offset: int = 0, user: UserContext = Depends(get_current_user)):
+    return native_skills.read_package_file(user, skill_id, session_id, path, offset)
+
+@router.post("/api/assistant/native-skills/{skill_id}/command")
+def native_skill_command(skill_id: str, body: NativeSkillCommand, db: Session = Depends(get_db), user: UserContext = Depends(get_current_user)):
+    return native_skills.execute_command(db, user, skill_id, body)
+
+
+@router.get("/api/assistant/native-skills/{skill_id}/runs", response_model=list[RunDetail])
+def native_skill_runs(skill_id: str, session_id: str, db: Session = Depends(get_db), user: UserContext = Depends(get_current_user)):
+    return native_skills.session_runs(db, user, skill_id, session_id)

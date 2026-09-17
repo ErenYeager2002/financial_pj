@@ -1,0 +1,2 @@
+FROM financial-platform-isolated-backend:report-empty-base-20260916
+COPY backend/app/workflow_service.py backend/app/ar_report_recovery.py backend/app/ar_empty_day_completion.py /app/backend/app/

@@ -1,0 +1,2 @@
+FROM financial-platform-isolated-backend:material-selector-base-20260916
+COPY backend/app/main.py backend/app/workflow_service.py backend/app/file_retention.py backend/app/ar_material_candidates.py backend/app/schemas.py /app/backend/app/

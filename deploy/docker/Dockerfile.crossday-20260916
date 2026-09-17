@@ -1,0 +1,6 @@
+FROM financial-platform-isolated-backend:pre-crossday-20260916
+COPY backend/app/workflow_service.py /app/backend/app/workflow_service.py
+COPY skills/ar-hexiao-daily/vendor/scripts/classify_hexiao.py /app/skills/ar-hexiao-daily/vendor/scripts/classify_hexiao.py
+COPY skills/ar-hexiao-daily/vendor/scripts/build_task_reports.py /app/skills/ar-hexiao-daily/vendor/scripts/build_task_reports.py
+COPY skills/ar-hexiao-daily-lab/vendor/scripts/classify_hexiao.py /app/skills/ar-hexiao-daily-lab/vendor/scripts/classify_hexiao.py
+COPY skills/ar-hexiao-daily-lab/vendor/scripts/build_task_reports.py /app/skills/ar-hexiao-daily-lab/vendor/scripts/build_task_reports.py

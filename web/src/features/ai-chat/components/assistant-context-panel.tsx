@@ -9,13 +9,19 @@ interface AssistantContextPanelProps {
   pendingMessage: string;
   draft: TaskDraft | null;
   onOpenTask: () => void;
+  executeInPlace?: boolean;
+  startingRun?: boolean;
+  selectedFileNamesById?: Record<string, string>;
 }
 
 export function AssistantContextPanel({
   selectedFileNames,
   pendingMessage,
   draft,
-  onOpenTask
+  onOpenTask,
+  executeInPlace = false,
+  startingRun = false,
+  selectedFileNamesById = {}
 }: AssistantContextPanelProps) {
   if (!selectedFileNames.length && !pendingMessage && !draft) return null;
 
@@ -75,8 +81,10 @@ export function AssistantContextPanel({
             {draft.clarification && (
               <p className='text-sm text-muted-foreground'>{draft.clarification}</p>
             )}
-            <Button type='button' onClick={onOpenTask} disabled={draft.state !== 'ready'}>
-              <Icons.check className='size-4' /> 打开任务
+            {executeInPlace && <dl className="space-y-2 text-sm">{Object.entries(draft.files ?? {}).map(([role, ids]) => <div key={role}><dt className="text-muted-foreground">{role === 'primary' ? '本次处理材料' : role === 'reference' ? '上一版应收 all' : role}</dt><dd>{(Array.isArray(ids) ? ids : [ids]).map(id => selectedFileNamesById[id] || `文件 ${id.slice(0, 8)}`).join('、')}</dd></div>)}</dl>}
+            {executeInPlace && <dl className="space-y-2 text-sm">{Object.entries(draft.parameters ?? {}).map(([key, value]) => <div key={key}><dt className="text-muted-foreground">{({ mode: '处理模式', base_month: '账龄基准月', date_label: '拆分日期' } as Record<string, string>)[key] || key}</dt><dd>{String(value || '自动识别')}</dd></div>)}</dl>}
+            <Button type='button' onClick={onOpenTask} disabled={draft.state !== 'ready' || startingRun}>
+              <Icons.check className='size-4' /> {startingRun ? '正在启动…' : executeInPlace ? '确认并执行' : '打开任务'}
             </Button>
           </CardContent>
         </Card>

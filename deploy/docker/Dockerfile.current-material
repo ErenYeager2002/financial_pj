@@ -1,0 +1,2 @@
+FROM financial-platform-isolated-backend:current-material-base-20260916
+COPY backend/app/ar_formal_ledger_service.py backend/app/ar_material_rebinding.py backend/app/ar_history_guard.py /app/backend/app/

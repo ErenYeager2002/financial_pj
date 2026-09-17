@@ -1,0 +1,3 @@
+FROM financial-platform-isolated-backend:history-rebind-base-20260916
+COPY skills/ar-hexiao-daily/vendor/scripts/receipt_history.py /app/skills/ar-hexiao-daily/vendor/scripts/receipt_history.py
+COPY skills/ar-hexiao-daily-lab/vendor/scripts/receipt_history.py /app/skills/ar-hexiao-daily-lab/vendor/scripts/receipt_history.py

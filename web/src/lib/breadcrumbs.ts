@@ -33,6 +33,10 @@ export function buildBreadcrumbs(
     return [...taskDetailBreadcrumbs, { title: '任务结果', link: pathname }];
   }
 
+  if (/^\/dashboard\/installed-skills\/[^/]+(?:\/run)?$/.test(pathname)) {
+    return [{ title: '工作台', link: '/dashboard/overview' }, { title: 'Skill 中心', link: '/dashboard/installed-skills' }, { title: pathname.endsWith('/run') ? 'Skill 对话' : 'Skill 详情', link: pathname }];
+  }
+
   if (/^\/dashboard\/skills\/[^/]+\/run$/.test(pathname)) {
     return [
       { title: '工作台', link: '/dashboard/overview' },

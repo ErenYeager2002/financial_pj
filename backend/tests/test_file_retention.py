@@ -71,6 +71,18 @@ class FileRetentionTests(unittest.TestCase):
         old_input,old_output,new_input,new_output=self.two_runs()
         self.assertEqual(self.candidates(),{old_input.id,old_output.id})
 
+    def test_ar_input_candidates_survive_but_old_outputs_are_retired(self):
+        old_input = self.file(0, skill='ar-hexiao-daily')
+        old = self.run_record(1, skill='ar-hexiao-daily', files={'file_id': old_input.id})
+        old_output = self.file(1, kind='output', run=old)
+        unused = self.file(0, skill='ar-hexiao-daily')
+        latest = self.run_record(3, skill='ar-hexiao-daily')
+        new_output = self.file(3, kind='output', run=latest)
+        self.assertEqual(self.candidates(), {old_output.id})
+        self.assertTrue(Path(old_input.stored_path).exists())
+        self.assertTrue(Path(unused.stored_path).exists())
+        self.assertNotIn(new_output.id, self.candidates())
+
     def test_failed_new_task_does_not_replace_success(self):
         old_input,old_output,new_input,new_output=self.two_runs()
         failed=self.run_record(5,state='failed');failed_output=self.file(5,kind='output',run=failed)

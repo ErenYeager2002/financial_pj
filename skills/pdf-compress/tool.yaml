@@ -1,0 +1,84 @@
+schema_version: 1
+id: pdf-compress
+name: PDF 压缩至 8MB
+version: 1.0.0
+status: published
+category: 文件整理
+description: 上传 PDF，自动生成小于 8MB 的压缩副本，保留全部页面和上传原件。
+ui:
+  employee_name: PDF 压缩至 8MB
+  short_description: 上传 PDF，自动生成小于 8MB 的压缩副本，保留全部页面和上传原件。
+  categories:
+  - 文件整理
+  estimated_minutes: 1
+  output_summary: 小于 8MB 的 PDF 副本
+  action_label: 开始压缩
+  popular: true
+tags:
+- PDF
+- 压缩
+- 8MB
+operational_profile:
+  execution_kind: offline_file
+  external_sources: []
+  employee_labels:
+  - PDF压缩
+  - 保留原件
+file_inputs:
+- role: pdf_file
+  name: 待压缩 PDF
+  description: 上传一份 PDF，最大 100MB。
+  required: true
+  multiple: false
+  extensions:
+  - pdf
+  max_size_mb: 100
+input_schema:
+  type: object
+  additionalProperties: false
+  properties: {}
+output_schema:
+  type: object
+  required:
+  - status
+  - summary
+  - output_files
+  - warnings
+  properties:
+    status:
+      const: success
+    summary:
+      type: object
+    output_files:
+      type: array
+    warnings:
+      type: array
+handler:
+  adapter: python
+  entrypoint: scripts/entry.py
+  worker_pool: python
+runtime:
+  timeout_seconds: 600
+  memory_mb: 2048
+  concurrency_limit: 1
+  network_access: false
+  network_targets: []
+risk:
+  level: read_only
+  requires_confirmation: true
+  requires_change_review: false
+  requires_approval: false
+  modifies_uploaded_files: false
+permissions:
+  run: finance_user
+  manage: skill_admin
+safety_constraints: {}
+progress_stages:
+- key: reading_files
+  label: 检查 PDF
+- key: processing
+  label: 逐级压缩
+- key: generating_output
+  label: 校验文件并生成下载
+result_presentation:
+  metrics: []

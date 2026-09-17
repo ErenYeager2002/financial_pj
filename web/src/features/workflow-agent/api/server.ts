@@ -43,9 +43,9 @@ export function listWorkflowBatches(): Promise<WorkflowBatchRead[]> {
   return platformServerRequest<WorkflowBatchRead[]>('/api/workflow-batches?limit=50');
 }
 
-export function listWorkflowReusableFiles(skillId: string): Promise<WorkflowReusableFilesRead> {
+export function listWorkflowReusableFiles(skillId: string, candidatePage = 1): Promise<WorkflowReusableFilesRead> {
   return platformServerRequest<WorkflowReusableFilesRead>(
-    `/api/workflows/reusable-files?skill_id=${encodeURIComponent(skillId)}`
+    `/api/workflows/reusable-files?skill_id=${encodeURIComponent(skillId)}&candidate_page=${candidatePage}`
   );
 }
 

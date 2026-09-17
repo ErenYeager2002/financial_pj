@@ -24,7 +24,7 @@ export default async function Page(): Promise<React.JSX.Element> {
     <PageContainer
       pageTitle='工具中心' headingLevel={1} compact
     >
-      <SkillCatalog skills={skills} adminDedications={adminDedications} />
+      <SkillCatalog skills={skills.filter((skill) => skill.catalog_module !== 'installed_skills')} adminDedications={adminDedications} />
     </PageContainer>
   );
 }

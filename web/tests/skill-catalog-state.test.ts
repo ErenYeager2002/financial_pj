@@ -28,6 +28,8 @@ function skill(overrides: Partial<SkillSummary> = {}): SkillSummary {
     action_label: '开始核销',
     popular: false,
     execution_mode: 'standard',
+    interaction_mode: 'form',
+    catalog_module: 'tools',
     execution_modes: ['workflow'],
     default_execution_mode: 'workflow',
     risk: {

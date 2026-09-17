@@ -1,5 +1,6 @@
 'use client';
 
+import { nativeSkillDisplay } from '@/features/skills/native-skill-display';
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMutation, useQueryClient, useSuspenseQuery } from '@tanstack/react-query';
@@ -222,7 +223,7 @@ export function RunDetailView({ runId }: RunDetailViewProps): React.JSX.Element 
                     : '正在连接'}
             </Badge>
           </div>
-          <CardTitle className='text-xl'>{run.skill_name}</CardTitle>
+          <CardTitle className='text-xl'>{run.skill_id.startsWith('native--') ? nativeSkillDisplay(run.skill_id, run.skill_name).name : run.skill_name}</CardTitle>
           <CardDescription className='break-all'>任务编号：{run.id}</CardDescription>
         </CardHeader>
         <CardContent className='space-y-4'>

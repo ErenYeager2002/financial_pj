@@ -17,6 +17,10 @@ import { ZhiyunCredentialCard } from '@/features/workflow-agent/components/zhiyu
 import {
   reusableMaterialSelection,
   selectedMaterialUpdates,
+  materialGroups,
+  materialYear,
+  toggleMaterialSelection,
+  validateMaterialSelection,
   type WorkflowMaterialFile
 } from '@/features/workflow-agent/workflow-materials';
 import {
@@ -156,6 +160,9 @@ export function WorkflowLauncher({
   const [dateRangeStart, setDateRangeStart] = React.useState('');
   const [dateRangeEnd, setDateRangeEnd] = React.useState('');
   const [dateError, setDateError] = React.useState('');
+  const [materialSetId, setMaterialSetId] = React.useState(initialReusableFiles?.material_set_id ?? '');
+  const [candidateNextPage, setCandidateNextPage] = React.useState<number | null>(initialReusableFiles?.candidate_next_page ?? null);
+  const [loadingCandidates, setLoadingCandidates] = React.useState(false);
   const [materials, setMaterials] = React.useState<Record<string, WorkflowMaterialFile[]>>(() =>
     reusableMaterialSelection(initialReusableFiles, selectedInitialSkill)
   );
@@ -267,6 +274,8 @@ export function WorkflowLauncher({
       .then((response) => {
         setMaterials(reusableMaterialSelection(response, skillId));
         setMaterialVersion(response.material_version ?? null);
+        setMaterialSetId(response.material_set_id ?? '');
+        setCandidateNextPage(response.candidate_next_page ?? null);
         setMaterialsError('');
       })
       .catch((loadError: unknown) => {
@@ -459,6 +468,33 @@ export function WorkflowLauncher({
     if (!response.ok) throw new Error(await responseMessage(response, '文件删除失败。'));
   }
 
+  const candidateSkillRef = React.useRef(skillId);
+  candidateSkillRef.current = skillId;
+
+  async function loadMoreCandidates() {
+    if (!candidateNextPage || loadingCandidates || working || uploadingRole || deletingFileId) return;
+    setLoadingCandidates(true);
+    try {
+      const response = await fetch(`/api/platform/workflows/reusable-files?skill_id=${encodeURIComponent(skillId)}&candidate_page=${candidateNextPage}`);
+      if (!response.ok) throw new Error(await responseMessage(response, '候选文件加载失败。'));
+      const result = (await response.json()) as WorkflowReusableFilesRead;
+      if (candidateSkillRef.current !== skillId) return;
+      if ((result.material_set_id ?? '') !== materialSetId) throw new Error('任务材料已有新版本，请刷新页面后重新选择。');
+      const incoming = reusableMaterialSelection(result, skillId);
+      setMaterials((current) => {
+        const merged = { ...current };
+        for (const [role, entries] of Object.entries(incoming)) {
+          const known = new Set((current[role] ?? []).map((file) => file.id));
+          merged[role] = [...(current[role] ?? []), ...entries.filter((file) => file.candidate && !known.has(file.id))];
+        }
+        return merged;
+      });
+      setCandidateNextPage(result.candidate_next_page ?? null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '候选文件加载失败。');
+    } finally { setLoadingCandidates(false); }
+  }
+
   async function uploadMaterial(
     role: string,
     multiple: boolean,
@@ -467,7 +503,8 @@ export function WorkflowLauncher({
     const selected = Array.from(event.target.files ?? []);
     event.target.value = '';
     if (!selected.length || uploadingRole || materialLock.locked) return;
-    const uploads = multiple ? selected : selected.slice(0, 1);
+    const selectable = isArSkill(skillId);
+    const uploads = multiple || selectable ? selected : selected.slice(0, 1);
     const previousFiles = materials[role] ?? [];
     setUploadingRole(role);
     setError('');
@@ -490,18 +527,18 @@ export function WorkflowLauncher({
       }
       setMaterials((current) => ({
         ...current,
-        [role]: multiple
+        [role]: multiple || selectable
           ? [
               ...(current[role] ?? []),
-              ...uploaded.map((item) => ({ ...item, source: 'uploaded' as const }))
+              ...uploaded.map((item) => ({ ...item, source: 'uploaded' as const, ...(selectable ? { selected: false } : {}) }))
             ]
-          : uploaded.map((item) => ({ ...item, source: 'uploaded' as const }))
+          : uploaded.map((item) => ({ ...item, source: 'uploaded' as const, ...(selectable ? { selected: false } : {}) }))
       }));
       setDirtyRoles((current) => new Set(current).add(role));
       const previousUploadedIds = previousFiles
         .filter((item) => item.source === 'uploaded')
         .map((item) => item.id);
-      if (!multiple && previousUploadedIds.length) {
+      if (!multiple && !selectable && previousUploadedIds.length) {
         const cleanup = await Promise.allSettled(
           previousUploadedIds.map((fileId) => deleteUploadedFile(fileId))
         );
@@ -518,22 +555,49 @@ export function WorkflowLauncher({
     }
   }
 
+  async function hideMaterials(fileId?: string) {
+    const params = new URLSearchParams({ skill_id: skillId });
+    if (fileId) params.set('file_id', fileId);
+    else params.set('all_files', 'true');
+    const response = await fetch(`/api/platform/workflows/reusable-files?${params}`, { method: 'DELETE' });
+    if (!response.ok) throw new Error(await responseMessage(response, '候选文件移除失败。'));
+  }
+
+  async function removeAllMaterials() {
+    if (working || uploadingRole || deletingFileId || loadingCandidates || materialsLoading || materialLock.locked) return;
+    if (!window.confirm('确认移除全部候选文件吗？未加载的文件也会从列表移除，历史任务和材料文件会保留。')) return;
+    setDeletingFileId('all');
+    setError('');
+    try {
+      await hideMaterials();
+      setMaterials({});
+      setCandidateNextPage(null);
+      setDirtyRoles(new Set(fileInputs.map((input) => input.role)));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '候选文件移除失败。');
+    } finally { setDeletingFileId(''); }
+  }
+
   async function removeMaterial(role: string, material: WorkflowMaterialFile) {
     if (working || uploadingRole || deletingFileId || materialLock.locked) return;
-    const message =
-      material.source === 'saved'
+    const deleteCandidate = material.source === 'uploaded' || material.candidate === true;
+    const message = isArSkill(skillId)
+      ? `确认从候选列表移除 ${material.name} 吗？历史任务和材料文件会保留。`
+      : !deleteCandidate
         ? `确认本次任务不再使用“${material.name}”吗？旧任务中的文件不会被删除。`
-        : `确认删除本次上传的“${material.name}”吗？`;
+        : `确认移除候选文件 ${material.name} 吗？未被任务引用的上传文件将被删除。`;
     if (!window.confirm(message)) return;
     setDeletingFileId(material.id);
     setError('');
     try {
-      if (material.source === 'uploaded') await deleteUploadedFile(material.id);
+      if (isArSkill(skillId)) await hideMaterials(material.id);
+      else if (deleteCandidate) await deleteUploadedFile(material.id);
       setMaterials((current) => ({
         ...current,
         [role]: (current[role] ?? []).filter((item) => item.id !== material.id)
       }));
       setDirtyRoles((current) => new Set(current).add(role));
+      if (isArSkill(skillId) && candidateNextPage !== null) setCandidateNextPage(1);
     } catch (removeError) {
       setError(removeError instanceof Error ? removeError.message : '文件删除失败。');
     } finally {
@@ -571,12 +635,18 @@ export function WorkflowLauncher({
       setDateError(dateRangeError);
       return;
     }
+    if (isArSkill(skillId)) {
+      const materialError = materialsLoading || materialsError
+        ? '请等待任务材料加载完成，加载失败时请先重试。'
+        : validateMaterialSelection(materials);
+      if (materialError) { setError(materialError); return; }
+    }
     const rerunSuccessfulDates = isArSkill(skillId);
     setWorking(true);
     setError('');
     setDateError('');
     try {
-      const { files, replace_roles } = selectedMaterialUpdates(materials, dirtyRoles);
+      const { files, replace_roles } = selectedMaterialUpdates(materials, isArSkill(skillId) ? new Set(fileInputs.map((input) => input.role)) : dirtyRoles);
       const useBatchEndpoint = dates.length > 1 || rerunSuccessfulDates;
       const endpoint = !useBatchEndpoint
         ? '/api/platform/workflows/start'
@@ -584,6 +654,7 @@ export function WorkflowLauncher({
       const body = !useBatchEndpoint
         ? {
             skill_id: skillId,
+            ...(isArSkill(skillId) ? { expected_material_set_id: materialSetId } : {}),
             execution_mode: executionMode,
             reconciliation_date: dates[0],
             files,
@@ -592,6 +663,7 @@ export function WorkflowLauncher({
           }
         : {
             skill_id: skillId,
+            ...(isArSkill(skillId) ? { expected_material_set_id: materialSetId } : {}),
             execution_mode: executionMode,
             reconciliation_dates: dates,
             files,
@@ -859,6 +931,13 @@ export function WorkflowLauncher({
               <div>
                 <div className='flex items-center gap-2'>
                   <p className='text-sm font-medium'>任务材料</p>
+                  {isArSkill(skillId) && (Object.values(materials).some((files) => files.length > 0) || candidateNextPage !== null) && (
+                    <Button type='button' size='sm' variant='ghost' className='text-muted-foreground hover:text-destructive'
+                      disabled={working || materialsLoading || loadingCandidates || Boolean(uploadingRole) || Boolean(deletingFileId) || materialLock.locked}
+                      onClick={() => void removeAllMaterials()}>
+                      {deletingFileId === 'all' ? '正在移除…' : '全部移除'}
+                    </Button>
+                  )}
                   {materialLock.locked && <p role='status' className='text-sm text-muted-foreground'>{materialLock.reason}</p>}
                   {materialVersion !== null && (
                     <Badge variant='secondary'>当前业务版本 V{materialVersion}</Badge>
@@ -871,13 +950,51 @@ export function WorkflowLauncher({
                 return (
                   <div key={input.role} className='rounded-lg border p-3'>
                     <div className='flex items-start justify-between gap-3'>
-                      <div className='min-w-0'>
+                      <div className='min-w-0 flex-1'>
                         <p className='text-sm font-medium'>
                           {input.name}
                           {input.role === 'profit_loss_ledgers' && '（每年一份）'}
                           {input.required && <span className='ml-1 text-destructive'>*</span>}
                         </p>
-                        {entries.length > 0 ? (
+                        {isArSkill(skillId) ? (
+                          <div className='mt-3 space-y-3'>
+                            <p className='text-xs text-muted-foreground'>上传后请勾选。同组勾选另一份会替换选择；任务仅使用勾选的文件。</p>
+                            {materialGroups(input.role, entries).map(([label, files]) => (
+                              <fieldset key={label} className='space-y-1'>
+                                <legend className='mb-1 text-xs font-medium'>{label}</legend>
+                                <PaginatedCollection ariaLabel={`${label}候选文件`} contentClassName='space-y-1'>
+                                  {files.map((material) => (
+                                    <div key={material.id} className='flex items-center gap-2 rounded-md bg-muted/40 px-3 py-2 text-xs'>
+                                    <label className='flex min-w-0 flex-1 cursor-pointer items-center gap-2'>
+                                      <input type='checkbox' className='size-4 shrink-0 accent-primary'
+                                        checked={material.selected !== false}
+                                        disabled={working || materialsLoading || Boolean(uploadingRole) || Boolean(deletingFileId) || materialLock.locked || (input.role === 'profit_loss_ledgers' && !materialYear(material))}
+                                        onChange={() => {
+                                          setMaterials((current) => ({ ...current, [input.role]: toggleMaterialSelection(input.role, current[input.role] ?? [], material.id) }));
+                                          setDirtyRoles((current) => new Set(current).add(input.role));
+                                        }} />
+                                      <span className='min-w-0 flex-1 break-all'>{material.name}</span>
+                                      <Badge variant={material.selected !== false ? 'secondary' : 'outline'} className='shrink-0 font-normal'>
+                                        {material.selected !== false ? '本次选用' : '未选用'}
+                                      </Badge>
+                                    </label>
+                                    <Button type='button' variant='ghost' size='sm'
+                                      className='shrink-0 text-muted-foreground hover:text-destructive'
+                                      aria-label={`移除 ${material.name}`}
+                                      title='从候选列表移除，历史任务和材料文件保留'
+                                      disabled={working || materialsLoading || loadingCandidates || Boolean(uploadingRole) || Boolean(deletingFileId) || materialLock.locked}
+                                      onClick={() => void removeMaterial(input.role, material)}>
+                                      {deletingFileId === material.id ? <Icons.spinner className='mr-1 size-4 animate-spin' /> : <Icons.trash className='mr-1 size-4' />}
+                                      移除
+                                    </Button>
+                                    </div>
+                                  ))}
+                                </PaginatedCollection>
+                              </fieldset>
+                            ))}
+                            {!entries.length && <p className='text-xs text-muted-foreground'>请上传候选文件。</p>}
+                          </div>
+                        ) : (                        entries.length > 0 ? (
                           <PaginatedCollection
                             ariaLabel={`${input.name}已选材料`}
                             className='mt-2'
@@ -921,19 +1038,19 @@ export function WorkflowLauncher({
                           <p className='mt-2 text-xs text-muted-foreground'>
                             {materialsLoading ? '正在检查平台已保存文件…' : '当前没有可复用文件。'}
                           </p>
-                        )}
+                        ))}
                       </div>
                       <label className='shrink-0 cursor-pointer rounded-md border px-3 py-2 text-xs font-medium transition-colors hover:bg-muted'>
                         {uploadingRole === input.role
                           ? '上传中…'
-                          : entries.length
+                          : isArSkill(skillId) ? '上传候选表' : entries.length
                             ? input.multiple ? '新增/替换' : '替换当前表'
                             : '选择文件'}
                         <input
                           type='file'
                           className='sr-only'
                           accept={input.extensions?.map((item) => `.${item}`).join(',')}
-                          multiple={input.multiple}
+                          multiple={isArSkill(skillId) || input.multiple}
                           disabled={
                             materialLock.locked ||
                             materialsLoading ||
@@ -950,6 +1067,11 @@ export function WorkflowLauncher({
                   </div>
                 );
               })}
+              {isArSkill(skillId) && candidateNextPage !== null && (
+                <Button type='button' variant='outline' disabled={loadingCandidates || materialsLoading || working || Boolean(uploadingRole) || Boolean(deletingFileId)} onClick={() => void loadMoreCandidates()}>
+                  {loadingCandidates ? '正在加载…' : '加载更多候选文件'}
+                </Button>
+              )}
               {materialsError && (
                 <Alert variant='destructive'>
                   <AlertTitle>已保存任务材料加载失败</AlertTitle>

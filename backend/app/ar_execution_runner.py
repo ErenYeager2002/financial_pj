@@ -197,6 +197,15 @@ class ArExecution:
 
     def classify_receipts(self) -> dict[str, Any]:
         self.script("verify_sources.py", ["verify", "--workspace", str(self.workspace)])
+        summary = self.service._fetched_summary_for_date(self.context.get("fetched_data"), self.date)
+        counts = [summary.get(key) for key in self.service.FETCHED_DATASET_COUNT_KEYS.values()]
+        if counts and all(type(value) is int and value == 0 for value in counts):
+            proof = json.loads(self.service._run_script(
+                Path(__file__).parent, "ar_empty_day_probe.py",
+                ["--scripts", str(self.scripts), "--workspace", str(self.workspace), "--date", self.date],
+            ))
+            if proof == {"schema": "ar-empty-day-v1", "date": self.date, "empty": True}:
+                return {"empty_day_skipped": True, "empty_day_evidence": proof}
         arguments = ["--workspace", str(self.workspace), "--hexiao-date", self.date]
         self.script("classify_hexiao.py", [*arguments, *self.ledger_args])
         self.script("build_flow_plan.py", arguments)
@@ -435,12 +444,28 @@ class ArExecution:
         plan = json.loads(rechecked.read_text(encoding="utf-8"))
         if plan.get("write"):
             raise ValueError("写后复核仍有待写项目；已停止发布，不自动执行第二轮写入")
+        compatibility = None
+        if plan.get("conflict") and (self.service._load(self.action.input_json, {}) or {}).get("recovered_from"):
+            from .settings import settings
+            current_scripts = settings.skill_dir / self.workflow.skill_id / "vendor" / "scripts"
+            compatibility = json.loads(self.service._run_script(
+                Path(__file__).parent, "ar_deferred_history_review.py",
+                ["--pinned", str(self.scripts), "--current", str(current_scripts),
+                 "--plan", str(rechecked),
+                 *[value for year,path in ledgers.items() for value in ("--ledger", str(year), str(path))]],
+            ))
+            resolved = set(compatibility["resolved_case_ids"])
+            plan["conflict"] = [item for item in plan.get("conflict", []) if item.get("case_id") not in resolved]
+            plan["counts"] = {**(plan.get("counts") or {}), "conflict":len(plan["conflict"]),
+                              "skip":len(plan.get("skip", []))+len(resolved)}
+            (review / "history-gate-review.json").write_text(json.dumps(compatibility, ensure_ascii=False, indent=2), encoding="utf-8")
         original = json.loads(checked.read_text(encoding="utf-8"))
         allowed_conflicts = {item.get("case_id") for item in original.get("conflict") or []}
         if any(item.get("case_id") not in allowed_conflicts for item in plan.get("conflict") or []):
             raise ValueError("写后复核出现新增冲突，需核对实际执行结果")
         self._require_staged_fingerprints(stage, "write_receipt_flow")
         return {"review_workspace": str(review), "counts": plan.get("counts") or {},
+                **({"compatibility_review": compatibility} if compatibility else {}),
                 **({"ar_read_cache": self.context["ar_read_cache"]} if optimized else {}),
                 "checked_fingerprint": self.service.sha256_file(rechecked),
                 "files": self._workbook_fingerprints(stage)}
@@ -457,6 +482,20 @@ class ArExecution:
     def build_final_report(self) -> dict[str, Any]:
         stage, checked = self.staging()
         self._require_staged_fingerprints(stage, "rescan_holds")
+        prior_review = self.execution.get("steps", {}).get("verify_reconciliation") or {}
+        compatibility = prior_review.get("compatibility_review")
+        if compatibility:
+            from .settings import settings
+            rechecked = Path(prior_review["review_workspace"]) / "04_产出" / f"写入计划_校验后_{self.tag}.json"
+            proof = json.loads(self.service._run_script(Path(__file__).parent, "ar_deferred_history_review.py", [
+                "--pinned", str(self.scripts), "--current", str(settings.skill_dir / self.workflow.skill_id / "vendor" / "scripts"),
+                "--plan", str(rechecked), "--materialize", "--expected-fingerprint", prior_review["checked_fingerprint"],
+                *[value for case in compatibility["resolved_case_ids"] for value in ("--resolved-id", case)],
+                *[value for year,path in annual_ledgers_in_copy(self.workspace, stage, self.ledgers).items()
+                  for value in ("--ledger", str(year), str(path))],
+            ]))
+            if proof != compatibility:
+                raise ValueError("报告兼容复核与已通过的复核证据不同")
         self.script("build_execution_report.py", ["--workspace", str(stage), "--checked", str(checked)])
         path = stage / "04_产出" / f"最终核销结果_{self.tag}.json"
         from .ar_result_summary import metrics_from_report
@@ -720,6 +759,18 @@ def transition_phase(db: Session, action: WorkflowAction, workflow: WorkflowSess
         workflow.state = "cancelled"
         workflow.stage = "cancelled"
         workflow.progress_message = "当前步骤已结束，按取消请求停止后续执行"
+        return
+    if result.get("empty_day_skipped"):
+        expected = {"schema": "ar-empty-day-v1", "date": workflow.reconciliation_date, "empty": True}
+        if action.name != "ar_classify_receipts" or result.get("empty_day_evidence") != expected:
+            raise ValueError("空日期完成缺少对应核销日的只读核验证据")
+        state.update(next_tool="", publication="not_required_empty_day", empty_day_skipped=True)
+        action.result_json = service._json(result)
+        service._complete_empty_reconciliation_date(db, workflow, context)
+        if workflow.fetched_bundle_id and not workflow.batch_id:
+            service.finalize_bundle(db, bundle_id=workflow.fetched_bundle_id, outcome="succeeded")
+        service._advance_batch(db, workflow, service._pass_through_batch_result(workflow, context), action)
+        service.sync_reminder_from_workflow(db, workflow)
         return
     if phase is not None:
         workflow.stage = "preparing" if phase.progress < 58 else "applying"

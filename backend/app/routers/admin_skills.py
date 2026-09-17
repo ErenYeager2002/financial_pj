@@ -229,3 +229,19 @@ def admin_publish_skill_release(
 ) -> SkillReleaseRead:
     require_admin(current)
     return publish_release(db, current, release_id, body.confirmation)
+
+
+from ..contracts import NativeSkillRead, SkillInstallCatalog, SkillInstallRequest
+from ..native_skill_service import installation_catalog, install_native_skill
+
+
+@source_router.post("/install-catalog", response_model=SkillInstallCatalog)
+def admin_install_catalog(current: UserContext = Depends(get_current_user)):
+    require_admin(current)
+    return installation_catalog()
+
+
+@source_router.post("/prepare-install", response_model=NativeSkillRead)
+def admin_prepare_install(body: SkillInstallRequest, db: Session = Depends(get_db), current: UserContext = Depends(get_current_user)):
+    require_admin(current)
+    return install_native_skill(db, current, body)

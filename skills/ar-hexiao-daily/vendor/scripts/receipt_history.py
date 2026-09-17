@@ -27,11 +27,26 @@ def plan(rec, result, rows, journal):
     owned=events.get(identity)
     matches=[ref for ref,r in paid.items() if BR.cents(r['回款明细'])==amount and r['收款时间'] in (arrival.isoformat(),day,posting.isoformat())]
     if owned:
-        matches=[ref for ref,r in paid.items() if list(BR.signature(r))==owned['signature']]
+        old_matches=[ref for ref,r in paid.items() if list(BR.signature(r))==owned['signature']]
+        if old_matches:
+            matches=old_matches
+        elif BR.cents(owned['signature'][0])!=amount:
+            return None
+        # An uploaded workbook may retain the original arrival date while the
+        # journal records the corrected posting date. Rebind the same durable
+        # event only to one amount/date candidate. Later receipts already in the
+        # workbook do not belong to this event's chronological cumulative total.
+        # Keep the durable identity and the old journal in the write audit.
+    if not matches:
+        import current_receipt_cohort
+        target_ref=current_receipt_cohort.target(rec,rows)
+        if target_ref is not None:matches=[target_ref]
     if len(matches)>1:return None
     # A single conserved receipt can have a mistyped date. Amount alone is
     # insufficient: require the complete current cumulative and ordinary AR split.
-    if not matches and not owned and len(paid)==1 and cumulative==amount:
+    # Current conserved evidence may repair a stale signature of the same
+    # event; durable ownership and unchanged source amount remain checked above.
+    if not matches and len(paid)==1 and cumulative==amount:
         ref, row = next(iter(paid.items()))
         same_date = row['收款时间'] in (arrival.isoformat(),day,posting.isoformat())
         exact_conserved = (BR.cents(row['回款明细'])==amount and baseline==delivery
@@ -69,7 +84,11 @@ def plan(rec, result, rows, journal):
     answer=copy.deepcopy(result)
     answer.update(bucket='auto',code='E5',ledger_row_ref=int(ref),five_cols=five,derived_cols={'差异':target['差异']} if target['差异'] is not None else {})
     if kind=='existing' and len(rows)==1 and not dirty and abs(remaining)<=BR.SETTLEMENT_CENTS:
-        answer['derived_cols']={'差异':(baseline-delivery)/100}
+        # Ordinary first-time settlement leaves an absent zero difference blank.
+        # Preserve that representation when reviewing the same receipt; real
+        # differences and existing explicit values still require verification.
+        if baseline != delivery or target['差异'] is not None:
+            answer['derived_cols']={'差异':(baseline-delivery)/100}
     if dirty:
         answer.setdefault('warning_codes',[]).append('W_UNRELATED_RECEIPT_INCOMPLETE')
     answer.pop('row_operation',None)
@@ -88,6 +107,50 @@ def candidate(rec,result,ledger):
         return plan(rec,result,BR.ledger_rows(ledger,rec['so'],rec['sod']),getattr(ledger,'baseline_receipt_state',{}).get(BR.group_key(rec['so'],rec['sod'])) or {})
     except (KeyError,TypeError,ValueError):return None
 
+
+def matches_planned_history(expected, item):
+    """Bind a reconstructed missing receipt to the first step of its batch chain.
+
+    The regular chain validator still checks every step and the actual ledger.
+    Only the representation changes here; receipt identity and amounts do not.
+    """
+    import receipt_correction as R
+    if expected is None:
+        return False
+    if R.planned(expected) == R.planned(item):
+        return True
+    single = expected.get('row_operation') or {}
+    chain = item.get('row_operation') or {}
+    audit = expected.get('receipt_correction') or {}
+    steps = chain.get('steps') or []
+    if (audit.get('kind') != 'missing' or single.get('type') != 'split_below'
+            or chain.get('type') != 'split_payment_chain' or len(steps) < 2):
+        return False
+    first = steps[0]
+    if any(first.get(k) != item.get(k) for k in ('ar', 'so', 'sod', 'case_id')):
+        return False
+    source = item.get('split_payment_source') or {}
+    order = source.get('writeoff_sequence_key') or source.get('fallback_sequence_key')
+    if first.get('index') != 0 or first.get('writeoff_sequence_key') != list(order or []):
+        return False
+    for key in ('ledger_row_ref', 'five_cols', 'derived_cols'):
+        if expected.get(key) != item.get(key):
+            return False
+    if first.get('five_cols') != expected.get('five_cols') or first.get('derived_cols') != expected.get('derived_cols'):
+        return False
+    bindings = [
+        (chain.get('source_receivable'), single.get('source_receivable')),
+        (chain.get('initial_cumulative'), single.get('existing_received')),
+        (chain.get('latest_delivery'), single.get('latest_delivery')),
+        (first.get('current_received'), single.get('current_received')),
+        (first.get('cumulative_received'), single.get('cumulative_received')),
+        (first.get('receivable'), single.get('paid_receivable')),
+        (first.get('remaining_after'), single.get('unpaid_receivable')),
+    ]
+    return all(BR.cents(actual) is not None and BR.cents(actual) == BR.cents(wanted)
+               for actual, wanted in bindings)
+
+
 def check(item,rows):
     import receipt_correction as R
     import validate_plan as V
@@ -100,7 +163,20 @@ def check(item,rows):
         for field,key in [('amount_local','amount_local'),('delivery_local','deliver_local'),('cumulative_local','cumulative_received_local')]:
             if BR.cents(source.get(field))!=BR.cents(rec.get(key)):return bad('历史回款来源金额发生变化')
         expected=plan(rec,item,audit['before_rows'],audit['journal'])
-        if expected is None or R.planned(expected)!=R.planned(item):return bad('历史回款方案不能由原值和取数依据重建')
+        if expected is not None and (item.get('so_accrual_audit') or {}).get('all_settled') is False:
+            # Reconstruct the final SO-wide policy from actual rows, rather
+            # than trusting a claimed deferral or the single-SOD intermediate.
+            from classify_hexiao import LedgerIndex, _apply_so_accrual_gate
+            names={'SO':'so','SOD':'sod','应收金额':'yingshou','计提':'jiti',
+                   '回款明细':'huikuan','是否结账':'jiezhang','收款时间':'shoukuan_time',
+                   '收款方式':'shoukuan_way','差异':'chayi'}
+            snapshots={int(ref):{dest:row.get(src) for src,dest in names.items()}
+                       for ref,row in rows.items() if row.get('SO')==item['so']}
+            sods={}
+            for ref,row in snapshots.items():sods.setdefault(row['sod'],[]).append(ref)
+            index=LedgerIndex(synthetic={'so':{item['so']:list(snapshots)},'sod':sods,'rows':snapshots})
+            _apply_so_accrual_gate([expected],index,0.01)
+        if not matches_planned_history(expected, item):return bad('历史回款方案不能由原值和取数依据重建')
         clean=copy.deepcopy(item);clean.pop('receipt_correction')
         current={str(ref):BR.normalized(r) for ref,r in rows.items() if r.get('SO')==item['so'] and r.get('SOD')==item['sod']}
         checked=V.check_one(clean,rows)
@@ -148,7 +224,7 @@ def zero_rows(rows):
                              and row.get('是否结账') == '是' for row in rows.values())
 
 def zero_candidate(rec, result, ledger):
-    if ledger is None or rec.get('forced_code') or rec.get('flow_hits') not in (None,1):return None
+    if ledger is None or rec.get('forced_code'):return None
     if any(BR.cents(rec.get(key)) != 0 for key in ('amount_local','deliver_local')):return None
     rows=BR.ledger_rows(ledger,rec.get('so'),rec.get('sod'))
     if not zero_rows(rows):return None
@@ -182,12 +258,16 @@ def existing_sod_slices(rec, ledger):
     for sod in {str(ledger.row_snapshot[ref].get('sod') or '') for ref in ledger.so_index.get(so,[])}:
         rows.update(BR.ledger_rows(ledger,so,sod))
     paid={ref:row for ref,row in rows.items() if (BR.cents(row['回款明细']) or 0)>0}
-    if not paid or any(not common.norm_date(row['收款时间']) or not row['收款方式'] or row['是否结账']!='是' for row in paid.values()):return None
+    if not paid or any(not row['收款方式'] or row['是否结账']!='是' for row in paid.values()):return None
     days={arrival,posting,common.receipt_time(arrival,posting)}
     cohort={ref:row for ref,row in paid.items() if common.norm_date(row['收款时间']) in days}
+    if any(not common.norm_date(row['收款时间']) for row in paid.values()):
+        import current_receipt_cohort
+        cohort=current_receipt_cohort.select(rows,arrival,posting,total,cumulative)
+        if not cohort:return None
     if sum(BR.cents(row['回款明细']) for row in cohort.values())!=total:return None
     if len({row['SOD'] for row in cohort.values()})!=len(cohort):return None
-    if sum(BR.cents(row['回款明细']) for row in paid.values() if common.norm_date(row['收款时间'])<=posting)!=cumulative:return None
+    if sum(BR.cents(row['回款明细']) for ref,row in paid.items() if ref in cohort or (common.norm_date(row['收款时间']) and common.norm_date(row['收款时间'])<=posting))!=cumulative:return None
     resolved=[]; original_used=0
     cohort_audit={'before_so_rows':rows,'after_so_rows':copy.deepcopy(rows),'total_local':total/100,'cumulative_local':cumulative/100,'matched_rows':list(cohort)}
     for index,(ref,row) in enumerate(cohort.items()):
@@ -198,7 +278,7 @@ def existing_sod_slices(rec, ledger):
         original_used+=part_orig
         part={key:copy.deepcopy(value) for key,value in rec.items() if not key.startswith('default_') and key not in ('forced_code','forced_reason')}
         part.update(sod=sod,amount_local=value/100,amount_orig=part_orig/100,deliver_local=delivery/100,
-                    cumulative_received_local=sum(BR.cents(r['回款明细']) for r in paid.values() if r['SOD']==sod and common.norm_date(r['收款时间'])<=posting)/100,
+                    cumulative_received_local=sum(BR.cents(r['回款明细']) for key,r in paid.items() if r['SOD']==sod and (key in cohort or (common.norm_date(r['收款时间']) and common.norm_date(r['收款时间'])<=posting)))/100,
                     existing_sod_receipt_audit=cohort_audit,
                     match_basis='同 SO 本次核销金额、日期组及累计回款共同确认的已有 SOD 回款')
         # A recognized cohort must also pass the ordinary existing-receipt proof.
