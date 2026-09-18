@@ -1,0 +1,7 @@
+FROM python:3.11-slim-bookworm
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY backend/pyproject.toml /opt/test-dependencies/pyproject.toml
+RUN mkdir -p /opt/test-dependencies/app && touch /opt/test-dependencies/app/__init__.py && python -m pip install --no-cache-dir '/opt/test-dependencies[dev]'
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+WORKDIR /workspace
+ENTRYPOINT ["python", "-B"]

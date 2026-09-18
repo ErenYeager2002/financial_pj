@@ -1,0 +1,57 @@
+name: Refactor baseline
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: refactor-baseline-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  backend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [safety, linux-ipc, ar-synthetic, ar-source-synthetic, native-artifacts, backend-format, backend-static, backend-unit, contracts]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Build test dependencies from repository
+        run: docker build -f scripts/refactor/Dockerfile.backend-test -t financial-refactor-test:ci .
+      - name: Run isolated check
+        run: >-
+          docker run --rm --read-only --network none --tmpfs /tmp:rw,size=2g
+          -v "$GITHUB_WORKSPACE:/workspace:ro" -w /workspace
+          financial-refactor-test:ci scripts/refactor/check.py
+          --suite '${{ matrix.suite }}' --continue-on-collection-errors
+  postgres:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - run: docker build -f scripts/refactor/Dockerfile.backend-test -t financial-refactor-test:ci .
+      - run: docker pull postgres:16-alpine
+      - name: Dedicated disposable PostgreSQL tests
+        env:
+          REFACTOR_BACKEND_TEST_IMAGE: financial-refactor-test:ci
+          REFACTOR_POSTGRES_IMAGE: postgres:16-alpine
+        run: python3 -B scripts/refactor/postgres_baseline.py
+  frontend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Build locked dependencies including local Agent runtime
+        run: docker build -f scripts/refactor/Dockerfile.frontend-test -t financial-refactor-web-test:ci .
+      - name: Typecheck, lint, contracts, synthetic tests and build
+        run: >-
+          docker run --rm --read-only --network none --tmpfs /tmp:rw,size=3g
+          -v "$GITHUB_WORKSPACE:/source:ro"
+          financial-refactor-web-test:ci /source/scripts/refactor/frontend_baseline.cjs

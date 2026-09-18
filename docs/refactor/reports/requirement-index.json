@@ -1,0 +1,3439 @@
+{
+  "schema_version": "requirement-index-v1",
+  "spec_sha256": "25601ea169d0a31d23ace1dbeebd856b848b1277e18f709ac3ae0885a4660a44",
+  "coverage": "Numbered clauses and PR/T/G/I table rows; prose requirements still require manual audit.",
+  "entries": [
+    {
+      "id": "clause-L79",
+      "source_line": 79,
+      "section": "1.1 本轮必须达到的结果",
+      "requirement": "1. 建立实际调用图、回归基线、可重复构建和 CI；明确哪些代码运行、哪些只是历史兼容。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L80",
+      "source_line": 80,
+      "section": "1.1 本轮必须达到的结果",
+      "requirement": "2. 将数据库迁移与服务启动分开；明确事务提交者，防止辅助函数隐式提交。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L81",
+      "source_line": 81,
+      "section": "1.1 本轮必须达到的结果",
+      "requirement": "3. 统一幂等、执行前授权、租约、失败分类与重试政策；保留原有防重复写入约束。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L82",
+      "source_line": 82,
+      "section": "1.1 本轮必须达到的结果",
+      "requirement": "4. 将应收核销从巨型 `workflow_service.py` 中按垂直业务切片拆出，消除双向依赖。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L83",
+      "source_line": 83,
+      "section": "1.1 本轮必须达到的结果",
+      "requirement": "5. 保留固定工具、应收核销、Agent/Harness、新 Pi 会话的职责；按实际调用证据收敛旧 Native 命令路径。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L84",
+      "source_line": 84,
+      "section": "1.1 本轮必须达到的结果",
+      "requirement": "6. 统一正式文件成果、任务查询、事件与审计的基础协议，而不强制统一全部业务状态机。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L85",
+      "source_line": 85,
+      "section": "1.1 本轮必须达到的结果",
+      "requirement": "7. 统一 Skill 版本和发布协议，整理部署入口，消除必须依赖历史补丁镜像才能重建的问题。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L86",
+      "source_line": 86,
+      "section": "1.1 本轮必须达到的结果",
+      "requirement": "8. 有证据地清理重复代码、旧前端组件、失效文档和兼容入口，保留历史任务读取与恢复能力。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "I01",
+      "source_line": 350,
+      "section": "4. 不可破坏的不变量",
+      "requirement": "| I01 | 用户身份与角色从已验证会话及本地账号读取，不信任客户端 owner/department/role |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "I02",
+      "source_line": 351,
+      "section": "4. 不可破坏的不变量",
+      "requirement": "| I02 | 文件读取、选择、复制、登记、下载、删除分别鉴权；同内容 hash 不代表有访问权限 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "I03",
+      "source_line": 352,
+      "section": "4. 不可破坏的不变量",
+      "requirement": "| I03 | 固定工具权限与 `native--<id>` 权限保持明确映射，不通过改名扩大授权 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "I04",
+      "source_line": 353,
+      "section": "4. 不可破坏的不变量",
+      "requirement": "| I04 | 任务创建、确认、真正开始及高风险步骤都要满足当前授权；权限快照仅用于审计 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "I05",
+      "source_line": 354,
+      "section": "4. 不可破坏的不变量",
+      "requirement": "| I05 | 执行模式、Skill 快照、业务日期、材料版本在任务生命周期内固定 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "I06",
+      "source_line": 355,
+      "section": "4. 不可破坏的不变量",
+      "requirement": "| I06 | 金额、币种、期间、舍入、核销匹配规则由确定性业务代码决定 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "I07",
+      "source_line": 356,
+      "section": "4. 不可破坏的不变量",
+      "requirement": "| I07 | 原始上传文件不作为可写工作区；写入使用隔离副本 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "I08",
+      "source_line": 357,
+      "section": "4. 不可破坏的不变量",
+      "requirement": "| I08 | 任务产物发布之前验证输出 schema、文件边界和必要业务条件 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "I09",
+      "source_line": 358,
+      "section": "4. 不可破坏的不变量",
+      "requirement": "| I09 | 材料版本历史不可覆盖；恢复历史材料应创建新的版本 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "I10",
+      "source_line": 359,
+      "section": "4. 不可破坏的不变量",
+      "requirement": "| I10 | 同一材料作用域的合法当前版本只能有一个 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "I11",
+      "source_line": 360,
+      "section": "4. 不可破坏的不变量",
+      "requirement": "| I11 | 多日期核销保持原有日期升序串行；已成功日期不重复执行写入 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "I12",
+      "source_line": 361,
+      "section": "4. 不可破坏的不变量",
+      "requirement": "| I12 | 已失效的 Worker 不能发布结果、更新终态或续活已失效的租约 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "I13",
+      "source_line": 362,
+      "section": "4. 不可破坏的不变量",
+      "requirement": "| I13 | HTTP 超时、进程失联、回读失败均不能推断“尚未写入” |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "I14",
+      "source_line": 363,
+      "section": "4. 不可破坏的不变量",
+      "requirement": "| I14 | 不确定财务写入禁止自动重试；只能执行明确且有证据的恢复动作 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "I15",
+      "source_line": 364,
+      "section": "4. 不可破坏的不变量",
+      "requirement": "| I15 | 用户确认与管理员审批含义不同；只有实际存在的阶段才显示相应操作 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "I16",
+      "source_line": 365,
+      "section": "4. 不可破坏的不变量",
+      "requirement": "| I16 | 模型建议、自然语言“确认”不能绕过后端硬闸和明确授权 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "I17",
+      "source_line": 366,
+      "section": "4. 不可破坏的不变量",
+      "requirement": "| I17 | 凭据不进入模型上下文、任务参数、日志、命令行和普通容器环境 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "I18",
+      "source_line": 367,
+      "section": "4. 不可破坏的不变量",
+      "requirement": "| I18 | 核销证据、材料、错误展示经过统一脱敏与受限分页 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "I19",
+      "source_line": 368,
+      "section": "4. 不可破坏的不变量",
+      "requirement": "| I19 | 任务中心为查询投影，不得改变底层对象生命周期 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "I20",
+      "source_line": 369,
+      "section": "4. 不可破坏的不变量",
+      "requirement": "| I20 | 批次与子日期的统计口径不能因统一任务中心而重复计数 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "I21",
+      "source_line": 370,
+      "section": "4. 不可破坏的不变量",
+      "requirement": "| I21 | 临时 Pi 工作区文件不自动成为正式台账或核销材料 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "I22",
+      "source_line": 371,
+      "section": "4. 不可破坏的不变量",
+      "requirement": "| I22 | 新旧执行实现不得在生产同时产生同一财务副作用 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "I23",
+      "source_line": 372,
+      "section": "4. 不可破坏的不变量",
+      "requirement": "| I23 | 取消请求与取消完成分开；有未确认进程或副作用时不假报已取消 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "I24",
+      "source_line": 373,
+      "section": "4. 不可破坏的不变量",
+      "requirement": "| I24 | 迁移不静默合并、丢弃历史任务和重复 key，不篡改审计事实 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "I25",
+      "source_line": 374,
+      "section": "4. 不可破坏的不变量",
+      "requirement": "| I25 | 新功能回退不等于撤销财务写入；回退代码与修复业务数据是不同流程 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "I26",
+      "source_line": 375,
+      "section": "4. 不可破坏的不变量",
+      "requirement": "| I26 | 配置/版本切换仅影响允许接收的新任务，不改变运行中固定契约 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "I27",
+      "source_line": 376,
+      "section": "4. 不可破坏的不变量",
+      "requirement": "| I27 | 无证据的旧代码不删除，无证据的旧任务不重跑 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "I28",
+      "source_line": 377,
+      "section": "4. 不可破坏的不变量",
+      "requirement": "| I28 | 原生沙箱可以保留已批准的通用命令能力，但不得因此获得正式财务写入和全局凭据权限 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "I29",
+      "source_line": 378,
+      "section": "4. 不可破坏的不变量",
+      "requirement": "| I29 | 所有调用路径的原子性由数据库约束、事务及执行协议共同保证，不仅靠前端禁用按钮 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "I30",
+      "source_line": 379,
+      "section": "4. 不可破坏的不变量",
+      "requirement": "| I30 | 本地测试成功不等于 PostgreSQL 并发、Linux UDS、Docker 隔离或生产发布已验证 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "PR-00",
+      "source_line": 555,
+      "section": "6.1 任务总表与依赖",
+      "requirement": "| PR-00 | 全仓盘点、合成基线、环境与 CI 准备 | 无 | 获得真实调用/测试基线 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "PR-01",
+      "source_line": 556,
+      "section": "6.1 任务总表与依赖",
+      "requirement": "| PR-01 | 独立迁移与启动版本检查 | 00 | API/Worker 不再隐式迁移 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "PR-02",
+      "source_line": 557,
+      "section": "6.1 任务总表与依赖",
+      "requirement": "| PR-02 | 显式事务与事件 append 接口 | 00、01 | 回滚无半成品任务 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "PR-03",
+      "source_line": 558,
+      "section": "6.1 任务总表与依赖",
+      "requirement": "| PR-03 | 幂等登记、命令/会话语义拆分 | 02 | 并发相同提交仅绑定一个执行 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "PR-04",
+      "source_line": 559,
+      "section": "6.1 任务总表与依赖",
+      "requirement": "| PR-04 | 执行阶段授权与撤权规则 | 02、03 | 撤权后不能开始新危险步骤 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "PR-05",
+      "source_line": 560,
+      "section": "6.1 任务总表与依赖",
+      "requirement": "| PR-05 | 重试统一、租约与代次防护 | 02、04 | 旧 Worker 不能续租或发布 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "PR-06",
+      "source_line": 561,
+      "section": "6.1 任务总表与依赖",
+      "requirement": "| PR-06 | 队列公平性与维护份额 | 05 | 并发限制不失效、队列不饥饿 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "PR-07",
+      "source_line": 562,
+      "section": "6.1 任务总表与依赖",
+      "requirement": "| PR-07 | API 拆分与公开服务边界 | 02～05 | 原 API 合约兼容 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "PR-08",
+      "source_line": 563,
+      "section": "6.1 任务总表与依赖",
+      "requirement": "| PR-08 | 核销公开端口和基础适配器 | 07 | 新模块不反向依赖旧 service |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "PR-09",
+      "source_line": 564,
+      "section": "6.1 任务总表与依赖",
+      "requirement": "| PR-09 | 核销取数、材料与预览切片 | 08 | 取数与材料基线不变 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "PR-10",
+      "source_line": 565,
+      "section": "6.1 任务总表与依赖",
+      "requirement": "| PR-10 | 核销判定、计划、证据切片 | 09 | 原 14 阶段顺序保持 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "PR-11",
+      "source_line": 566,
+      "section": "6.1 任务总表与依赖",
+      "requirement": "| PR-11 | 核销暂存、写入、写后校验 | 10 | 禁止重复写入与错版本写入 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "PR-12",
+      "source_line": 567,
+      "section": "6.1 任务总表与依赖",
+      "requirement": "| PR-12 | 核销发布、批次与恢复切片 | 11 | 已完成日期不再写入 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "PR-13",
+      "source_line": 568,
+      "section": "6.1 任务总表与依赖",
+      "requirement": "| PR-13 | Pi 命令关联、运行时协议 | 03～05、07 | 重放命令不重复启动 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "PR-14",
+      "source_line": 569,
+      "section": "6.1 任务总表与依赖",
+      "requirement": "| PR-14 | 正式成果、引用与统一查询 | 12、13 | 文件权限、引用和统计一致 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "PR-15",
+      "source_line": 570,
+      "section": "6.1 任务总表与依赖",
+      "requirement": "| PR-15 | Skill 版本及发布协议收敛 | 05、12～14 | 多入口只有一套发布事实 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "PR-16",
+      "source_line": 571,
+      "section": "6.1 任务总表与依赖",
+      "requirement": "| PR-16 | 前端共用、BFF、任务交互 | 07、13、14 | 页面与历史链接兼容 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "PR-17",
+      "source_line": 572,
+      "section": "6.1 任务总表与依赖",
+      "requirement": "| PR-17 | 完整构建、运行管理器归位 | 01、13、15 | 不依赖日期补丁链可重建 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "PR-18",
+      "source_line": 573,
+      "section": "6.1 任务总表与依赖",
+      "requirement": "| PR-18 | 旧 Native/legacy 分阶段退役 | 13～17 | 无活跃依赖才删除执行入口 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "PR-19",
+      "source_line": 574,
+      "section": "6.1 任务总表与依赖",
+      "requirement": "| PR-19 | 观测、故障演练与性能基准 | 05、06、12～17 | 关键风险可见、演练通过 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "PR-20",
+      "source_line": 575,
+      "section": "6.1 任务总表与依赖",
+      "requirement": "| PR-20 | 重复代码、依赖、文档清理 | 18、19 | 有证据删除，保留来源与历史 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "PR-21",
+      "source_line": 576,
+      "section": "6.1 任务总表与依赖",
+      "requirement": "| PR-21 | 综合验收与分批发布包 | 全部必选门禁 | 验收表完整且回滚可用 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L592",
+      "source_line": 592,
+      "section": "具体步骤",
+      "requirement": "1. 在用户工作副本运行 `git status --short`、`git rev-parse HEAD`、`git log -1 --format=%H`。记录本地 SHA 与本文基线差异。分支创建不得覆盖已有同名分支。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L593",
+      "source_line": 593,
+      "section": "具体步骤",
+      "requirement": "2. 阅读根 `AGENTS.md`、子目录 `AGENTS.md`、现有项目约束；记录冲突。不要把文档中的 TODO 当已实现功能。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L594",
+      "source_line": 594,
+      "section": "具体步骤",
+      "requirement": "3. 使用 `git ls-files` 获取受版本控制文件清单，排除 `.git`、依赖、生成文件和用户数据。脚本不得递归扫描真实 `data` 内容。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L595",
+      "source_line": 595,
+      "section": "具体步骤",
+      "requirement": "4. 对 Python 使用 AST 列出顶层类/函数、import、路由装饰器、`commit/rollback/flush`、`subprocess`/文件写入、动态 import、入口点。不能只按行数识别职责。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L596",
+      "source_line": 596,
+      "section": "具体步骤",
+      "requirement": "5. 对 TS/TSX 列出 App Router 路由、BFF、页面、组件、hooks、查询 key、模型调用、动态 import、CSS 和构建依赖；使用现有 TypeScript 工具链，不新增大型扫描服务。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L597",
+      "source_line": 597,
+      "section": "具体步骤",
+      "requirement": "6. 比较 `skills`、`sources`、`standalone-skills`、`native-skill-overrides`：按相对路径和 SHA-256 分组，记录精确重复、近似重复、vendor 副本、自动生成文件。不能自动删除。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L598",
+      "source_line": 598,
+      "section": "具体步骤",
+      "requirement": "7. 盘点所有 Compose、Dockerfile、systemd、计划任务、PowerShell 启动器和真实入口。将“代码存在”“配置引用”“实际启用”“有调用证据”分四列。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L599",
+      "source_line": 599,
+      "section": "具体步骤",
+      "requirement": "8. 建立隔离合成数据：普通表格任务、多个年份账簿、一份流转表、单日与多日取数包、写后失败、Native/Pi 文件生成。每个 fixture 注明构造逻辑和预期业务含义。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L600",
+      "source_line": 600,
+      "section": "具体步骤",
+      "requirement": "9. 收集原有测试结果与环境阻塞；先使用现有测试入口，不导入全局 settings 后才修改测试数据库。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L601",
+      "source_line": 601,
+      "section": "具体步骤",
+      "requirement": "10. 建立 CI：格式/类型、后端单元、PostgreSQL 集成、OpenAPI 生成差异、前端 build、关键合成 E2E。Linux 上覆盖 `fcntl`/UDS；不能仅 Windows 或 SQLite 通过就算完整。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L631",
+      "source_line": 631,
+      "section": "具体步骤",
+      "requirement": "1. 分离 `migrate_database()`、`check_schema_compatible()`、`seed_required_rows()`；用户初始化如 bootstrap_admin 独立处理并保证原子/幂等，不把所有初始化都删除。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L632",
+      "source_line": 632,
+      "section": "具体步骤",
+      "requirement": "2. `init_db()` 过渡为明确兼容 wrapper。生产 API/Worker 改用只检查入口；测试 fixture 显式调用迁移。不能保留“生产缺表自动建表”的 fallback。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L633",
+      "source_line": 633,
+      "section": "具体步骤",
+      "requirement": "3. 迁移命令先检查数据库目标、预期 revision、单一 head、迁移是否安全，再获取迁移互斥锁。锁失效或超时明确退出。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L634",
+      "source_line": 634,
+      "section": "具体步骤",
+      "requirement": "4. PostgreSQL 锁可以是专用连接上的 advisory lock；迁移过程必须持续持有该连接。若将连接传给 Alembic，要修改 `env.py` 使用 `config.attributes['connection']`，而不是重新创建无关 engine。现有 `env.py` 会自行创建 engine，必须处理这一点。[S18][E06]",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L635",
+      "source_line": 635,
+      "section": "具体步骤",
+      "requirement": "5. 离线生成 SQL 不得要求连接生产数据库；online/offline 路径都保留。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L636",
+      "source_line": 636,
+      "section": "具体步骤",
+      "requirement": "6. 当前 `SQLITE_RUNTIME_COLUMNS` 的补列逻辑迁入正式 Alembic revision 或受控的一次性 legacy 升级入口。先验证旧 SQLite 样本，不直接删兼容逻辑。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L637",
+      "source_line": 637,
+      "section": "具体步骤",
+      "requirement": "7. 将“没有 alembic_version 自动 stamp 基线”的行为从普通服务启动拿走；仅允许 legacy 导入工具在验证已存在结构确实匹配后执行。禁止凭存在任意平台表就随意 stamp。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L638",
+      "source_line": 638,
+      "section": "具体步骤",
+      "requirement": "8. 将 `migrate_sqlite_to_postgres.py` 从日常 schema 升级命令中分离。首次数据导入与平常升级拥有独立报告和授权。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L639",
+      "source_line": 639,
+      "section": "具体步骤",
+      "requirement": "9. Compose 添加一次性迁移服务或显式预启动命令，让 API/Worker 在迁移成功后启动。注意 skill-sync 与迁移依赖不能形成循环。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L640",
+      "source_line": 640,
+      "section": "具体步骤",
+      "requirement": "10. schema 检查采用受支持 revision 集合/范围，记录当前和应用兼容版本。新旧应用并存时不能简单要求旧应用的 `head` 与新 DB 完全相同，必须配套 expand/contract 策略。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L664",
+      "source_line": 664,
+      "section": "具体步骤",
+      "requirement": "1. 生成全仓 commit 调用表，区分：API 用例提交、Worker 领取提交、阶段检查点提交、独立 heartbeat 提交、辅助函数隐式提交。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L665",
+      "source_line": 665,
+      "section": "具体步骤",
+      "requirement": "2. 新增纯追加 `append_run_event(db, ...)`；它可以修改 run 的相关字段、add 事件、flush，但不 commit。对应失败审计也仅追加。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L666",
+      "source_line": 666,
+      "section": "具体步骤",
+      "requirement": "3. 保留 `emit_event` 旧行为作为短期 wrapper，逐路径替换。禁止全仓字符串替换默认 commit。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L667",
+      "source_line": 667,
+      "section": "具体步骤",
+      "requirement": "4. 把普通任务提交拆为 prepare 与 persist，persist 接受调用方事务。所有 `RunRecord`、StepRun、文件绑定、ModelTrace、初始事件同事务创建。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L668",
+      "source_line": 668,
+      "section": "具体步骤",
+      "requirement": "5. 为 `create_run`、`confirm_run`、`cancel_run`、草稿消费明确唯一 commit 者。内部服务可抛领域异常；HTTP 层按现有形状映射。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L669",
+      "source_line": 669,
+      "section": "具体步骤",
+      "requirement": "6. 数据库事务外的大文件复制写到唯一暂存目录，数据库绑定失败仅留下可回收孤儿；不能在事务回滚处理里删除可能已经被另一请求引用的目录。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L670",
+      "source_line": 670,
+      "section": "具体步骤",
+      "requirement": "7. 长操作的进度事件单独短事务写入，仍校验执行资格；不能让进度提交意外把未完成材料发布一起提交。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L671",
+      "source_line": 671,
+      "section": "具体步骤",
+      "requirement": "8. 审查 `run_fencing` 的 Session `before_flush` 监听器。提交路径无 run fence 时不得误报；Worker 路径不能因换 Session 丢失 fence。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L672",
+      "source_line": 672,
+      "section": "具体步骤",
+      "requirement": "9. 回滚后重新读取必要 ORM 实例，不继续使用失效事务中的对象假定其状态已保存。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L698",
+      "source_line": 698,
+      "section": "实施步骤",
+      "requirement": "1. 按第 5.2～5.5 节实现表与字段，索引命名沿用项目规范。新模型通过现有元数据入口显式导入，避免 Alembic autogenerate 漏表。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L699",
+      "source_line": 699,
+      "section": "实施步骤",
+      "requirement": "2. 先做 dry-run 历史分析：普通 key 重复组、空 key、Native 共用 key、同 key 不同输入、跨部门历史记录。只输出 ID 和脱敏摘要，不自动合并。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L700",
+      "source_line": 700,
+      "section": "实施步骤",
+      "requirement": "3. 实现带版本的 canonical request 与 SHA-256。为数组顺序、默认值、Decimal、Unicode、文件角色、时间日期单独写测试。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L701",
+      "source_line": 701,
+      "section": "实施步骤",
+      "requirement": "4. 实现 reserve/read/mark_prepared/bind/reject 的条件更新 API；token 不匹配、租约失效不能 bind。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L702",
+      "source_line": 702,
+      "section": "实施步骤",
+      "requirement": "5. 对 `create_run` 使用短事务准备协议。外部模型解析只能在占位成功后发生；第一次已保存的解析结果供重放复用。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L703",
+      "source_line": 703,
+      "section": "实施步骤",
+      "requirement": "6. 快照复制防 TOCTOU：先固定 revision/hash，复制至 staging 后重新核对；source 在复制中变化则拒绝，不生成名不副实的快照。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L704",
+      "source_line": 704,
+      "section": "实施步骤",
+      "requirement": "7. `retry_run` 明确是“创建新的业务执行”还是“重放同一次重试请求”。当前 `retry:<run_id>` 的含义先通过测试固定，不能让用户多次网络重试不断建新任务。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L705",
+      "source_line": 705,
+      "section": "实施步骤",
+      "requirement": "8. 草稿消费必须原子标记 consumed 并绑定 run，不能任务成功创建而草稿仍可重复消费。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L706",
+      "source_line": 706,
+      "section": "实施步骤",
+      "requirement": "9. 幂等 key 由前端在一次用户提交意图开始时生成并持久到提交结束；网络重试复用，用户修改参数重新提交生成新 key。不要每次 fetch 自动生成新 key。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L707",
+      "source_line": 707,
+      "section": "实施步骤",
+      "requirement": "10. 新 API 内部 receipt 与旧创建 API 形状兼容，BFF 透传对应状态和 request_id；不在重复请求时返回最新不相干 run。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L708",
+      "source_line": 708,
+      "section": "实施步骤",
+      "requirement": "11. Native 新字段分批回填，保持旧字段只读 fallback；每批使用稳定游标和事务，输出已处理/跳过/异常计数。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L709",
+      "source_line": 709,
+      "section": "实施步骤",
+      "requirement": "12. 任何历史 key 组存在多条不同业务记录时标为 ambiguous，保留原记录，禁止自动选第一条当“正确记录”。必要时只为新请求启用强幂等。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L735",
+      "source_line": 735,
+      "section": "实施步骤",
+      "requirement": "1. 定义调用阶段 `create/confirm/start/read/write/publish/cancel`，明确每阶段检查列表。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L736",
+      "source_line": 736,
+      "section": "实施步骤",
+      "requirement": "2. Worker 从 DB 当前用户记录恢复身份；使用任务固定的 owner 和原 department 进行一致性检查，不以任务里的历史 role 直接授权，不把所有用户强制构造成 finance_user 而跳过真实权限逻辑。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L737",
+      "source_line": 737,
+      "section": "实施步骤",
+      "requirement": "3. 调用顺序必须先 refresh 再 assert，尤其管理员降权后不能继续通过旧 `is_admin` 快照绕过。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L738",
+      "source_line": 738,
+      "section": "实施步骤",
+      "requirement": "4. 排队阶段撤权、停用、部门变更：拒绝启动，生成脱敏可审计原因。改变旧任务归属只能通过独立数据治理流程，不能“自动跟随新部门”。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L739",
+      "source_line": 739,
+      "section": "实施步骤",
+      "requirement": "5. 写入前检查 Skill 操作权限、输入材料归属、审批/确认快照、固定版本、执行资格；用户权限变更不能用缓存延迟刷新当理由跳过。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L740",
+      "source_line": 740,
+      "section": "实施步骤",
+      "requirement": "6. 长事务中已进入不可逆原子步骤，不粗暴 kill。允许完成必要的停止、回读、校验和证据保存，但不自动继续下一个写入步骤。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L741",
+      "source_line": 741,
+      "section": "实施步骤",
+      "requirement": "7. 撤销运行权限后，合法用户仍应可停止自己会话或取消自己的待执行任务；账号停用导致无法登录时由管理员受审计地停止，不能给匿名用户 stop 权限。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L742",
+      "source_line": 742,
+      "section": "实施步骤",
+      "requirement": "8. 新 Pi 保留 stop/cancel 的安全豁免，但豁免的是 Skill 执行权限，不是身份、会话归属和部门隔离。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L743",
+      "source_line": 743,
+      "section": "实施步骤",
+      "requirement": "9. 前端只做体验提示，后端所有入口独立执行相同政策；不只修改某个普通 POST 路由遗漏草稿/Agent/Native 入口。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L744",
+      "source_line": 744,
+      "section": "实施步骤",
+      "requirement": "10. 高风险授权与落库之间采用已定义锁/CAS，记录授权观察版本；不声称跨外部系统操作具备绝对瞬时撤权。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L776",
+      "source_line": 776,
+      "section": "租约实施步骤",
+      "requirement": "1. 普通 Run 沿用 `(id, worker_id, attempt)`，保留 Session before_flush 防护；增加结构化 lease_lost 观测。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L777",
+      "source_line": 777,
+      "section": "租约实施步骤",
+      "requirement": "2. Workflow heartbeat 必须绑定领取时的 `attempt_count` 或等价代次，且只更新尚未过期的有效租约；不靠固定 worker 名称识别唯一执行。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L778",
+      "source_line": 778,
+      "section": "租约实施步骤",
+      "requirement": "3. `run_workflow_action_once` 向 heartbeat 传递当前代次；AR lock 检查同一代次。两者先同步实现和测试，避免一边支持一边不支持。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L779",
+      "source_line": 779,
+      "section": "租约实施步骤",
+      "requirement": "4. heartbeat 条件更新返回行数 0 时记录资格失效；不无限“成功续租”假报。临时 DB 错误允许在未过期窗口内重试 heartbeat，但不延长一个已失效资格。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L780",
+      "source_line": 780,
+      "section": "租约实施步骤",
+      "requirement": "5. 领取时间与超时尽量使用一致的 DB 时间源；耗时测量用 monotonic。跨主机时钟差异列入测试，不用显示时间判断唯一执行者。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L781",
+      "source_line": 781,
+      "section": "租约实施步骤",
+      "requirement": "6. 明确 `waiting_user_action` 是否仍有活跃子进程/租约。现有 fencing 接受该状态，但 heartbeat/count 的处理要审查；若仍占执行槽则所有租约与容量检查必须一致，若释放则先保存检查点并明确转交，不简单扩大状态列表。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L782",
+      "source_line": 782,
+      "section": "租约实施步骤",
+      "requirement": "7. 终态更新、事件、成果登记、材料发布使用条件更新或持锁事务校验代次。不能仅在执行开始检查一次。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L783",
+      "source_line": 783,
+      "section": "租约实施步骤",
+      "requirement": "8. 旧 Worker 失去资格后不能把新执行状态改 failed/cancelled；只记录独立的脱敏观测，必要时停止自己唯一标识的子进程组。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L784",
+      "source_line": 784,
+      "section": "租约实施步骤",
+      "requirement": "9. 子进程停止必须绑定本次 process identity，不能按进程名杀所有 Python/浏览器。保留核销进程证据和现有特殊处理。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L785",
+      "source_line": 785,
+      "section": "租约实施步骤",
+      "requirement": "10. 租约过期不代表物理进程退出。对于写入动作保留 outcome_unknown/process_exit_confirmed=false，禁止自动重排。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L809",
+      "source_line": 809,
+      "section": "第一轮实现",
+      "requirement": "1. 保留现有全局调度锁，先修复前 100 条候选的问题，不同时改变所有锁策略。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L810",
+      "source_line": 810,
+      "section": "第一轮实现",
+      "requirement": "2. 推荐按本池可运行 Skill 获取每个 Skill 最早的可领取候选，再按 oldest queued_at 和稳定 ID 排序。统计有效租约后跳过饱和 Skill；保证后面不同 Skill 可进入候选。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L811",
+      "source_line": 811,
+      "section": "第一轮实现",
+      "requirement": "3. 如果采用分页扫描，必须使用 keyset 而非不断 OFFSET；预算耗尽时记录 continuation 并保证下次继续向后，不每次回到同一批饱和任务。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L812",
+      "source_line": 812,
+      "section": "第一轮实现",
+      "requirement": "4. 候选选择、并发计数和领取状态更新必须处于同一受保护事务。授权失败任务记录终止原因后继续查其他候选。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L813",
+      "source_line": 813,
+      "section": "第一轮实现",
+      "requirement": "5. 候选输入和 snapshot 校验不能持锁做大文件 hash 或远程网络。先做廉价过滤，文件完整性在实际启动前验证。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L814",
+      "source_line": 814,
+      "section": "第一轮实现",
+      "requirement": "6. 定义并发作用域：保持原 Skill 级限制与各池关系，不擅自改成 owner 级。普通/核销/取数/Agent 的占槽语义写表，避免重复占槽或漏算。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L815",
+      "source_line": 815,
+      "section": "第一轮实现",
+      "requirement": "7. 维护任务采用明确份额：在任务之间检查维护到期预算，或将清理等交给独立维护入口；不只在“没有任何业务任务时”才运行。不得从长财务写入中间抢占进程。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L816",
+      "source_line": 816,
+      "section": "第一轮实现",
+      "requirement": "8. 维护服务多实例时也需要 DB 领取/锁，避免多个清理进程同时删同一个包。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L817",
+      "source_line": 817,
+      "section": "第一轮实现",
+      "requirement": "9. 增加测量：最老任务年龄、每池队列长度、领取耗时、锁等待、饱和跳过次数、维护延迟。不在指标 label 中放用户/文件名。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L841",
+      "source_line": 841,
+      "section": "实施步骤",
+      "requirement": "1. 将 `main.py` 中目录、模型连接、普通任务、文件、核销、工作台等路由按现有业务分组迁到 router。已有 router 复用，避免重复注册。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L842",
+      "source_line": 842,
+      "section": "实施步骤",
+      "requirement": "2. 保持 path、method、鉴权依赖、response_model、状态码、错误结构、流式语义。保留 operation_id 或记录必要变更，避免生成客户端突变。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L843",
+      "source_line": 843,
+      "section": "实施步骤",
+      "requirement": "3. `main.py` 仅保留应用组装、生命周期、middleware、OpenAPI 组装与基础健康入口。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L844",
+      "source_line": 844,
+      "section": "实施步骤",
+      "requirement": "4. 公共服务输入不接受未经检查的客户端 UserContext；依赖注入后的 Actor/Scope 为内部类型。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L845",
+      "source_line": 845,
+      "section": "实施步骤",
+      "requirement": "5. 普通业务逻辑从路由移到用例服务，不把 8,000 行 service 搬进 router。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L846",
+      "source_line": 846,
+      "section": "实施步骤",
+      "requirement": "6. 临时兼容 wrapper 明确导出符号，禁止使用 `from ... import *` 掩盖依赖。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L847",
+      "source_line": 847,
+      "section": "实施步骤",
+      "requirement": "7. 公共 exception 到 HTTP 的映射集中维护，但保持旧客户端所需 detail 形状。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L848",
+      "source_line": 848,
+      "section": "实施步骤",
+      "requirement": "8. API/OpenAPI schema 导出必须在无生产数据库、无真实模型 Key 的环境可执行；不得靠导入 main 触发生产初始化完成导出。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L849",
+      "source_line": 849,
+      "section": "实施步骤",
+      "requirement": "9. 如果抽到模块级 schema，保持 Pydantic 模型名称稳定并检查同名冲突；不要因新的重复类自动生成 `Schema2` 等未知类型。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L850",
+      "source_line": 850,
+      "section": "实施步骤",
+      "requirement": "10. 初步建立架构测试：新 business 模块禁止 import `app.main`，禁止反向依赖 facade；旧未迁移边逐条 allowlist 并绑定待清理 PR。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L909",
+      "source_line": 909,
+      "section": "实施步骤",
+      "requirement": "1. 先移动纯常量、错误类型、值对象、阶段前缀检查；保留旧文件显式 re-export，避免持久化协议变化。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L910",
+      "source_line": 910,
+      "section": "实施步骤",
+      "requirement": "2. 抽出工作区定位、年度参数、受控脚本执行；保留真实引用的旧函数委托，删除复制的第二份实现。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L911",
+      "source_line": 911,
+      "section": "实施步骤",
+      "requirement": "3. 在 composition root 创建具体端口依赖，不在业务类内部 `from . import workflow_service as service`。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L912",
+      "source_line": 912,
+      "section": "实施步骤",
+      "requirement": "4. 去除 AR runner 对 service 的反向 import，改为显式依赖。每消除一条边运行对应特征测试。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L913",
+      "source_line": 913,
+      "section": "实施步骤",
+      "requirement": "5. 不在此 PR 改 SQL 结构、不改 workbook 算法、不变更 phase 名、不引入新任务队列。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L914",
+      "source_line": 914,
+      "section": "实施步骤",
+      "requirement": "6. 测试 monkeypatch 原私有函数的，迁移为注入 fake port；先保留行为断言，不删除测试以适配新结构。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L915",
+      "source_line": 915,
+      "section": "实施步骤",
+      "requirement": "7. `app.models` 继续作为 ORM 元数据入口，避免因为 domain 移动导致类重复注册。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L937",
+      "source_line": 937,
+      "section": "具体步骤",
+      "requirement": "1. 创建执行用例固定用户、部门、Skill revision、execution_mode、业务日期、材料版本、取数方式；后续不得自动替换其中任何值。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L938",
+      "source_line": 938,
+      "section": "具体步骤",
+      "requirement": "2. 日期范围沿用原 schema 限制和顺序。明确字符串日期是业务时区日期；数据库时间戳仍存 timezone-aware UTC，不使用模型运行环境时区替代业务时区。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L939",
+      "source_line": 939,
+      "section": "具体步骤",
+      "requirement": "3. 拆出材料检查：年度盈亏表至少一份、流转表唯一、同年重复文件拒绝、文件 role 与 owner/department 匹配、历史无年份兼容仅走旧规则，不在重构时擅自重分配年份。[S20]",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L940",
+      "source_line": 940,
+      "section": "具体步骤",
+      "requirement": "4. 取数连接器只负责只读获取与校验，凭据通过既有受控通道取得；context、result、异常和日志不得出现账号密码。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L941",
+      "source_line": 941,
+      "section": "具体步骤",
+      "requirement": "5. 正式取数、快照回放两种来源保留。回放必须验证 scope、格式版本、完整性、日期覆盖；生产保持原有关闭/开启策略，不自动开启开发回放。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L942",
+      "source_line": 942,
+      "section": "具体步骤",
+      "requirement": "6. 取数包是原始可重放材料，预览是派生索引。原始包清理后预览可保留，但不得伪装成可回放包。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L943",
+      "source_line": 943,
+      "section": "具体步骤",
+      "requirement": "7. 补取必须绑定原取数来源和会话版本。快照模式不允许偷偷补调用真实智云。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L944",
+      "source_line": 944,
+      "section": "具体步骤",
+      "requirement": "8. 预览接口保留分页、搜索、脱敏和计数口径。禁止对每次翻页读取全部历史 JSON，禁止解析失败回退完整原始数据。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L945",
+      "source_line": 945,
+      "section": "具体步骤",
+      "requirement": "9. 确认取数绑定当前 preview/bundle revision；确认之前有补取或刷新产生新版本时，旧确认不能自动继承。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L946",
+      "source_line": 946,
+      "section": "具体步骤",
+      "requirement": "10. 任务提醒仍只负责告知/预填，不自动创建财务执行，不与正式任务混在幂等键命名空间。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L947",
+      "source_line": 947,
+      "section": "具体步骤",
+      "requirement": "11. 迁移旧 facade 中的 `_load/_json` 等辅助函数前区分其异常容错语义，不能统一成“解析失败返回空”而掩盖关键材料缺失。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L990",
+      "source_line": 990,
+      "section": "实施步骤",
+      "requirement": "1. 迁移 `next_phase/require_phase`，测试空前缀、合法前缀、重复步骤、跳步骤、乱序、未知步骤、完成后继续请求。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L991",
+      "source_line": 991,
+      "section": "实施步骤",
+      "requirement": "2. 生成计划仍调用任务固定的 Skill 脚本。模型可辅助解释证据，不直接把模型自由文本转为 workbook 写入。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L992",
+      "source_line": 992,
+      "section": "实施步骤",
+      "requirement": "3. 证据必须覆盖要求检查的订单/回款集合。分页读完、证据成立、计划可写是不同状态，不能把“模型看过第一页”视为全部覆盖。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L993",
+      "source_line": 993,
+      "section": "实施步骤",
+      "requirement": "4. 保留 `plan_fingerprint`、业务日期、material_set_id、material_version 等写入 guard，明确它们的生成源和更新时机。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L994",
+      "source_line": 994,
+      "section": "实施步骤",
+      "requirement": "5. 将首次报告、最终报告、范围报告的区别写入返回协议，不合并为同一个“生成报告”并丢失恢复边界。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L995",
+      "source_line": 995,
+      "section": "实施步骤",
+      "requirement": "6. 保留挂账、跨期、历史核销、空日、延期复核等既有策略；只能重排代码，不擅自使用新的财务判断。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L996",
+      "source_line": 996,
+      "section": "实施步骤",
+      "requirement": "7. 对确定性普通 runner 与 Agent/Harness 共用同一 phase 校验服务；Agent 工具白名单从固定契约生成/验证，不维护一份可漂移副本。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L997",
+      "source_line": 997,
+      "section": "实施步骤",
+      "requirement": "8. 不新增无实际状态依据的确认/审批卡片。审批链有无及需要哪些确认仍由现有实际执行契约决定。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L998",
+      "source_line": 998,
+      "section": "实施步骤",
+      "requirement": "9. 对每个阶段记录输入引用、输出摘要、代码版本、状态变化和错误；日志只留脱敏摘要，不为观测扩大模型数据可见性。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1024",
+      "source_line": 1024,
+      "section": "具体步骤",
+      "requirement": "1. stage 前检查当前有效租约、授权、固定材料、合法阶段和 plan_fingerprint。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1025",
+      "source_line": 1025,
+      "section": "具体步骤",
+      "requirement": "2. 创建与 task/action/attempt 绑定的唯一暂存目录，保持既有目录兼容和证据格式。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1026",
+      "source_line": 1026,
+      "section": "具体步骤",
+      "requirement": "3. 写前记录输入文件 hash、预计修改范围、脚本版本、命令摘要、调用 ID、材料版本；敏感参数按既有策略保护。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1027",
+      "source_line": 1027,
+      "section": "具体步骤",
+      "requirement": "4. 执行脚本前释放不必要长事务锁，但保留能重新验证的阶段 checkpoint。不能持数据库全局锁等待整个 Excel 或浏览器过程。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1028",
+      "source_line": 1028,
+      "section": "具体步骤",
+      "requirement": "5. 写入脚本只能访问声明的工作文件和输出目录。普通固定工具也逐步复用这一保护，不能把有全数据卷权限的 Worker 误认为每任务强沙箱。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1029",
+      "source_line": 1029,
+      "section": "具体步骤",
+      "requirement": "6. 进程执行保留 timeout、stdout/stderr 脱敏、process identity、process_exit_confirmed、退出码和证据关联。返回码为 0 不等于所有业务校验通过。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1030",
+      "source_line": 1030,
+      "section": "具体步骤",
+      "requirement": "7. `write_ledger`、`write_receipt_flow` 分别保存阶段结果，不能因为后者失败而重跑前者；确切恢复动作仍由原政策与证据决定。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1031",
+      "source_line": 1031,
+      "section": "具体步骤",
+      "requirement": "8. 写后重新读取受控文件检查金额、明细、公式和计划覆盖，使用固定脚本/校验逻辑；不要把模型评价当回读校验。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1032",
+      "source_line": 1032,
+      "section": "具体步骤",
+      "requirement": "9. 进入正式发布前再次核验文件内容、材料 lineage 和执行资格，防 worker 在副本完成后已经失去资格。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1033",
+      "source_line": 1033,
+      "section": "具体步骤",
+      "requirement": "10. 在任一不确定边界，记录 `write_status=unknown/applied_unverified` 等内部语义，映射到现有可兼容错误响应；不自动归类为未写入。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1034",
+      "source_line": 1034,
+      "section": "具体步骤",
+      "requirement": "11. 取消在安全检查点生效；执行器未确认退出时保持 cancelling/outcome unknown。不要直接标 cancelled 并放开同一文件写入。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1035",
+      "source_line": 1035,
+      "section": "具体步骤",
+      "requirement": "12. 临时目录清理延后到完整结果/证据归档且无活跃引用。清理错误不能把财务任务重排，也不能删除需要恢复的暂存。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1061",
+      "source_line": 1061,
+      "section": "发布实施",
+      "requirement": "1. 定义 `PublicationRequest`：scope、workflow/action/attempt、父材料版本、计划 fingerprint、固定 Skill revision、已校验成果清单、必要确认/审批引用。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1062",
+      "source_line": 1062,
+      "section": "发布实施",
+      "requirement": "2. 复用现有材料 version/current 约束、publish 函数和恢复证据，不新增同义“ledger_versions”表。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1063",
+      "source_line": 1063,
+      "section": "发布实施",
+      "requirement": "3. 大文件归档先落到不可变目标；通过内容校验后再在短 DB 事务中登记 FileRecord、材料成员、新 current、关联和审计。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1064",
+      "source_line": 1064,
+      "section": "发布实施",
+      "requirement": "4. 文件系统与 DB 无跨介质原子事务。明确“文件落地但 DB 未提交”作为可检查孤儿；“DB 已提交但应答丢失”通过发布操作 ID/原 workflow 关联回查，不能再发新版本。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1065",
+      "source_line": 1065,
+      "section": "发布实施",
+      "requirement": "5. 发布前持有既有正确范围的材料锁/CAS；在同一事务中校验当前父版本并提交后继版本。同一作用域并发首次创建也必须有唯一约束或确定的作用域锁。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1066",
+      "source_line": 1066,
+      "section": "发布实施",
+      "requirement": "6. 数据库约束冲突转换为 `MATERIAL_VERSION_CONFLICT`，不能异常后改用新父版本静默重试。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1067",
+      "source_line": 1067,
+      "section": "发布实施",
+      "requirement": "7. “已 verified 但未完成 formal_ledgers 登记”保留为待完成登记状态；根据现有 `publication_needs_completion` 恢复，不重新写 workbook。[S19]",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1068",
+      "source_line": 1068,
+      "section": "发布实施",
+      "requirement": "8. 财务成功与范围报告成功分开。每日核销已成功、范围报告失败时，保留成功日结果，恢复只生成报告。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1117",
+      "source_line": 1117,
+      "section": "协议实施",
+      "requirement": "1. 为对运行时具有副作用的操作增加稳定 `command_id/request_id` 与协议版本；UI 网络重试不得重复生成 ID。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1118",
+      "source_line": 1118,
+      "section": "协议实施",
+      "requirement": "2. start/send/job.submit/upload_commit 等分别定义重放含义。send 若会触发模型/工具执行，也必须有重复投递保护。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1119",
+      "source_line": 1119,
+      "section": "协议实施",
+      "requirement": "3. 运行时管理器持久记录命令接收与执行关联，保证同 scope/session/command 的重放返回原 receipt。平台幂等表只登记平台请求，不能代替运行时自身去重。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1120",
+      "source_line": 1120,
+      "section": "协议实施",
+      "requirement": "4. API 调用 UDS 超时后先按 command ID 查询运行时。查询未确认不等于没收到，禁止自动换新 ID 重发。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1121",
+      "source_line": 1121,
+      "section": "协议实施",
+      "requirement": "5. 长任务由已有 jobs 接口承载，返回稳定 job ID；短命令仍可保留同步响应，但同样要有回执与去重，不能统一改超时时间掩盖后台执行。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1122",
+      "source_line": 1122,
+      "section": "协议实施",
+      "requirement": "6. 平台新增关联记录时绑定 owner、department、session、runtime、command、job，约束唯一组合；后台状态仍由运行时负责，平台只保存最后观察。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1123",
+      "source_line": 1123,
+      "section": "协议实施",
+      "requirement": "7. 事件协议包含 source、scope、execution_ref、sequence、schema_version、timestamp、type。sequence 使用运行时原序号或稳定接收索引；不能用客户端当前时间代替去重键。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1124",
+      "source_line": 1124,
+      "section": "协议实施",
+      "requirement": "8. 状态轮询支持 cursor/from_sequence，重复与乱序事件可合并。终态不得被晚到 running 覆盖，重新执行必须新代次/新 command。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1125",
+      "source_line": 1125,
+      "section": "协议实施",
+      "requirement": "9. 会话停止和 job 取消必须作用于自己对象。撤权后保留合法 stop/cancel，不允许借此运行新命令。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1126",
+      "source_line": 1126,
+      "section": "协议实施",
+      "requirement": "10. 允许使用用户拥有的固定 Skill 包，必须保持不可变包版本；新 Pi 所依赖的 native 包管理继续保留。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1127",
+      "source_line": 1127,
+      "section": "协议实施",
+      "requirement": "11. manager 的 UDS 协议验证 peer/owner、payload 类型、长度、白名单操作、路径；API 不可提交任意 docker 参数、host path、环境变量或 root 命令。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1128",
+      "source_line": 1128,
+      "section": "协议实施",
+      "requirement": "12. systemd root manager 即使必要，也仅接受窄协议，目录权限与 socket 权限正确；不将 Docker socket 挂到模型环境。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1129",
+      "source_line": 1129,
+      "section": "协议实施",
+      "requirement": "13. 文件目录索引第一轮保留单机限制。JSON 更新必须原子写、锁范围明确；不得声称此方案已支持多主机。数据库会话化作为后续显式任务，不在此 PR 混入目录重建。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1130",
+      "source_line": 1130,
+      "section": "协议实施",
+      "requirement": "14. 文件上传的 begin/chunk/commit/abort 保留完整性、版本、配额与归属；commit 重放不能重复登记或覆盖其他会话文件。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1150",
+      "source_line": 1150,
+      "section": "正式成果登记",
+      "requirement": "1. 区分输入、临时产物、已归档成果和正式业务材料；复用现有 kind/业务关联，必要字段增量扩展。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1151",
+      "source_line": 1151,
+      "section": "正式成果登记",
+      "requirement": "2. 设计 `register_artifact(scope, source_execution, immutable_source, role, expected_hash)`；内部复制/流式读取允许范围文件、校验 hash/大小/类型、登记 FileRecord 和来源。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1152",
+      "source_line": 1152,
+      "section": "正式成果登记",
+      "requirement": "3. 跨数据库和 runtime 文件系统通过明确“准备—复制—校验—登记”协议，不能将 manager 内路径直接信任为下载路径。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1153",
+      "source_line": 1153,
+      "section": "正式成果登记",
+      "requirement": "4. 同一 source_execution、逻辑产物 key、版本/内容重复登记返回原引用；内容变了则生成新版本或拒绝冲突，不能覆盖历史 FileRecord。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1154",
+      "source_line": 1154,
+      "section": "正式成果登记",
+      "requirement": "5. 临时命令输出不强制全部登记，否则会堆积海量中间文件；用户选择“保存为成果”或业务发布时登记。实际财务必要证据不能因未点保存而丢失。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1155",
+      "source_line": 1155,
+      "section": "正式成果登记",
+      "requirement": "6. 上传与复制必须校验文件实际类型、大小、路径和引用；禁止对同 hash 跨 owner 直接复用授权。物理去重可以后续单独设计。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1156",
+      "source_line": 1156,
+      "section": "正式成果登记",
+      "requirement": "7. Markdown/HTML/Excel 预览禁止执行宏、公式外联或主动内容。已有合法 Excel 公式原样保留，不为“安全处理”破坏业务公式；新外部文本导出另按既有防公式注入策略处理。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1157",
+      "source_line": 1157,
+      "section": "正式成果登记",
+      "requirement": "8. 大文件 hash/复制采用流式处理；不要一次性载入数 GB，保留断点和配额限制。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1161",
+      "source_line": 1161,
+      "section": "引用与删除",
+      "requirement": "1. 继续使用已有 ArtifactBinding、WorkflowMaterialSetFile 等关系；新的 Pi 引用用最小必要绑定表达。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1162",
+      "source_line": 1162,
+      "section": "引用与删除",
+      "requirement": "2. 删除保护与文件详情共用 `reference_service`，不能一个用新索引一个仍解析旧 JSON。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1163",
+      "source_line": 1163,
+      "section": "引用与删除",
+      "requirement": "3. 新记录同步登记引用；历史 JSON 回填按 keyset 分批，处理可解析/不可解析/缺失引用三种结果。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1164",
+      "source_line": 1164,
+      "section": "引用与删除",
+      "requirement": "4. 回填前后双读比较，只读影子比对允许，影子业务写入禁止。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1165",
+      "source_line": 1165,
+      "section": "引用与删除",
+      "requirement": "5. 历史 JSON 解析失败或引用未知按“仍需保护”处理，不能因为新表没记录就允许删除。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1166",
+      "source_line": 1166,
+      "section": "引用与删除",
+      "requirement": "6. 删除前锁文件/引用或通过软删状态阻止新绑定；仅先 count 再删除存在竞态，需要事务复查与并发测试。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1167",
+      "source_line": 1167,
+      "section": "引用与删除",
+      "requirement": "7. 物理删除有独立保留期和明确证据，先 tombstone 后异步清理；失败可重试物理清理，但不重跑财务任务。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1171",
+      "source_line": 1171,
+      "section": "查询统一",
+      "requirement": "1. 扩展已有任务中心投影，保留普通 run、独立日期、batch 各自去重逻辑；Pi 会话与其命令不能全部无差别累加成财务任务总数。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1172",
+      "source_line": 1172,
+      "section": "查询统一",
+      "requirement": "2. 展示任务分类、底层状态、观察时间、可用操作。映射函数集中在服务端/共享合约；前端不从中文 message 猜状态。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1173",
+      "source_line": 1173,
+      "section": "查询统一",
+      "requirement": "3. 查询必须先加 owner/department/管理员范围，再做聚合、分页、统计。缓存 key 包含身份作用域。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1174",
+      "source_line": 1174,
+      "section": "查询统一",
+      "requirement": "4. 跨来源分页使用稳定 `(created_at, kind, id)` 游标或数据库投影；不能每个来源各拿一页后拼起来假称是全局正确分页。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1175",
+      "source_line": 1175,
+      "section": "查询统一",
+      "requirement": "5. 保留历史路由和深链；新 ID 包装不能破坏旧文件下载和任务详情。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1203",
+      "source_line": 1203,
+      "section": "实施步骤",
+      "requirement": "1. 审查现有 SourceBinding/SourceRevision/Rollout 等模型，优先扩展，不再新建意义重叠的 SkillRelease 表。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1204",
+      "source_line": 1204,
+      "section": "实施步骤",
+      "requirement": "2. 为固定工具、Native 包、Pi 绑定建立统一版本引用适配器；保存原 commit/hash/source path，不丢上游来源。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1205",
+      "source_line": 1205,
+      "section": "实施步骤",
+      "requirement": "3. 已有按任务复制的 snapshot 第一轮保留。后续内容寻址去重必须验证只读挂载、依赖和历史回收，不能此次为省磁盘把历史快照删掉改读最新包。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1206",
+      "source_line": 1206,
+      "section": "实施步骤",
+      "requirement": "4. 同步只负责发现候选/生成审查包，不自动把远程 main 作为生产执行版本。原有定时同步可能重启服务的行为必须盘点，不能与统一发布同时抢写。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1207",
+      "source_line": 1207,
+      "section": "实施步骤",
+      "requirement": "5. Web 与 CLI 提交同一种发布请求，包含 expected 当前版本、目标 revision、操作者、generation、检查结果、回滚材料引用。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1208",
+      "source_line": 1208,
+      "section": "实施步骤",
+      "requirement": "6. 第一轮保留现有目标 Skill 排空政策，包括排队、运行和必要确认中的任务；不为了免等待而取消任务、改状态或跳过审批。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1209",
+      "source_line": 1209,
+      "section": "实施步骤",
+      "requirement": "7. 发布获取排他锁和目标 Skill 可用状态代次，暂停只影响目标，不误停全站。管理员原已暂停的工具不自动启用。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1210",
+      "source_line": 1210,
+      "section": "实施步骤",
+      "requirement": "8. 安装暂存包，校验 hash/manifest/依赖/执行契约/安全扫描后切换。系统依赖或 runtime 合约变化走完整服务发布，不能伪装成脚本-only 热更新。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1211",
+      "source_line": 1211,
+      "section": "实施步骤",
+      "requirement": "9. 对 API、Worker、提醒 Worker、Pi 包索引的版本观察建立核对，不把 `registry.refresh()` 只在一个进程执行就认为全平台更新。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1212",
+      "source_line": 1212,
+      "section": "实施步骤",
+      "requirement": "10. 恢复接单前检查当前 pause 所有权、generation、目标版本；管理员或后续发布已变更状态时停止自动覆盖。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1213",
+      "source_line": 1213,
+      "section": "实施步骤",
+      "requirement": "11. 同步回滚启动镜像/包指针与运行副本，不能只有当前容器正确而重启回到旧代码。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1214",
+      "source_line": 1214,
+      "section": "实施步骤",
+      "requirement": "12. 发布日志不记录明文 env；rollback package 权限受限，不上传 CI artifact。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1215",
+      "source_line": 1215,
+      "section": "实施步骤",
+      "requirement": "13. 发布操作断电/强杀后，通过 release receipt、当前版本、容器身份、hash、pause generation 进行可验证恢复。不能无限重试 install。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1216",
+      "source_line": 1216,
+      "section": "实施步骤",
+      "requirement": "14. release 状态需要区分 completed、failed、recovery_required。失败不自动重新执行任何财务任务。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1252",
+      "source_line": 1252,
+      "section": "实施步骤",
+      "requirement": "1. 先画现有页面—BFF—后端接口映射，逐条保留历史 URL、面包屑、快捷键和角色导航。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1253",
+      "source_line": 1253,
+      "section": "实施步骤",
+      "requirement": "2. 所有后端数据类型从 `contracts/financial-platform.openapi.json` 生成至 `features/platform-api/generated.ts`；稳定别名在现有 types 文件维护，不手写另一份业务 DTO。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1254",
+      "source_line": 1254,
+      "section": "实施步骤",
+      "requirement": "3. OpenAPI 变更先更新后端 response_model，再运行现有 `scripts/export_openapi.py` 和前端生成脚本，最后检查 diff。[S30]",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1255",
+      "source_line": 1255,
+      "section": "实施步骤",
+      "requirement": "4. 提取共用 `TaskStatusBadge`、`ProgressPanel`、`FailureDetails`、`ArtifactList`、`FileSelector`、`ConfirmationPanel`、消息渲染基础组件。名称为建议，不存在同等组件时才新增。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1256",
+      "source_line": 1256,
+      "section": "实施步骤",
+      "requirement": "5. 核销日期选择、取数确认、材料版本、逐单证据、批次恢复保留业务组件，不强行退回通用 JSON 表单。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1257",
+      "source_line": 1257,
+      "section": "实施步骤",
+      "requirement": "6. TanStack Query key 必须区分用户/部门/资源/过滤条件；登出、账号切换、部门变化时清理相应缓存，避免渲染上一个用户数据。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1258",
+      "source_line": 1258,
+      "section": "实施步骤",
+      "requirement": "7. mutation 的逻辑提交 ID 独立于 HTTP request ID；自动 retry 仅对安全 GET/明确幂等操作启用，未经去重的 POST 不自动重发。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1259",
+      "source_line": 1259,
+      "section": "实施步骤",
+      "requirement": "8. 处理 202 receipt、409幂等冲突、权限撤销、租约失效、材料冲突、状态未知。UI 不根据模型最后一句“已完成”直接将任务设成功。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1260",
+      "source_line": 1260,
+      "section": "实施步骤",
+      "requirement": "9. 状态同步由一个 hook 负责，每个页面生命周期明确注册/清理；避免 SSE 与轮询各自更新不同状态。流断线先从 cursor 恢复，不重新创建任务。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1261",
+      "source_line": 1261,
+      "section": "实施步骤",
+      "requirement": "10. BFF 按端点明确 timeout 与流式行为；不能用一个短 timeout 截断全部长下载/SSE，也不能全局无限超时。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1262",
+      "source_line": 1262,
+      "section": "实施步骤",
+      "requirement": "11. BFF 只转发允许的服务端身份与 request/idempotency header；不信任浏览器自填 owner/role；禁止把 Key/Cookie 放 URL 查询参数。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1263",
+      "source_line": 1263,
+      "section": "实施步骤",
+      "requirement": "12. 敏感用户数据 `no-store` 或使用正确私有缓存；不能跨用户共享 server cache。下载 MIME、文件名编码、Content-Disposition、安全 header 保持。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1264",
+      "source_line": 1264,
+      "section": "实施步骤",
+      "requirement": "13. 审批界面显示具体材料版本、计划摘要与过期状态；按钮禁用只是体验，真正判定后端完成。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1265",
+      "source_line": 1265,
+      "section": "实施步骤",
+      "requirement": "14. loading、空列表、失败、部分成果、后台运行、可恢复状态分别展示；不要用一个通用“出错了重试”诱导重复写入。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1266",
+      "source_line": 1266,
+      "section": "实施步骤",
+      "requirement": "15. 未完成 TaskDraft 与正式 Run 区分；聊天消息只是建议时不能生成假成功任务卡片。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1267",
+      "source_line": 1267,
+      "section": "实施步骤",
+      "requirement": "16. 保留主题 token 和现有组件体系；移除样式重复前检查 CSS import、类名动态使用和可访问性。不要混入整套新 UI 框架。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1268",
+      "source_line": 1268,
+      "section": "实施步骤",
+      "requirement": "17. 固定布局与专用页共享无业务组件，禁止相互 import 巨型页面来复用一小块展示。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1292",
+      "source_line": 1292,
+      "section": "构建实施",
+      "requirement": "1. 记录当前所有活跃镜像 digest、构建上下文、来源 Dockerfile、依赖与覆盖层；只从配置和经授权运行信息获取，不打印 secrets。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1293",
+      "source_line": 1293,
+      "section": "构建实施",
+      "requirement": "2. 建立少量正式完整构建入口：backend/worker、web、agent runtime、必要 Pi runtime/egress。API 与 Worker 可以共用镜像，但职责与权限配置不同。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1294",
+      "source_line": 1294,
+      "section": "构建实施",
+      "requirement": "3. 正式 Dockerfile 从明确基础镜像及固定依赖构建，不依赖某台机器才有的 `pi-context-base-日期` 等历史镜像。[S24]",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1295",
+      "source_line": 1295,
+      "section": "构建实施",
+      "requirement": "4. Python 当前依赖多为范围声明，先解析并验证现有可用版本，再提交受控制的 lock/constraints 和 hash。不要同时升级所有依赖；锁文件生成工具版本也固定。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1296",
+      "source_line": 1296,
+      "section": "构建实施",
+      "requirement": "5. Node 保留现有 pnpm lock 和 packageManager；生产安装 frozen lockfile。根/子 workspace 路径和 `file:../agent-runtime` 依赖必须在完整构建上下文可用。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1297",
+      "source_line": 1297,
+      "section": "构建实施",
+      "requirement": "6. image 标注源码 commit、build id、依赖锁摘要；发布记录保存 digest。不要声称有时间戳和外部构建因素的镜像一定字节级相同，要求的是依赖可追溯与行为可复现。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1298",
+      "source_line": 1298,
+      "section": "构建实施",
+      "requirement": "7. 构建上下文 `.dockerignore` 排除 `.env`、真实 data、凭据、浏览器 profile、回滚 env 包、临时财务文件、.venv、node_modules 和历史生成输出。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1299",
+      "source_line": 1299,
+      "section": "构建实施",
+      "requirement": "8. 无网络部署使用提前批准的 wheel/镜像/npm 缓存包；不得为方便安装临时放开生产公网。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1300",
+      "source_line": 1300,
+      "section": "构建实施",
+      "requirement": "9. 依赖变更才触发相应镜像重建；开发热更新不重建全部镜像。Worker 代码变化仍按现有安全排空/重启策略，不因文件保存自动中断核销。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1304",
+      "source_line": 1304,
+      "section": "manager 归位",
+      "requirement": "1. 将真正长期运行的 manager/sandbox/job 管理源码从 `deployment/` 迁入 `runtime-manager/`，安装和 systemd 文件仍放 deploy。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1305",
+      "source_line": 1305,
+      "section": "manager 归位",
+      "requirement": "2. 原路径在过渡期保留显式启动 wrapper；systemd 指向固定安装位置/受控 current 链接，不指向个人 releases 下任意历史目录。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1306",
+      "source_line": 1306,
+      "section": "manager 归位",
+      "requirement": "3. 把 `PI_RUNTIME_ROOT`、`PI_CONTROL_ROOT`、`PI_MANAGER_SOCKET`、运行镜像、允许 UID 等参数从源码硬编码移到受控配置。root-owned 安装配置不能被普通 API 用户修改。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1307",
+      "source_line": 1307,
+      "section": "manager 归位",
+      "requirement": "4. 保留 runtime、model broker、egress 的网络与凭据隔离；不会因合并目录而合并安全进程。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1308",
+      "source_line": 1308,
+      "section": "manager 归位",
+      "requirement": "5. 保留 non-root runtime、read_only、cap_drop、no-new-privileges、pids/memory、tmpfs、只读包挂载、允许的工作目录、服务停止宽限期。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1309",
+      "source_line": 1309,
+      "section": "manager 归位",
+      "requirement": "6. API 不额外获得 Docker socket、宿主根目录或所有人工作区。专用管理进程的接口严格白名单与 peer 校验。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1310",
+      "source_line": 1310,
+      "section": "manager 归位",
+      "requirement": "7. 活跃 runtime 与 manager 协议版本必须兼容；升级 manager 不能导致未知工作目录被自动清空，旧 job 的状态可回查。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1311",
+      "source_line": 1311,
+      "section": "manager 归位",
+      "requirement": "8. 备份除了 DB，还包括不可变文件、Skill 包、Pi catalog/必要工作目录、发布记录和密钥恢复方案；密钥单独加密保管，不能丢失后声称 DB 备份足够。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1331",
+      "source_line": 1331,
+      "section": "四阶段退役",
+      "requirement": "1. **可观察**：为旧入口增加脱敏调用计数和来源标记，不改变行为。区分历史查询、安装与新命令请求。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1332",
+      "source_line": 1332,
+      "section": "四阶段退役",
+      "requirement": "2. **禁止新建**：满足功能覆盖后，只对新执行关闭旧入口；既有活动命令继续运行，历史读取、安装和包引用不受影响。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1333",
+      "source_line": 1333,
+      "section": "四阶段退役",
+      "requirement": "3. **只读兼容**：新入口接管提交，旧 API 返回明确可识别迁移错误或安全只读状态，不默默换执行器。未适配客户端不能收到假成功。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1334",
+      "source_line": 1334,
+      "section": "四阶段退役",
+      "requirement": "4. **删除执行实现**：调用图无活跃 writer、观测窗口覆盖实际使用周期、无活动执行、历史读取测试通过、回退包已验证后，才删除旧执行和专属进程。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1358",
+      "source_line": 1358,
+      "section": "观测实施",
+      "requirement": "1. 日志链贯穿 request_id、idempotency receipt、execution_ref、action/attempt、Skill revision、release id、artifact id。用户 ID等不作为高基数 metrics label。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1359",
+      "source_line": 1359,
+      "section": "观测实施",
+      "requirement": "2. 测量 queue wait、claim latency、执行耗时、lease loss、retry denied、outcome unknown、材料冲突、发布恢复、Pi sync lag、文件归档失败。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1360",
+      "source_line": 1360,
+      "section": "观测实施",
+      "requirement": "3. 日志分员工摘要/管理员细节；所有输出先按现有脱敏策略处理。异常 response body 与 UDS raw payload 不能原样 dump。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1361",
+      "source_line": 1361,
+      "section": "观测实施",
+      "requirement": "4. 模型调用观测记录 provider/model、用途、耗时、token、失败码、关联执行；不默认为审计需要就保存所有原文财务数据。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1362",
+      "source_line": 1362,
+      "section": "观测实施",
+      "requirement": "5. liveness 不依赖所有外部服务，readiness检查该服务实际必要依赖；管理员健康页才展示详细队列、版本和错误，不扩大匿名信息面。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1363",
+      "source_line": 1363,
+      "section": "观测实施",
+      "requirement": "6. API/Worker/manager 每个服务设置资源限制、请求/命令大小、超时、上传配额；默认值应由现有配置与基线测量确定，不在此文假装知道机器容量。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1364",
+      "source_line": 1364,
+      "section": "观测实施",
+      "requirement": "7. heartbeat 异常不能被长期完全吞没，应有节流日志/指标；避免每次轮询产生大量重复错误。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1365",
+      "source_line": 1365,
+      "section": "观测实施",
+      "requirement": "8. 维护任务日志说明回收对象、依据与结果；无引用判定失败只记录并跳过，不自动强删。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1391",
+      "source_line": 1391,
+      "section": "清理步骤",
+      "requirement": "1. 对每个候选标注类别：完全重复实现、同职责不同实现、生成产物、vendor来源、历史兼容、产品功能重叠。不同类别的删除规则不同。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1392",
+      "source_line": 1392,
+      "section": "清理步骤",
+      "requirement": "2. 完全重复逻辑抽到正确模块，通过原签名 facade 委托；对财务算法重复先对比业务语义，不能合并不同期间/币种策略。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1393",
+      "source_line": 1393,
+      "section": "清理步骤",
+      "requirement": "3. 为 vendor/source 副本选唯一维护源和可重复构建方法，保留 upstream revision、license、patch/override 清单。生成包不能手工改后不回源。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1394",
+      "source_line": 1394,
+      "section": "清理步骤",
+      "requirement": "4. 移出活动构建的旧 Dockerfile/试点启动器必须满足 PR-17重建与回滚要求；Git 历史可保存源码，正式回滚材料按保留策略保存。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1395",
+      "source_line": 1395,
+      "section": "清理步骤",
+      "requirement": "5. Clerk 依赖只有在所有支持部署不再使用且明确取消支持时才删。默认本轮保留认证 adapter，不因生产 Compose 写 session 就认定其它环境不需要。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1396",
+      "source_line": 1396,
+      "section": "清理步骤",
+      "requirement": "6. 前端依赖检查要包括动态 import、CSS、构建配置、服务端代码、peer dependency；工具报告 unused 后还要 build/交互测试，不按名称删 kbar/cmdk、AI SDK、xterm。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1397",
+      "source_line": 1397,
+      "section": "清理步骤",
+      "requirement": "7. 禁用 Skill 默认保持不可执行/实验状态，不删除其说明与历史关联。`task-clarifier/env-doctor` 不强行成为普通财务任务。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1398",
+      "source_line": 1398,
+      "section": "清理步骤",
+      "requirement": "8. 技术文档只保留一份当前架构；Skill 数量/状态从注册表导出，环境模式从实际配置说明。历史“下一阶段要接 PostgreSQL”等旧计划移入历史，不与当前事实混写。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1399",
+      "source_line": 1399,
+      "section": "清理步骤",
+      "requirement": "9. `AGENTS.md` 更新真实命令、架构边界、禁止生产动作和新增测试；不能写“测试都通过”这种会过期的断言。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1400",
+      "source_line": 1400,
+      "section": "清理步骤",
+      "requirement": "10. 删除前执行全仓引用、构建、部署脚本、历史 API、fixture 和迁移检查。迁移文件和历史协议解释器原则上不作为普通 unused 清理对象。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1416",
+      "source_line": 1416,
+      "section": "交付内容",
+      "requirement": "1. 完整源代码改造及新旧映射。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1417",
+      "source_line": 1417,
+      "section": "交付内容",
+      "requirement": "2. 每个 PR 的真实测试报告、失败清单与未验证项。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1418",
+      "source_line": 1418,
+      "section": "交付内容",
+      "requirement": "3. Alembic 迁移、历史回填、dry-run与回退说明。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1419",
+      "source_line": 1419,
+      "section": "交付内容",
+      "requirement": "4. 合约快照、生成客户端、历史 API 兼容矩阵。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1420",
+      "source_line": 1420,
+      "section": "交付内容",
+      "requirement": "5. 正式完整构建、镜像/依赖/源码版本清单。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1421",
+      "source_line": 1421,
+      "section": "交付内容",
+      "requirement": "6. 生产发布 runbook、灰度/回滚/故障恢复步骤。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1422",
+      "source_line": 1422,
+      "section": "交付内容",
+      "requirement": "7. deletion-ledger 与尚未获准删除对象。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1423",
+      "source_line": 1423,
+      "section": "交付内容",
+      "requirement": "8. 最终 progress、风险、后续可选优化，不能留隐含 TODO。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1584",
+      "source_line": 1584,
+      "section": "8.2 Alembic 编写规则",
+      "requirement": "1. 新 revision 从实际当前 head 接出，不能根据本文猜 revision ID。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1585",
+      "source_line": 1585,
+      "section": "8.2 Alembic 编写规则",
+      "requirement": "2. 不修改已在生产执行过的历史 migration；确有错误写新的修复迁移。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1586",
+      "source_line": 1586,
+      "section": "8.2 Alembic 编写规则",
+      "requirement": "3. autogenerate 输出人工审查，尤其 rename 被识别为 drop/create、Text→JSONB、nullable→NOT NULL、外键和索引。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1587",
+      "source_line": 1587,
+      "section": "8.2 Alembic 编写规则",
+      "requirement": "4. 新字段优先可空或有明确不触发历史误义的默认值；回填完成再加强约束。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1588",
+      "source_line": 1588,
+      "section": "8.2 Alembic 编写规则",
+      "requirement": "5. 不用 `default=''` 把未知会话、未知版本伪装成存在值。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1589",
+      "source_line": 1589,
+      "section": "8.2 Alembic 编写规则",
+      "requirement": "6. 大表索引按实际 PostgreSQL 版本/锁影响设计；需要 CONCURRENTLY 时使用 Alembic 合适 autocommit block 并明确无法与整个迁移保持一个事务。小规模可先普通创建，但必须说明锁预算。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1590",
+      "source_line": 1590,
+      "section": "8.2 Alembic 编写规则",
+      "requirement": "7. SQLite 测试分支不支持的特性采用明确替代；PostgreSQL独有锁/部分索引/JSON行为必须PG集成测，不能被SQLite假替代。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1591",
+      "source_line": 1591,
+      "section": "8.2 Alembic 编写规则",
+      "requirement": "8. ORM 模型移动不应触发表删除重建。所有模型注册进入同一 Base.metadata。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1592",
+      "source_line": 1592,
+      "section": "8.2 Alembic 编写规则",
+      "requirement": "9. 限定 migration 运行账号有DDL，普通 API/Worker 使用足够且更少的权限；不要给沙箱数据库账号。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1593",
+      "source_line": 1593,
+      "section": "8.2 Alembic 编写规则",
+      "requirement": "10. downgrade 对存在新数据的结构若不安全，应显式拒绝/要求空表或预检，不能 silent drop。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1666",
+      "source_line": 1666,
+      "section": "8.6 无法原子跨 DB 与文件系统的处理",
+      "requirement": "1. 生成唯一暂存文件",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1667",
+      "source_line": 1667,
+      "section": "8.6 无法原子跨 DB 与文件系统的处理",
+      "requirement": "2. 校验内容并落到稳定不可变路径",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1668",
+      "source_line": 1668,
+      "section": "8.6 无法原子跨 DB 与文件系统的处理",
+      "requirement": "3. fsync/原子 rename（仅在实际文件系统支持且同设备）",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1669",
+      "source_line": 1669,
+      "section": "8.6 无法原子跨 DB 与文件系统的处理",
+      "requirement": "4. DB 事务校验当前材料与执行资格",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1670",
+      "source_line": 1670,
+      "section": "8.6 无法原子跨 DB 与文件系统的处理",
+      "requirement": "5. 登记成果/材料/事件并提交",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1671",
+      "source_line": 1671,
+      "section": "8.6 无法原子跨 DB 与文件系统的处理",
+      "requirement": "6. 确认结果；清理无引用暂存另行进行",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T01",
+      "source_line": 1712,
+      "section": "9.2 提交与事务测试",
+      "requirement": "| T01 | 同key同内容顺序提交2次 | 同一执行ID，业务创建一次 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T02",
+      "source_line": 1713,
+      "section": "9.2 提交与事务测试",
+      "requirement": "| T02 | 20客户端并发同key | 一个bound资源，其余重放/处理中 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T03",
+      "source_line": 1714,
+      "section": "9.2 提交与事务测试",
+      "requirement": "| T03 | 同key不同参数 | 409，无第二执行 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T04",
+      "source_line": 1715,
+      "section": "9.2 提交与事务测试",
+      "requirement": "| T04 | 同key不同文件hash | 409，原输入绑定不变 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T05",
+      "source_line": 1716,
+      "section": "9.2 提交与事务测试",
+      "requirement": "| T05 | 同key不同owner | 隔离，不能返回他人资源 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T06",
+      "source_line": 1717,
+      "section": "9.2 提交与事务测试",
+      "requirement": "| T06 | 同key不同department | 不跨域重放旧记录 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T07",
+      "source_line": 1718,
+      "section": "9.2 提交与事务测试",
+      "requirement": "| T07 | 同key不同operation | 不串用创建/取消/发布记录 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T08",
+      "source_line": 1719,
+      "section": "9.2 提交与事务测试",
+      "requirement": "| T08 | registry新版本发布后旧key重放 | 返回原固定版本 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T09",
+      "source_line": 1720,
+      "section": "9.2 提交与事务测试",
+      "requirement": "| T09 | 描述数组/文件顺序有语义差别 | 指纹按schema区分，不盲目排序 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T10",
+      "source_line": 1721,
+      "section": "9.2 提交与事务测试",
+      "requirement": "| T10 | NaN/Infinity/损坏JSON | 拒绝，不能生成不稳定指纹 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T11",
+      "source_line": 1722,
+      "section": "9.2 提交与事务测试",
+      "requirement": "| T11 | 模型解析完成并保存后应答丢失 | 不重复解析已冻结输入 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T12",
+      "source_line": 1723,
+      "section": "9.2 提交与事务测试",
+      "requirement": "| T12 | 准备token过期，旧准备者晚落库 | 旧token不能绑定执行 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T13",
+      "source_line": 1724,
+      "section": "9.2 提交与事务测试",
+      "requirement": "| T13 | 创建run后插入step失败 | run/step/event/绑定全部回滚 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T14",
+      "source_line": 1725,
+      "section": "9.2 提交与事务测试",
+      "requirement": "| T14 | 初始event追加后注入异常 | 不发生隐式commit |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T15",
+      "source_line": 1726,
+      "section": "9.2 提交与事务测试",
+      "requirement": "| T15 | DB提交成功但HTTP断开 | 重放查询到原资源 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T16",
+      "source_line": 1727,
+      "section": "9.2 提交与事务测试",
+      "requirement": "| T16 | 草稿并发消费 | 一个任务，草稿只绑定一次 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T17",
+      "source_line": 1728,
+      "section": "9.2 提交与事务测试",
+      "requirement": "| T17 | 同Native会话多条命令 | 均可保存，专用session关联正确 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T18",
+      "source_line": 1729,
+      "section": "9.2 提交与事务测试",
+      "requirement": "| T18 | 历史key歧义回填 | 标ambiguous，不删不乱选 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T19",
+      "source_line": 1735,
+      "section": "9.3 授权、租约、重试测试",
+      "requirement": "| T19 | 创建后撤销Skill权限 | 未启动任务拒绝执行 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T20",
+      "source_line": 1736,
+      "section": "9.3 授权、租约、重试测试",
+      "requirement": "| T20 | 等待确认期间账号停用 | 不能确认/启动 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T21",
+      "source_line": 1737,
+      "section": "9.3 授权、租约、重试测试",
+      "requirement": "| T21 | 管理员降为普通用户 | 刷新身份后按新权限处理 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T22",
+      "source_line": 1738,
+      "section": "9.3 授权、租约、重试测试",
+      "requirement": "| T22 | 用户变更部门 | 不能把旧任务自动移到新部门执行 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T23",
+      "source_line": 1739,
+      "section": "9.3 授权、租约、重试测试",
+      "requirement": "| T23 | 参数伪造owner/role | 服务端身份不变 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T24",
+      "source_line": 1740,
+      "section": "9.3 授权、租约、重试测试",
+      "requirement": "| T24 | 撤权后停止自己Pi会话 | 允许合法停止，不允许新命令 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T25",
+      "source_line": 1741,
+      "section": "9.3 授权、租约、重试测试",
+      "requirement": "| T25 | 其他用户取消/下载/猜ID | 按原scope政策拒绝 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T26",
+      "source_line": 1742,
+      "section": "9.3 授权、租约、重试测试",
+      "requirement": "| T26 | 同worker_id不同attempt | 旧代次不能续租/发布 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T27",
+      "source_line": 1743,
+      "section": "9.3 授权、租约、重试测试",
+      "requirement": "| T27 | heartbeat晚于租约过期 | 不复活过期资格 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T28",
+      "source_line": 1744,
+      "section": "9.3 授权、租约、重试测试",
+      "requirement": "| T28 | 工作流旧heartbeat延迟到达 | 不续新代次租约 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T29",
+      "source_line": 1745,
+      "section": "9.3 授权、租约、重试测试",
+      "requirement": "| T29 | 旧Worker执行完后新Worker已接管 | 旧结果登记失败，不改新状态 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T30",
+      "source_line": 1746,
+      "section": "9.3 授权、租约、重试测试",
+      "requirement": "| T30 | DB暂断未超过租约 | 按政策恢复心跳，不假报成功 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T31",
+      "source_line": 1747,
+      "section": "9.3 授权、租约、重试测试",
+      "requirement": "| T31 | DB断连超过租约 | 写入进入未知/人工恢复，不自动重跑 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T32",
+      "source_line": 1748,
+      "section": "9.3 授权、租约、重试测试",
+      "requirement": "| T32 | waiting_user_action仍有进程 | 心跳、并发占槽、取消语义一致 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T33",
+      "source_line": 1749,
+      "section": "9.3 授权、租约、重试测试",
+      "requirement": "| T33 | 风险字段缺失/损坏 | 不自动按只读重试 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T34",
+      "source_line": 1750,
+      "section": "9.3 授权、租约、重试测试",
+      "requirement": "| T34 | read_only但声明修改上传文件 | 不自动重试 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T35",
+      "source_line": 1751,
+      "section": "9.3 授权、租约、重试测试",
+      "requirement": "| T35 | RPA/Native/外部写入未知 | 禁止统一自动重试 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T36",
+      "source_line": 1752,
+      "section": "9.3 授权、租约、重试测试",
+      "requirement": "| T36 | 确定只读、有效输入、未超次数 | 允许受控有限重试 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T37",
+      "source_line": 1753,
+      "section": "9.3 授权、租约、重试测试",
+      "requirement": "| T37 | 取消与领取同时发生 | 最终只有合法执行/取消结果 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T38",
+      "source_line": 1754,
+      "section": "9.3 授权、租约、重试测试",
+      "requirement": "| T38 | 子进程退出未确认 | 不释放危险副作用假设，不误报已取消 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T39",
+      "source_line": 1760,
+      "section": "9.4 核销业务与恢复测试",
+      "requirement": "| T39 | 两份同年度盈亏表 | 明确拒绝 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T40",
+      "source_line": 1761,
+      "section": "9.4 核销业务与恢复测试",
+      "requirement": "| T40 | 缺流转表/多流转表 | 明确拒绝 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T41",
+      "source_line": 1762,
+      "section": "9.4 核销业务与恢复测试",
+      "requirement": "| T41 | 跨年材料固定 | 年度映射不因当前日期变化 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T42",
+      "source_line": 1763,
+      "section": "9.4 核销业务与恢复测试",
+      "requirement": "| T42 | 回放包跨用户/坏hash/缺文件 | 不可消费 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T43",
+      "source_line": 1764,
+      "section": "9.4 核销业务与恢复测试",
+      "requirement": "| T43 | 只有预览、原包已清理 | 可看历史，不可当回放 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T44",
+      "source_line": 1765,
+      "section": "9.4 核销业务与恢复测试",
+      "requirement": "| T44 | 回放模式尝试真实补取 | 拒绝，不调用业务系统 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T45",
+      "source_line": 1766,
+      "section": "9.4 核销业务与恢复测试",
+      "requirement": "| T45 | 取数确认后补取版本变化 | 旧确认不自动覆盖新版本 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T46",
+      "source_line": 1767,
+      "section": "9.4 核销业务与恢复测试",
+      "requirement": "| T46 | phase完成数组非合法前缀 | 拒绝推进 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T47",
+      "source_line": 1768,
+      "section": "9.4 核销业务与恢复测试",
+      "requirement": "| T47 | Agent尝试跳过validate | 后端硬闸拒绝 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T48",
+      "source_line": 1769,
+      "section": "9.4 核销业务与恢复测试",
+      "requirement": "| T48 | 证据只覆盖部分订单 | 不能标全量证据检查完成 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T49",
+      "source_line": 1770,
+      "section": "9.4 核销业务与恢复测试",
+      "requirement": "| T49 | plan fingerprint改变 | 旧确认/写入请求失效 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T50",
+      "source_line": 1771,
+      "section": "9.4 核销业务与恢复测试",
+      "requirement": "| T50 | stage失败 | 原材料/正式材料不变 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T51",
+      "source_line": 1772,
+      "section": "9.4 核销业务与恢复测试",
+      "requirement": "| T51 | write_ledger成功、flow失败 | 不重跑已成功写入 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T52",
+      "source_line": 1773,
+      "section": "9.4 核销业务与恢复测试",
+      "requirement": "| T52 | 写完后回读失败 | 仅恢复校验，保留写入证据 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T53",
+      "source_line": 1774,
+      "section": "9.4 核销业务与恢复测试",
+      "requirement": "| T53 | 发布前父材料变化 | MATERIAL_VERSION_CONFLICT |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T54",
+      "source_line": 1775,
+      "section": "9.4 核销业务与恢复测试",
+      "requirement": "| T54 | 同父版本并发发布 | 仅合法后继成为current |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T55",
+      "source_line": 1776,
+      "section": "9.4 核销业务与恢复测试",
+      "requirement": "| T55 | 发布DB提交后应答丢失 | 回查原发布，不创建第二版本 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T56",
+      "source_line": 1777,
+      "section": "9.4 核销业务与恢复测试",
+      "requirement": "| T56 | verified但正式台账登记未完成 | 恢复登记，不重写workbook |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T57",
+      "source_line": 1778,
+      "section": "9.4 核销业务与恢复测试",
+      "requirement": "| T57 | 多日第2日失败 | 第1日不重跑、第3日不提前启动 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T58",
+      "source_line": 1779,
+      "section": "9.4 核销业务与恢复测试",
+      "requirement": "| T58 | 每日成功但范围报告失败 | 只恢复范围报告 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T59",
+      "source_line": 1780,
+      "section": "9.4 核销业务与恢复测试",
+      "requirement": "| T59 | 恢复旧材料 | 创建新version，历史不覆盖 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T60",
+      "source_line": 1781,
+      "section": "9.4 核销业务与恢复测试",
+      "requirement": "| T60 | 空业务日/延期/历史特殊分支 | 与原确定性基线一致 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T61",
+      "source_line": 1782,
+      "section": "9.4 核销业务与恢复测试",
+      "requirement": "| T61 | stage/workspace文件被篡改 | hash/边界检查阻断 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T62",
+      "source_line": 1783,
+      "section": "9.4 核销业务与恢复测试",
+      "requirement": "| T62 | 租约失效后仍返回成功脚本结果 | 拒绝发布 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T63",
+      "source_line": 1789,
+      "section": "9.5 Pi、文件、发布与前端测试",
+      "requirement": "| T63 | Pi submit/send重复投递 | 相同command只接受一次副作用 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T64",
+      "source_line": 1790,
+      "section": "9.5 Pi、文件、发布与前端测试",
+      "requirement": "| T64 | UDS提交超时 | 回查同command，不换ID重发 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T65",
+      "source_line": 1791,
+      "section": "9.5 Pi、文件、发布与前端测试",
+      "requirement": "| T65 | runtime重启 | 已登记job/receipt可恢复关联 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T66",
+      "source_line": 1792,
+      "section": "9.5 Pi、文件、发布与前端测试",
+      "requirement": "| T66 | 重复/乱序事件 | 终态不被旧running覆盖 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T67",
+      "source_line": 1793,
+      "section": "9.5 Pi、文件、发布与前端测试",
+      "requirement": "| T67 | 浏览器关闭/刷新 | 任务仍可查询，未重新创建 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T68",
+      "source_line": 1794,
+      "section": "9.5 Pi、文件、发布与前端测试",
+      "requirement": "| T68 | 上传chunk重复/错误offset | 按协议拒绝或幂等，不损坏数据 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T69",
+      "source_line": 1795,
+      "section": "9.5 Pi、文件、发布与前端测试",
+      "requirement": "| T69 | upload_commit重放 | 同版本不重复归档 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T70",
+      "source_line": 1796,
+      "section": "9.5 Pi、文件、发布与前端测试",
+      "requirement": "| T70 | symlink/路径穿越/压缩包越界 | 拒绝，不读写scope之外 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T71",
+      "source_line": 1797,
+      "section": "9.5 Pi、文件、发布与前端测试",
+      "requirement": "| T71 | 同hash不同owner | 不获得他人文件权限 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T72",
+      "source_line": 1798,
+      "section": "9.5 Pi、文件、发布与前端测试",
+      "requirement": "| T72 | 正式成果登记失败 | 恢复归档，不重跑财务任务 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T73",
+      "source_line": 1799,
+      "section": "9.5 Pi、文件、发布与前端测试",
+      "requirement": "| T73 | 删除时并发新增文件引用 | 不删除被引用文件 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T74",
+      "source_line": 1800,
+      "section": "9.5 Pi、文件、发布与前端测试",
+      "requirement": "| T74 | 历史JSON引用未知 | 保守禁止删除 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T75",
+      "source_line": 1801,
+      "section": "9.5 Pi、文件、发布与前端测试",
+      "requirement": "| T75 | task center混合来源 | 分页排序稳定、批次计数不重 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T76",
+      "source_line": 1802,
+      "section": "9.5 Pi、文件、发布与前端测试",
+      "requirement": "| T76 | web/CLI并发发布 | 共用release事实与排他规则 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T77",
+      "source_line": 1803,
+      "section": "9.5 Pi、文件、发布与前端测试",
+      "requirement": "| T77 | 发布中管理员更改暂停状态 | 旧操作不自动覆盖 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T78",
+      "source_line": 1804,
+      "section": "9.5 Pi、文件、发布与前端测试",
+      "requirement": "| T78 | 目标Skill排空超时 | 恢复本次暂停，不取消任务 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T79",
+      "source_line": 1805,
+      "section": "9.5 Pi、文件、发布与前端测试",
+      "requirement": "| T79 | 提醒Worker导入旧契约 | 拒绝不兼容热更新或完整发布 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T80",
+      "source_line": 1806,
+      "section": "9.5 Pi、文件、发布与前端测试",
+      "requirement": "| T80 | 新镜像重启 | 版本与发布记录一致，无补丁丢失 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T81",
+      "source_line": 1807,
+      "section": "9.5 Pi、文件、发布与前端测试",
+      "requirement": "| T81 | BFF自动重试不安全POST | 不重复执行；使用明确幂等策略 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T82",
+      "source_line": 1808,
+      "section": "9.5 Pi、文件、发布与前端测试",
+      "requirement": "| T82 | 切换用户/部门 | 清理缓存，无跨用户残留 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T83",
+      "source_line": 1809,
+      "section": "9.5 Pi、文件、发布与前端测试",
+      "requirement": "| T83 | SSE断线恢复 | 续读事件，不创建新任务 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T84",
+      "source_line": 1810,
+      "section": "9.5 Pi、文件、发布与前端测试",
+      "requirement": "| T84 | 202/409/权限撤销/状态未知 | UI显示明确，不误报成功 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T85",
+      "source_line": 1811,
+      "section": "9.5 Pi、文件、发布与前端测试",
+      "requirement": "| T85 | 核销业务页与通用组件共用 | 专有步骤/确认未丢 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T86",
+      "source_line": 1812,
+      "section": "9.5 Pi、文件、发布与前端测试",
+      "requirement": "| T86 | 旧任务链接/下载入口 | 仍可解析或明确兼容重定向 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T87",
+      "source_line": 1813,
+      "section": "9.5 Pi、文件、发布与前端测试",
+      "requirement": "| T87 | 干净环境完整build | 所有运行组件均可构建 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T88",
+      "source_line": 1814,
+      "section": "9.5 Pi、文件、发布与前端测试",
+      "requirement": "| T88 | 无DDL权限API/Worker启动 | 兼容DB可ready，无隐式迁移 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T89",
+      "source_line": 1815,
+      "section": "9.5 Pi、文件、发布与前端测试",
+      "requirement": "| T89 | 多迁移进程竞争/迁移失败 | 一次迁移，失败实例不ready |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "T90",
+      "source_line": 1816,
+      "section": "9.5 Pi、文件、发布与前端测试",
+      "requirement": "| T90 | 数据与文件联合备份恢复 | 引用、材料、下载可用 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1978",
+      "source_line": 1978,
+      "section": "12.1 发布之前",
+      "requirement": "1. 确认所有P0门禁通过，未执行项有明确阻塞结论；核销金额差异未解释时禁止发布。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1979",
+      "source_line": 1979,
+      "section": "12.1 发布之前",
+      "requirement": "2. 固定候选源码SHA、镜像digest、依赖锁、DB目标revision、Skill包版本和manager协议。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1980",
+      "source_line": 1980,
+      "section": "12.1 发布之前",
+      "requirement": "3. 备份数据库、必要文件、发布记录与密钥恢复资料；验证备份可恢复，备份受控不打印内容。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1981",
+      "source_line": 1981,
+      "section": "12.1 发布之前",
+      "requirement": "4. 确认当前活动任务、等待确认任务、核销批次、Pi job、发布任务数量与协议版本。长任务是否可不中断共存必须先有测试证据。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1982",
+      "source_line": 1982,
+      "section": "12.1 发布之前",
+      "requirement": "5. 确认暂停范围是目标工具、目标入口或必要服务，不能默认停全站。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1983",
+      "source_line": 1983,
+      "section": "12.1 发布之前",
+      "requirement": "6. 检查旧API/Worker是否仍可能绕过新幂等/租约协议；没有兼容保证时对相关写入口排空切换，不进行随机流量混跑。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1984",
+      "source_line": 1984,
+      "section": "12.1 发布之前",
+      "requirement": "7. 保存当前配置指针、Skill状态generation、容器身份和镜像digest；之后回滚必须核对所有权，防覆盖后来的操作。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "clause-L1985",
+      "source_line": 1985,
+      "section": "12.1 发布之前",
+      "requirement": "8. 单独执行迁移预检；大表索引、数据回填、scope修复不是普通“顺便发布”。",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "G01",
+      "source_line": 2102,
+      "section": "14.1 必须全部满足的门禁",
+      "requirement": "| G01 | PR-00真实调用图、source-map、基线测试已建立 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "G02",
+      "source_line": 2103,
+      "section": "14.1 必须全部满足的门禁",
+      "requirement": "| G02 | 新提交具备数据库强幂等，历史Native会话无损迁移 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "G03",
+      "source_line": 2104,
+      "section": "14.1 必须全部满足的门禁",
+      "requirement": "| G03 | 任务/事件/步骤/初始引用提交原子，辅助事件无隐式穿透 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "G04",
+      "source_line": 2105,
+      "section": "14.1 必须全部满足的门禁",
+      "requirement": "| G04 | 权限撤销、停用、降权、部门变更测试通过 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "G05",
+      "source_line": 2106,
+      "section": "14.1 必须全部满足的门禁",
+      "requirement": "| G05 | 普通与Workflow旧代次不能续租/发布 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "G06",
+      "source_line": 2107,
+      "section": "14.1 必须全部满足的门禁",
+      "requirement": "| G06 | 自动/手动重试政策一致，不确定写入不会自动重排 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "G07",
+      "source_line": 2108,
+      "section": "14.1 必须全部满足的门禁",
+      "requirement": "| G07 | 队列公平性和维护份额验证，业务并发限制保持 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "G08",
+      "source_line": 2109,
+      "section": "14.1 必须全部满足的门禁",
+      "requirement": "| G08 | 核销新模块无反向依赖，原14阶段契约和财务结果保持 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "G09",
+      "source_line": 2110,
+      "section": "14.1 必须全部满足的门禁",
+      "requirement": "| G09 | 批次恢复不重跑成功日期，写后失败不重写已应用计划 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "G10",
+      "source_line": 2111,
+      "section": "14.1 必须全部满足的门禁",
+      "requirement": "| G10 | Pi命令/事件/后台任务可以重放去重和状态回查 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "G11",
+      "source_line": 2112,
+      "section": "14.1 必须全部满足的门禁",
+      "requirement": "| G11 | 正式文件与临时工作区区分，历史未知引用仍受保护 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "G12",
+      "source_line": 2113,
+      "section": "14.1 必须全部满足的门禁",
+      "requirement": "| G12 | 网页/CLI共享发布协议，完整源码可构建运行组件 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "G13",
+      "source_line": 2114,
+      "section": "14.1 必须全部满足的门禁",
+      "requirement": "| G13 | 前端合约生成、BFF、缓存隔离、旧深链测试通过 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "G14",
+      "source_line": 2115,
+      "section": "14.1 必须全部满足的门禁",
+      "requirement": "| G14 | API/Worker不执行隐式DDL，迁移/回填/恢复已演练 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "G15",
+      "source_line": 2116,
+      "section": "14.1 必须全部满足的门禁",
+      "requirement": "| G15 | 已删除内容逐项有证据，不存在未经证明的删除 |",
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "G16",
+      "source_line": 2117,
+      "section": "14.1 必须全部满足的门禁",
+      "requirement": "| G16 | 无生产越权操作，生产是否上线有真实记录 |",
+      "status": "unverified",
+      "evidence": []
+    }
+  ]
+}

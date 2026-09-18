@@ -1,0 +1,12 @@
+ARG NODE_TEST_BASE=node:22-slim
+FROM ${NODE_TEST_BASE}
+WORKDIR /app
+ENV CI=true COREPACK_NPM_REGISTRY=https://registry.npmjs.org
+RUN corepack enable && corepack prepare pnpm@10.15.1 --activate
+COPY agent-runtime/package.json agent-runtime/pnpm-lock.yaml agent-runtime/tsconfig.json ./agent-runtime/
+COPY agent-runtime/src ./agent-runtime/src
+RUN cd agent-runtime && pnpm install --frozen-lockfile --registry=https://registry.npmjs.org --fetch-retries=1 --fetch-timeout=30000 --ignore-scripts && pnpm run build
+COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml web/.npmrc ./web/
+RUN cd web && pnpm install --frozen-lockfile --registry=https://registry.npmjs.org --fetch-retries=1 --fetch-timeout=30000
+ENV NEXT_TELEMETRY_DISABLED=1
+ENTRYPOINT ["node"]

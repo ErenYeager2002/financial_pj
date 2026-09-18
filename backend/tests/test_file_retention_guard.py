@@ -1,5 +1,7 @@
 """PostgreSQL guard tests, only in a disposable container with synthetic schema."""
 import os
+from pathlib import Path
+import sys
 import threading
 import time
 import unittest
@@ -11,11 +13,16 @@ class RetentionGuardTests(unittest.TestCase):
     def setUpClass(cls):
         if os.environ.get('FILE_RETENTION_ISOLATED_TEST') != '1':
             raise RuntimeError('Disposable PostgreSQL test required')
-        cls.engine=create_engine('postgresql+psycopg://retention_test:retention_test@127.0.0.1:5432/retention_test')
+        sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts/refactor'))
+        from verify_isolation import verify
+        verify()
+        if not os.environ['FINANCIAL_DATABASE_URL'].startswith('postgresql+psycopg://'):
+            raise RuntimeError('Disposable PostgreSQL URL required')
+        cls.engine=create_engine(os.environ['FINANCIAL_DATABASE_URL'])
         with cls.engine.begin() as db:
             for table,cols in [('task_drafts','files_json text, parameters_json text'),('runs','files_json text, parameters_json text'),('workflow_batches','files_json text'),('workflow_sessions','files_json text, context_json text'),('workflow_actions','input_json text'),('files',"stored_path text, kind text DEFAULT 'input'")]:
                 db.exec_driver_sql(f"CREATE TABLE {table} (id text PRIMARY KEY, state text DEFAULT 'ready', {cols})")
-            db.exec_driver_sql(GUARD_SQL)
+            db.exec_driver_sql((Path(__file__).resolve().parents[2] / 'deployment/file_retention_guard.sql').read_text())
 
     def setUp(self):
         with self.engine.begin() as db:
