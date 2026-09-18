@@ -1,0 +1,6 @@
+FROM financial-platform-isolated-pi-runtime:0.85.1-session-v10-20260917
+COPY deployment/pi_extension_ui.py deployment/pi_runtime_server.py /opt/platform/
+COPY deployment/patch_pi_dialog_lifecycle.py /opt/platform/
+USER root
+RUN python /opt/platform/patch_pi_dialog_lifecycle.py
+USER 10001:10001

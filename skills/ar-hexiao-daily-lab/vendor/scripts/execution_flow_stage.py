@@ -43,11 +43,13 @@ def run(workspace: Path, checked: Path) -> dict:
             eligible = sum(item.get("verdict") == "write" for item in items)
             monthly_prefill = phase == "prefill" and any(item.get("monthly_schema") for item in items)
             if monthly_prefill:
-                eligible = 0
+                from flow_order_prefill import pending_sos
+                eligible = sum(item.get("verdict") == "write" and bool(pending_sos(item)) for item in items)
+            applicable = not monthly_prefill or eligible > 0
             result["phases"][phase] = {
                 "state": "failed" if problems else "verified",
-                "applicable": not monthly_prefill,
-                "reason": "月度核销在状态阶段统一登记，前置阶段不适用" if monthly_prefill else "",
+                "applicable": applicable,
+                "reason": "本批没有需要单独预填的待处理订单" if not applicable else "",
                 "eligible_count": eligible,
                 "changed_count": None if problems else len(changes),
                 "unchanged_count": None if problems else eligible - len(changes),

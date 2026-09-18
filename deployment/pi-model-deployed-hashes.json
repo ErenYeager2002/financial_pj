@@ -1,0 +1,12 @@
+{
+  "backend/app/pi_model_access.py": "487f80490384f479dfd0d415309c8223bb732075f74b5898ee6bbab894bf699a",
+  "backend/app/pi_model_broker.py": "038d19255afa03871699a1ac2549ebad4b3025956098a0f91cdb7076768fa29a",
+  "backend/app/pi_runtime_service.py": "ec1e1da7e9ac7ff57cda20334ba574a2d945ce097a327a9e912486fd7f059f99",
+  "backend/app/routers/pi_runtime.py": "ced17fca05c5f5769156be89051f4bef5a8482e246a4e5771d780cf4aa8372d7",
+  "deployment/pi_runtime_manager.py": "0ca525737a1ef1835425d31d5d76fdd29f02e023009d9a815577e3ff5614539c",
+  "deployment/pi_runtime_server.py": "421fb88f05b4268903545e5b7002af6a1f5e1454689f1b19c87d8427ff48ac16",
+  "deployment/pi_egress_proxy.py": "30a934d5483796501a4a53aa70a6fea5b09f6bcc249806e535a3b5ae5f2653e1",
+  "deployment/compose.pi-runtime.yaml": "36d3e116ffdfe10d5b6b22da9e35685d52d54b7cb33f21a1bbf1a3ef23873370",
+  "deployment/financial-pi-runtime.service": "9a02319990418af674add3178c86fc219944bd650333865b3ee9f23f62576930",
+  "web/src/features/pi-runtime/pi-workspace.tsx": "dc5eca2d3b66e0170d99497ec83e16fb4318fb8095d6268388b36fdb3e5029dc"
+}

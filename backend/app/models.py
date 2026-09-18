@@ -1454,3 +1454,18 @@ class SchedulerLock(Base):
     __tablename__ = "scheduler_locks"
 
     name: Mapped[str] = mapped_column(String(64), primary_key=True)
+
+
+class AssistantTurn(Base):
+    __tablename__ = "assistant_turns"
+    owner_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    department_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    session_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    turn_id: Mapped[str] = mapped_column(String(36))
+    state: Mapped[str] = mapped_column(String(32), default="running", index=True)
+    lease_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    partial_text: Mapped[str] = mapped_column(Text, default="")
+    data_json: Mapped[str] = mapped_column(Text, default="{}")
+    error: Mapped[str] = mapped_column(Text, default="")
+    stopped: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

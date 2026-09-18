@@ -446,7 +446,7 @@ def classify_one(
             result["reason"] = f"已检查 {int(y)} 年盈亏表，但明细里没有这张单"
         else:
             result["code"] = "E2"
-            result["reason"] = "盈亏表里还没有这张单（多半还没交付进表）"
+            result["reason"] = "当前任务的盈亏材料未包含这张订单，需补齐对应明细；不能据此判断订单未交付"
         return result
 
     snap = ledger.row_snapshot.get(row, {})

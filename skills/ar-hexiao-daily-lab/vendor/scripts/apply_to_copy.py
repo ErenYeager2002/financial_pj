@@ -229,7 +229,7 @@ def write_plan(
                     value = wanted[key]
                     if key == '收款时间': value = common.norm_date(value) or value
                     edits.append((int(ref), cols[key], value))
-                changes.append({'案例ID':it['case_id'],'行号':final_original_row(int(ref)), 'SO':it['so'],'SOD':it['sod'], '改前':{key:_norm(proof['before_rows'][ref][key]) for key in FIVE},'改后':{key:_norm(wanted[key]) for key in FIVE}, '操作':'整组回款纠正，保留原应收行'})
+                changes.append({'案例ID':it['case_id'],'行号':final_original_row(int(ref)), 'SO':it['so'],'SOD':it['sod'], '改前':{key:_norm(proof['before_rows'][ref][key]) for key in FIVE},'改后':{key:_norm(wanted[key]) for key in FIVE}, '操作':'整组回款纠正，保留原应收行','新增行号':''})
             continue
         if op.get("type") == BR.OPERATION:
             if "差异" in derived:
@@ -764,7 +764,7 @@ def write_change_report(changes: List[dict], path: Path) -> None:
         c.font = Font(bold=True)
     for ch in changes:
         ws.append(
-            [ch["案例ID"], ch["行号"], ch["SO"], ch["SOD"], ch["操作"], ch["新增行号"]]
+            [ch["案例ID"], ch["行号"], ch["SO"], ch["SOD"], ch["操作"], ch.get("新增行号", "")]
             + [ch["改前"][k] for k in FIVE]
             + [ch["改后"][k] for k in FIVE]
             + [ch.get("派生列_改前", {}).get(k, "") for k in DERIVED]
@@ -1231,26 +1231,50 @@ def _apply_in_place(
         print(f"临时结果留在 {tmp}（给同事看）；你的副本原样；备份在 {backup}", file=sys.stderr)
         return 1
 
+    report_tmp = report.with_name(f".{report.stem}_生成中_{ts}{report.suffix}")
+    difference_tmp = difference_report.with_name(f".{difference_report.stem}_生成中_{ts}{difference_report.suffix}")
     try:
         difference_result = build_order_difference(
             writable, tmp, hexiao_date=hexiao_date
         )
         # 就地模式先在临时文件验证，但交付报告必须显示最终业务副本名。
         difference_result["ledger"] = str(src)
-        write_order_difference_report(difference_result, difference_report)
+        write_order_difference_report(difference_result, difference_tmp)
+        write_change_report(changes, report_tmp)
+        import openpyxl
+        check_book = openpyxl.load_workbook(report_tmp, read_only=True, data_only=False)
+        try:
+            if check_book.active.max_row != len(changes) + 1:
+                raise ValueError("变更清单行数与实际变更不一致")
+            if list(next(check_book.active.values))[:6] != ["案例ID", "行号", "SO", "SOD", "操作", "新增行号"]:
+                raise ValueError("变更清单表头不完整")
+        finally:
+            check_book.close()
     except Exception as e:
+        report_tmp.unlink(missing_ok=True)
+        difference_tmp.unlink(missing_ok=True)
         tmp.unlink(missing_ok=True)
         if "portable_tmp" in locals():
             portable_tmp.unlink(missing_ok=True)
         print(
-            f"ERROR: 订单写入差异表生成失败：{type(e).__name__}"
+            f"AR_CHANGE_REPORT_FAILED: 盈亏变更报告生成或校验失败：{type(e).__name__}"
             f"（原副本没动，备份在 {backup}）",
             file=sys.stderr,
         )
         return 2
 
     portable_backup = None
+    portable_published = False
+    report_backups = {}
+    published_reports = []
     try:
+        for ready, destination in ((report_tmp, report), (difference_tmp, difference_report)):
+            if destination.exists():
+                old = destination.with_name(f".{destination.stem}_报告替换前_{ts}{destination.suffix}")
+                shutil.copy2(destination, old)
+                report_backups[destination] = old
+            ready.replace(destination)
+            published_reports.append(destination)
         if portable_result:
             if portable.exists():
                 portable_backup = portable.with_name(
@@ -1258,11 +1282,21 @@ def _apply_in_place(
                 )
                 shutil.copy2(portable, portable_backup)
             portable_tmp.replace(portable)
+            portable_published = True
         tmp.replace(src)  # 要么整份换成新的，要么完全没换，不会写一半
     except OSError as e:
-        difference_report.unlink(missing_ok=True)
+        for destination in reversed(published_reports):
+            old = report_backups.pop(destination, None)
+            if old is not None:
+                old.replace(destination)
+            else:
+                destination.unlink(missing_ok=True)
+        for old in report_backups.values():
+            old.unlink(missing_ok=True)
+        report_tmp.unlink(missing_ok=True)
+        difference_tmp.unlink(missing_ok=True)
         portable_tmp.unlink(missing_ok=True)
-        if portable_result:
+        if portable_published:
             if portable_backup and portable_backup.exists():
                 portable_backup.replace(portable)
             else:
@@ -1275,7 +1309,8 @@ def _apply_in_place(
         return 2
     if portable_backup:
         portable_backup.unlink(missing_ok=True)
-    write_change_report(changes, report)
+    for old in report_backups.values():
+        old.unlink(missing_ok=True)
     _resnapshot_sources(src)
     print(f"已就地回填 {len(changes)} 笔 → {src}")
     print(f"写前备份 → {backup}")

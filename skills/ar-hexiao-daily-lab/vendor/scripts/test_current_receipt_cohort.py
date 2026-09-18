@@ -56,3 +56,33 @@ class CurrentCohortTest(unittest.TestCase):
             self.assertEqual(sum(r['回款明细'] for r in after.values()),100)
             self.assertEqual(str(after[2]['收款时间'])[:10],'2026-06-23')
             self.assertEqual(src.read_bytes(),original)
+
+    def test_completed_date_correction_preserves_source_sod(self):
+        import current_receipt_cohort as R
+        p, ledger = self.fixture()
+        records = C.expand_payments([p], {})
+        self.assertEqual([r['sod'] for r in R.expand(records, ledger)], ['SOD_B'])
+        item = C.classify_records(records, ledger, {})['auto'][0]
+        ledger.row_snapshot[4]['shoukuan_time'] = item['five_cols']['收款时间']
+        after = R.expand(records, ledger)
+        self.assertEqual([r['sod'] for r in after], ['SOD_B'])
+        self.assertEqual([r['amount_local'] for r in after], [40])
+        self.assertEqual([r['cumulative_received_local'] for r in after], [60])
+        final = C.classify_records(records, ledger, {})
+        self.assertEqual([r['sod'] for r in final['auto']], ['SOD_B'])
+        self.assertTrue(all(not r.get('row_operation') for r in final['auto']))
+
+    def test_dated_cohort_keeps_amount_and_uniqueness_guards(self):
+        import current_receipt_cohort as R
+        for mode in ['wrong_total', 'wrong_cumulative', 'duplicate_sod', 'missing_method']:
+            with self.subTest(mode=mode):
+                p, ledger = self.fixture()
+                ledger.row_snapshot[4]['shoukuan_time'] = '2026-08-25'
+                records = C.expand_payments([p], {})
+                if mode == 'wrong_total': ledger.row_snapshot[4]['huikuan'] = 39
+                if mode == 'wrong_cumulative': ledger.row_snapshot[2]['huikuan'] = 39
+                if mode == 'duplicate_sod':
+                    ledger.row_snapshot[3]['shoukuan_time'] = '2026-08-25'
+                    ledger.row_snapshot[4]['huikuan'] = 20
+                if mode == 'missing_method': ledger.row_snapshot[4]['shoukuan_way'] = None
+                self.assertEqual(R.expand(records, ledger), records)

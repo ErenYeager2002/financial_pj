@@ -1,0 +1,71 @@
+name: financial-pi-runtime
+services:
+  egress:
+    image: financial-platform-isolated-pi-egress:model-20260917
+    container_name: financial-pi-egress
+    restart: unless-stopped
+    pull_policy: never
+    read_only: true
+    init: true
+    cgroup_parent: financial-pi.slice
+    mem_limit: 256m
+    pids_limit: 128
+    user: "10001:10001"
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    labels:
+      financial.pi.egress: "1"
+    tmpfs: ["/tmp:rw,nosuid,nodev,size=32m,mode=1777"]
+    volumes:
+      - /home/lee/financial-platform-isolated/data/pi-model-socket:/model-socket:ro
+    networks: [outbound]
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "2"
+  model-broker:
+    image: financial-platform-isolated-backend:pi-context-20260917
+    stop_grace_period: 120s
+    container_name: financial-pi-model-broker
+    restart: unless-stopped
+    pull_policy: never
+    read_only: true
+    init: true
+    cgroup_parent: financial-pi.slice
+    mem_limit: 512m
+    pids_limit: 128
+    user: "10001:10001"
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: ["/tmp:rw,nosuid,nodev,size=32m,mode=1777"]
+    environment:
+      PYTHONPATH: /app/backend
+      PYTHONDONTWRITEBYTECODE: '1'
+      FINANCIAL_NETWORK_POLICY_MODE: internal
+      FINANCIAL_PROJECT_ROOT: /app
+      FINANCIAL_DATA_DIR: /var/lib/financial-platform
+      FINANCIAL_DATABASE_URL: postgresql+psycopg://financial:${POSTGRES_PASSWORD:?required}@postgres:5432/financial
+    command: [python, -m, uvicorn, app.pi_model_broker:app, --uds, /model-socket/model.sock, --no-access-log]
+    volumes:
+      - /home/lee/financial-platform-isolated/data/pi-model-socket:/model-socket
+      - /home/lee/financial-platform-isolated/data/pi-model-access:/var/lib/financial-platform/pi-model-access:ro
+      - /home/lee/financial-platform-isolated/data/credential.key:/var/lib/financial-platform/credential.key:ro
+      - /home/lee/financial-platform-isolated/data/runs:/var/lib/financial-platform/runs:ro
+      - /home/lee/financial-platform-isolated/data/workflows:/var/lib/financial-platform/workflows:ro
+      - /home/lee/financial-platform-isolated/data/uploads:/var/lib/financial-platform/uploads:ro
+      - /home/lee/financial-platform-isolated/data/pi-skill-proposals:/var/lib/financial-platform/pi-skill-proposals
+      - /home/lee/financial-platform-isolated/data/native-skills/packages:/var/lib/financial-platform/native-skills/packages:ro
+      - /home/lee/financial-platform-isolated/data/native-skills/installed:/var/lib/financial-platform/native-skills/installed:ro
+      - /home/lee/financial-platform-isolated/data/pi-runtime/catalog:/var/lib/financial-platform/pi-runtime/catalog:ro
+      - /home/lee/financial-platform-isolated/data/pi-business-access:/var/lib/financial-platform/pi-business-access:ro
+    networks: [outbound, platform-data]
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "2"}
+networks:
+  outbound:
+    name: financial-pi-egress-outbound
+  platform-data:
+    external: true
+    name: financial-platform-isolated_data

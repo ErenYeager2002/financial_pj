@@ -52,7 +52,7 @@ def recover_expired_jobs(db: Session, now: datetime | None = None) -> None:
                 RunRecord.state == "running",
                 RunRecord.lease_expires_at.is_not(None),
                 RunRecord.lease_expires_at < current,
-            )
+            ).with_for_update()
         ).all()
     )
     for run in expired_runs:

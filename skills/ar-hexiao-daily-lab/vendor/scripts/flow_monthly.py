@@ -236,6 +236,7 @@ def finalize(items, checked):
     for item in items:
         if item.get('monthly_schema') != SCHEMA or item.get('verdict') != 'write':
             continue
+        item.pop('order_only', None)
         item['monthly_date'] = date.isoformat()
         entries = {}
         deliveries = {}
@@ -276,7 +277,14 @@ def finalize(items, checked):
             item['monthly_receipt_history'] = (complete_parent_history(item.get('ar'),checked,by_ar.get(item.get('ar'),[]),list(entries.values()))
                 or complete_current_history(item,checked,by_ar.get(item.get('ar'),[]),list(entries.values()),require_existing))
             if not entries:
-                item.update(verdict='skip', reason='没有经验证的本次核销金额可登记')
+                outcomes = item.get('so_outcomes') or []
+                pending = (outcomes and all(o.get('codes') and set(o['codes']) <= {'E2','E3'}
+                           and set(o.get('buckets', [])) == {'hold'} for o in outcomes))
+                if pending and item.get('hits') == 1 and item.get('order_suggest'):
+                    item.update(order_only=True, updated_suggest='',
+                                reason='订单尚未进入盈亏表，仅登记单号及金额，不标记完成')
+                else:
+                    item.update(verdict='skip', reason='没有经验证的本次核销金额可登记')
         except ValueError as exc:
             item.update(verdict='hand', reason=str(exc))
             item['monthly_entries'] = []
@@ -284,9 +292,13 @@ def finalize(items, checked):
 
 
 def columns(ws):
-    rows = list(ws.iter_rows(values_only=True))
+    from itertools import islice
+    # Header detection has always inspected only the first eight rows.
+    # Do not materialize the business rows that it never consumes.
+    scan = 8
+    rows = list(islice(ws.iter_rows(values_only=True), scan))
     aliases = common.load_aliases()
-    header, names = common.find_header_row(rows, '到账流转', ['日期','公司名称','金额','单号'], aliases)
+    header, names = common.find_header_row(rows, '到账流转', ['日期','公司名称','金额','单号'], aliases, scan=scan)
     found = common.resolve_columns(names, '到账流转', ['日期','公司名称','金额','单号'], aliases)
     for key in ('收款形式','预收','是否更新应收款'):
         options = {'预收':['预收','预收款','预收金额','预收余额']}.get(key, aliases.get('到账流转',{}).get(key,[key]))
@@ -410,12 +422,13 @@ def parsed_balance(raw):
     return {'opening':first[0],'deductions':deductions,'remaining':remaining}
 
 
-def legacy_month(ws, row, cols, history=None):
+def legacy_month(ws, row, cols, history=None, original_order=None):
     date=common.norm_date(value(ws,row,cols,'日期'))
     start=money(value(ws,row,cols,'金额'))
     if date is None or start < 0:
         raise ValueError('原流转日期或金额无效')
-    text=str(value(ws,row,cols,'单号') or '').strip()
+    display=str(value(ws,row,cols,'单号') or '').strip()
+    text=display if original_order is None else original_order
     raw=value(ws,row,cols,'预收')
     if isinstance(raw,CellRichText):raw=str(raw)
     deductions=[]
@@ -460,12 +473,12 @@ def legacy_month(ws, row, cols, history=None):
     return {'month':date.strftime('%Y-%m'),'date':date.isoformat(),'row':row,'start':number(start),
             'remaining':number(remaining),'entries':entries,'prefix':prefix,'signature':signature(ws,row,cols),
             'legacy_sos':[] if recovered or relocate else sorted({so.upper() for so in SO.findall(text)}),
-            'display_original':prefix if relocate else text, 'display_amounts':{},
+            'display_original':prefix if relocate else display, 'display_amounts':{},
             '_repair_balance':recovered, '_relocate_display':relocate}
 
 
 def adopt_chain(ws, cols, item):
-    row=int(item['row_no']);first=legacy_month(ws,row,cols,item.get('monthly_receipt_history'))
+    row=int(item['row_no']);first=legacy_month(ws,row,cols,item.get('monthly_receipt_history'),item.get('_order_before_prefill'))
     chain={'sheet':ws.title,'months':[first]};payer=first['signature'][1];known={row}
     while money(chain['months'][-1]['remaining'])>0:
         previous=chain['months'][-1]
@@ -619,13 +632,47 @@ def update_filter_names(path, sheet, sources):
 def write_file(src, out, items, *, validate_only=False, workbook=None):
     state=load_state(src)
     wb=workbook if workbook is not None else openpyxl.load_workbook(src,data_only=False,rich_text=True)
-    edits_by={}; insert_by={}; changes=[]; targets=set(); cols_by={}; expected_cells=[]
+    edits_by={}; insert_by={}; changes=[]; targets=set(); cols_by={}; expected_cells=[]; order_only_ids=set(); prefill_checks=[]
     try:
+        # Column maps belong to this opened workbook only. Reuse them while
+        # checking its fixed contents; later write/readback opens a fresh book.
+        def sheet_columns(sheet):
+            if sheet not in cols_by:
+                cols_by[sheet] = columns(wb[sheet])
+            return cols_by[sheet]
         for chain in state['receipts'].values():
-            resolve_months(wb[chain['sheet']], columns(wb[chain['sheet']]), chain)
+            resolve_months(wb[chain['sheet']], sheet_columns(chain['sheet']), chain)
         for item in items:
-            sheet=item['sheet'];ws=wb[sheet];cols=cols_by.setdefault(sheet,columns(ws))
+            sheet=item['sheet'];ws=wb[sheet];cols=sheet_columns(sheet)
             ar=item['ar'];chain=state['receipts'].get(ar)
+            if item.get('order_only'):
+                import flow_order_prefill
+                root=int(item['row_no'])
+                if (sheet,root) in targets:raise ValueError('多笔到账计划引用同一原始行')
+                targets.add((sheet,root))
+                if item.get('monthly_entries'):raise ValueError('订单预填不得包含核销事项')
+                desired,changed,pending=flow_order_prefill.record(item,ws,cols,state)
+                if not changed:continue
+                edits_by.setdefault(sheet,[]).append((root,cols['单号'],desired));insert_by.setdefault(sheet,[])
+                expected={cols[field]:value(ws,root,cols,field) for field in FIELDS}
+                expected[cols['日期']]=common.norm_date(expected[cols['日期']]);expected[cols['单号']]=desired
+                month={'row':root}
+                if chain:
+                    matches=[m for m in chain['months'] if m['row']==root]
+                    if len(matches)!=1:raise ValueError('历史流转行不能唯一定位')
+                    month=matches[0];month['display_original']=str(desired)
+                expected_cells.append((sheet,month,expected));order_only_ids.add(id(month));prefill_checks.append((pending,month))
+                changes.append({'AR':ar,'单号':str(desired),'日期':pending['signature'][0],
+                                '是否更新应收款':'(未改)','文件':src.name,'sheet':sheet,
+                                '行号':root,'操作':'仅预填订单信息','核销事项':[]})
+                continue
+            pending=state.get('order_prefills',{}).get(ar)
+            if pending:
+                if pending['sheet']!=sheet or pending['signature']!=signature(ws,int(item['row_no']),cols):
+                    raise ValueError('待处理订单原行发生变化，需重新核对')
+                import flow_order_prefill
+                flow_order_prefill.check_completion_basis(item,pending)
+                item={**item,'_order_before_prefill':pending['original_text']}
             if chain:
                 if chain['sheet']!=sheet: raise ValueError('到账关联工作表发生变化')
                 resolve_months(ws,cols,chain)
@@ -693,7 +740,12 @@ def write_file(src, out, items, *, validate_only=False, workbook=None):
                         if index<len(lines)-1:runs.append(xlsx_patch.RichTextRun('\n'))
                     else:runs.append(xlsx_patch.RichTextRun(line+('\n' if index<len(lines)-1 else ''),color))
                 text=xlsx_patch.RichTextValue(tuple(runs))
-            overrides={cols['单号']:text,cols['预收']:formula(month['start'],month['entries']),cols['是否更新应收款']:'是'}
+            if pending:
+                completed={o['so'] for o in item.get('so_outcomes',[]) if o.get('completed')}
+                for entry in new:
+                    if entry['so'] in completed:pending['pending'].pop(entry['so'],None)
+            receipt_status='部分' if pending and pending['pending'] else '是'
+            overrides={cols['单号']:text,cols['预收']:formula(month['start'],month['entries']),cols['是否更新应收款']:receipt_status}
             if cross:
                 overrides.update({cols['日期']:day,cols['金额']:float(money(month['start'])),cols['收款形式']:'冲预收'})
                 # Receipt registration is new for this month; do not copy old status.
@@ -730,7 +782,7 @@ def write_file(src, out, items, *, validate_only=False, workbook=None):
             else:
                 edits.extend((month['row'],col,v) for col,v in overrides.items())
             expected_cells.append((sheet, month, dict(overrides)))
-            changes.append({'AR':ar,'单号':order_text(month),'日期':month['date'],'是否更新应收款':'是','文件':src.name,'sheet':sheet,'行号':month['row'],'操作':'恢复核销公式' if repair else ('跨月结转' if cross else '同月登记'),
+            changes.append({'AR':ar,'单号':order_text(month),'日期':month['date'],'是否更新应收款':receipt_status,'文件':src.name,'sheet':sheet,'行号':month['row'],'操作':'恢复核销公式' if repair else ('跨月结转' if cross else '同月登记'),
                 '预收公式':formula(month['start'],month['entries']),'预收余额':float(remaining), '核销事项':[e['key'] for e in new]})
         if validate_only:return changes
         if not changes:return []
@@ -740,8 +792,16 @@ def write_file(src, out, items, *, validate_only=False, workbook=None):
                 if '_insert_after' in month:
                     source=month.pop('_insert_after');month['row']=source+1+sum(r<source for r in sources)
                 else:month['row']+=sum(r<month['row'] for r in sources)
+        managed_ids={id(m) for chain in state['receipts'].values() for m in chain['months']}
+        for sheet,month,_ in expected_cells:
+            if id(month) not in managed_ids:
+                old_row=month['row'];month['row']+=sum(source<old_row for source,_ in insert_by.get(sheet,[]))
+                managed_ids.add(id(month))
         for change in changes:
-            change['行号']=state['receipts'][change['AR']]['months'][-1]['row']
+            if change['操作']!='仅预填订单信息':change['行号']=state['receipts'][change['AR']]['months'][-1]['row']
+            else:
+                record=state['order_prefills'][change['AR']]
+                change['行号']=next(month['row'] for pending,month in prefill_checks if pending is record)
     finally:
         if workbook is None:wb.close()
     current=src
@@ -767,6 +827,12 @@ def write_file(src, out, items, *, validate_only=False, workbook=None):
                     elif isinstance(wanted,dt.date):valid=common.norm_date(got)==wanted
                     else:valid=(str(got or '')==str(wanted or ''))
                     if not valid:raise ValueError('流转单号、日期、状态或金额回读不一致')
+            for pending,month in prefill_checks:
+                pending['row']=month['row'];pending['signature']=signature(check[pending['sheet']],month['row'],columns(check[pending['sheet']]))
+            for ar,pending in state.get('order_prefills',{}).items():
+                if ar in state['receipts']:
+                    root=state['receipts'][ar]['months'][0]['row'];pending['row']=root
+                    pending['signature']=signature(check[pending['sheet']],root,columns(check[pending['sheet']]))
             for chain in state['receipts'].values():
                 ws=check[chain['sheet']];cols=columns(ws)
                 for month in chain['months']:
@@ -777,7 +843,7 @@ def write_file(src, out, items, *, validate_only=False, workbook=None):
                     touched = any(candidate is month for _,candidate,_ in expected_cells)
                     if not touched and month.get('signature') is not None and sig!=month['signature']:
                         raise ValueError('未授权修改的历史结转行发生变化')
-                    if touched:
+                    if touched and id(month) not in order_only_ids:
                         if sig[5]!=expected or value(cached[ws.title],r,cols,'预收')!=expected or balance(month['start'],month['entries'])!=money(month['remaining']):
                             raise ValueError('流转预收算式或余额回读不一致')
                     month['signature']=sig
@@ -822,8 +888,11 @@ def prepare(workspace, items):
 
 
 def write(workspace, items, *, in_place, phase):
-    if phase=='prefill':return [],[]
-    if phase not in ('status','all'):raise ValueError('未知流转阶段')
+    if phase=='prefill':
+        import flow_order_prefill
+        try:items=flow_order_prefill.prefill_items(items)
+        except ValueError as exc:return [],[str(exc)]
+    if phase not in ('prefill','status','all'):raise ValueError('未知流转阶段')
     selected=[x for x in items if x.get('verdict')=='write']
     if any('monthly_entries' not in x for x in selected):
         return [],['月度流转必须先绑定已验证的盈亏核销事项']

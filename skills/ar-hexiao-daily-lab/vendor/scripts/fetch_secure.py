@@ -157,7 +157,20 @@ def main() -> int:
         print("ERROR: 按 AR/SO 补取只支持单个核销日。", file=sys.stderr)
         return 2
 
-    fetch_zhiyun.login_with_password = _edge_login
+    previous_login = fetch_zhiyun.login_with_password
+    # One secure-fetch invocation owns one batch and one credential identity.
+    # Only authentication is reused; each date still gets fresh API reads.
+    login_session = {}
+
+    def batch_login(base_url, username, secret, headless=True):
+        identity = (base_url, username, secret, headless)
+        if login_session.get("identity") != identity:
+            result = _edge_login(base_url, username, secret, headless=headless)
+            login_session.clear()
+            login_session.update(identity=identity, result=result)
+        return login_session["result"]
+
+    fetch_zhiyun.login_with_password = batch_login
     try:
         try:
             dates = fetch_zhiyun.resolve_fetch_dates(
@@ -189,6 +202,8 @@ def main() -> int:
                 return result
         return 0
     finally:
+        fetch_zhiyun.login_with_password = previous_login
+        login_session.clear()
         password = ""
         payload.clear()
 

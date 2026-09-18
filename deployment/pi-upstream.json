@@ -1,0 +1,8 @@
+{
+  "repository": "https://github.com/earendil-works/pi",
+  "commit": "e4c75a73222ae2c72abb5f5314fa35ee8effc508",
+  "package": "@earendil-works/pi-coding-agent",
+  "version": "0.85.1",
+  "baseline_date": "2026-09-17",
+  "status": "implementation-in-progress"
+}

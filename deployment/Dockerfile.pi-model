@@ -1,0 +1,5 @@
+FROM financial-platform-isolated-backend:pi-model-base-20260917
+COPY backend/app/pi_model_access.py /app/backend/app/pi_model_access.py
+COPY backend/app/pi_model_broker.py /app/backend/app/pi_model_broker.py
+COPY backend/app/pi_runtime_service.py /app/backend/app/pi_runtime_service.py
+COPY backend/app/routers/pi_runtime.py /app/backend/app/routers/pi_runtime.py

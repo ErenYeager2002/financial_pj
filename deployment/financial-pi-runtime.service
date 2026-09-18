@@ -1,0 +1,31 @@
+[Unit]
+Description=Financial platform isolated official Pi runtime manager
+After=docker.service
+Requires=docker.service
+RequiresMountsFor=/home/lee/financial-platform-isolated/pi-runtime/owners
+
+[Service]
+Type=simple
+User=root
+Environment=PI_RUNTIME_ROOT=/home/lee/financial-platform-isolated/pi-runtime
+Environment=PI_CONTROL_ROOT=/run/financial-pi
+Environment=PI_MANAGER_SOCKET=/home/lee/financial-platform-isolated/data/pi-runtime/manager.sock
+Environment=PI_RUNTIME_IMAGE=financial-platform-isolated-pi-runtime:0.85.1-session-v16-20260917
+Environment=PI_API_UID=10001
+ExecStart=/usr/bin/python3 -B /home/lee/financial-platform-isolated/releases/rebuild-e95b527/source/deployment/pi_runtime_manager.py
+Restart=on-failure
+RestartSec=5
+RuntimeDirectory=financial-pi
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=yes
+UMask=0077
+MemoryMax=512M
+TasksMax=128
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/home/lee/financial-platform-isolated/pi-runtime /home/lee/financial-platform-isolated/data/pi-runtime
+
+[Install]
+WantedBy=multi-user.target

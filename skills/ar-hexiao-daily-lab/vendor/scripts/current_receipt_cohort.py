@@ -51,15 +51,16 @@ def expand(records,ledger):
             out.append(rec);continue
         if not source.get('itemized_cumulative_authoritative') or rec.get('forced_code') not in (None,'','E5'):
             out.append(rec);continue
-        rows={}
-        for sod in source.get('all_sods') or []:rows.update(BR.ledger_rows(ledger,rec.get('so'),sod))
         arrival,posting=common.norm_date(rec.get('shoukuan_date')),common.norm_date(rec.get('hexiao_date'))
         total,cumulative=BR.cents(source.get('amount_local')),BR.cents(source.get('cumulative_local'))
-        if not arrival or not posting or total is None or cumulative is None or not select(rows,arrival,posting,total,cumulative):
+        if not arrival or not posting or total is None or cumulative is None:
             out.append(rec);continue
         seed={**rec,'default_amount_local':source.get('amount_local'),'default_amount_orig':source.get('amount_orig'),
               'default_cumulative_received_local':source.get('cumulative_local'),
               'default_sod_lines':[{'sod':sod,'deliver_local':amount} for sod,amount in (source.get('sod_delivery_local') or {}).items()]}
+        # Keep the same proven cohort after its missing dates have been repaired.
+        # existing_sod_slices checks dated and undated groups against source totals,
+        # unique SOD rows, cumulative receipts and the ordinary receipt proof.
         slices=H.existing_sod_slices(seed,ledger)
         if slices:out.extend(slices);resolved[key]=copy.deepcopy(source)
         else:out.append(rec)

@@ -1,0 +1,12 @@
+[Unit]
+Description=Bounded persistent Pi workspaces
+Before=financial-pi-runtime.service
+
+[Mount]
+What=/home/lee/financial-platform-isolated/pi-runtime/workspaces.ext4
+Where=/home/lee/financial-platform-isolated/pi-runtime/owners
+Type=ext4
+Options=loop,nosuid,nodev
+
+[Install]
+WantedBy=multi-user.target

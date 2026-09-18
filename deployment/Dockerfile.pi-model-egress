@@ -1,0 +1,2 @@
+FROM financial-platform-isolated-pi-egress:20260917
+COPY deployment/pi_egress_proxy.py /opt/platform/pi_egress_proxy.py

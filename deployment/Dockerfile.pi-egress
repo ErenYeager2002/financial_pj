@@ -1,0 +1,3 @@
+FROM financial-platform-isolated-pi-runtime:0.85.1-session-v2-20260917
+COPY deployment/pi_egress_proxy.py /opt/platform/pi_egress_proxy.py
+CMD ["python", "-B", "/opt/platform/pi_egress_proxy.py"]

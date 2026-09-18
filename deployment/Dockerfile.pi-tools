@@ -1,0 +1,6 @@
+FROM financial-platform-isolated-pi-runtime:0.85.1-session-v14-20260917
+USER root
+COPY deployment/vendor/fd-10.3.0-LICENSE-* /usr/local/share/licenses/fd/
+COPY deployment/vendor/fd-10.3.0-linux-x64 /opt/platform/fd-10.3.0
+RUN echo "9f48273b6c780a5f4f084ef30bc67d98cbd7d10c55c4605cf3a6ee29b741af87  /opt/platform/fd-10.3.0" | sha256sum -c - && chmod 0755 /opt/platform/fd-10.3.0 && ln -sf /opt/platform/fd-10.3.0 /usr/local/bin/fd && fd --version && fd --help | grep -q -- --no-require-git
+USER 10001:10001

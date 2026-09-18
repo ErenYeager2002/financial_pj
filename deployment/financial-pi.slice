@@ -1,0 +1,10 @@
+[Unit]
+Description=Shared resource boundary for untrusted Pi user environments
+
+[Slice]
+MemoryHigh=4G
+MemoryMax=6G
+CPUWeight=50
+
+[Install]
+WantedBy=multi-user.target

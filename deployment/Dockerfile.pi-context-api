@@ -1,0 +1,3 @@
+FROM financial-platform-isolated-backend:pi-context-base-20260917
+COPY backend/app/pi_runtime_service.py backend/app/pi_skill_drafts.py backend/app/pi_business_query.py /app/backend/app/
+COPY backend/app/routers/pi_runtime.py /app/backend/app/routers/pi_runtime.py

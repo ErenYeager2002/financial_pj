@@ -1,7 +1,7 @@
 schema_version: 1
 id: ar-hexiao-daily
 name: 应收核销日清
-version: 1.6.28-local.3
+version: 1.6.28-local.12
 status: published
 category: 应收管理
 description: 应收核销多阶段流程，自动登录智云取数，按核销记录身份审计并纠正可解释的系统重复核销；日清与写前校验通过后直接安全写入副本，并按真实单元格坐标归一化公式差异。

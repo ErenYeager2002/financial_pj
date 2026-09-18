@@ -20,7 +20,8 @@ def lease_deadline(now: datetime | None = None) -> datetime:
 
 
 class LeaseHeartbeat(AbstractContextManager["LeaseHeartbeat"]):
-    def __init__(self, kind: LeaseKind, record_id: str, worker_id: str) -> None:
+    def __init__(self, kind: LeaseKind, record_id: str, worker_id: str, *, attempt: int | None = None) -> None:
+        self.attempt = attempt
         self.kind = kind
         self.record_id = record_id
         self.worker_id = worker_id
@@ -34,8 +35,11 @@ class LeaseHeartbeat(AbstractContextManager["LeaseHeartbeat"]):
     def _touch(self) -> None:
         now = datetime.now(UTC)
         with SessionLocal() as db:
+            query = update(self.model)
+            if self.kind == "run":
+                query = query.where(self.model.attempt_count == self.attempt, self.model.lease_expires_at >= now)
             db.execute(
-                update(self.model)
+                query
                 .where(
                     self.model.id == self.record_id,
                     self.model.state == "running",

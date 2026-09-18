@@ -28,6 +28,7 @@ from .settings import settings
 from .skill_install_service import _check_tree_sizes, _package_files, _read_blob
 from .storage import sha256_file, run_root, register_output
 from .events import emit_event
+from .native_skill_policy import require_native_skill
 
 NAME = re.compile(r"^[a-z][a-z0-9-]{0,71}$")
 
@@ -160,6 +161,9 @@ def session_snapshot(name: str, user: UserContext, session_id: str) -> tuple[Nat
 
 
 def prepare_context(db: Session, user: UserContext, name: str, body: NativeSkillContextRequest) -> NativeSkillContext:
+    user = require_native_skill(db, user, name)
+    if body.file_ids:
+        require_native_skill(db, user, name, "can_upload")
     pinned, package, workspace = session_snapshot(name, user, body.session_id)
     inputs = []
     material_key = hashlib.sha256(json.dumps(sorted(set(body.file_ids))).encode()).hexdigest()
@@ -185,7 +189,8 @@ def prepare_context(db: Session, user: UserContext, name: str, body: NativeSkill
     return NativeSkillContext(skill=pinned, instructions=instructions, files=files, inputs=inputs)
 
 
-def read_package_file(user: UserContext, name: str, session_id: str, path: str, offset: int = 0):
+def read_package_file(db: Session, user: UserContext, name: str, session_id: str, path: str, offset: int = 0):
+    user = require_native_skill(db, user, name)
     _, package, _ = session_snapshot(name, user, session_id)
     target = (package / path).resolve()
     if not target.is_relative_to(package.resolve()) or not target.is_file(): raise HTTPException(404, "Skill 文件不存在。")
@@ -210,6 +215,9 @@ def execute_command(db: Session, user: UserContext, name: str, body):
     context = prepare_context(db, user, name, body)
     pinned, package, workspace = session_snapshot(name, user, body.session_id)
     with command_guard(workspace):
+        user = require_native_skill(db, user, name)
+        from .assistant_turn_service import require_turn_command
+        require_turn_command(db, user, body.session_id, body.turn_id)
         before = {p.relative_to(workspace / "outputs").as_posix(): sha256_file(p) for p in (workspace / "outputs").rglob("*") if p.is_file() and not p.is_symlink()}
         now = datetime.now(UTC)
         run = RunRecord(id=str(uuid4()), owner_id=user.user_id, owner_name=user.display_name, department_id=user.department_id,

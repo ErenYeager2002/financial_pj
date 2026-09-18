@@ -1,0 +1,32 @@
+{
+  "baseline_commit": "c1d73d6abb2eaa4b7896aa645b04e74cf31204f5",
+  "previous_next_image": "sha256:9cc1b9fc89d6eeebc6d358598ce4ddbb558433e1cd9bba0868fc71b9a4682001",
+  "overlays": {
+    "web/src/config/platform-navigation.ts": "140406d3d725b228e517ddc6b5859a9e4abfd13fb54883665af5bb7803a66192",
+    "web/src/features/pi-runtime/pi-workspace.tsx": "a49b14a65dd4c69058eb833dde6d4f22c5b1bb8e2675498797a56acc1c3a85d3",
+    "web/src/app/api/platform/pi-runtime/sessions/route.ts": "73a6342143c263750c3c0b620133e2db138afe1819cb63d98e4264ac2ea05553",
+    "web/src/app/api/platform/pi-runtime/sessions/[sessionId]/operate/route.ts": "2b2344bd730bca16bdee72f7fc61dbbdb0f7ba2825ab8aa4f4159abe5c7aa7d4",
+    "web/src/app/dashboard/pi/page.tsx": "d03602ba564dcb9a9228aa939fe7561707cdef6ec139e56a0f249d3476d6f011",
+    "web/src/features/pi-runtime/pi-files.tsx": "075e12915e96354d2074298b4ec7caa2937349c8f53f480024275ac417a7da6d",
+    "web/src/app/api/platform/pi-runtime/sessions/[sessionId]/files/route.ts": "3647057c651638a18af704c6531aed0c1a04b628c49e14d0539cd74c10402697",
+    "web/src/app/api/platform/pi-runtime/sessions/[sessionId]/download/route.ts": "2289550c8a55669fde53237a3ba7918af4be7a1574f09b82872e94dc254028e3",
+    "web/src/app/dashboard/installed-skills/[skillId]/run/page.tsx": "30e3a76c0256850eddee68d9b9e7e40087dfae385b573e461c6c19c3888579a6",
+    "web/src/features/pi-runtime/pi-legacy-history.tsx": "b8f36f3a1860e58662761e759d7fcb53e699888e201dbeebab98d2463f6c6534",
+    "web/src/features/pi-runtime/pi-chat.tsx": "68626d04087cd3376d3a7812afa52a2cd680db9d72cec0fbd1919f1451a54076",
+    "web/src/features/ai-chat/legacy-assistant-page.tsx": "c28b40dedd0faf358daa13e8e2663902b4cf89f4040c3b3883b00eef659f3105",
+    "web/src/app/dashboard/ai-chat/page.tsx": "43bf2dc1d687028e9d63b85b6eea87675abce054a3258615efd3fa5cd81db0ca",
+    "web/src/features/pi-runtime/pi-jobs.tsx": "0f59215e227a58d9e0c07572ff4166fd062f90b859978f562169387b3009b3ee",
+    "web/src/features/pi-runtime/pi-dialogs.tsx": "8046a13aa703a224a39432cd126e17135823cb84ac1541e8e2187e2443b05640",
+    "web/src/features/pi-runtime/pi-message-images.tsx": "e3220d06a8af7fd8fa374f57db6a94b6b74979d06894d0963ddc529bd2d27769",
+    "web/src/features/pi-runtime/pi-commands.tsx": "0235adab16bf2123871bb3582317e05a2f8351f3214ee342bf1888d33bc68d35",
+    "web/src/features/pi-runtime/pi-session-stats.tsx": "672045d4de766f9611996066ccdf68e4787be757f779e8b05ca4929ae1764928",
+    "web/src/features/pi-runtime/pi-skill-proposals.tsx": "19a976ddd7e1135286a755bcca04a148d4f6c760ad81a84612f2bf0ebb2387d0",
+    "web/src/app/api/platform/pi-runtime/skill-proposals/route.ts": "d61bee929a27dc47bfbfe1341723b5be6b35e0b7212d8d5f158dd26635515d44",
+    "web/src/app/api/platform/pi-runtime/skill-proposals/[candidateId]/publish/route.ts": "136aae357142d4f8feb7acff97910668d7d78817434cf7ac56574662e0e6305d",
+    "web/src/features/pi-runtime/pi-file-transfer.ts": "4a8da5a3cc727b758cbb498ac4abfa5aefc365c1aab85742c6af8a1018637b16",
+    "web/src/features/pi-runtime/pi-chat-artifacts.tsx": "3dcdbc56c161cb53ec150341833e328c9b0ecc8331262e80a352e3d02eadc561",
+    "web/src/features/ai-chat/assistant-response.ts": "82cfc51d19abf99f3db1170482001f032e6c62409ed68c25dcec130cba41ba84",
+    "web/src/features/pi-runtime/pi-chat-design.module.css": "bd718fc41685fa6870eb95e0c5b5e68a138a410818d7f3d135423f20c13ecd4a",
+    "web/src/features/pi-runtime/pi-chat-messages.tsx": "d377445bb8a87f7fc25cfb8c77816fdb1d2ff15b5f5cec429fc1554f9ecfd48e"
+  }
+}

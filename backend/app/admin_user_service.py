@@ -274,6 +274,10 @@ def replace_department_user_permissions(
         for item in registry.list(include_disabled=False)
         if item.manifest.status == "published"
     }
+    from .native_skill_service import list_native_skills
+    published.update("native--" + item.id for item in list_native_skills())
+    if any(item.skill_id.startswith("native--") and item.requires_approval for item in body.permissions):
+        raise HTTPException(status_code=422, detail="原生 Skill 暂不支持逐次审批，请使用运行授权控制。")
     requested_ids = [item.skill_id for item in body.permissions]
     if len(requested_ids) != len(set(requested_ids)):
         raise HTTPException(status_code=422, detail="同一 Skill 不能重复授权。")

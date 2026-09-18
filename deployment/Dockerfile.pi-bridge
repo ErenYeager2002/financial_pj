@@ -1,0 +1,9 @@
+FROM financial-platform-isolated-pi-runtime:0.85.1-20260917
+COPY deployment/pi_runtime_server.py /opt/platform/pi_runtime_server.py
+COPY deployment/pi_session_tracking.ts /opt/platform/pi_session_tracking.ts
+
+COPY deployment/pi_jobs.py /opt/platform/pi_jobs.py
+COPY deployment/pi_jobs_extension.ts /opt/platform/pi_jobs_extension.ts
+
+COPY deployment/pi_browser.py /opt/platform/pi_browser.py
+COPY deployment/pi_browser_extension.ts /opt/platform/pi_browser_extension.ts

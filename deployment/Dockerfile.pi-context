@@ -1,0 +1,3 @@
+FROM financial-platform-isolated-pi-runtime:0.85.1-session-v15-20260917
+COPY deployment/pi_shared_memory.py deployment/pi_shared_context.ts deployment/pi_runtime_server.py /opt/platform/
+COPY deployment/pi_skill_draft_client.py deployment/pi_business_client.py /opt/platform/

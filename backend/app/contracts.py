@@ -882,6 +882,7 @@ class NativeSkillContext(BaseModel):
 
 
 class NativeSkillCommand(NativeSkillContextRequest):
+    turn_id: str = Field(default="", max_length=36)
     command: str = Field(min_length=1, max_length=12000)
 
 

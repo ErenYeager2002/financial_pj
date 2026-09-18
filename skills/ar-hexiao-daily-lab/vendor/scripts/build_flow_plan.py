@@ -118,14 +118,19 @@ def plan_item_for_ar(ar: str, items: List[dict], summary_row: Optional[dict]) ->
     so_amounts: Dict[str, Optional[float]] = {}
     so_outcomes: Dict[str, dict] = {}
     amount_cases = set()
+    amount_conflicts = set()
+    observed_amounts = {}
     for it in items:
         so = (it.get("so") or "").strip()
         if so and so not in so_list:
             so_list.append(so)
+        amount = _delivery_amount(it)
+        if so and amount is not None:
+            if so in observed_amounts and observed_amounts[so] != amount:amount_conflicts.add(so)
+            observed_amounts.setdefault(so, amount)
         case = it.get("case_id") or (so, it.get("sod"))
         if so and case not in amount_cases:
             amount_cases.add(case)
-            amount = _delivery_amount(it)
             if so not in so_amounts or so_amounts[so] is None:
                 so_amounts[so] = amount
         if so:
@@ -172,6 +177,7 @@ def plan_item_for_ar(ar: str, items: List[dict], summary_row: Optional[dict]) ->
             {"so": so, "delivery_amount": so_amounts.get(so)} for so in so_list
         ],
         "so_outcomes": list(so_outcomes.values()),
+        "order_amount_conflicts": sorted(amount_conflicts),
         "red_sos": [],
         "order_rich_runs": _rich_runs(order_suggest, []),
         "write_order": bool(str(order_suggest).strip()),  # 空单号不写列，防抹掉已有

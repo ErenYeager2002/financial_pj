@@ -1,0 +1,16 @@
+FROM financial-platform-isolated-next:ai-chat-builder-20260915 AS builder
+COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml web/.npmrc ./
+ENV CI=1
+RUN npm install --prefix /opt/pi-web-terminal --ignore-scripts --no-audit --no-fund --save-exact @xterm/xterm@6.0.0 @xterm/addon-fit@0.11.0 && mkdir -p node_modules/@xterm && cp -a /opt/pi-web-terminal/node_modules/@xterm/. node_modules/@xterm/
+COPY web/src ./src
+COPY web/public ./public
+RUN pnpm build
+FROM docker.m.daocloud.io/library/node:22-slim AS runner
+WORKDIR /app
+ENV NODE_ENV=production PORT=3000 HOSTNAME=0.0.0.0 NEXT_TELEMETRY_DISABLED=1
+COPY --from=builder --chown=node:node /app/web/public ./public
+COPY --from=builder --chown=node:node /app/web/.next/standalone ./
+COPY --from=builder --chown=node:node /app/web/.next/static ./.next/static
+USER node
+EXPOSE 3000
+CMD ["node", "server.js"]

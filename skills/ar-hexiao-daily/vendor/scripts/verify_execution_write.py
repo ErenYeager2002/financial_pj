@@ -193,7 +193,12 @@ def main(argv=None) -> int:
     review = workspace / "execution-review"
     if review.is_dir():
         import fallback_allocation_ledger
-        fallback_allocation_ledger.commit(review, plan)
+        try:
+            fallback_allocation_ledger.commit(review, plan)
+        except (ValueError, OSError) as exc:
+            raise ValueError(
+                "AR_REVIEW_ALLOCATION_FAILED: 工作簿回读已通过，复核副本分配记录登记失败；本日尚未发布"
+            ) from exc
     print(json.dumps({"verified": True, "written_count": len(verified_cases)}))
     return 0
 

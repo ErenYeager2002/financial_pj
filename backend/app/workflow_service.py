@@ -3482,6 +3482,16 @@ def _workflow_error_detail(workflow: WorkflowSession, reason: object) -> TaskErr
         } else "unknown"
         write_status = "not_started"
         recovery_allowed = True
+    elif step_key == "write_ledger" and re.search(r"(?:^|\n|：)AR_CHANGE_REPORT_FAILED:", raw_reason):
+        safe_reason = "盈亏变更报告生成或校验失败，本日结果尚未发布；需管理员核查暂存区后恢复。"
+        error_code, category = "WORKFLOW_LEDGER_REPORT_FAILED", "unknown"
+        write_status = "not_published"
+        recovery_allowed = False
+    elif step_key == "verify_reconciliation" and "AR_REVIEW_ALLOCATION_FAILED:" in raw_reason:
+        safe_reason = "工作簿回读已通过，但复核副本的分配记录登记失败，本日结果尚未发布。"
+        error_code, category = "WORKFLOW_REVIEW_ALLOCATION_FAILED", "unknown"
+        write_status = "not_published"
+        recovery_allowed = False
     elif isinstance(reason, PostWriteVerificationError):
         safe_reason = "写入已经完成，但回读校验未完成。"
         error_code, category = "WORKFLOW_POST_WRITE_VERIFICATION_FAILED", "version_conflict"
@@ -3531,6 +3541,9 @@ def _workflow_public_error(workflow: WorkflowSession, detail: TaskErrorDetail) -
     elif detail.error_code.startswith("WORKFLOW_FETCH_PREVIEW_"):
         message = f"{date_label} 取数预览未完成：{detail.reason}尚未进入核销写入。"
         error_type = "fetch_preview_failed"
+    elif detail.error_code == "WORKFLOW_LEDGER_REPORT_FAILED":
+        message = f"{date_label} 盈亏变更报告生成或校验失败，本日结果未发布；请联系管理员核查暂存区后恢复。"
+        error_type = "ledger_report_failed"
     elif detail.error_code == "WORKFLOW_POST_WRITE_VERIFICATION_FAILED":
         message = f"{date_label} 写入后的回读校验未完成，发布状态待核实；请联系管理员处理。"
         error_type = "post_write_verification"

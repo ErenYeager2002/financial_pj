@@ -1,0 +1,5 @@
+FROM sha256:07a135b2be7855483e58507fd01593bb24396e478bde131d1d872c17523a60ef
+COPY skills/ar-hexiao-daily/tool.yaml /app/skills/ar-hexiao-daily/tool.yaml
+COPY skills/ar-hexiao-daily/vendor/scripts/flow_monthly.py /app/skills/ar-hexiao-daily/vendor/scripts/flow_monthly.py
+COPY skills/ar-hexiao-daily-lab/tool.yaml /app/skills/ar-hexiao-daily-lab/tool.yaml
+COPY skills/ar-hexiao-daily-lab/vendor/scripts/flow_monthly.py /app/skills/ar-hexiao-daily-lab/vendor/scripts/flow_monthly.py

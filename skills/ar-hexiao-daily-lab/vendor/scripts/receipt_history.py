@@ -286,4 +286,20 @@ def existing_sod_slices(rec, ledger):
         if planned_part is None:return None
         cohort_audit['after_so_rows'][ref]=planned_part['receipt_correction']['after']
         resolved.append(part)
+    # Paid-row recognition proves monetary slices, but must not erase explicit
+    # zero-delivery source SODs. Keep them for normal classification/validation;
+    # this is not proof of a payment or permission to mark a missing row done.
+    for sod, line in lines.items():
+        if BR.cents(line.get('deliver_local')) != 0:
+            continue
+        if any(BR.cents(row.get('回款明细')) not in (None, 0)
+               for row in rows.values() if row['SOD'] == sod):
+            return None
+        part = {key: copy.deepcopy(value) for key, value in rec.items()
+                if not key.startswith('default_')
+                and key not in ('forced_code', 'forced_reason', 'existing_sod_receipt_audit')}
+        part.update(sod=sod, amount_local=0.0, amount_orig=0.0,
+                    deliver_local=0.0, cumulative_received_local=0.0,
+                    match_basis='保留来源明确的零交付额 SOD，按普通规则核对')
+        resolved.append(part)
     return resolved

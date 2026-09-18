@@ -175,8 +175,12 @@ def readback_payload(entry: dict) -> dict:
 
 
 def _stable_payload(entry: dict) -> dict:
+    # Current-workbook provenance can be added during reconstruction without
+    # changing the allocation. Keep readback_payload strict for evidence checks.
+    # Unknown fields remain compared so new financial semantics fail closed.
     return {key: value for key, value in readback_payload(entry).items()
-            if key not in {"applied_sos", "applied_cases"}}
+            if key not in {"applied_sos", "applied_cases",
+                           "reconstructed_from_current_material", "current_material_evidence"}}
 
 
 def commit(workspace: Path, checked: dict) -> Tuple[Path, int]:
@@ -207,6 +211,13 @@ def commit(workspace: Path, checked: dict) -> Tuple[Path, int]:
                         raise ValueError(f"父回款 {ar} 的本次计划改变已有已写记录，禁止覆盖历史")
                 old["applied_cases"] = entry["applied_cases"]
                 old["applied_sos"] = entry["applied_sos"]
+                # Keep the new provenance for strict formal-ledger readback,
+                # only after allocation and every previously written case agree.
+                for key in ("reconstructed_from_current_material", "current_material_evidence"):
+                    if key in entry:
+                        old[key] = entry[key]
+                    else:
+                        old.pop(key, None)
             old["last_verified_at"] = now
     receipts = baseline_receipts.merge_journal(data.get("baseline_receipts", {}), checked)
     baseline_receipts.validate_journal(receipts)

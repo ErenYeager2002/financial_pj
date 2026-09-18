@@ -1,0 +1,8 @@
+FROM financial-platform-isolated-backend:ar-evidence-base-worker-20260917
+COPY backend/app/workflow_service.py /app/backend/app/workflow_service.py
+COPY skills/ar-hexiao-daily/tool.yaml /app/skills/ar-hexiao-daily/tool.yaml
+COPY skills/ar-hexiao-daily/vendor/scripts/fallback_allocation_ledger.py /app/skills/ar-hexiao-daily/vendor/scripts/fallback_allocation_ledger.py
+COPY skills/ar-hexiao-daily/vendor/scripts/verify_execution_write.py /app/skills/ar-hexiao-daily/vendor/scripts/verify_execution_write.py
+COPY skills/ar-hexiao-daily-lab/tool.yaml /app/skills/ar-hexiao-daily-lab/tool.yaml
+COPY skills/ar-hexiao-daily-lab/vendor/scripts/fallback_allocation_ledger.py /app/skills/ar-hexiao-daily-lab/vendor/scripts/fallback_allocation_ledger.py
+COPY skills/ar-hexiao-daily-lab/vendor/scripts/verify_execution_write.py /app/skills/ar-hexiao-daily-lab/vendor/scripts/verify_execution_write.py

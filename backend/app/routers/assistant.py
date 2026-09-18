@@ -429,13 +429,15 @@ def assistant_ar_request_status(session_id: str, db: Session = Depends(get_db), 
 
 from ..contracts import NativeSkillRead, NativeSkillContext, NativeSkillContextRequest, NativeSkillCommand, NativeSkillFileRead
 from .. import native_skill_service as native_skills
+from ..native_skill_policy import require_native_skill, visible_native_skills
 
 @router.get("/api/native-skills", response_model=list[NativeSkillRead])
-def native_skill_list(user: UserContext = Depends(get_current_user)):
-    return native_skills.list_native_skills()
+def native_skill_list(db: Session = Depends(get_db), user: UserContext = Depends(get_current_user)):
+    return visible_native_skills(db, user, native_skills.list_native_skills())
 
 @router.get("/api/native-skills/{skill_id}", response_model=NativeSkillRead)
-def native_skill_detail(skill_id: str, user: UserContext = Depends(get_current_user)):
+def native_skill_detail(skill_id: str, db: Session = Depends(get_db), user: UserContext = Depends(get_current_user)):
+    require_native_skill(db, user, skill_id)
     return native_skills.installed_skill(skill_id)
 
 @router.post("/api/assistant/native-skills/{skill_id}/context", response_model=NativeSkillContext)
@@ -443,8 +445,8 @@ def native_skill_context(skill_id: str, body: NativeSkillContextRequest, db: Ses
     return native_skills.prepare_context(db, user, skill_id, body)
 
 @router.get("/api/assistant/native-skills/{skill_id}/file", response_model=NativeSkillFileRead)
-def native_skill_file(skill_id: str, session_id: str, path: str, offset: int = 0, user: UserContext = Depends(get_current_user)):
-    return native_skills.read_package_file(user, skill_id, session_id, path, offset)
+def native_skill_file(skill_id: str, session_id: str, path: str, offset: int = 0, db: Session = Depends(get_db), user: UserContext = Depends(get_current_user)):
+    return native_skills.read_package_file(db, user, skill_id, session_id, path, offset)
 
 @router.post("/api/assistant/native-skills/{skill_id}/command")
 def native_skill_command(skill_id: str, body: NativeSkillCommand, db: Session = Depends(get_db), user: UserContext = Depends(get_current_user)):
@@ -454,3 +456,14 @@ def native_skill_command(skill_id: str, body: NativeSkillCommand, db: Session = 
 @router.get("/api/assistant/native-skills/{skill_id}/runs", response_model=list[RunDetail])
 def native_skill_runs(skill_id: str, session_id: str, db: Session = Depends(get_db), user: UserContext = Depends(get_current_user)):
     return native_skills.session_runs(db, user, skill_id, session_id)
+
+
+from ..assistant_turn_service import TurnMutation, turn_status, mutate_turn
+
+@router.get("/api/assistant/turns/{session_id}")
+def persisted_turn_status(session_id: str, db: Session = Depends(get_db), user: UserContext = Depends(get_current_user)):
+    return turn_status(db,user,session_id)
+
+@router.post("/api/assistant/turns/{session_id}")
+def persisted_turn_mutation(session_id: str, body: TurnMutation, db: Session = Depends(get_db), user: UserContext = Depends(get_current_user)):
+    return mutate_turn(db,user,session_id,body)

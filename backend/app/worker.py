@@ -19,6 +19,7 @@ from .database import SessionLocal, init_db
 from .events import emit_event
 from .fetched_bundle_service import purge_expired_bundles
 from .leases import LeaseHeartbeat, lease_deadline
+from .run_fencing import RunLeaseLost, bind_run_fence, assert_run_fence
 from .models import RunRecord
 from .redaction import sanitize_text
 from .registry import SkillManifest
@@ -118,6 +119,17 @@ def claim_next_run(
 
 
 def execute_run(db: Session, run: RunRecord) -> None:
+    bind_run_fence(db, run)
+    try:
+        assert_run_fence(db)
+        _execute_claimed_run(db, run)
+    except RunLeaseLost:
+        db.rollback()
+    finally:
+        db.info.pop("ordinary_run_fence", None)
+
+
+def _execute_claimed_run(db: Session, run: RunRecord) -> None:
     manifest = SkillManifest.model_validate(json.loads(run.manifest_snapshot))
     owner = UserContext(
         user_id=run.owner_id,
@@ -125,8 +137,10 @@ def execute_run(db: Session, run: RunRecord) -> None:
         role="finance_user",
         department_id=run.department_id,
     )
-    workspace = run_root(run.owner_id, run.id)
-    skill_dir = workspace / "skill"
+    original_workspace = run_root(run.owner_id, run.id)
+    workspace = original_workspace / "attempts" / str(run.attempt_count)
+    workspace.mkdir(parents=True, exist_ok=True)
+    skill_dir = original_workspace / "skill"
     ctx = ExecutionContext(
         db=db,
         run=run,
@@ -153,6 +167,8 @@ def execute_run(db: Session, run: RunRecord) -> None:
             message="任务执行完成",
             data={"summary": result.get("summary", {})},
         )
+    except RunLeaseLost:
+        raise
     except InterruptedError as exc:
         safe_error = sanitize_text(str(exc), error=True)
         run.finished_at = datetime.now(UTC)
@@ -221,11 +237,8 @@ def run_once(
     with SessionLocal() as db:
         run = claim_next_run(db, pools, identity)
         if run:
-            with LeaseHeartbeat("run", run.id, identity):
+            with LeaseHeartbeat("run", run.id, identity, attempt=run.attempt_count):
                 execute_run(db, run)
-            run.heartbeat_at = datetime.now(UTC)
-            run.lease_expires_at = None
-            db.commit()
             return True
         if run_workflow_action_once(db, pools, identity, execution_contracts=(CONTRACT_VERSION,)):
             return True

@@ -1,5 +1,5 @@
 import { createElement, type ReactNode } from 'react';
-import Markdown, { type Components } from 'react-markdown';
+import Markdown, { defaultUrlTransform, type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 function element(
@@ -74,11 +74,17 @@ const components: Components = {
   hr: () => createElement('hr', { className: 'my-5 border-border' })
 };
 
-export function AssistantResponse({ content }: { content: string }) {
+export function AssistantResponse({ content, resolveFileLink }: { content: string; resolveFileLink?: (href: string) => string | undefined }) {
   return createElement(
     Markdown,
     {
-      components,
+      components: resolveFileLink ? {...components, a: ({children, href}) => {
+        const file = href ? resolveFileLink(href) : undefined;
+        return file ? element('a', 'break-all font-medium text-primary underline underline-offset-4', children, {href: file, download: true})
+          : element('a', 'break-all font-medium text-primary underline underline-offset-4', children,
+              href?.startsWith('http') ? {href, target: '_blank', rel: 'noreferrer noopener'} : {href});
+      }} : components,
+      urlTransform: (url) => resolveFileLink?.(url) ? url : defaultUrlTransform(url),
       remarkPlugins: [remarkGfm],
       skipHtml: true
     },

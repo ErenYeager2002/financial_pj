@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from .auth import UserContext
 from .events import emit_event
+from .run_fencing import assert_run_fence
 from .models import FileRecord, RunRecord
 from .network_policy import assert_url_allowed, skill_subprocess_environment
 from .registry import SkillManifest
@@ -272,6 +273,11 @@ class SubprocessAdapter:
         stderr_lines: list[str] = []
         timeout = ctx.manifest.runtime.timeout_seconds
         while open_streams or process.poll() is None:
+            try:
+                assert_run_fence(ctx.db)
+            except Exception:
+                stop_child()
+                raise
             ctx.db.refresh(ctx.run)
             if ctx.run.cancel_requested:
                 stop_child()

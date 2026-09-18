@@ -1,0 +1,3 @@
+FROM financial-platform-isolated-backend:pi-skills-20260917
+COPY backend/app/routers/pi_runtime.py /app/backend/app/routers/pi_runtime.py
+COPY backend/app/pi_runtime_service.py /app/backend/app/pi_runtime_service.py

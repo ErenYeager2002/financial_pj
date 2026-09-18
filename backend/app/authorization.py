@@ -31,7 +31,7 @@ def get_skill_permission(
         select(UserSkillPermission).where(
             UserSkillPermission.user_id == user_id,
             UserSkillPermission.skill_id == skill_id,
-        )
+        ).execution_options(populate_existing=True)
     )
 
 

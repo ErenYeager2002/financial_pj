@@ -1,0 +1,4 @@
+FROM financial-platform-isolated-backend:current-group-20260916
+COPY --chown=10001:10001 backend/app/main.py /app/backend/app/main.py
+COPY --chown=10001:10001 backend/app/pi_runtime_service.py /app/backend/app/pi_runtime_service.py
+COPY --chown=10001:10001 backend/app/routers/pi_runtime.py /app/backend/app/routers/pi_runtime.py

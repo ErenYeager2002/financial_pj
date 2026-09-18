@@ -45,7 +45,11 @@ class CurrentGroupTest(unittest.TestCase):
             plan=C.classify_records(records,C.LedgerIndex(before),{})
             checked=V.validate(plan,A.read_ledger_rows(before))
             self.assertEqual(checked['counts']['conflict'],0)
-            items=checked['write'];_,patch=A.write_plan(before,after,items,return_patch_result=True)
+            items=checked['write'];changes,patch=A.write_plan(before,after,items,return_patch_result=True)
+            A.write_change_report(changes,Path(tmp)/'changes.xlsx')
+            report=openpyxl.load_workbook(Path(tmp)/'changes.xlsx')
+            self.assertTrue(all(row[5].value is None for row in list(report.active)[1:]))
+            report.close()
             self.assertEqual(A.verify_written(after,items),[])
             rows=A.read_ledger_rows(after)
             self.assertEqual(len(rows),8)
@@ -85,6 +89,42 @@ class CurrentGroupTest(unittest.TestCase):
                 self.assertTrue(valid_receipt_proof(item,dt.date(2026,8,20)))
             self.assertEqual(actual_amount(again['skip'][1]),110)
             self.assertEqual(before.read_bytes(),original)
+            from unittest.mock import patch
+            with patch.object(A, 'write_change_report', side_effect=OSError('report destination unavailable')):
+                rc=A._apply_in_place(before,Path(tmp)/'failed-report.xlsx',Path(tmp)/'diff.xlsx',copy.deepcopy(checked['write']),hexiao_date='2026-08-20')
+            self.assertEqual(rc,2)
+            self.assertEqual(before.read_bytes(),original)
+            self.assertFalse((Path(tmp)/'failed-report.xlsx').exists())
+            self.assertFalse((Path(tmp)/'diff.xlsx').exists())
+            report_path=Path(tmp)/'old-report.xlsx';diff_path=Path(tmp)/'old-diff.xlsx'
+            report_path.write_bytes(b'previous report');diff_path.write_bytes(b'previous difference')
+            replace=Path.replace
+            def reject_ledger(source,target):
+                if Path(target)==before:raise OSError('ledger replacement unavailable')
+                return replace(source,target)
+            with patch.object(Path,'replace',reject_ledger):
+                rc=A._apply_in_place(before,report_path,diff_path,copy.deepcopy(checked['write']),hexiao_date='2026-08-20')
+            self.assertEqual(rc,2)
+            self.assertEqual(before.read_bytes(),original)
+            self.assertEqual(report_path.read_bytes(),b'previous report')
+            self.assertEqual(diff_path.read_bytes(),b'previous difference')
+            portable=A.workbook_finalize.portable_path_for(before);portable.write_bytes(b'previous portable')
+            finalize=A._finalize_output
+            def portable_result(source,patch_result,portable_tmp,**kwargs):
+                result,_=finalize(source,patch_result,portable_tmp,**kwargs)
+                portable_tmp.write_bytes(b'new portable')
+                return result,(portable_tmp,{})
+            def reject_report(source,target):
+                if Path(target)==report_path:raise OSError('report replacement unavailable')
+                return replace(source,target)
+            with patch.object(A,'_finalize_output',portable_result),patch.object(Path,'replace',reject_report):
+                rc=A._apply_in_place(before,report_path,diff_path,copy.deepcopy(checked['write']),hexiao_date='2026-08-20')
+            self.assertEqual(rc,2)
+            self.assertEqual(before.read_bytes(),original)
+            self.assertEqual(portable.read_bytes(),b'previous portable')
+
+
+
 
     def test_incomplete_source_or_nonconserved_group_is_not_reconstructed(self):
         import current_receipt_group as G
