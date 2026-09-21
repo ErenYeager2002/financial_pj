@@ -89,50 +89,6 @@ class LedgerIndex:
                 "shoukuan_way": cell("收款方式"), "yingshou": yingshou,
             }
 
-    def positional_row(
-        self, so: str, sod: str, lines: List[dict]
-    ) -> Optional[Tuple[int, str, Optional[float]]]:
-        """
-        (SO+应收金额) 定位不到唯一行时的严格消歧：验证**整段能不能对齐**。
-
-          她表里这个 SO 的全部行（行号升序） vs 智云该 SO 的全部 SOD（编号降序）
-
-        为什么按这个序：两边都源自月初同一份「交付数据」导出，天然同序。
-
-        返回 (行号, 依据, 比例)；对不齐返回 None（老老实实挂起）。依据两种：
-
-        · `exact`  —— 金额序列逐位完全相等。实测 SO26040297（12 行）、SO26040481（10 行）。
-        · `ratio`  —— 有几位不等，但**所有不等的位比值完全一致**（系统性口径差，不是行错位）。
-                      实测 SO26040322：智云 477.61/661.31 vs 她表 488.64/676.58，
-                      两处比值都是 0.977433，她当天就是按智云金额填的。
-                      行错位不可能凑出同一个比值，所以这条判据是可证的，不是猜。
-
-        只要行数对不上（比如她把某个 SOD 拆成了两行）→ 直接 None。
-        """
-        rows = sorted(self.so_index.get(so, []))
-        if not rows or not lines or len(rows) != len(lines):
-            return None
-        ordered = sorted(lines, key=lambda x: str(x.get("sod") or ""), reverse=True)
-        ratios: List[float] = []
-        for r, ln in zip(rows, ordered):
-            y = common.to_number((self.row_snapshot.get(r) or {}).get("yingshou"))
-            d = ln.get("deliver")
-            if y is None or d is None or float(y) == 0.0:
-                return None
-            if abs(float(y) - float(d)) > TOL:
-                ratios.append(float(d) / float(y))
-        kind, ratio = "exact", None
-        if ratios:
-            ratio = sum(ratios) / len(ratios)
-            if not (0.5 < ratio < 1.5):
-                return None
-            if any(abs(x - ratio) > 5e-4 for x in ratios):
-                return None  # 比值不一致 → 更像行错位，不敢认
-            kind = "ratio"
-        for r, ln in zip(rows, ordered):
-            if (ln.get("sod") or "") == sod:
-                return r, kind, ratio
-        return None
 
     @staticmethod
     def _is_outstanding(snap: dict) -> bool:
@@ -422,7 +378,11 @@ class LedgerIndex:
                             return outstanding[0], "SO+应收金额+SOD未结清行", rows
                 return None, "E8", rows
         if sod:
-            rows = self.sod_index.get(sod, [])
+            sod_rows = self.sod_index.get(sod, [])
+            rows = [r for r in sod_rows if not so or
+                    str((self.row_snapshot.get(r) or {}).get("so") or "").strip() == so]
+            if so and sod_rows and not rows:
+                return None, "E_SO_SOD_MISMATCH", list(sod_rows)
             if len(rows) == 1:
                 return rows[0], "SOD", rows
             if len(rows) > 1:

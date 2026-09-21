@@ -558,6 +558,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/workflow-batches/{batch_id}/stop-disabled-owner": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Admin Stop Disabled Workflow Batch */
+        post: operations["admin_stop_disabled_workflow_batch_api_admin_workflow_batches__batch_id__stop_disabled_owner_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/workflow-definitions": {
         parameters: {
             query?: never;
@@ -569,6 +586,23 @@ export interface paths {
         get: operations["admin_list_workflow_definitions_api_admin_workflow_definitions_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/workflows/{workflow_id}/stop-disabled-owner": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Admin Stop Disabled Workflow */
+        post: operations["admin_stop_disabled_workflow_api_admin_workflows__workflow_id__stop_disabled_owner_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -901,6 +935,24 @@ export interface paths {
         get: operations["get_assistant_status_api_assistant_status_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/assistant/turns/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Persisted Turn Status */
+        get: operations["persisted_turn_status_api_assistant_turns__session_id__get"];
+        put?: never;
+        /** Persisted Turn Mutation */
+        post: operations["persisted_turn_mutation_api_assistant_turns__session_id__post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1260,6 +1312,126 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/pi-runtime/admin/users/{owner_id}/sessions/{session_id}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Admin Stop Disabled Owner Session */
+        post: operations["admin_stop_disabled_owner_session_api_pi_runtime_admin_users__owner_id__sessions__session_id__stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pi-runtime/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Sessions */
+        get: operations["list_sessions_api_pi_runtime_sessions_get"];
+        put?: never;
+        /** Create Session */
+        post: operations["create_session_api_pi_runtime_sessions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pi-runtime/sessions/{session_id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download */
+        get: operations["download_api_pi_runtime_sessions__session_id__download_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pi-runtime/sessions/{session_id}/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Files */
+        post: operations["files_api_pi_runtime_sessions__session_id__files_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pi-runtime/sessions/{session_id}/operate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Operate */
+        post: operations["operate_api_pi_runtime_sessions__session_id__operate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pi-runtime/skill-proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Proposals */
+        get: operations["proposals_api_pi_runtime_skill_proposals_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pi-runtime/skill-proposals/{candidate_id}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Publish Candidate */
+        post: operations["publish_candidate_api_pi_runtime_skill_proposals__candidate_id__publish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/profile/avatar": {
         parameters: {
             query?: never;
@@ -1513,6 +1685,23 @@ export interface paths {
         put?: never;
         /** Interpret */
         post: operations["interpret_api_skills__skill_id__interpret_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/submissions/{request_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Submission Status */
+        get: operations["submission_status_api_submissions__request_id__get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1907,7 +2096,8 @@ export interface paths {
         get: operations["get_reusable_workflow_files_api_workflows_reusable_files_get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /** Remove Reusable Workflow Files */
+        delete: operations["remove_reusable_workflow_files_api_workflows_reusable_files_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2346,6 +2536,19 @@ export interface components {
             version: string;
         } & {
             [key: string]: unknown;
+        };
+        /** AdminStopResult */
+        AdminStopResult: {
+            /**
+             * Environment Running
+             * @constant
+             */
+            environment_running: false;
+            /**
+             * Running
+             * @constant
+             */
+            running: false;
         };
         /** AdminUserCreate */
         AdminUserCreate: {
@@ -3028,6 +3231,22 @@ export interface components {
              */
             mode: "form" | "chat";
         };
+        /** CreateSession */
+        CreateSession: {
+            /**
+             * Channel
+             * @default assistant
+             * @enum {string}
+             */
+            channel: "assistant" | "workspace";
+            /** Skill Id */
+            skill_id?: string | null;
+            /**
+             * Title
+             * @default Pi 会话
+             */
+            title: string;
+        };
         /** ExecutionModeSpec */
         ExecutionModeSpec: {
             /**
@@ -3177,6 +3396,41 @@ export interface components {
             required: boolean;
             /** Role */
             role: string;
+        };
+        /** FileOperation */
+        FileOperation: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "list" | "upload_begin" | "upload_chunk" | "upload_commit" | "upload_abort";
+            /**
+             * Data
+             * @default
+             */
+            data: string;
+            /** Name */
+            name?: string | null;
+            /**
+             * Offset
+             * @default 0
+             */
+            offset: number;
+            /**
+             * Path
+             * @default
+             */
+            path: string;
+            /** Size */
+            size?: number | null;
+            /**
+             * Source
+             * @default workspace
+             * @enum {string}
+             */
+            source: "workspace" | "inputs";
+            /** Upload Id */
+            upload_id?: string | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -3343,6 +3597,11 @@ export interface components {
             file_ids?: string[];
             /** Session Id */
             session_id: string;
+            /**
+             * Turn Id
+             * @default
+             */
+            turn_id: string;
         };
         /** NativeSkillContext */
         NativeSkillContext: {
@@ -3430,6 +3689,18 @@ export interface components {
             task_scope: string;
             /** Window Hours */
             window_hours: number;
+        };
+        /** Operation */
+        Operation: {
+            /**
+             * Operation
+             * @enum {string}
+             */
+            operation: "start" | "send" | "resize" | "poll" | "stop" | "jobs";
+            /** Payload */
+            payload?: {
+                [key: string]: unknown;
+            };
         };
         /** PermissionSpec */
         PermissionSpec: {
@@ -3859,6 +4130,11 @@ export interface components {
             key: string;
             /** Label */
             label: string;
+        };
+        /** PublishCandidate */
+        PublishCandidate: {
+            /** Sha256 */
+            sha256: string;
         };
         /** RegistryError */
         RegistryError: {
@@ -5063,6 +5339,48 @@ export interface components {
             /** Step Type */
             step_type: string;
         };
+        /** SubmissionConflictResponse */
+        SubmissionConflictResponse: {
+            /** Detail */
+            detail: components["schemas"]["SubmissionErrorDetail"] | string;
+        };
+        /** SubmissionErrorDetail */
+        SubmissionErrorDetail: {
+            /**
+             * Code
+             * @enum {string}
+             */
+            code: "IDEMPOTENCY_CONFLICT" | "SUBMISSION_IN_PROGRESS" | "SUBMISSION_NOT_READY" | "SUBMISSION_REJECTED" | "LEGACY_SUBMISSION_UNVERIFIED" | "SUBMISSION_RECOVERY_ONLY";
+            /**
+             * Message
+             * @default
+             */
+            message: string;
+            /** Request Id */
+            request_id?: string | null;
+        };
+        /** SubmissionReceiptRead */
+        SubmissionReceiptRead: {
+            /**
+             * Operation
+             * @enum {string}
+             */
+            operation: "run.create" | "run.retry" | "draft.confirm";
+            /**
+             * Request Id
+             * Format: uuid
+             */
+            request_id: string;
+            /** Response Version */
+            response_version: number;
+            /** Run Id */
+            run_id: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "preparing" | "prepared" | "bound" | "rejected";
+        };
         /** TaskCenterItem */
         TaskCenterItem: {
             /**
@@ -5418,6 +5736,30 @@ export interface components {
             enabled: boolean;
             /** Owner Id */
             owner_id: string;
+        };
+        /** TurnMutation */
+        TurnMutation: {
+            /** Action */
+            action: string;
+            /** Data */
+            data?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Error
+             * @default
+             */
+            error: string;
+            /**
+             * Text
+             * @default
+             */
+            text: string;
+            /**
+             * Turn Id
+             * @default
+             */
+            turn_id: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -5781,6 +6123,8 @@ export interface components {
              * @enum {string}
              */
             execution_mode: "workflow" | "pi_harness";
+            /** Expected Material Set Id */
+            expected_material_set_id?: string | null;
             /** Fetched Bundle Id */
             fetched_bundle_id?: string | null;
             /** Files */
@@ -6359,6 +6703,8 @@ export interface components {
         };
         /** WorkflowReusableFilesRead */
         WorkflowReusableFilesRead: {
+            /** Candidate Next Page */
+            candidate_next_page?: number | null;
             /** Files */
             files?: {
                 [key: string]: unknown;
@@ -6389,6 +6735,8 @@ export interface components {
              * @enum {string}
              */
             execution_mode: "workflow" | "pi_harness";
+            /** Expected Material Set Id */
+            expected_material_set_id?: string | null;
             /** Fetched Bundle Id */
             fetched_bundle_id?: string | null;
             /** Files */
@@ -6422,6 +6770,7 @@ export type AdminAssistantProfile = components['schemas']['AdminAssistantProfile
 export type AdminAssistantProfileWrite = components['schemas']['AdminAssistantProfileWrite'];
 export type AdminPasswordReset = components['schemas']['AdminPasswordReset'];
 export type AdminSkillDetail = components['schemas']['AdminSkillDetail'];
+export type AdminStopResult = components['schemas']['AdminStopResult'];
 export type AdminUserCreate = components['schemas']['AdminUserCreate'];
 export type AdminUserRead = components['schemas']['AdminUserRead'];
 export type AdminUserUpdate = components['schemas']['AdminUserUpdate'];
@@ -6455,12 +6804,14 @@ export type BodyUploadAvatarApiProfileAvatarPost = components['schemas']['Body_u
 export type BodyUploadFileApiFilesPost = components['schemas']['Body_upload_file_api_files_post'];
 export type ChangePasswordRequest = components['schemas']['ChangePasswordRequest'];
 export type ConversationSpec = components['schemas']['ConversationSpec'];
+export type CreateSession = components['schemas']['CreateSession'];
 export type ExecutionModeSpec = components['schemas']['ExecutionModeSpec'];
 export type ExecutionSpec = components['schemas']['ExecutionSpec'];
 export type ExternalDataSourceSpec = components['schemas']['ExternalDataSourceSpec'];
 export type FeatureControlRead = components['schemas']['FeatureControlRead'];
 export type FetchedBundleRead = components['schemas']['FetchedBundleRead'];
 export type FileInputSpec = components['schemas']['FileInputSpec'];
+export type FileOperation = components['schemas']['FileOperation'];
 export type HttpValidationError = components['schemas']['HTTPValidationError'];
 export type HandlerSpec = components['schemas']['HandlerSpec'];
 export type InterpretRequest = components['schemas']['InterpretRequest'];
@@ -6477,6 +6828,7 @@ export type NativeSkillContextRequest = components['schemas']['NativeSkillContex
 export type NativeSkillFileRead = components['schemas']['NativeSkillFileRead'];
 export type NativeSkillRead = components['schemas']['NativeSkillRead'];
 export type ObservabilitySummary = components['schemas']['ObservabilitySummary'];
+export type Operation = components['schemas']['Operation'];
 export type PermissionSpec = components['schemas']['PermissionSpec'];
 export type PlatformFile = components['schemas']['PlatformFile'];
 export type PlatformFileDetail = components['schemas']['PlatformFileDetail'];
@@ -6488,6 +6840,7 @@ export type PlatformFilePage = components['schemas']['PlatformFilePage'];
 export type PlatformHealth = components['schemas']['PlatformHealth'];
 export type PlatformUser = components['schemas']['PlatformUser'];
 export type ProgressStageSpec = components['schemas']['ProgressStageSpec'];
+export type PublishCandidate = components['schemas']['PublishCandidate'];
 export type RegistryError = components['schemas']['RegistryError'];
 export type RegistryReloadResponse = components['schemas']['RegistryReloadResponse'];
 export type ResultMetricSpec = components['schemas']['ResultMetricSpec'];
@@ -6540,6 +6893,9 @@ export type SkillUiSpec = components['schemas']['SkillUiSpec'];
 export type StepDefinitionRead = components['schemas']['StepDefinitionRead'];
 export type StepMetricRead = components['schemas']['StepMetricRead'];
 export type StepRunRead = components['schemas']['StepRunRead'];
+export type SubmissionConflictResponse = components['schemas']['SubmissionConflictResponse'];
+export type SubmissionErrorDetail = components['schemas']['SubmissionErrorDetail'];
+export type SubmissionReceiptRead = components['schemas']['SubmissionReceiptRead'];
 export type TaskCenterItem = components['schemas']['TaskCenterItem'];
 export type TaskCenterPage = components['schemas']['TaskCenterPage'];
 export type TaskCenterStateCounts = components['schemas']['TaskCenterStateCounts'];
@@ -6553,6 +6909,7 @@ export type TaskReminderCleanupResult = components['schemas']['TaskReminderClean
 export type TaskReminderRead = components['schemas']['TaskReminderRead'];
 export type TaskReminderSubscriptionRead = components['schemas']['TaskReminderSubscriptionRead'];
 export type TaskReminderSubscriptionWrite = components['schemas']['TaskReminderSubscriptionWrite'];
+export type TurnMutation = components['schemas']['TurnMutation'];
 export type ValidationError = components['schemas']['ValidationError'];
 export type Workbench = components['schemas']['Workbench'];
 export type WorkbenchCounts = components['schemas']['WorkbenchCounts'];
@@ -7871,6 +8228,37 @@ export interface operations {
             };
         };
     };
+    admin_stop_disabled_workflow_batch_api_admin_workflow_batches__batch_id__stop_disabled_owner_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowBatchRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     admin_list_workflow_definitions_api_admin_workflow_definitions_get: {
         parameters: {
             query?: never;
@@ -7887,6 +8275,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkflowDefinitionRead"][];
+                };
+            };
+        };
+    };
+    admin_stop_disabled_workflow_api_admin_workflows__workflow_id__stop_disabled_owner_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -8464,6 +8883,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssistantStatus"];
+                };
+            };
+        };
+    };
+    persisted_turn_status_api_assistant_turns__session_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    persisted_turn_mutation_api_assistant_turns__session_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TurnMutation"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -9131,6 +9616,250 @@ export interface operations {
             };
         };
     };
+    admin_stop_disabled_owner_session_api_pi_runtime_admin_users__owner_id__sessions__session_id__stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                owner_id: string;
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminStopResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_sessions_api_pi_runtime_sessions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_session_api_pi_runtime_sessions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateSession"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_api_pi_runtime_sessions__session_id__download_get: {
+        parameters: {
+            query: {
+                path: string;
+                source?: "workspace" | "inputs";
+            };
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    files_api_pi_runtime_sessions__session_id__files_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FileOperation"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    operate_api_pi_runtime_sessions__session_id__operate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Operation"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    proposals_api_pi_runtime_skill_proposals_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    publish_candidate_api_pi_runtime_skill_proposals__candidate_id__publish_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                candidate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PublishCandidate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_avatar_api_profile_avatar_get: {
         parameters: {
             query?: never;
@@ -9219,7 +9948,9 @@ export interface operations {
     };
     new_run_api_runs_post: {
         parameters: {
-            query?: never;
+            query?: {
+                standard_only?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -9239,6 +9970,15 @@ export interface operations {
                     "application/json": components["schemas"]["RunDetail"];
                 };
             };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubmissionConflictResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -9246,6 +9986,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubmissionConflictResponse"];
                 };
             };
         };
@@ -9462,6 +10211,15 @@ export interface operations {
                     "application/json": components["schemas"]["RunDetail"];
                 };
             };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubmissionConflictResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -9469,6 +10227,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubmissionConflictResponse"];
                 };
             };
         };
@@ -9705,6 +10472,37 @@ export interface operations {
             };
         };
     };
+    submission_status_api_submissions__request_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubmissionReceiptRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_task_center_items_api_task_center_get: {
         parameters: {
             query?: {
@@ -9860,6 +10658,15 @@ export interface operations {
                     "application/json": components["schemas"]["RunDetail"];
                 };
             };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubmissionConflictResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -9867,6 +10674,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubmissionConflictResponse"];
                 };
             };
         };
@@ -10490,6 +11306,7 @@ export interface operations {
         parameters: {
             query: {
                 skill_id: string;
+                candidate_page?: number;
             };
             header?: never;
             path?: never;
@@ -10504,6 +11321,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkflowReusableFilesRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_reusable_workflow_files_api_workflows_reusable_files_delete: {
+        parameters: {
+            query: {
+                skill_id: string;
+                file_id?: string | null;
+                all_files?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: number;
+                    };
                 };
             };
             /** @description Validation Error */

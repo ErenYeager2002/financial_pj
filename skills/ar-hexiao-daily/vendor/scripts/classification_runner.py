@@ -104,6 +104,7 @@ def classify_records(
             and not r.get("baseline_receipt_audit")
             and r.get("code") not in {
                 "OK_ALREADY_SETTLED",
+                "OK_REGISTERED_RECEIPT_ALREADY_APPLIED",
                 settlement_status.SO_ALREADY_SETTLED,
                 "OK_FALLBACK_ALLOCATION_ALREADY_APPLIED",
                 "OK_ITEMIZED_CUMULATIVE_ALREADY_APPLIED",
@@ -266,6 +267,9 @@ def classify_records(
             )
             r["five_cols"] = {}
 
+    import source_history_gap
+    source_history_gap.apply(results, ledger)
+
     import receipt_sequence
     receipt_sequence.guard(results)
 
@@ -277,6 +281,12 @@ def classify_records(
 
     if not defer_sequence_guard:
         FS.guard(results)
+    import ordinary_receipt_identity
+    ordinary_receipt_identity.bind(results, ledger)
+    for item in results:
+        if "W_DELIVERY_LOCAL_RATE_DIFFERENCE" in (item.get("warning_codes") or []):
+            item["reason"] = (str(item.get("reason") or "") +
+                              "；交付本币与订单汇率换算值不同，本次采用智云明确的交付本币。")
     auto = [r for r in results if r["bucket"] == "auto"]
     hold = [r for r in results if r["bucket"] == "hold"]
     exc = [r for r in results if r["bucket"] == "exception"]
@@ -310,6 +320,12 @@ def classify_records_by_year(
         if delivery_date is None:
             rec["target_ledger_year"] = None
             rec["target_ledger_path"] = ""
+            if rec.get("forced_code") == "E5" and rec.get("so"):
+                # 只核对材料是否包含 SO，不据此推测项目交付年度。
+                rec["_provided_ledger_years"] = sorted(ledgers)
+                rec["_missing_from_provided_ledgers"] = bool(ledgers) and not any(
+                    ledger.so_index.get(rec["so"]) for ledger in ledgers.values()
+                )
             if not rec.get("forced_code"):
                 issue = str(rec.get("delivery_date_issue") or "").strip()
                 conflict = "冲突" in issue

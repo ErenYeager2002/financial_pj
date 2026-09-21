@@ -26,7 +26,13 @@ from .task_reminder_workflow_service import sync_reminder_from_workflow
 def acquire_claim_lock(db: Session) -> None:
     dialect = db.get_bind().dialect.name
     if dialect == "sqlite":
-        db.execute(text("BEGIN IMMEDIATE"))
+        connection = db.connection()
+        if connection.connection.driver_connection.in_transaction:
+            # Upgrade an existing caller/savepoint transaction to a write lock
+            # without committing it or issuing an invalid nested BEGIN.
+            db.execute(text("UPDATE scheduler_locks SET name = name WHERE name = 'global'"))
+        else:
+            db.execute(text("BEGIN IMMEDIATE"))
         return
     db.scalar(select(SchedulerLock).where(SchedulerLock.name == "global").with_for_update())
 

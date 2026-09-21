@@ -44,7 +44,7 @@ def run(workspace: Path, checked: Path) -> dict:
             monthly_prefill = phase == "prefill" and any(item.get("monthly_schema") for item in items)
             if monthly_prefill:
                 from flow_order_prefill import pending_sos
-                eligible = sum(item.get("verdict") == "write" and bool(pending_sos(item)) for item in items)
+                eligible = sum(item.get("verdict") == "write" and bool(pending_sos(item)) and not item.get("source_receipts") for item in items)
             applicable = not monthly_prefill or eligible > 0
             result["phases"][phase] = {
                 "state": "failed" if problems else "verified",

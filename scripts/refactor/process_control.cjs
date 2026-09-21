@@ -14,4 +14,5 @@ function runGroup(command,args,{cwd,env,timeout=240000,maxBuffer=8*1024*1024}={}
     child.on('close',finish);
   });
 }
-module.exports={runGroup};
+function succeeded(result) { return result.status === 0 && !result.signal && !result.error; }
+module.exports={runGroup,succeeded};

@@ -1,0 +1,41 @@
+{
+  "mode": "normal",
+  "services": {
+    "api": {
+      "image": "sha256:1a051c67b34d7151ad60dd818aa44ef91d3122827f65c922eff96c7badddb610",
+      "running": true,
+      "restarts": 0,
+      "matched_source_files": 47
+    },
+    "worker-standard": {
+      "image": "sha256:1a051c67b34d7151ad60dd818aa44ef91d3122827f65c922eff96c7badddb610",
+      "running": true,
+      "restarts": 0,
+      "matched_source_files": 47
+    },
+    "worker-task-discovery": {
+      "image": "sha256:1a051c67b34d7151ad60dd818aa44ef91d3122827f65c922eff96c7badddb610",
+      "running": true,
+      "restarts": 0,
+      "matched_source_files": 47
+    }
+  },
+  "agent": {
+    "id": "d3e1ffeae50b494fa9e01bd5e29cc17aef094923ae660d7497cff2c1221853f9",
+    "image": "sha256:44a333283d6abd78846b0e8330f67e224c965e1e472ad3877f4f1ba876e79ad5",
+    "running": true,
+    "restarts": 0,
+    "started_at": "2026-09-18T09:57:00.225260631Z",
+    "phase": "resumed"
+  },
+  "task_counts": {
+    "runs": 0,
+    "batches": 0,
+    "actions": 0,
+    "discovery": 0,
+    "assistant": 0
+  },
+  "healthy_sample": true,
+  "revision": "f2a3b4c5d6e7",
+  "session_http": 401
+}

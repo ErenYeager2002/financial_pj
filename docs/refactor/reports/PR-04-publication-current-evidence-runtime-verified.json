@@ -1,0 +1,53 @@
+{
+  "at": "2026-09-20T08:35:03.384010+00:00",
+  "image": "sha256:0d1a589a0110fbf44b1dab7376581531e73bedca7b39f2c03579e5e5d3d60e82",
+  "backend_hash_count": 202,
+  "preserved_ar_skill_hash_count": 240,
+  "services": {
+    "api": {
+      "hash_count": 442,
+      "mismatches": [],
+      "uid": 10001,
+      "revisions": [
+        "f4b5c6d7e8f9"
+      ],
+      "replay_only": false,
+      "image": "sha256:0d1a589a0110fbf44b1dab7376581531e73bedca7b39f2c03579e5e5d3d60e82",
+      "status": "running",
+      "restarts": 0
+    },
+    "worker-standard": {
+      "hash_count": 442,
+      "mismatches": [],
+      "uid": 10001,
+      "revisions": [
+        "f4b5c6d7e8f9"
+      ],
+      "replay_only": false,
+      "image": "sha256:0d1a589a0110fbf44b1dab7376581531e73bedca7b39f2c03579e5e5d3d60e82",
+      "status": "running",
+      "restarts": 0
+    },
+    "worker-task-discovery": {
+      "hash_count": 442,
+      "mismatches": [],
+      "uid": 10001,
+      "revisions": [
+        "f4b5c6d7e8f9"
+      ],
+      "replay_only": false,
+      "image": "sha256:0d1a589a0110fbf44b1dab7376581531e73bedca7b39f2c03579e5e5d3d60e82",
+      "status": "running",
+      "restarts": 0
+    }
+  },
+  "mode": "normal",
+  "public_mode": "normal",
+  "active_counts": {
+    "runs": 0,
+    "batches": 0,
+    "actions": 0,
+    "discovery": 0,
+    "assistant": 0
+  }
+}

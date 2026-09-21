@@ -5,7 +5,7 @@ from contextlib import AbstractContextManager
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 
-from sqlalchemy import update
+from sqlalchemy import update, select, func
 
 from .database import SessionLocal
 from .models import RunRecord, WorkflowAction
@@ -27,18 +27,27 @@ class LeaseHeartbeat(AbstractContextManager["LeaseHeartbeat"]):
         self.worker_id = worker_id
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        self.lease_lost = False
 
     @property
     def model(self):
         return RunRecord if self.kind == "run" else WorkflowAction
 
-    def _touch(self) -> None:
-        now = datetime.now(UTC)
+    def _touch(self) -> bool:
+        if type(self.attempt) is not int or self.attempt <= 0:
+            return False
         with SessionLocal() as db:
-            query = update(self.model)
-            if self.kind == "run":
-                query = query.where(self.model.attempt_count == self.attempt, self.model.lease_expires_at >= now)
-            db.execute(
+            # Take the row lock before observing time. A wait must not reuse a
+            # timestamp from when the lease was still valid.
+            row_id = db.scalar(select(self.model.id).where(
+                self.model.id == self.record_id).with_for_update())
+            if row_id is None:
+                return False
+            now = (db.scalar(select(func.clock_timestamp()))
+                   if db.bind.dialect.name == "postgresql" else datetime.now(UTC))
+            query = update(self.model).where(
+                self.model.attempt_count == self.attempt, self.model.lease_expires_at > now)
+            result = db.execute(
                 query
                 .where(
                     self.model.id == self.record_id,
@@ -48,11 +57,14 @@ class LeaseHeartbeat(AbstractContextManager["LeaseHeartbeat"]):
                 .values(heartbeat_at=now, lease_expires_at=lease_deadline(now))
             )
             db.commit()
+            return result.rowcount == 1
 
     def _loop(self) -> None:
         while not self._stop.wait(settings.worker_heartbeat_seconds):
             try:
-                self._touch()
+                if not self._touch():
+                    self.lease_lost = True
+                    return
             except Exception:
                 # A transient heartbeat failure must not terminate the financial action.
                 # The next heartbeat gets another chance before the lease expires.

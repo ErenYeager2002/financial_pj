@@ -17,7 +17,8 @@ from sqlalchemy import select
 from app import fetched_data_preview, model_service, workflow_orchestrator, workflow_service
 from app.auth_models import UserSkillPermission
 from app.auth_service import get_user_by_username
-from app.database import SessionLocal, init_db
+from app.database import SessionLocal
+from db_setup import migrate_test_database
 from app.models import (
     AuditEvent,
     FileRecord,
@@ -239,7 +240,7 @@ def _append_material_version(
 
 def _finish_all_ar_workflows() -> None:
     """Keep platform-global single-flight tests isolated from earlier cases."""
-    init_db()
+    migrate_test_database()
     with SessionLocal() as db:
         workflows = list(
             db.scalars(

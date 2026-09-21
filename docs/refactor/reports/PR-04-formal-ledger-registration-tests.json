@@ -1,0 +1,5 @@
+{
+  "returncode": 0,
+  "stdout": "{\"schema_version\": \"isolated-check-v1\", \"results\": [{\"suite\": \"approval-authorization\", \"command\": [\"/usr/local/bin/python\", \"-B\", \"-m\", \"pytest\", \"backend/tests/test_approval_authorization.py\", \"backend/tests/test_ar_published_cancellation.py\", \"backend/tests/test_publication_current_evidence.py\", \"backend/tests/test_formal_ledger_registration.py\", \"--basetemp\", \"/tmp/financial-refactor-dtogphp2/approval-auth-pytest\", \"-p\", \"no:cacheprovider\", \"-q\"], \"exit_code\": 0, \"status\": \"passed\", \"seconds\": 25.39, \"output\": \"................................................                         [100%]\\n\"}]}\n\n",
+  "stderr": ""
+}

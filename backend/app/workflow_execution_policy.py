@@ -73,7 +73,7 @@ def assert_workflow_execution_enabled(workflow: object) -> None:
     assert_workflow_skill_execution_enabled(str(skill_id))
 
 
-def workflow_owner_context(db: Session, workflow: object) -> UserContext:
+def workflow_owner_context(db: Session, workflow: object, *, observe_phase=None, action=None) -> UserContext:
     """Re-read the task owner before every new executable action.
 
     Workflow and Pi Harness workers use this same gate. The task keeps its
@@ -97,7 +97,12 @@ def workflow_owner_context(db: Session, workflow: object) -> UserContext:
         department_id=owner.department_id,
         username=owner.username,
     )
-    assert_skill_permission(db, actor, str(getattr(workflow, "skill_id", "")))
+    permission = assert_skill_permission(db, actor, str(getattr(workflow, "skill_id", "")))
+    if observe_phase is not None:
+        from .modules.execution.authorization import record_authorization_observation
+
+        record_authorization_observation(db, workflow, actor, permission, observe_phase,
+                                         resource_type="workflow", action=action)
     return actor
 
 

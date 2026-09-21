@@ -134,6 +134,15 @@ def _has_expected_tool_call(body: object) -> bool:
         return False
 
 
+def _tool_probe_choice(body: object) -> dict[str, Any]:
+    if not isinstance(body, dict):
+        return {}
+    choices = body.get("choices")
+    if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+        return {}
+    return choices[0]
+
+
 def _verify_tool_calling(
     provider: ProviderDefinition,
     api_key: str,
@@ -144,6 +153,8 @@ def _verify_tool_calling(
     # 且 M3 思考默认开启会占用 max_tokens；改用 system 指令强制调用工具。
     is_minimax = provider.id == "minimax"
     is_go = provider.id == "opencode_go"
+    is_stepfun = provider.id == "stepfun"
+    is_agnes = provider.id == "agnes"
     payload: dict[str, Any] = {
         "model": model,
         "messages": (
@@ -154,7 +165,7 @@ def _verify_tool_calling(
                 },
                 {"role": "user", "content": "ping"},
             ]
-            if is_minimax or is_go
+            if is_minimax or is_go or is_stepfun or is_agnes
             else [{"role": "user", "content": "ping"}]
         ),
         "tools": [
@@ -171,12 +182,13 @@ def _verify_tool_calling(
                 },
             }
         ],
-        "max_tokens": 4096 if is_go else (1024 if is_minimax else 32),
+        "max_tokens": 4096 if is_go or is_stepfun or is_agnes else (1024 if is_minimax else 32),
         "temperature": 0,
     }
-    if is_go:
-        # Go serves several reasoning models; forcing a function or temperature
-        # can be rejected even when the model supports tools. Validate the actual
+    if is_go or is_stepfun:
+        # Reasoning providers need enough output budget for the tool call.
+        # Avoid forcing a function or sampling parameters during the probe.
+        # Validate the actual
         # returned tool call after requesting it explicitly in the system message.
         payload["tool_choice"] = "auto"
         payload.pop("temperature")
@@ -194,10 +206,30 @@ def _verify_tool_calling(
             "/chat/completions",
             api_key,
             payload,
-            timeout=30,
+            timeout=60 if is_stepfun or is_agnes else 30,
         )
         response.raise_for_status()
         body = response.json()
+        choice = _tool_probe_choice(body)
+        message = choice.get("message")
+        if (is_stepfun and choice.get("finish_reason") == "stop"
+                and isinstance(message, dict) and not message.get("tool_calls")):
+            # An auto tool choice may legitimately return text. Retry this
+            # harmless connection probe once with explicit user intent; never
+            # retry a returned malformed call, truncation or safety rejection.
+            retry_payload = {
+                **payload,
+                "messages": [*payload["messages"][:-1], {
+                    "role": "user",
+                    "content": "请现在调用 tool_call_supported 工具，参数为 {}。不要以普通文字回答。",
+                }],
+            }
+            response = secure_llm_request(
+                "POST", provider, base_url, "/chat/completions", api_key,
+                retry_payload, timeout=15,
+            )
+            response.raise_for_status()
+            body = response.json()
     except httpx.HTTPStatusError as exc:
         raise ValueError(
             f"模型 {model} 未通过 Tool Calling 验证"
@@ -212,6 +244,13 @@ def _verify_tool_calling(
             f"模型 {model} 返回成功，但没有完成平台要求的 Tool Calling 验证。"
         ) from exc
     if not _has_expected_tool_call(body):
+        if is_stepfun:
+            reason = _tool_probe_choice(body).get("finish_reason")
+            detail = {
+                "length": "验证输出额度已耗尽，工具调用未完成",
+                "content_filter": "验证请求被模型安全过滤，工具调用未完成",
+            }.get(reason if isinstance(reason, str) else "", "未返回符合要求的工具调用")
+            raise ValueError(f"模型 {model}：{detail}。本次验证未通过，请稍后重新验证或选择其他模型。")
         raise ValueError(
             f"模型 {model} 返回成功，但没有完成平台要求的 Tool Calling 验证。"
         )

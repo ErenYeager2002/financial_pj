@@ -14,9 +14,10 @@ from sqlalchemy.orm import Session
 
 from .adapters import ExecutionContext, get_adapter
 from .ar_execution_contract import CONTRACT_VERSION
-from .auth import UserContext
-from .database import SessionLocal, init_db
-from .events import emit_event
+from .modules.execution.authorization import execution_owner, ExecutionPhase, ExecutionAuthorizationRevoked
+from .modules.execution.preconditions import assert_run_confirmation, ExecutionPreconditionFailed
+from .database import SessionLocal, check_runtime_database
+from .events import append_run_event
 from .fetched_bundle_service import purge_expired_bundles
 from .leases import LeaseHeartbeat, lease_deadline
 from .run_fencing import RunLeaseLost, bind_run_fence, assert_run_fence
@@ -56,11 +57,11 @@ def claim_next_run(
     )
     selected: RunRecord | None = None
     for run_id in candidates:
-        run = db.get(RunRecord, run_id)
+        run = db.get(RunRecord, run_id, populate_existing=True)
         if not run:
             continue
         try:
-            SkillManifest.model_validate(json.loads(run.manifest_snapshot))
+            manifest = SkillManifest.model_validate(json.loads(run.manifest_snapshot))
         except (TypeError, ValueError, json.JSONDecodeError):
             detail = build_task_error(
                 employee=run.owner_name or run.owner_id,
@@ -79,17 +80,24 @@ def claim_next_run(
                 error_code="invalid_skill_snapshot",
                 error_message=run.error_message,
             )
-            emit_event(
+            append_run_event(
                 db,
                 run,
                 event_type="state",
                 state="failed",
                 message=run.error_message,
                 data={"error": detail.as_dict()},
-                commit=False,
             )
             continue
         if active_run_count(db, run.skill_id, now) >= max(1, run.concurrency_limit):
+            continue
+        try:
+            execution_owner(db, run, ExecutionPhase.CLAIM, observe=True)
+            assert_run_confirmation(run, manifest, ExecutionPhase.CLAIM)
+            from .modules.execution.run_snapshot import assert_execution_snapshot
+            assert_execution_snapshot(db, run, ExecutionPhase.CLAIM)
+        except (ExecutionAuthorizationRevoked, ExecutionPreconditionFailed) as error:
+            _deny_execution(db, run, error)
             continue
         run.state = "running"
         run.started_at = now
@@ -101,10 +109,10 @@ def claim_next_run(
         run.lease_expires_at = lease_deadline(now)
         selected = run
         break
-    db.commit()
     if not selected:
+        db.commit()
         return None
-    emit_event(
+    append_run_event(
         db,
         selected,
         event_type="state",
@@ -118,6 +126,16 @@ def claim_next_run(
     return selected
 
 
+def _deny_execution(db, run, error):
+    run.error_message = str(error)
+    run.finished_at = datetime.now(UTC)
+    finish_run_execution_step(db, run, state="failed", error_code=error.code,
+                              error_message=run.error_message)
+    append_run_event(db, run, event_type="state", state="failed",
+                     message=run.error_message,
+                     data={"code":error.code,"phase":error.phase.value})
+
+
 def execute_run(db: Session, run: RunRecord) -> None:
     bind_run_fence(db, run)
     try:
@@ -129,27 +147,38 @@ def execute_run(db: Session, run: RunRecord) -> None:
         db.info.pop("ordinary_run_fence", None)
 
 
+def _reload_after_execution_failure(db: Session, run_id: str) -> RunRecord:
+    """Discard unpublished work and revalidate ownership before recording failure."""
+    db.rollback()
+    run = db.get(RunRecord, run_id)
+    if run is None:
+        raise RunLeaseLost("Task disappeared before failure could be recorded")
+    assert_run_fence(db, lock=True)
+    return run
+
+
 def _execute_claimed_run(db: Session, run: RunRecord) -> None:
-    manifest = SkillManifest.model_validate(json.loads(run.manifest_snapshot))
-    owner = UserContext(
-        user_id=run.owner_id,
-        display_name=run.owner_name,
-        role="finance_user",
-        department_id=run.department_id,
-    )
-    original_workspace = run_root(run.owner_id, run.id)
-    workspace = original_workspace / "attempts" / str(run.attempt_count)
-    workspace.mkdir(parents=True, exist_ok=True)
-    skill_dir = original_workspace / "skill"
-    ctx = ExecutionContext(
-        db=db,
-        run=run,
-        manifest=manifest,
-        skill_dir=skill_dir,
-        workspace=workspace,
-        owner=owner,
-    )
+    run_id = run.id
     try:
+        # Same order as administrative permission mutations and queue claims:
+        # global scheduler lock, then task fence, then current authorization.
+        acquire_claim_lock(db)
+        assert_run_fence(db, lock=True)
+        db.refresh(run)
+        manifest = SkillManifest.model_validate(json.loads(run.manifest_snapshot))
+        if run.cancel_requested:
+            raise InterruptedError("任务已被员工取消，未启动执行器。")
+        owner = execution_owner(db, run, ExecutionPhase.START, observe=True)
+        assert_run_confirmation(run, manifest, ExecutionPhase.START)
+        from .modules.execution.run_snapshot import assert_execution_snapshot
+        assert_execution_snapshot(db, run, ExecutionPhase.START)
+        db.commit()
+        original_workspace = run_root(run.owner_id, run.id)
+        workspace = original_workspace / "attempts" / str(run.attempt_count)
+        workspace.mkdir(parents=True, exist_ok=True)
+        skill_dir = original_workspace / "skill"
+        ctx = ExecutionContext(db=db, run=run, manifest=manifest, skill_dir=skill_dir,
+                               workspace=workspace, owner=owner)
         adapter = get_adapter(run.adapter)
         result = adapter.execute(ctx)
         errors = sorted(Draft202012Validator(manifest.output_schema).iter_errors(result), key=str)
@@ -158,7 +187,7 @@ def _execute_claimed_run(db: Session, run: RunRecord) -> None:
         run.result_json = json.dumps(result, ensure_ascii=False, sort_keys=True)
         run.finished_at = datetime.now(UTC)
         finish_run_execution_step(db, run, state="succeeded", result=result)
-        emit_event(
+        append_run_event(
             db,
             run,
             event_type="state",
@@ -167,16 +196,24 @@ def _execute_claimed_run(db: Session, run: RunRecord) -> None:
             message="任务执行完成",
             data={"summary": result.get("summary", {})},
         )
+        db.commit()
     except RunLeaseLost:
         raise
+    except (ExecutionAuthorizationRevoked, ExecutionPreconditionFailed) as exc:
+        run = _reload_after_execution_failure(db, run_id)
+        _deny_execution(db, run, exc)
+        db.commit()
     except InterruptedError as exc:
+        run = _reload_after_execution_failure(db, run_id)
         safe_error = sanitize_text(str(exc), error=True)
         run.finished_at = datetime.now(UTC)
         finish_run_execution_step(
             db, run, state="cancelled", error_code="cancelled", error_message=safe_error
         )
-        emit_event(db, run, event_type="state", state="cancelled", message=safe_error)
+        append_run_event(db, run, event_type="state", state="cancelled", message=safe_error)
+        db.commit()
     except TimeoutError as exc:
+        run = _reload_after_execution_failure(db, run_id)
         detail = build_task_error(
             employee=run.owner_name or run.owner_id,
             skill_id=run.skill_id,
@@ -191,7 +228,7 @@ def _execute_claimed_run(db: Session, run: RunRecord) -> None:
         finish_run_execution_step(
             db, run, state="timed_out", error_code="timeout", error_message=safe_error
         )
-        emit_event(
+        append_run_event(
             db,
             run,
             event_type="state",
@@ -199,7 +236,9 @@ def _execute_claimed_run(db: Session, run: RunRecord) -> None:
             message=safe_error,
             data={"error": detail.as_dict()},
         )
+        db.commit()
     except Exception as exc:
+        run = _reload_after_execution_failure(db, run_id)
         detail = build_task_error(
             employee=run.owner_name or run.owner_id,
             skill_id=run.skill_id,
@@ -218,7 +257,7 @@ def _execute_claimed_run(db: Session, run: RunRecord) -> None:
             error_code="adapter_failure",
             error_message=safe_error,
         )
-        emit_event(
+        append_run_event(
             db,
             run,
             event_type="state",
@@ -226,6 +265,8 @@ def _execute_claimed_run(db: Session, run: RunRecord) -> None:
             message=safe_error,
             data={"error": detail.as_dict()},
         )
+        db.commit()
+
 
 
 def run_once(
@@ -245,6 +286,9 @@ def run_once(
         if "workflow" in pools and purge_expired_bundles(db, limit=1):
             return True
         if "workflow" in pools:
+            from .ar_material_lifecycle import maintain_materials
+            if maintain_materials(db):
+                return True
             from .ar_staging_retention import maintain_expired_staging
 
             if maintain_expired_staging(db):
@@ -257,7 +301,7 @@ def run_once(
 
 
 def run_loop(pools: tuple[str, ...], worker_id: str) -> None:
-    init_db()
+    check_runtime_database()
     settings.ensure_directories()
     signal.signal(signal.SIGINT, _stop)
     signal.signal(signal.SIGTERM, _stop)
@@ -298,7 +342,7 @@ def main() -> None:
     args = parser.parse_args()
     pools = tuple(item.strip() for item in args.pools.split(",") if item.strip())
     if args.once:
-        init_db()
+        check_runtime_database()
         settings.ensure_directories()
         run_once(pools, args.worker_id)
     else:

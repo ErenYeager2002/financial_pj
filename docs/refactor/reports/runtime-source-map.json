@@ -1,0 +1,251 @@
+{
+  "observed_at": "2026-09-18T07:43:56.794758+00:00",
+  "scope": "read-only metadata and selected source hashes; no business data or environment values",
+  "systemd": [
+    {
+      "unit": "financial-native-sandbox.service",
+      "active": "active",
+      "substate": "running",
+      "unit_sha256": "ca3f36f17017a6cfcd44f27535850e765694f73ef995b0bb0eb594dcfe73bdca",
+      "repository_unit_sha256": "ca3f36f17017a6cfcd44f27535850e765694f73ef995b0bb0eb594dcfe73bdca",
+      "script_files": [
+        {
+          "path_relative_to_deploy_root": "releases/rebuild-e95b527/source/deployment/native_skill_sandbox.py",
+          "sha256": "3e226689f286bfb43fd5395e2a406c885516d01d5f94dbbd8e63b02daaf09208",
+          "repository_candidates": [
+            {
+              "path": "deployment/native_skill_sandbox.py",
+              "sha256": "3e226689f286bfb43fd5395e2a406c885516d01d5f94dbbd8e63b02daaf09208",
+              "matches": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "unit": "financial-pi-runtime.service",
+      "active": "active",
+      "substate": "running",
+      "unit_sha256": "dcf680e7eaf806869c341d6affb578e7c91f46432dcbb694e5ab02736cff8390",
+      "repository_unit_sha256": "dcf680e7eaf806869c341d6affb578e7c91f46432dcbb694e5ab02736cff8390",
+      "script_files": [
+        {
+          "path_relative_to_deploy_root": "releases/rebuild-e95b527/source/deployment/pi_runtime_manager.py",
+          "sha256": "f681731b938a555d24dbf66df5744b149d9ff2a6f0c8f080a8ecd5cf42bf15d4",
+          "repository_candidates": [
+            {
+              "path": "deployment/pi_runtime_manager.py",
+              "sha256": "f681731b938a555d24dbf66df5744b149d9ff2a6f0c8f080a8ecd5cf42bf15d4",
+              "matches": true
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "containers": [
+    {
+      "service": "next",
+      "image_id": "sha256:3eed32005b29fe238663b3eaa7b5937684af63144ce5e820fb7f2e1b7425fb69",
+      "state": "running",
+      "compose_file_sha256": "ef229358fa804d4f64bd68f6b4b4428f0792e094d3538609f2c20ee5f9ac1027",
+      "source_hashes": []
+    },
+    {
+      "service": "worker-task-discovery",
+      "image_id": "sha256:b7ce24c7083b474eb0018c82d3d0f772a25c0ddeba6c63cf5617d51b3c6d4abd",
+      "state": "running",
+      "compose_file_sha256": "ef229358fa804d4f64bd68f6b4b4428f0792e094d3538609f2c20ee5f9ac1027",
+      "source_hashes": [
+        {
+          "relative": "app/workflow_service.py",
+          "sha256": "88d2d83dc3501363f3f04445a5beae874973ee8cd512c022d6e5872009b2804a",
+          "repository_sha256": "88d2d83dc3501363f3f04445a5beae874973ee8cd512c022d6e5872009b2804a",
+          "release_sha256": "88d2d83dc3501363f3f04445a5beae874973ee8cd512c022d6e5872009b2804a",
+          "matches_repository": true,
+          "matches_release": true
+        },
+        {
+          "relative": "app/ar_execution_runner.py",
+          "sha256": "3ef25aeafb110b25aef9f3cec7bf624506da99b8a9dcbd7580cca28b033aa118",
+          "repository_sha256": "3ef25aeafb110b25aef9f3cec7bf624506da99b8a9dcbd7580cca28b033aa118",
+          "release_sha256": "3ef25aeafb110b25aef9f3cec7bf624506da99b8a9dcbd7580cca28b033aa118",
+          "matches_repository": true,
+          "matches_release": true
+        },
+        {
+          "relative": "app/worker.py",
+          "sha256": "b30e58d0ec8d9c922734238cc00b8e5815bc990c1c4707f399386d7ec048aec3",
+          "repository_sha256": "b30e58d0ec8d9c922734238cc00b8e5815bc990c1c4707f399386d7ec048aec3",
+          "release_sha256": "b30e58d0ec8d9c922734238cc00b8e5815bc990c1c4707f399386d7ec048aec3",
+          "matches_repository": true,
+          "matches_release": true
+        }
+      ]
+    },
+    {
+      "service": "worker-standard",
+      "image_id": "sha256:b7ce24c7083b474eb0018c82d3d0f772a25c0ddeba6c63cf5617d51b3c6d4abd",
+      "state": "running",
+      "compose_file_sha256": "ef229358fa804d4f64bd68f6b4b4428f0792e094d3538609f2c20ee5f9ac1027",
+      "source_hashes": [
+        {
+          "relative": "app/workflow_service.py",
+          "sha256": "88d2d83dc3501363f3f04445a5beae874973ee8cd512c022d6e5872009b2804a",
+          "repository_sha256": "88d2d83dc3501363f3f04445a5beae874973ee8cd512c022d6e5872009b2804a",
+          "release_sha256": "88d2d83dc3501363f3f04445a5beae874973ee8cd512c022d6e5872009b2804a",
+          "matches_repository": true,
+          "matches_release": true
+        },
+        {
+          "relative": "app/ar_execution_runner.py",
+          "sha256": "3ef25aeafb110b25aef9f3cec7bf624506da99b8a9dcbd7580cca28b033aa118",
+          "repository_sha256": "3ef25aeafb110b25aef9f3cec7bf624506da99b8a9dcbd7580cca28b033aa118",
+          "release_sha256": "3ef25aeafb110b25aef9f3cec7bf624506da99b8a9dcbd7580cca28b033aa118",
+          "matches_repository": true,
+          "matches_release": true
+        },
+        {
+          "relative": "app/worker.py",
+          "sha256": "b30e58d0ec8d9c922734238cc00b8e5815bc990c1c4707f399386d7ec048aec3",
+          "repository_sha256": "b30e58d0ec8d9c922734238cc00b8e5815bc990c1c4707f399386d7ec048aec3",
+          "release_sha256": "b30e58d0ec8d9c922734238cc00b8e5815bc990c1c4707f399386d7ec048aec3",
+          "matches_repository": true,
+          "matches_release": true
+        }
+      ]
+    },
+    {
+      "service": "worker-agent",
+      "image_id": "sha256:44a333283d6abd78846b0e8330f67e224c965e1e472ad3877f4f1ba876e79ad5",
+      "state": "running",
+      "compose_file_sha256": "ef229358fa804d4f64bd68f6b4b4428f0792e094d3538609f2c20ee5f9ac1027",
+      "source_hashes": [],
+      "source_probe": "Node runtime artifact hashes collected; Python sources not applicable; build-to-source mapping pending",
+      "node_runtime_files": {
+        "cwd": "/app/agent-runtime",
+        "files": [
+          {
+            "path": "/app/agent-runtime/dist/workflow-harness-worker.js",
+            "sha256": "0996075a333e39c5d9de6816fb83e10b34e154c92feaa1b95821e89aa7ef30dd"
+          },
+          {
+            "path": "/app/agent-runtime/package.json",
+            "sha256": "0cba3cce094d4242cce050518ff0d8e6456ab783c7bb87739713059830ece61f"
+          }
+        ]
+      }
+    },
+    {
+      "service": "api",
+      "image_id": "sha256:816c9d1dfc113dbe2e74da34e887dc22d494dd7bd3dad710614d4b13545b6edf",
+      "state": "running",
+      "compose_file_sha256": "ef229358fa804d4f64bd68f6b4b4428f0792e094d3538609f2c20ee5f9ac1027",
+      "source_hashes": [
+        {
+          "relative": "app/workflow_service.py",
+          "sha256": "88d2d83dc3501363f3f04445a5beae874973ee8cd512c022d6e5872009b2804a",
+          "repository_sha256": "88d2d83dc3501363f3f04445a5beae874973ee8cd512c022d6e5872009b2804a",
+          "release_sha256": "88d2d83dc3501363f3f04445a5beae874973ee8cd512c022d6e5872009b2804a",
+          "matches_repository": true,
+          "matches_release": true
+        },
+        {
+          "relative": "app/ar_execution_runner.py",
+          "sha256": "3ef25aeafb110b25aef9f3cec7bf624506da99b8a9dcbd7580cca28b033aa118",
+          "repository_sha256": "3ef25aeafb110b25aef9f3cec7bf624506da99b8a9dcbd7580cca28b033aa118",
+          "release_sha256": "3ef25aeafb110b25aef9f3cec7bf624506da99b8a9dcbd7580cca28b033aa118",
+          "matches_repository": true,
+          "matches_release": true
+        },
+        {
+          "relative": "app/worker.py",
+          "sha256": "b30e58d0ec8d9c922734238cc00b8e5815bc990c1c4707f399386d7ec048aec3",
+          "repository_sha256": "b30e58d0ec8d9c922734238cc00b8e5815bc990c1c4707f399386d7ec048aec3",
+          "release_sha256": "b30e58d0ec8d9c922734238cc00b8e5815bc990c1c4707f399386d7ec048aec3",
+          "matches_repository": true,
+          "matches_release": true
+        }
+      ]
+    },
+    {
+      "service": "egress-proxy",
+      "image_id": "sha256:9cbb62039d65d8bacd0439d5af8059d7c80d5c5557232650ec05684477caa6a3",
+      "state": "running",
+      "compose_file_sha256": "ef229358fa804d4f64bd68f6b4b4428f0792e094d3538609f2c20ee5f9ac1027",
+      "source_hashes": []
+    },
+    {
+      "service": "gateway",
+      "image_id": "sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648",
+      "state": "running",
+      "compose_file_sha256": "ef229358fa804d4f64bd68f6b4b4428f0792e094d3538609f2c20ee5f9ac1027",
+      "source_hashes": []
+    },
+    {
+      "service": "postgres",
+      "image_id": "sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685",
+      "state": "running",
+      "compose_file_sha256": "ef229358fa804d4f64bd68f6b4b4428f0792e094d3538609f2c20ee5f9ac1027",
+      "source_hashes": []
+    }
+  ],
+  "schedules": [
+    {
+      "kind": "user-crontab",
+      "user": "root",
+      "read_exit": 1,
+      "platform_entry_count": 0,
+      "entry_hashes": []
+    },
+    {
+      "kind": "user-crontab",
+      "user": "lee",
+      "read_exit": 0,
+      "platform_entry_count": 1,
+      "entry_hashes": [
+        "82581c15954d92753d6c227e9d345946e7ce51d89fae6a8979a7652701a85352"
+      ],
+      "matched_scripts": [
+        {
+          "relative_script": "deployment/retain_files.py",
+          "sha256": null
+        }
+      ],
+      "schedule_fields": [
+        "*",
+        "*",
+        "*",
+        "*",
+        "*"
+      ]
+    }
+  ],
+  "matching_timer_units": [],
+  "schedule_limitations": "Platform-name matches only; generic wrappers, at jobs, other user crontabs and external schedulers are not excluded.",
+  "retention_cron_followup": {
+    "command_kind": "host-python",
+    "target": "deployment/retain_files.py",
+    "target_exists": false,
+    "journal_exit": 0,
+    "missing_script_events_last_15_minutes": 15,
+    "event_times": [
+      "1789717021313515",
+      "1789717081367657",
+      "1789717141389246",
+      "1789717201438854",
+      "1789717261486315",
+      "1789717321528104",
+      "1789717381567432",
+      "1789717441605845",
+      "1789717501651556",
+      "1789717561700978",
+      "1789717621744520",
+      "1789717681787294",
+      "1789717741827788",
+      "1789717801857681",
+      "1789717861905886"
+    ],
+    "action_taken": "none; baseline only; no retention or financial write retried"
+  }
+}

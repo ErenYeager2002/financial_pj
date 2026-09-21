@@ -240,6 +240,26 @@
         "title": "AdminSkillDetail",
         "type": "object"
       },
+      "AdminStopResult": {
+        "properties": {
+          "environment_running": {
+            "const": false,
+            "title": "Environment Running",
+            "type": "boolean"
+          },
+          "running": {
+            "const": false,
+            "title": "Running",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "running",
+          "environment_running"
+        ],
+        "title": "AdminStopResult",
+        "type": "object"
+      },
       "AdminUserCreate": {
         "properties": {
           "department_id": {
@@ -1803,6 +1823,40 @@
         "title": "ConversationSpec",
         "type": "object"
       },
+      "CreateSession": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "default": "assistant",
+            "enum": [
+              "assistant",
+              "workspace"
+            ],
+            "title": "Channel",
+            "type": "string"
+          },
+          "skill_id": {
+            "anyOf": [
+              {
+                "pattern": "^[a-z][a-z0-9-]{0,71}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skill Id"
+          },
+          "title": {
+            "default": "Pi 会话",
+            "maxLength": 200,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "title": "CreateSession",
+        "type": "object"
+      },
       "ExecutionModeSpec": {
         "properties": {
           "adapter": {
@@ -2122,6 +2176,89 @@
           "name"
         ],
         "title": "FileInputSpec",
+        "type": "object"
+      },
+      "FileOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "list",
+              "upload_begin",
+              "upload_chunk",
+              "upload_commit",
+              "upload_abort"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "data": {
+            "default": "",
+            "maxLength": 1398104,
+            "title": "Data",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "offset": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Offset",
+            "type": "integer"
+          },
+          "path": {
+            "default": "",
+            "maxLength": 4096,
+            "title": "Path",
+            "type": "string"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "maximum": 34359738368.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size"
+          },
+          "source": {
+            "default": "workspace",
+            "enum": [
+              "workspace",
+              "inputs"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "upload_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Upload Id"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "title": "FileOperation",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -2511,6 +2648,12 @@
             "pattern": "^[A-Za-z0-9_-]{1,128}$",
             "title": "Session Id",
             "type": "string"
+          },
+          "turn_id": {
+            "default": "",
+            "maxLength": 36,
+            "title": "Turn Id",
+            "type": "string"
           }
         },
         "required": [
@@ -2736,6 +2879,33 @@
           "manual_intervention_count"
         ],
         "title": "ObservabilitySummary",
+        "type": "object"
+      },
+      "Operation": {
+        "additionalProperties": false,
+        "properties": {
+          "operation": {
+            "enum": [
+              "start",
+              "send",
+              "resize",
+              "poll",
+              "stop",
+              "jobs"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          }
+        },
+        "required": [
+          "operation"
+        ],
+        "title": "Operation",
         "type": "object"
       },
       "PermissionSpec": {
@@ -3556,6 +3726,21 @@
           "label"
         ],
         "title": "ProgressStageSpec",
+        "type": "object"
+      },
+      "PublishCandidate": {
+        "additionalProperties": false,
+        "properties": {
+          "sha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sha256"
+        ],
+        "title": "PublishCandidate",
         "type": "object"
       },
       "RegistryError": {
@@ -6324,6 +6509,116 @@
         "title": "StepRunRead",
         "type": "object"
       },
+      "SubmissionConflictResponse": {
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SubmissionErrorDetail"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "SubmissionConflictResponse",
+        "type": "object"
+      },
+      "SubmissionErrorDetail": {
+        "properties": {
+          "code": {
+            "enum": [
+              "IDEMPOTENCY_CONFLICT",
+              "SUBMISSION_IN_PROGRESS",
+              "SUBMISSION_NOT_READY",
+              "SUBMISSION_REJECTED",
+              "LEGACY_SUBMISSION_UNVERIFIED",
+              "SUBMISSION_RECOVERY_ONLY"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "default": "",
+            "title": "Message",
+            "type": "string"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "SubmissionErrorDetail",
+        "type": "object"
+      },
+      "SubmissionReceiptRead": {
+        "properties": {
+          "operation": {
+            "enum": [
+              "run.create",
+              "run.retry",
+              "draft.confirm"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
+          "request_id": {
+            "format": "uuid",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "response_version": {
+            "title": "Response Version",
+            "type": "integer"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "status": {
+            "enum": [
+              "preparing",
+              "prepared",
+              "bound",
+              "rejected"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "operation",
+          "status",
+          "run_id",
+          "response_version"
+        ],
+        "title": "SubmissionReceiptRead",
+        "type": "object"
+      },
       "TaskCenterItem": {
         "properties": {
           "business_date_count": {
@@ -7054,6 +7349,43 @@
         "title": "TaskReminderSubscriptionWrite",
         "type": "object"
       },
+      "TurnMutation": {
+        "properties": {
+          "action": {
+            "pattern": "^(begin|touch|finish|stop)$",
+            "title": "Action",
+            "type": "string"
+          },
+          "data": {
+            "additionalProperties": true,
+            "title": "Data",
+            "type": "object"
+          },
+          "error": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Error",
+            "type": "string"
+          },
+          "text": {
+            "default": "",
+            "maxLength": 20000,
+            "title": "Text",
+            "type": "string"
+          },
+          "turn_id": {
+            "default": "",
+            "maxLength": 36,
+            "title": "Turn Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "title": "TurnMutation",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -7781,6 +8113,18 @@
             ],
             "title": "Execution Mode",
             "type": "string"
+          },
+          "expected_material_set_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Material Set Id"
           },
           "fetched_bundle_id": {
             "anyOf": [
@@ -9116,6 +9460,17 @@
       },
       "WorkflowReusableFilesRead": {
         "properties": {
+          "candidate_next_page": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate Next Page"
+          },
           "files": {
             "additionalProperties": true,
             "title": "Files",
@@ -9193,6 +9548,18 @@
             ],
             "title": "Execution Mode",
             "type": "string"
+          },
+          "expected_material_set_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Material Set Id"
           },
           "fetched_bundle_id": {
             "anyOf": [
@@ -11194,6 +11561,45 @@
         ]
       }
     },
+    "/api/admin/workflow-batches/{batch_id}/stop-disabled-owner": {
+      "post": {
+        "operationId": "admin_stop_disabled_workflow_batch_api_admin_workflow_batches__batch_id__stop_disabled_owner_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowBatchRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Admin Stop Disabled Workflow Batch"
+      }
+    },
     "/api/admin/workflow-definitions": {
       "get": {
         "operationId": "admin_list_workflow_definitions_api_admin_workflow_definitions_get",
@@ -11217,6 +11623,45 @@
         "tags": [
           "admin-workflows"
         ]
+      }
+    },
+    "/api/admin/workflows/{workflow_id}/stop-disabled-owner": {
+      "post": {
+        "operationId": "admin_stop_disabled_workflow_api_admin_workflows__workflow_id__stop_disabled_owner_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workflow_id",
+            "required": true,
+            "schema": {
+              "title": "Workflow Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Admin Stop Disabled Workflow"
       }
     },
     "/api/assistant/ar/materials": {
@@ -12025,6 +12470,94 @@
           }
         },
         "summary": "Get Assistant Status",
+        "tags": [
+          "assistant"
+        ]
+      }
+    },
+    "/api/assistant/turns/{session_id}": {
+      "get": {
+        "operationId": "persisted_turn_status_api_assistant_turns__session_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Persisted Turn Status",
+        "tags": [
+          "assistant"
+        ]
+      },
+      "post": {
+        "operationId": "persisted_turn_mutation_api_assistant_turns__session_id__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TurnMutation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Persisted Turn Mutation",
         "tags": [
           "assistant"
         ]
@@ -12916,6 +13449,345 @@
         ]
       }
     },
+    "/api/pi-runtime/admin/users/{owner_id}/sessions/{session_id}/stop": {
+      "post": {
+        "operationId": "admin_stop_disabled_owner_session_api_pi_runtime_admin_users__owner_id__sessions__session_id__stop_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "owner_id",
+            "required": true,
+            "schema": {
+              "title": "Owner Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminStopResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Admin Stop Disabled Owner Session",
+        "tags": [
+          "pi-runtime"
+        ]
+      }
+    },
+    "/api/pi-runtime/sessions": {
+      "get": {
+        "operationId": "list_sessions_api_pi_runtime_sessions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Sessions",
+        "tags": [
+          "pi-runtime"
+        ]
+      },
+      "post": {
+        "operationId": "create_session_api_pi_runtime_sessions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSession"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Session",
+        "tags": [
+          "pi-runtime"
+        ]
+      }
+    },
+    "/api/pi-runtime/sessions/{session_id}/download": {
+      "get": {
+        "operationId": "download_api_pi_runtime_sessions__session_id__download_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "title": "Path",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "default": "workspace",
+              "enum": [
+                "workspace",
+                "inputs"
+              ],
+              "title": "Source",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download",
+        "tags": [
+          "pi-runtime"
+        ]
+      }
+    },
+    "/api/pi-runtime/sessions/{session_id}/files": {
+      "post": {
+        "operationId": "files_api_pi_runtime_sessions__session_id__files_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileOperation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Files",
+        "tags": [
+          "pi-runtime"
+        ]
+      }
+    },
+    "/api/pi-runtime/sessions/{session_id}/operate": {
+      "post": {
+        "operationId": "operate_api_pi_runtime_sessions__session_id__operate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Operation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Operate",
+        "tags": [
+          "pi-runtime"
+        ]
+      }
+    },
+    "/api/pi-runtime/skill-proposals": {
+      "get": {
+        "operationId": "proposals_api_pi_runtime_skill_proposals_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Proposals",
+        "tags": [
+          "pi-runtime"
+        ]
+      }
+    },
+    "/api/pi-runtime/skill-proposals/{candidate_id}/publish": {
+      "post": {
+        "operationId": "publish_candidate_api_pi_runtime_skill_proposals__candidate_id__publish_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "candidate_id",
+            "required": true,
+            "schema": {
+              "title": "Candidate Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublishCandidate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Publish Candidate",
+        "tags": [
+          "pi-runtime"
+        ]
+      }
+    },
     "/api/profile/avatar": {
       "get": {
         "operationId": "get_avatar_api_profile_avatar_get",
@@ -13035,6 +13907,18 @@
       },
       "post": {
         "operationId": "new_run_api_runs_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "standard_only",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Standard Only",
+              "type": "boolean"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -13056,6 +13940,16 @@
             },
             "description": "Successful Response"
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionConflictResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -13065,6 +13959,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionConflictResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
           }
         },
         "summary": "New Run"
@@ -13370,6 +14274,16 @@
             },
             "description": "Successful Response"
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionConflictResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -13379,6 +14293,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionConflictResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
           }
         },
         "summary": "Retry"
@@ -13684,6 +14608,46 @@
           }
         },
         "summary": "Interpret"
+      }
+    },
+    "/api/submissions/{request_id}": {
+      "get": {
+        "operationId": "submission_status_api_submissions__request_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionReceiptRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Submission Status"
       }
     },
     "/api/task-center": {
@@ -14004,6 +14968,16 @@
             },
             "description": "Successful Response"
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionConflictResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -14013,6 +14987,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionConflictResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
           }
         },
         "summary": "Confirm Draft",
@@ -14908,6 +15892,73 @@
       }
     },
     "/api/workflows/reusable-files": {
+      "delete": {
+        "operationId": "remove_reusable_workflow_files_api_workflows_reusable_files_delete",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "file_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "File Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "all_files",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "All Files",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "title": "Response Remove Reusable Workflow Files Api Workflows Reusable Files Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Reusable Workflow Files"
+      },
       "get": {
         "operationId": "get_reusable_workflow_files_api_workflows_reusable_files_get",
         "parameters": [
@@ -14918,6 +15969,17 @@
             "schema": {
               "title": "Skill Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "candidate_page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Candidate Page",
+              "type": "integer"
             }
           }
         ],

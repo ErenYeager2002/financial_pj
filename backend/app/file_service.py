@@ -436,7 +436,8 @@ def _file_filters(
     unassigned: bool = False,
 ) -> list[Any]:
     effective_skill_id, _, _ = _effective_skill_expressions()
-    filters = [owner_list_filter(FileRecord, user)]
+    from .ar_material_lifecycle import retired_file_ids
+    filters = [owner_list_filter(FileRecord, user), FileRecord.id.not_in(retired_file_ids())]
     if kind:
         filters.append(FileRecord.kind == kind)
     if query:

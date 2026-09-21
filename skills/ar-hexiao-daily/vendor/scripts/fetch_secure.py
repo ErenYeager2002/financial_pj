@@ -127,6 +127,7 @@ def main() -> int:
         account = str(payload["account"]).strip()
         password = str(payload["password"])
         reconciliation_date = str(payload.get("reconciliation_date") or "").strip()
+        selected_dates = payload.get("dates")
         date_from = str(payload.get("date_from") or "").strip()
         date_to = str(payload.get("date_to") or "").strip()
         workspace = str(Path(payload["workspace"]).resolve())
@@ -148,12 +149,12 @@ def main() -> int:
     if (
         not account
         or not password
-        or has_single_date == has_date_range
+        or sum((has_single_date, has_date_range, selected_dates is not None)) != 1
         or bool(date_from) != bool(date_to)
     ):
         print("ERROR: 自动取数缺少账号、密码或唯一日期范围。", file=sys.stderr)
         return 2
-    if has_date_range and (supplement_ar_ids or supplement_so_ids):
+    if (has_date_range or selected_dates is not None) and (supplement_ar_ids or supplement_so_ids):
         print("ERROR: 按 AR/SO 补取只支持单个核销日。", file=sys.stderr)
         return 2
 
@@ -173,11 +174,19 @@ def main() -> int:
     fetch_zhiyun.login_with_password = batch_login
     try:
         try:
-            dates = fetch_zhiyun.resolve_fetch_dates(
-                single_date=reconciliation_date,
-                date_from=date_from,
-                date_to=date_to,
-            )
+            if selected_dates is not None:
+                from datetime import date
+                if not isinstance(selected_dates, list) or not 1 <= len(selected_dates) <= 31:
+                    raise ValueError("取数日期必须是 1 至 31 个明确日期组成的列表")
+                if any(not isinstance(item, str) for item in selected_dates):
+                    raise ValueError("取数日期必须是日期字符串")
+                dates = sorted({date.fromisoformat(item).isoformat() for item in selected_dates})
+            else:
+                dates = fetch_zhiyun.resolve_fetch_dates(
+                    single_date=reconciliation_date,
+                    date_from=date_from,
+                    date_to=date_to,
+                )
         except ValueError as exc:
             print(f"ERROR: {exc}", file=sys.stderr)
             return 2

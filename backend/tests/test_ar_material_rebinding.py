@@ -5,7 +5,7 @@ import copy
 def fixture():
     event={"event_key":"identity", "so":"SO_TEST", "sod":"SOD_TEST", "回款明细":30,
            "收款时间":"2026-09-03", "收款方式":"冲预收", "slot":0}
-    ledger={"parents":{}, "baseline_receipts":{"group":{"baseline_receivable":100,
+    ledger={"parents":{}, "baseline_receipts":{'["SO_TEST","SOD_TEST"]':{"baseline_receivable":100,
         "receivable_group_scope":{"basis":"so_latest_delivery"}, "events":{"identity":event},
         "ordinary_events":{"earlier":{"signature":[20,"2026-08-01","汇"]}},
         "settled":True,"accrual":50}}}
@@ -18,11 +18,11 @@ def fixture():
 def test_only_absent_published_event_is_unbound_in_new_material():
     ledger,diff=fixture();original=copy.deepcopy(ledger)
     updated,audit=rebind_missing_baseline_events(ledger,[diff])
-    group=updated['baseline_receipts']['group']
+    group=updated['baseline_receipts']['["SO_TEST","SOD_TEST"]']
     assert not group['events'] and group['scope_only'] is True
     assert 'settled' not in group and 'accrual' not in group
-    assert group['ordinary_events']==original['baseline_receipts']['group']['ordinary_events']
-    assert group['unbound_events']['identity']==original['baseline_receipts']['group']['events']['identity']
+    assert group['ordinary_events']==original['baseline_receipts']['["SO_TEST","SOD_TEST"]']['ordinary_events']
+    assert group['unbound_events']['identity']==original['baseline_receipts']['["SO_TEST","SOD_TEST"]']['events']['identity']
     assert len(audit)==1 and ledger==original
     again,records=rebind_missing_baseline_events(updated,[diff])
     assert again==updated and records==[]
@@ -38,7 +38,7 @@ def test_conflicts_and_current_matching_receipts_keep_history():
 
 def test_other_group_and_ambiguous_missing_count_are_preserved():
     ledger,diff=fixture()
-    other=copy.deepcopy(ledger);other['baseline_receipts']['group']['events']['second']=copy.deepcopy(other['baseline_receipts']['group']['events']['identity'])
+    other=copy.deepcopy(ledger);other['baseline_receipts']['["SO_TEST","SOD_TEST"]']['events']['second']=copy.deepcopy(other['baseline_receipts']['["SO_TEST","SOD_TEST"]']['events']['identity'])
     updated,audit=rebind_missing_baseline_events(other,[diff]);assert updated==other and not audit
     updated,audit=rebind_missing_baseline_events(ledger,[{**diff,'expected':{**diff['expected'],'so':'OTHER'}}]);assert updated==ledger and not audit
 
@@ -71,7 +71,7 @@ def test_inheritance_writes_rebound_copy_and_preserves_registered_bundle(tmp_pat
     db=NS(get=lambda model,key:source if model==WorkflowSession and key=='source' else current if key=='current' else None)
     result=service.inherit_formal_ledgers(db,workflow,tmp_path)
     actual=json.loads((tmp_path/'03_台账/父回款顺序分配台账.json').read_bytes())
-    assert actual['baseline_receipts']['group']['events']=={}
+    assert actual['baseline_receipts']['["SO_TEST","SOD_TEST"]']['events']=={}
     assert result['history_rebindings']
     assert ledger==original and contents['父回款顺序分配台账.json']==original_bytes
 
@@ -83,4 +83,4 @@ def test_current_material_proof_excludes_unknown_receipts_and_missing_year():
     assert not differences_from_current_rows(ledger,[])
     assert not differences_from_current_rows(ledger,[{**diff['expected'],'amount':'29.00'}])
     assert not differences_from_current_rows(ledger,[{**diff['expected'],'amount':'0.00'}])
-    assert not differences_from_current_rows(ledger,[diff['expected']])
+    assert not differences_from_current_rows(ledger,[diff['expected'], *diff['current_rows']])

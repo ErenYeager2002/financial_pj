@@ -4,6 +4,7 @@ import hashlib
 import json
 import shutil
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -15,12 +16,16 @@ from sqlalchemy.orm import Session
 
 from .auth import UserContext
 from .authorization import assert_skill_permission, refresh_active_user
-from .events import emit_event
+from .events import append_run_event
 from .model_service import resolve_runtime_config
+from .modules.execution.prepared_payload import ModelAuditSelection
+from .modules.execution.authorization import execution_actor, execution_owner, ExecutionPhase, ExecutionAuthorizationRevoked
+from .modules.execution.input_snapshot import input_snapshot_hash
+from .modules.execution.preconditions import assert_run_input_snapshot, ExecutionInputChanged
 from .models import FileRecord, ModelTraceRecord, RunModelAudit, RunRecord
-from .orchestrator import interpret_parameters
+from .orchestrator import LlmConfig, interpret_parameters
 from .redaction import sanitize_text
-from .registry import RegisteredSkill, registry
+from .registry import RegisteredSkill, hash_skill_directory, registry
 from .resource_policy import assert_owner, owner_list_filter, run_root
 from .schemas import RunCreate, RunRead
 from .skill_availability_service import assert_skill_accepting_new_work
@@ -46,8 +51,9 @@ def _assert_visible(run: RunRecord, user: UserContext) -> None:
     assert_owner(run.owner_id, user, "任务", run.department_id)
 
 
-def get_run_or_404(db: Session, run_id: str, user: UserContext) -> RunRecord:
-    run = db.get(RunRecord, run_id)
+def get_run_or_404(db: Session, run_id: str, user: UserContext, *, lock: bool = False) -> RunRecord:
+    run = db.scalar(select(RunRecord).where(RunRecord.id == run_id).with_for_update()
+                    .execution_options(populate_existing=True)) if lock else db.get(RunRecord, run_id)
     if not run:
         raise HTTPException(status_code=404, detail="任务不存在。")
     _assert_visible(run, user)
@@ -189,7 +195,7 @@ def list_runs_page(
     return result, total
 
 
-def retry_run(db: Session, run: RunRecord, user: UserContext) -> RunRecord:
+def prepare_retry_request(db: Session, run: RunRecord, user: UserContext) -> RunCreate:
     allowed, reason = retry_status(db, run, user, verify_file_hash=True)
     if not allowed:
         raise HTTPException(status_code=409, detail=reason)
@@ -198,9 +204,7 @@ def retry_run(db: Session, run: RunRecord, user: UserContext) -> RunRecord:
         items = value if isinstance(value, list) else ([value] if value else [])
         ids = [item["file_id"] for item in items]
         raw_files[role] = ids if isinstance(value, list) else (ids[0] if ids else "")
-    return create_run(
-        db,
-        RunCreate(
+    return RunCreate(
             skill_id=run.skill_id,
             message=run.message,
             parameters=_load(run.parameters_json),
@@ -208,9 +212,11 @@ def retry_run(db: Session, run: RunRecord, user: UserContext) -> RunRecord:
             idempotency_key=f"retry:{run.id}",
             model_connection_id=run.model_audit.connection_id if run.model_audit else None,
             model=run.model_audit.model if run.model_audit else None,
-        ),
-        user,
-    )
+        )
+
+
+def retry_run(db: Session, run: RunRecord, user: UserContext) -> RunRecord:
+    return create_run(db, prepare_retry_request(db, run, user), user)
 
 
 def validate_files(
@@ -269,18 +275,41 @@ def validate_files(
 def _snapshot_skill(skill: RegisteredSkill, owner_id: str, run_id: str) -> Path:
     destination = run_root(owner_id, run_id) / "skill"
     destination.parent.mkdir(parents=True, exist_ok=True)
-    for path in skill.directory.rglob("*"):
-        if path.is_symlink():
+    if destination.exists():
+        raise FileExistsError("Task Skill snapshot already exists")
+
+    def verify(directory):
+        if directory.is_symlink() or any(path.is_symlink() for path in directory.rglob("*")):
             raise HTTPException(status_code=422, detail="Skill 包不能包含符号链接。")
+        if hash_skill_directory(directory) != skill.skill_hash:
+            raise HTTPException(status_code=409, detail="Skill 内容在任务准备期间发生变化，请重新提交。")
+
+    verify(skill.directory)
+    staging = destination.parent / ("skill.staging-" + uuid.uuid4().hex)
     shutil.copytree(
         skill.directory,
-        destination,
+        staging,
+        symlinks=True,
         ignore=shutil.ignore_patterns("__pycache__", ".pytest_cache", "output", "工作区"),
     )
+    # A link introduced during copy is copied as a link, never dereferenced, and
+    # rejected below. Both the final source and copied bytes must match the pin.
+    verify(staging)
+    verify(skill.directory)
+    # Keep orphan staging for recovery; never delete a potentially shared snapshot.
+    if destination.exists():
+        raise FileExistsError("Task Skill snapshot already exists")
+    staging.rename(destination)
     return destination
 
 
-def create_run(db: Session, request: RunCreate, user: UserContext) -> RunRecord:
+@dataclass(frozen=True)
+class PreparedRun:
+    run: RunRecord
+    llm_config: LlmConfig | ModelAuditSelection | None
+    model_trace: dict[str, int | str]
+
+def _resolve_preparation_context(db: Session, request: RunCreate, user: UserContext):
     skill = registry.get(request.skill_id)
     if not skill:
         raise HTTPException(status_code=404, detail="Skill 不存在或尚未发布。")
@@ -300,7 +329,7 @@ def create_run(db: Session, request: RunCreate, user: UserContext) -> RunRecord:
             )
         )
         if existing:
-            return existing
+            return existing.id
 
     assert_skill_accepting_new_work(db, request.skill_id)
     user = refresh_active_user(db, user)
@@ -314,6 +343,21 @@ def create_run(db: Session, request: RunCreate, user: UserContext) -> RunRecord:
         request.model_connection_id,
         request.model,
     )
+    return skill, user, llm_config
+
+
+def prepare_run(db: Session, request: RunCreate, user: UserContext, *, context=None) -> PreparedRun | RunRecord:
+    """Own only short read sessions; do not end or commit the caller's transaction."""
+    bind = db.get_bind()
+    if context is None:
+        with Session(bind=getattr(bind, "engine", bind)) as read_db:
+            context = _resolve_preparation_context(read_db, request, user)
+    if isinstance(context, str):
+        existing = db.get(RunRecord, context)
+        if existing is None:
+            raise HTTPException(status_code=409, detail="任务状态已变化，请重新查询。")
+        return existing
+    skill, user, llm_config = context
     model_trace: dict[str, int | str] = {}
     parameters, missing, _, _ = interpret_parameters(
         skill,
@@ -333,15 +377,13 @@ def create_run(db: Session, request: RunCreate, user: UserContext) -> RunRecord:
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=[error.message for error in errors],
         )
-    if request.skill_id == "consolidated-statements" and parameters.get("parent_run_id"):
-        parent = get_run_or_404(db, parameters["parent_run_id"], user)
-        if parent.owner_id != user.user_id or parent.skill_id != request.skill_id or _load(parent.parameters_json).get("period") != parameters.get("period"):
-            raise HTTPException(status_code=422, detail="补充版本必须属于同一用户、月份和报表工具。")
-    files, file_hash = validate_files(db, skill, request.files, user)
-    payload_hash = hashlib.sha256(
-        (_json(parameters) + _json(files) + skill.skill_hash).encode("utf-8")
-    ).hexdigest()
-    input_hash = hashlib.sha256(f"{file_hash}:{payload_hash}".encode()).hexdigest()
+    with Session(bind=getattr(bind, "engine", bind)) as read_db:
+        if request.skill_id == "consolidated-statements" and parameters.get("parent_run_id"):
+            parent = get_run_or_404(read_db, parameters["parent_run_id"], user)
+            if parent.owner_id != user.user_id or parent.skill_id != request.skill_id or _load(parent.parameters_json).get("period") != parameters.get("period"):
+                raise HTTPException(status_code=422, detail="补充版本必须属于同一用户、月份和报表工具。")
+        files, _ = validate_files(read_db, skill, request.files, user)
+    input_hash = input_snapshot_hash(_json(parameters), files, skill.skill_hash)
     confirmation = skill.manifest.risk.requires_confirmation
     now = datetime.now(UTC)
     run_id = str(uuid.uuid4())
@@ -373,8 +415,18 @@ def create_run(db: Session, request: RunCreate, user: UserContext) -> RunRecord:
         confirmation_required=confirmation,
         queued_at=None if confirmation else now,
     )
+    return PreparedRun(run, llm_config, model_trace)
+
+
+def persist_run(db: Session, prepared: PreparedRun) -> RunRecord:
+    """Persist the prepared task in the caller-owned transaction, without commit."""
+    run = prepared.run
+    llm_config = prepared.llm_config
+    model_trace = prepared.model_trace
     db.add(run)
     db.flush()
+    from .modules.execution.run_snapshot import persist_execution_snapshot
+    persist_execution_snapshot(db, run)
     initialize_run_steps(db, run)
     if llm_config:
         db.add(
@@ -388,8 +440,8 @@ def create_run(db: Session, request: RunCreate, user: UserContext) -> RunRecord:
         db.add(
             ModelTraceRecord(
                 id=str(uuid.uuid4()),
-                owner_id=user.user_id,
-                department_id=user.department_id,
+                owner_id=run.owner_id,
+                department_id=run.department_id,
                 run_id=run.id,
                 connection_id=llm_config.connection_id,
                 purpose="parameter_interpretation",
@@ -402,7 +454,7 @@ def create_run(db: Session, request: RunCreate, user: UserContext) -> RunRecord:
                 failure_code=str(model_trace.get("failure_code", "unknown"))[:64],
             )
         )
-    emit_event(
+    append_run_event(
         db,
         run,
         event_type="state",
@@ -417,14 +469,71 @@ def create_run(db: Session, request: RunCreate, user: UserContext) -> RunRecord:
     return run
 
 
+
+def _revalidate_prepared_run(
+    db: Session, prepared: PreparedRun, request: RunCreate, user: UserContext,
+    *, pinned_skill: RegisteredSkill | None = None,
+) -> None:
+    """Recheck mutable facts in the transaction that will persist the task."""
+    user = refresh_active_user(db, user)
+    run = prepared.run
+    skill = pinned_skill or registry.get(run.skill_id)
+    if not skill or skill.skill_hash != run.skill_hash or skill.manifest.version != run.skill_version:
+        raise HTTPException(status_code=409, detail="Skill 版本已经变化，请重新提交。")
+    assert_skill_accepting_new_work(db, run.skill_id)
+    assert_skill_permission(db, user, run.skill_id)
+    if request.files:
+        assert_skill_permission(db, user, run.skill_id, "can_upload")
+    for value in request.files.values():
+        for file_id in value if isinstance(value, list) else ([value] if value else []):
+            record = db.get(FileRecord, file_id, populate_existing=True)
+            if record is None or record.kind != "input":
+                raise HTTPException(status_code=409, detail="输入文件已经变化，请重新提交。")
+            assert_owner(record.owner_id, user, "输入文件", record.department_id)
+            path = Path(record.stored_path).resolve()
+            if not path.is_file() or sha256_file(path) != record.sha256:
+                raise HTTPException(status_code=409, detail="输入文件内容已经变化，请重新提交。")
+    files, _ = validate_files(db, skill, request.files, user)
+    input_hash = input_snapshot_hash(run.parameters_json, files, run.skill_hash)
+    if _json(files) != run.files_json or input_hash != run.input_hash:
+        raise HTTPException(status_code=409, detail="输入文件绑定已经变化，请重新提交。")
+    parameters = _load(run.parameters_json)
+    if run.skill_id == "consolidated-statements" and parameters.get("parent_run_id"):
+        parent = db.get(RunRecord, parameters["parent_run_id"], populate_existing=True)
+        if (parent is None or parent.owner_id != user.user_id
+            or parent.department_id != user.department_id or parent.skill_id != run.skill_id
+            or _load(parent.parameters_json).get("period") != parameters.get("period")):
+            raise HTTPException(status_code=409, detail="补充版本的父任务已经变化，请重新提交。")
+
+
+def create_run(db: Session, request: RunCreate, user: UserContext) -> RunRecord:
+    """Prepare and persist a task; the API or composing use case owns commit."""
+    prepared = prepare_run(db, request, user)
+    if isinstance(prepared, RunRecord):
+        return prepared
+    _revalidate_prepared_run(db, prepared, request, user)
+    return persist_run(db, prepared)
+
+
 def confirm_run(db: Session, run: RunRecord, user: UserContext) -> RunRecord:
+    user = execution_actor(db, run, user, ExecutionPhase.CONFIRM)
+    try:
+        execution_owner(db, run, ExecutionPhase.CONFIRM)
+    except ExecutionAuthorizationRevoked as error:
+        raise HTTPException(403, str(error)) from None
     if run.state != "waiting_confirmation":
         raise HTTPException(status_code=409, detail="当前任务不在等待确认状态。")
+    try:
+        assert_run_input_snapshot(run, ExecutionPhase.CONFIRM)
+        from .modules.execution.run_snapshot import assert_execution_snapshot
+        assert_execution_snapshot(db, run, ExecutionPhase.CONFIRM)
+    except ExecutionInputChanged as error:
+        raise HTTPException(409, str(error)) from None
     run.confirmed_by = user.user_id
     run.confirmed_at = datetime.now(UTC)
     run.queued_at = datetime.now(UTC)
     queue_run_execution_step(db, run)
-    emit_event(
+    append_run_event(
         db,
         run,
         event_type="state",
@@ -435,7 +544,8 @@ def confirm_run(db: Session, run: RunRecord, user: UserContext) -> RunRecord:
     return run
 
 
-def cancel_run(db: Session, run: RunRecord) -> RunRecord:
+def cancel_run(db: Session, run: RunRecord, user: UserContext) -> RunRecord:
+    user = execution_actor(db, run, user, ExecutionPhase.CANCEL)
     if run.state in TERMINAL_STATES:
         raise HTTPException(status_code=409, detail="任务已经结束。")
     if run.state in {"created", "validating", "queued", "waiting_confirmation"}:
@@ -444,7 +554,7 @@ def cancel_run(db: Session, run: RunRecord) -> RunRecord:
         from .step_runtime_service import finish_run_execution_step
 
         finish_run_execution_step(db, run, state="cancelled", error_code="cancelled")
-        emit_event(
+        append_run_event(
             db,
             run,
             event_type="state",
@@ -453,5 +563,8 @@ def cancel_run(db: Session, run: RunRecord) -> RunRecord:
         )
     else:
         run.cancel_requested = True
-        emit_event(db, run, event_type="notice", message="已提交取消请求")
+        append_run_event(db, run, event_type="notice", message="已提交取消请求")
+    from .audit_service import record_audit
+    record_audit(db, actor=user, action="run.cancel", resource_type="run", resource_id=run.id,
+                 details={"state":run.state,"on_behalf_of_owner":user.user_id != run.owner_id})
     return run

@@ -18,6 +18,7 @@ import common
 import fallback_allocation_ledger
 import baseline_receipts
 import rescan_holds
+import current_run_basis
 
 
 def build(workspace: Path, checked: Path, publication: dict, attempt: str) -> Path:
@@ -36,7 +37,7 @@ def build(workspace: Path, checked: Path, publication: dict, attempt: str) -> Pa
     ledger_dir.mkdir(exist_ok=True)
     for name in names:
         source = workspace / "03_台账" / name
-        if source.is_file():
+        if source.is_file() and not current_run_basis.enabled(plan):
             data = json.loads(source.read_text(encoding="utf-8"))
             if not isinstance(data, dict):
                 raise ValueError("既有辅助台账格式无效，禁止用空台账覆盖历史")

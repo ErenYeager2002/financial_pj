@@ -13,11 +13,12 @@ import httpx
 from fastapi import HTTPException
 from jsonschema import Draft202012Validator
 from pydantic import ValidationError
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .assistant_profile_service import resolve_assistant_config
 from .auth import UserContext
-from .authorization import allowed_skill_ids, assert_skill_permission
+from .authorization import allowed_skill_ids, assert_skill_permission, refresh_active_user
 from .contracts import SkillDetail, SkillSummary, TaskDraft
 from .model_providers import chat_completion_request
 from .models import FileRecord, ModelTraceRecord, RunRecord, TaskDraftRecord
@@ -315,6 +316,18 @@ def _model_trace(
     )
 
 
+def _persist_model_trace(db: Session, trace: ModelTraceRecord) -> ModelTraceRecord:
+    """Save the independent model-call fact without committing the caller's work."""
+    bind = db.get_bind()
+    engine = getattr(bind, "engine", bind)
+    with Session(bind=engine, expire_on_commit=False) as trace_db:
+        trace_db.add(trace)
+        trace_db.commit()
+    # Attach the committed fact so later draft linkage belongs to the caller.
+    db.add(trace)
+    return trace
+
+
 def _selected_files(
     db: Session,
     user: UserContext,
@@ -441,13 +454,14 @@ def _draft_read(record: TaskDraftRecord) -> TaskDraft:
     )
 
 
-def _get_owned_draft(db: Session, draft_id: str, user: UserContext) -> TaskDraftRecord:
-    record = db.get(TaskDraftRecord, draft_id)
-    if not record or record.owner_id != user.user_id:
+def _get_owned_draft(db: Session, draft_id: str, user: UserContext, *, lock: bool = False) -> TaskDraftRecord:
+    record = (db.scalar(select(TaskDraftRecord).where(TaskDraftRecord.id == draft_id).with_for_update().execution_options(populate_existing=True))
+              if lock else db.get(TaskDraftRecord, draft_id))
+    if not record or record.owner_id != user.user_id or record.department_id != user.department_id:
         raise HTTPException(status_code=404, detail="任务草稿不存在。")
     if record.state not in {"consumed", "expired"} and _draft_expired(record.expires_at):
         record.state = "expired"
-        db.commit()
+        db.flush()
     return record
 
 
@@ -492,14 +506,13 @@ def prepare_task_draft(
                 failure_code="agent_tool",
             )
     except Exception:
-        db.add(_model_trace(user, config, trace, trace_purpose))
-        db.commit()
+        _persist_model_trace(db, _model_trace(user, config, trace, trace_purpose))
         raise
 
     # 模型调用事实先独立保存。后续业务校验拒绝结果时，该记录合法保持无父级。
-    model_trace = _model_trace(user, config, trace, trace_purpose)
-    db.add(model_trace)
-    db.commit()
+    model_trace = _persist_model_trace(
+        db, _model_trace(user, config, trace, trace_purpose)
+    )
     skill = by_id.get(recommendation.skill_id)
     if not skill:
         raise HTTPException(status_code=502, detail="AI 助手推荐了未授权或不可用的 Skill。")
@@ -580,7 +593,7 @@ def update_task_draft(
     user: UserContext,
     body: TaskDraftUpdate,
 ) -> TaskDraft:
-    record = _get_owned_draft(db, draft_id, user)
+    record = _get_owned_draft(db, draft_id, user, lock=True)
     if record.state in {"expired", "consumed"}:
         raise HTTPException(status_code=409, detail="任务草稿已经过期或使用。")
     skill = registry.get(record.skill_id)
@@ -596,6 +609,10 @@ def update_task_draft(
     parameters, missing_parameters = _validate_parameters(skill, parameters)
     files, hashes, missing_files = _validate_draft_files(db, user, skill, files)
     missing = [*missing_parameters, *missing_files]
+    if (_json(parameters) != _json(_load(record.parameters_json, {}))
+            or _json(files) != _json(_load(record.files_json, {}))
+            or _json(hashes) != _json(_load(record.file_hashes_json, {}))):
+        record.content_revision += 1
     record.parameters_json = _json(parameters)
     record.files_json = _json(files)
     record.file_hashes_json = _json(hashes)
@@ -606,19 +623,25 @@ def update_task_draft(
     return _draft_read(record)
 
 
-def confirm_task_draft(
+def prepare_draft_run_request(
     db: Session,
     draft_id: str,
     user: UserContext,
-) -> RunRecord:
+    *, pinned_skill=None,
+) -> RunCreate | RunRecord:
+    user = refresh_active_user(db, user)
     record = _get_owned_draft(db, draft_id, user)
+    assert_skill_permission(db, user, record.skill_id, "can_create_draft")
+    assert_skill_permission(db, user, record.skill_id, "can_run")
     if record.state == "consumed" and record.run_id:
         run = db.get(RunRecord, record.run_id)
-        if run:
+        if (run and run.owner_id == user.user_id and run.department_id == user.department_id
+                and run.skill_id == record.skill_id):
             return run
+        raise HTTPException(status_code=409, detail="草稿关联的任务已经不可访问。")
     if record.state != "ready":
         raise HTTPException(status_code=409, detail="任务草稿尚未满足确认条件。")
-    skill = registry.get(record.skill_id)
+    skill = pinned_skill if pinned_skill is not None else registry.get(record.skill_id)
     if (
         not skill
         or skill.skill_hash != record.skill_hash
@@ -639,17 +662,34 @@ def confirm_task_draft(
         path = Path(stored.stored_path).resolve()
         if not path.is_file() or stored.sha256 != expected or sha256_file(path) != expected:
             raise HTTPException(status_code=409, detail="草稿引用的文件内容已经变化。")
-    run = create_run(
-        db,
-        RunCreate(
-            skill_id=record.skill_id,
-            message=record.message,
-            parameters=parameters,
-            files=files,
-            idempotency_key=f"draft:{record.id}",
-        ),
-        user,
+    return RunCreate(
+        skill_id=record.skill_id, message=record.message, parameters=parameters,
+        files=files, idempotency_key=f"draft:{record.id}:{record.content_revision}",
     )
+
+
+def confirm_task_draft(
+    db: Session, draft_id: str, user: UserContext, *,
+    prepared=None, expected_request: RunCreate | None = None, pinned_skill=None,
+) -> RunRecord:
+    from . import run_service
+
+    request = prepare_draft_run_request(db, draft_id, user, pinned_skill=pinned_skill)
+    if isinstance(request, RunRecord):
+        return request
+    if prepared is None:
+        run = create_run(db, request, user)
+    else:
+        if expected_request is None or request.model_dump() != expected_request.model_dump():
+            raise HTTPException(status_code=409, detail="草稿内容已经变化，请重新确认。")
+        if isinstance(prepared, RunRecord):
+            run = db.get(RunRecord, prepared.id)
+            if run is None:
+                raise HTTPException(status_code=409, detail="任务状态已经变化，请重新查询。")
+        else:
+            run_service._revalidate_prepared_run(db, prepared, request, user)
+            run = run_service.persist_run(db, prepared)
+    record = _get_owned_draft(db, draft_id, user)
     if run.state == "waiting_confirmation":
         run = confirm_run(db, run, user)
     record.state = "consumed"
@@ -660,7 +700,7 @@ def confirm_task_draft(
 
 
 def delete_task_draft(db: Session, draft_id: str, user: UserContext) -> None:
-    record = _get_owned_draft(db, draft_id, user)
+    record = _get_owned_draft(db, draft_id, user, lock=True)
     if record.state == "consumed":
         raise HTTPException(status_code=409, detail="已创建任务的草稿不能删除。")
     traces = db.query(ModelTraceRecord).filter(
@@ -673,3 +713,21 @@ def delete_task_draft(db: Session, draft_id: str, user: UserContext) -> None:
     db.flush()
     db.delete(record)
     db.flush()
+
+
+def consume_prepared_draft(db, draft_id, user, run, expected_request):
+    """Lock, recheck and consume inside the submission's business savepoint."""
+    record = db.scalar(select(TaskDraftRecord).where(
+        TaskDraftRecord.id == draft_id, TaskDraftRecord.owner_id == user.user_id,
+        TaskDraftRecord.department_id == user.department_id,
+    ).with_for_update().execution_options(populate_existing=True))
+    if record is None:
+        raise HTTPException(404, "任务草稿不存在。")
+    from .registry import RegisteredSkill, SkillManifest
+    pinned = RegisteredSkill(manifest=SkillManifest.model_validate(_load(run.manifest_snapshot, {})),
+        directory=Path(run.manifest_path).parent, manifest_path=Path(run.manifest_path),
+        skill_hash=run.skill_hash, commit_sha=run.skill_commit, source="draft-submission-snapshot")
+    confirmed = confirm_task_draft(db, draft_id, user, prepared=run,
+                                   expected_request=expected_request, pinned_skill=pinned)
+    if confirmed.id != run.id:
+        raise HTTPException(409, "草稿已由其他任务消费，请重新查询。")

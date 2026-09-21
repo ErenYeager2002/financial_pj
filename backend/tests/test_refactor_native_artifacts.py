@@ -12,14 +12,15 @@ from uuid import uuid4
 
 from app.auth import UserContext
 from app.auth_service import create_user
-from app.database import init_db, SessionLocal
+from app.database import SessionLocal
+from db_setup import migrate_test_database
 from app.models import FileRecord, RunRecord
 from app import native_skill_service as native
 from app.contracts import NativeSkillRead
 
 
 def test_native_command_archives_real_generated_file_and_keeps_runs_distinct():
-    init_db()
+    migrate_test_database()
     name='synthetic-'+uuid4().hex[:12]
     session='skill-native--'+name+'__test'
     root=native.native_root();root.mkdir(parents=True,exist_ok=True)
@@ -56,9 +57,17 @@ def test_native_command_archives_real_generated_file_and_keeps_runs_distinct():
             body=SimpleNamespace(session_id=session,turn_id='',file_ids=[],command='generate synthetic artifact')
             first=native.execute_command(db,actor,name,body)
             second=native.execute_command(db,actor,name,body)
-            assert first['run']['id']!=second['run']['id']
-            assert len(calls)==2
-            for number,result in enumerate((first,second),1):
+            third=native.execute_command(db,actor,name,body)
+            results=(first,second,third)
+            ids={result['run']['id'] for result in results}
+            assert len(ids)==3
+            assert len(calls)==3
+            records=[db.get(RunRecord,rid) for rid in ids]
+            assert len({record.source_session_key for record in records})==1
+            assert all(record.source_session_key and record.idempotency_key=="" for record in records)
+            assert len({record.source_command_id for record in records})==3
+            assert {row.id for row in native.session_runs(db,actor,name,session)}==ids
+            for number,result in enumerate(results,1):
                 assert result['run']['state']=='succeeded'
                 assert len(result['artifacts'])==1
                 artifact=result['artifacts'][0]

@@ -1,0 +1,8 @@
+{
+  "started_at": "2026-09-20T03:17:22.050298+00:00",
+  "candidate_image": "sha256:882434f388fd1f7598af3d2e505f891a3eb90c1282cd7b1e9870ea91b63fefbb",
+  "previous_image": "sha256:3eed32005b29fe238663b3eaa7b5937684af63144ce5e820fb7f2e1b7425fb69",
+  "exit_code": 0,
+  "output": "Maintenance mode: notice\nMaintenance mode: full\nMaintenance mode: normal\n{\"at\": \"2026-09-20T03:17:44.990225+00:00\", \"outcome\": \"succeeded\", \"plan\": \"frontend\", \"mode\": \"normal\"}\n",
+  "post_deployment_verification": "failed: literal Compose image retained old frontend despite process exit 0"
+}

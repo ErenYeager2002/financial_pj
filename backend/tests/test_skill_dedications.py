@@ -8,7 +8,8 @@ from helpers import TEST_PASSWORD, auth_client
 
 from app.auth_models import User, UserSkillPermission
 from app.auth_service import create_user
-from app.database import SessionLocal, init_db
+from app.database import SessionLocal
+from db_setup import migrate_test_database
 from app.main import app
 from app.models import AuditEvent, SkillDedicatedUser
 from app.registry import registry
@@ -26,7 +27,7 @@ def _create_user(
     department_id: str = "finance",
 ) -> tuple[str, str]:
     username = f"skill-dedication-{uuid.uuid4().hex[:12]}"
-    init_db()
+    migrate_test_database()
     with SessionLocal() as db:
         user = create_user(
             db,

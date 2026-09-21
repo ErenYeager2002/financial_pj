@@ -1,3 +1,5 @@
+import { submitDraftRequest } from '@/features/run-setup/draft-submission';
+import { platformApiError } from '@/features/platform-api/errors';
 import type {
   ConfirmedRun,
   ConfirmTaskDraftInput,
@@ -8,21 +10,9 @@ import type {
 } from './types';
 
 async function responseError(response: Response, fallback: string): Promise<Error> {
-  let body: unknown;
-  try {
-    body = await response.json();
-  } catch {
-    return new Error(fallback);
-  }
-  if (
-    typeof body === 'object' &&
-    body !== null &&
-    'detail' in body &&
-    typeof body.detail === 'string'
-  ) {
-    return new Error(body.detail);
-  }
-  return new Error(fallback);
+  let body: unknown = null;
+  try { body = await response.json(); } catch { /* Bounded fallback for non-JSON errors. */ }
+  return platformApiError(response.status, body, fallback);
 }
 
 export async function uploadSkillFile(input: UploadSkillFileInput): Promise<UploadedSkillFile> {
@@ -61,16 +51,7 @@ export async function confirmRun(runId: string): Promise<ConfirmedRun> {
 }
 
 export async function confirmTaskDraft(input: ConfirmTaskDraftInput): Promise<CreatedRun> {
-  const draftId = encodeURIComponent(input.draftId);
-  const update = await fetch(`/api/platform/task-drafts/${draftId}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ parameters: input.parameters, files: input.files })
-  });
-  if (!update.ok) throw await responseError(update, '任务草稿更新失败。');
-  const response = await fetch(`/api/platform/task-drafts/${draftId}/confirm`, {
-    method: 'POST'
-  });
-  if (!response.ok) throw await responseError(response, '任务草稿确认失败。');
+  const response = await submitDraftRequest(input);
+  if (!response.ok) throw await responseError(response, '任务草稿提交失败。');
   return (await response.json()) as CreatedRun;
 }

@@ -1,7 +1,7 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');const os=require('node:os');const path=require('node:path');
-const {runGroup}=require('../process_control.cjs');
+const {runGroup,succeeded}=require('../process_control.cjs');
 test('timeout removes a term-ignoring descendant',async()=>{
   const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'financial-refactor-process-'));
   try {
@@ -19,4 +19,14 @@ test('timeout removes a term-ignoring descendant',async()=>{
 test('successful output remains available',async()=>{
   const result=await runGroup(process.execPath,['-e',"console.log('synthetic')"],{timeout:2000});
   assert.equal(result.status,0);assert.equal(result.stdout.trim(),'synthetic');
+});
+
+test('timeout remains failed when SIGTERM handler exits zero',async()=>{
+ const result=await runGroup(process.execPath,['-e',"process.on('SIGTERM',()=>process.exit(0));console.log('ready');setInterval(()=>{},1000)"],{timeout:500});
+ assert.equal(result.status,0);assert.equal(result.error.code,'TIMEOUT');assert.equal(succeeded(result),false);
+});
+test('output limit and exit signal cannot be successful',()=>{
+ assert.equal(succeeded({status:0,error:{code:'MAX_BUFFER'}}),false);
+ assert.equal(succeeded({status:0,signal:'SIGTERM'}),false);
+ assert.equal(succeeded({status:0}),true);
 });

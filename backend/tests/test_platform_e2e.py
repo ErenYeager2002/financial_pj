@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from io import BytesIO
 from types import SimpleNamespace
 
@@ -230,7 +232,36 @@ def test_api_key_auto_detection_and_model_selection(monkeypatch) -> None:
         assert client.get("/api/model-connections").json() == []
 
 
-def test_upload_run_worker_and_download(monkeypatch) -> None:
+@pytest.mark.parametrize("restore_preparation", [False, True])
+@pytest.mark.parametrize("concurrent_submit", [False, True])
+def test_upload_run_worker_and_download(monkeypatch, restore_preparation, concurrent_submit) -> None:
+    from app import run_service
+    from app.database import engine
+    import os
+    if os.environ.get("REFACTOR_POSTGRES_URL"):
+        assert engine.dialect.name == "postgresql"
+    if concurrent_submit and engine.dialect.name != "postgresql":
+        pytest.skip("Concurrent HTTP submission is verified against isolated PostgreSQL")
+    if restore_preparation:
+        from app.modules.execution.prepared_payload import freeze_prepared, restore_prepared
+        original_persist = run_service.persist_run
+        def persist_restored(db, prepared):
+            payload = freeze_prepared(prepared)
+            assert "sk-e2e-model-secret" not in str(payload)
+            return original_persist(db, restore_prepared(payload))
+        monkeypatch.setattr(run_service, "persist_run", persist_restored)
+    preparation_calls = []
+    original_prepare = run_service.prepare_run
+    def counted_prepare(*args, **kwargs):
+        preparation_calls.append(True)
+        return original_prepare(*args, **kwargs)
+    monkeypatch.setattr(run_service, "prepare_run", counted_prepare)
+    original_snapshot = run_service._snapshot_skill
+    def snapshot_without_database_transaction(*args, **kwargs):
+        if not concurrent_submit:
+            assert engine.pool.checkedout() == 0
+        return original_snapshot(*args, **kwargs)
+    monkeypatch.setattr(run_service, "_snapshot_skill", snapshot_without_database_transaction)
     bank = workbook_bytes(
         ["交易日期", "交易金额", "流水号"],
         [
@@ -310,9 +341,7 @@ def test_upload_run_worker_and_download(monkeypatch) -> None:
         assert input_file.status_code == 200
         assert input_file.json()["skill_id"] == "reconcile-bank"
 
-        created = client.post(
-            "/api/runs",
-            json={
+        request_body = {
                 "skill_id": "reconcile-bank",
                 "message": "金额差异 1 元以内、日期相差 2 天可以匹配",
                 "parameters": {},
@@ -320,11 +349,33 @@ def test_upload_run_worker_and_download(monkeypatch) -> None:
                     "bank_file": bank_id,
                     "ledger_file": ledger_id,
                 },
-                "idempotency_key": "e2e-reconcile-001",
+                "idempotency_key": f"e2e-reconcile-{restore_preparation}-{concurrent_submit}",
                 "model_connection_id": connection_id,
                 "model": "qwen3.7-plus",
-            },
-        )
+            }
+        if concurrent_submit:
+            from concurrent.futures import ThreadPoolExecutor
+            from threading import Barrier
+            barrier = Barrier(20)
+            def submit_concurrently(_):
+                barrier.wait(timeout=15)
+                return client.post("/api/runs?standard_only=true", json=request_body)
+            with ThreadPoolExecutor(max_workers=20) as pool:
+                responses = list(pool.map(submit_concurrently, range(20)))
+            successes = [response for response in responses if response.status_code == 200]
+            assert successes, [response.text for response in responses]
+            for response in responses:
+                if response.status_code != 200:
+                    assert response.status_code == 409, response.text
+                    assert response.json()["detail"]["code"] == "SUBMISSION_IN_PROGRESS"
+            created = successes[0]
+            assert {response.json()["id"] for response in successes} == {created.json()["id"]}
+            with ThreadPoolExecutor(max_workers=20) as pool:
+                replays = list(pool.map(lambda _: client.post("/api/runs?standard_only=true", json=request_body), range(20)))
+            assert all(response.status_code == 200 for response in replays), [response.text for response in replays]
+            assert {response.json()["id"] for response in replays} == {created.json()["id"]}
+        else:
+            created = client.post("/api/runs?standard_only=true", json=request_body)
         assert created.status_code == 200, created.text
         run_id = created.json()["id"]
         assert created.json()["state"] == "waiting_confirmation"
@@ -335,6 +386,48 @@ def test_upload_run_worker_and_download(monkeypatch) -> None:
             "date_tolerance_days": 2,
         }
 
+        from app.models import IdempotencyRequest
+        with SessionLocal() as db:
+            receipt_id = db.query(IdempotencyRequest).filter_by(operation="run.create",execution_id=run_id).one().id
+        status = client.get(f"/api/submissions/{receipt_id}")
+        assert status.status_code == 200
+        assert status.json() == {"request_id":receipt_id,"operation":"run.create","status":"bound","run_id":run_id,"response_version":1}
+        import json
+        original_request = json.loads(created.request.content)
+        assert len(preparation_calls) == 1
+        def no_latest_registry(*args, **kwargs):
+            raise AssertionError("Replay must use the original pinned revision")
+        with monkeypatch.context() as replay_patch:
+            replay_patch.setattr(run_service.registry, "get", no_latest_registry)
+            replay = client.post("/api/runs?standard_only=true", json=original_request)
+            assert replay.status_code == 200, replay.text
+            assert replay.json()["id"] == run_id
+            conflict = client.post("/api/runs?standard_only=true", json={**original_request, "message":"a different request"})
+            assert conflict.status_code == 409
+            assert conflict.json()["detail"]["code"] == "IDEMPOTENCY_CONFLICT"
+        from dataclasses import replace
+        from app.modules.execution import run_submission
+        with monkeypatch.context() as recovery_patch:
+            recovery_patch.setattr(run_submission, "settings", replace(run_submission.settings, submission_replay_only=True))
+            recovered_existing = client.post("/api/runs?standard_only=true",json=original_request)
+            assert recovered_existing.status_code == 200 and recovered_existing.json()["id"] == run_id
+            blocked_new = client.post("/api/runs?standard_only=true",json={**original_request,"idempotency_key":"recovery-new"})
+            assert blocked_new.status_code == 503
+            assert blocked_new.json()["detail"]["code"] == "SUBMISSION_RECOVERY_ONLY"
+        from app.models import RunRecord
+        legacy_key = "legacy:" + original_request["idempotency_key"]
+        with SessionLocal() as db:
+            stored_run = db.get(RunRecord, run_id)
+            stored_run.idempotency_key = legacy_key
+            db.commit()
+        historical = client.post("/api/runs?standard_only=true", json={**original_request, "idempotency_key":legacy_key})
+        assert historical.status_code == 409, historical.text
+        assert historical.json()["detail"]["code"] == "LEGACY_SUBMISSION_UNVERIFIED"
+        with SessionLocal() as db:
+            stored_run = db.get(RunRecord, run_id)
+            stored_run.idempotency_key = ""
+            db.commit()
+        assert len(preparation_calls) == 1
         confirmed = client.post(f"/api/runs/{run_id}/confirm")
         assert confirmed.status_code == 200, confirmed.text
         assert confirmed.json()["state"] == "queued"

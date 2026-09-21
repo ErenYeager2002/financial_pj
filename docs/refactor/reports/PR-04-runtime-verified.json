@@ -1,0 +1,82 @@
+{
+  "at": "2026-09-20T04:09:02.613728+00:00",
+  "candidate_image": "sha256:c7e0c9bcbbda13fa182a8989e8cd54114421c309b5b2b1e3def68f5233dd96ef",
+  "services": {
+    "api": {
+      "image": "sha256:c7e0c9bcbbda13fa182a8989e8cd54114421c309b5b2b1e3def68f5233dd96ef",
+      "running": true,
+      "restarts": 0,
+      "verification": {
+        "source_hashes": "matched",
+        "file_count": 196,
+        "revision": "f3a4b5c6d7e8",
+        "replay_only": false,
+        "uid": 10001,
+        "authorization_phases": [
+          "create",
+          "confirm",
+          "claim",
+          "start",
+          "read",
+          "write",
+          "publish",
+          "cancel"
+        ]
+      }
+    },
+    "worker-standard": {
+      "image": "sha256:c7e0c9bcbbda13fa182a8989e8cd54114421c309b5b2b1e3def68f5233dd96ef",
+      "running": true,
+      "restarts": 0,
+      "verification": {
+        "source_hashes": "matched",
+        "file_count": 196,
+        "revision": "f3a4b5c6d7e8",
+        "replay_only": false,
+        "uid": 10001,
+        "authorization_phases": [
+          "create",
+          "confirm",
+          "claim",
+          "start",
+          "read",
+          "write",
+          "publish",
+          "cancel"
+        ]
+      }
+    },
+    "worker-task-discovery": {
+      "image": "sha256:c7e0c9bcbbda13fa182a8989e8cd54114421c309b5b2b1e3def68f5233dd96ef",
+      "running": true,
+      "restarts": 0,
+      "verification": {
+        "source_hashes": "matched",
+        "file_count": 196,
+        "revision": "f3a4b5c6d7e8",
+        "replay_only": false,
+        "uid": 10001,
+        "authorization_phases": [
+          "create",
+          "confirm",
+          "claim",
+          "start",
+          "read",
+          "write",
+          "publish",
+          "cancel"
+        ]
+      }
+    }
+  },
+  "platform": {
+    "mode": "normal",
+    "task_counts": {
+      "runs": 0,
+      "batches": 0,
+      "actions": 0,
+      "discovery": 0,
+      "assistant": 0
+    }
+  }
+}

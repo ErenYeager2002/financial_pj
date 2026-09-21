@@ -217,7 +217,13 @@ class ToolDeployment:
         matches = re.findall(rb'^BACKEND_IMAGE=(.+)$',self.env_before,re.M)
         if len(matches)!=1:
             raise ScopeError('BACKEND_IMAGE 配置不唯一')
-        configured = json.loads(command(['docker','image','inspect',matches[0].decode().strip()]))[0]['Id']
+        # Compose may pin immutable image IDs and override the .env fallback.
+        # Resolve the actual deployment declaration before comparing its bytes.
+        composed = json.loads(command(['docker','compose','-f',str(ROOT/'compose.yaml'),'config','--format','json']))
+        declared = {composed['services'][name]['image'] for name in SERVICES}
+        if len(declared) != 1:
+            raise ScopeError('相关服务声明了不同镜像，不能执行单工具发布')
+        configured = json.loads(command(['docker','image','inspect',declared.pop()]))[0]['Id']
         # A previous no-restart release deliberately leaves Container.Image at
         # its original base. The persisted image is the base for the next layer.
         self.build_base = configured

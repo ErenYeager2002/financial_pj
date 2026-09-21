@@ -1,0 +1,10 @@
+{
+  "image_id": "sha256:6f0b5a73239c9ec92fda67546d4940506b9fc85f7d146e944b8da87cb8090c74",
+  "base_candidate": "sha256:a327561ba9112cb6658f887c84e4a54329e160c0f0ea1b15e00ffc691f50cbfa",
+  "mode": "replay-only",
+  "schema_revision": "f3a4b5c6d7e8",
+  "source_hashes": {
+    "deployment/Dockerfile.refactor-pr03-recovery": "95286fbe6cd47397b52faac6068dd3a0fb2e3076e4e7e81e5acdf16174a1d3d7"
+  },
+  "limitation": "Shared PR-04 safety core, including execution authorization. Blocks unbound ordinary submissions; not old-code rollback or full service restoration."
+}

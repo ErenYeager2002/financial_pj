@@ -23,6 +23,7 @@ from openpyxl.cell.rich_text import CellRichText
 import common
 import xlsx_patch
 import workbook_finalize
+import flow_completion
 
 SCHEMA = 'receipt-monthly-v2'
 PART = 'customXml/financialReceiptMonthly.xml'
@@ -54,7 +55,7 @@ def number(value):
 
 
 def formula(start, entries):
-    return number(start) + ''.join('-' + number(x['amount']) for x in entries) + '=' + number(balance(start, entries))
+    return number(start) + ''.join('-' + number(x['amount']) for x in entries if money(x['amount']) or 'source_total' not in x) + '=' + number(balance(start, entries))
 
 
 def balance(start, entries):
@@ -107,6 +108,13 @@ def checked_receipt_proof(row, ledger_rows, day, parents):
     """Attach receipt-specific evidence without changing the ledger disposition."""
     if (row.get('_check') or {}).get('verdict') != 'skip':
         return {}
+    import ordinary_receipt_identity as OI
+    if row.get('ordinary_receipt_proof') and (OI.check(row, ledger_rows) or {}).get('verdict') == 'skip':
+        posting = common.norm_date(day)
+        rec = row['ordinary_receipt_proof']['rec']
+        if posting and common.norm_date(rec.get('hexiao_date')) == posting:
+            return {'basis': 'registered_source_event', 'ar': row['ar'], 'so': row['so'], 'sod': row['sod'],
+                    'date': posting.isoformat(), 'amount': number(actual_amount(row))}
     import current_receipt_group
     if row.get('current_receipt_group') and current_receipt_group.check(row,ledger_rows).get('verdict')=='skip':
         records=row['current_receipt_group']['records']
@@ -150,7 +158,7 @@ def checked_receipt_proof(row, ledger_rows, day, parents):
 def valid_receipt_proof(row, date):
     proof=row.get('flow_receipt_proof') or {}
     try:
-        return (proof.get('basis') in {'published_parent_case','current_material_parent_case','current_receipt_group_case'}
+        return (proof.get('basis') in {'published_parent_case','current_material_parent_case','current_receipt_group_case','registered_source_event'}
                 and all(proof.get(k)==row.get(k) for k in ('ar','so','sod'))
                 and proof.get('date')==date.isoformat() and money(proof.get('amount'))==actual_amount(row))
     except ValueError:
@@ -205,7 +213,7 @@ def complete_current_history(item, checked, rows, entries, require_existing):
 
 
 def finalize(items, checked):
-    """Bind only verified ledger cases to the fixed business date."""
+    """Bind source money separately from verified P&L completion."""
     date = common.norm_date(checked.get('hexiao_date'))
     if not date:
         raise ValueError('缺少有效核销日期')
@@ -214,6 +222,8 @@ def finalize(items, checked):
     for kind in ('write', 'skip'):
         for row in checked.get(kind, []):
             if row.get('case_id') in bad:
+                continue
+            if row.get('code') == 'OK_SOURCE_SETTLED_MATERIAL_GAP':
                 continue
             # An already-settled SO alone is not proof that this receipt was applied.
             if row.get('code') == 'OK_SO_ALREADY_SETTLED' and not valid_receipt_proof(row,date):
@@ -238,6 +248,7 @@ def finalize(items, checked):
             continue
         item.pop('order_only', None)
         item['monthly_date'] = date.isoformat()
+        flow_completion.bind(item, by_ar.get(item.get('ar'), []))
         entries = {}
         deliveries = {}
         try:
@@ -271,6 +282,14 @@ def finalize(items, checked):
                 if key in entries and entries[key] != entry:
                     raise ValueError('同一核销事项金额冲突')
                 entries[key] = entry
+            import flow_source_receipts
+            source_entries = flow_source_receipts.allocations(item, date)
+            source_sos = {e['so'] for e in source_entries}
+            if source_entries:
+                entries = {k:e for k,e in entries.items() if e['so'] not in source_sos}
+                entries.update({e['key']:e for e in source_entries})
+                require_existing = [k for k in require_existing if k in entries]
+                item['source_allocation'] = True
             item['monthly_entries'] = list(entries.values())
             item['monthly_deliveries'] = deliveries
             item['monthly_require_existing'] = require_existing
@@ -422,6 +441,17 @@ def parsed_balance(raw):
     return {'opening':first[0],'deductions':deductions,'remaining':remaining}
 
 
+def legacy_period_opening(form, amount, parsed):
+    """Old carry rows display the first period deduction, not the opening."""
+    deductions = parsed.get('deductions') or []
+    opening = parsed.get('opening')
+    if (str(form or '').strip() == '冲预收' and opening is not None
+            and deductions and amount == deductions[0]
+            and opening > amount and parsed['remaining'] >= 0):
+        return opening
+    return None
+
+
 def legacy_month(ws, row, cols, history=None, original_order=None):
     date=common.norm_date(value(ws,row,cols,'日期'))
     start=money(value(ws,row,cols,'金额'))
@@ -449,6 +479,9 @@ def legacy_month(ws, row, cols, history=None, original_order=None):
         parsed = parsed_balance(raw)
         if 'remaining' not in parsed:
             raise ValueError('预收仅有备注，缺少可核实的余额')
+        period_opening = legacy_period_opening(value(ws,row,cols,'收款形式'), start, parsed)
+        if period_opening is not None:
+            start = period_opening
         remaining = parsed['remaining']
         deductions = list(parsed.get('deductions', [start - remaining]))
         if 'opening' in parsed:
@@ -498,7 +531,15 @@ def adopt_chain(ws, cols, item):
             if target_month and day.strftime('%Y-%m')!=target_month:continue
             try:amount=money(value(ws,r,cols,'金额'))
             except ValueError:continue
-            if amount==money(previous['remaining']):candidates.append(r)
+            if amount==money(previous['remaining']):
+                candidates.append(r)
+            elif target_month:
+                try:
+                    parsed=parsed_balance(value(ws,r,cols,'预收'))
+                    opening=legacy_period_opening(value(ws,r,cols,'收款形式'),amount,parsed)
+                except ValueError:
+                    continue
+                if opening==money(previous['remaining']):candidates.append(r)
         if len(candidates)>1:raise ValueError('同名、承接月份与余额存在多个候选，不能唯一确定结转行')
         if not candidates:
             if marker:raise ValueError('原行标记已转月，但缺少可核实承接行')
@@ -512,6 +553,7 @@ def order_text(month):
     # Each posting date keeps its own SO payment amount; never display delivery.
     amounts = {}
     for entry in month['entries']:
+        if entry.get('source_total') is not None and money(entry['amount'])==0:continue
         if entry.get('so'):
             key = (entry['date'], entry['so'])
             amounts[key] = amounts.get(key, Decimal(0)) + money(entry['amount'])
@@ -671,7 +713,8 @@ def write_file(src, out, items, *, validate_only=False, workbook=None):
                 if pending['sheet']!=sheet or pending['signature']!=signature(ws,int(item['row_no']),cols):
                     raise ValueError('待处理订单原行发生变化，需重新核对')
                 import flow_order_prefill
-                flow_order_prefill.check_completion_basis(item,pending)
+                if not item.get('source_allocation'):
+                    flow_order_prefill.check_completion_basis(item,pending)
                 item={**item,'_order_before_prefill':pending['original_text']}
             if chain:
                 if chain['sheet']!=sheet: raise ValueError('到账关联工作表发生变化')
@@ -694,18 +737,27 @@ def write_file(src, out, items, *, validate_only=False, workbook=None):
             recorded={e['key']:e for m in chain['months'] for e in m['entries']}
             if any(key not in recorded for key in item.get('monthly_require_existing', [])):
                 raise ValueError('盈亏已跳过但缺少流转事件记录，不能推定本笔已登记')
-            new=[]
+            import flow_source_receipts
+            source_entries = [e for e in item['monthly_entries'] if e['key'].startswith('source|')]
+            new=flow_source_receipts.new_entries(source_entries,recorded)
             for entry in item['monthly_entries']:
+                if entry['key'].startswith('source|'):continue
                 if entry['key'] in recorded:
                     if recorded[entry['key']]!=entry: raise ValueError('已登记核销事项金额发生变化')
                 else: new.append(entry)
             repair=any([m.pop('_repair_balance',False) for m in chain['months']])
-            if not new and not repair: continue
+            last=chain['months'][-1]
+            monetary_new=any(money(e['amount'])>0 for e in new)
+            if source_entries and not monetary_new:
+                last=next((m for m in chain['months'] if m['month']==month_key),last)
+            desired_status=flow_completion.status(item)
+            previous_status=str(value(ws,last['row'],cols,'是否更新应收款') or '')
+            status_change=bool(source_entries and desired_status and desired_status!=previous_status)
+            if not new and not repair and not status_change: continue
             legacy_sos={str(so).strip().upper() for m in chain['months'] for so in m.get('legacy_sos',[])}
             if any(str(e['so']).strip().upper() in legacy_sos for e in new):
                 raise ValueError('本次SO已有人工核销记录，缺少事项身份，不能重复扣减')
-            last=chain['months'][-1]
-            if day.isoformat()<max([m['date'] for m in chain['months']]+[e['date'] for e in recorded.values()]):
+            if monetary_new and day.isoformat()<max([m['date'] for m in chain['months']]+[e['date'] for e in recorded.values()]):
                 raise ValueError('倒序补录会影响已有结转余额，需人工核对')
             cross=month_key!=last['month']
             if month_key<last['month']: raise ValueError('不能倒序修改历史结转月份')
@@ -742,9 +794,11 @@ def write_file(src, out, items, *, validate_only=False, workbook=None):
                 text=xlsx_patch.RichTextValue(tuple(runs))
             if pending:
                 completed={o['so'] for o in item.get('so_outcomes',[]) if o.get('completed')}
-                for entry in new:
+                for entry in item['monthly_entries']:
                     if entry['so'] in completed:pending['pending'].pop(entry['so'],None)
-            receipt_status='部分' if pending and pending['pending'] else '是'
+            receipt_status=flow_completion.status(item, pending['pending'] if pending else ())
+            if source_entries and not cross and not receipt_status:
+                receipt_status=str(value(ws,month['row'],cols,'是否更新应收款') or '')
             overrides={cols['单号']:text,cols['预收']:formula(month['start'],month['entries']),cols['是否更新应收款']:receipt_status}
             if cross:
                 overrides.update({cols['日期']:day,cols['金额']:float(money(month['start'])),cols['收款形式']:'冲预收'})

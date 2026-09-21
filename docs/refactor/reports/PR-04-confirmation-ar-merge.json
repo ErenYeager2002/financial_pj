@@ -1,0 +1,56 @@
+{
+  "source_release": "/home/lee/financial-platform-isolated/releases/ar-allocation-contract-20260920-build",
+  "base_image": "sha256:ccf155fe9ee66aeea09ef64eda7eead98a493fc8e1c15c23867d7185a5c33b87",
+  "files": [
+    {
+      "path": "skills/ar-hexiao-daily/tool.yaml",
+      "before": "b26f639d0c196e24586ebc21d1b4d37cc40563a80eaed5e15bc69336996062dc",
+      "after": "26fc7c870dca02011f3e13616eed4265cd2ae3c84f62f46cbc024c50e29ff517"
+    },
+    {
+      "path": "skills/ar-hexiao-daily/vendor/scripts/allocation_contract.py",
+      "before": null,
+      "after": "eaf8749a6c6771c5abeb790376121b40e51058fe061643757d2c3ebc8497610b"
+    },
+    {
+      "path": "skills/ar-hexiao-daily/vendor/scripts/fallback_allocation_ledger.py",
+      "before": "901cad604876b08fa0a0646fc6838f49e57fdc129f14ce0fa522e27ad2b54bf7",
+      "after": "87f44fc895ab8ecc304fb393ff201f103658ea653c15f5ef14e1a4ac766757ef"
+    },
+    {
+      "path": "skills/ar-hexiao-daily/vendor/scripts/validate_plan.py",
+      "before": "4e95929ba81281d774d4641c20cf555e8a9ed6484714928cf0e096964efaaefc",
+      "after": "6969e474e4e398c772d35381dd288e7d7df80add8446b943b5fa84cf344c453e"
+    },
+    {
+      "path": "skills/ar-hexiao-daily/vendor/scripts/test_allocation_contract.py",
+      "before": null,
+      "after": "6aea1c55464d47005d3c8f90a4feabf862593f4004767044f02506b08dbb5601"
+    },
+    {
+      "path": "skills/ar-hexiao-daily-lab/tool.yaml",
+      "before": "40d62002161b86351013d3105d4232e3ad1e2120f343ae840980cd0ef2b040f7",
+      "after": "cd7e5900dee55901ad0a9cb6aa819c60858d4dbd680bb863a8924c2d33d2d66c"
+    },
+    {
+      "path": "skills/ar-hexiao-daily-lab/vendor/scripts/allocation_contract.py",
+      "before": null,
+      "after": "eaf8749a6c6771c5abeb790376121b40e51058fe061643757d2c3ebc8497610b"
+    },
+    {
+      "path": "skills/ar-hexiao-daily-lab/vendor/scripts/fallback_allocation_ledger.py",
+      "before": "901cad604876b08fa0a0646fc6838f49e57fdc129f14ce0fa522e27ad2b54bf7",
+      "after": "87f44fc895ab8ecc304fb393ff201f103658ea653c15f5ef14e1a4ac766757ef"
+    },
+    {
+      "path": "skills/ar-hexiao-daily-lab/vendor/scripts/validate_plan.py",
+      "before": "e127f4f803a7714c29d2bbc00c577b049fd2f8d90ac0a978199e04654b9864f7",
+      "after": "4a0c625afd56fa18f01d3e95a4d4bdaee9d099a002a3fc08a70571e249024615"
+    },
+    {
+      "path": "skills/ar-hexiao-daily-lab/vendor/scripts/test_allocation_contract.py",
+      "before": null,
+      "after": "6aea1c55464d47005d3c8f90a4feabf862593f4004767044f02506b08dbb5601"
+    }
+  ]
+}

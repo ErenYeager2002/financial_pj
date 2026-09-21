@@ -184,7 +184,7 @@ def maintain_staging(db, workflow_id: str) -> bool:
     now = datetime.now(UTC)
     workflow, context = _load(db, workflow_id, locked=True)
     retention = context.get("ar_staging_retention") or {}
-    if retention.get("state") == "purged":
+    if retention.get("state") in {"purged", "workbooks_retired"}:
         db.rollback()
         return False
     next_check = retention.get("next_check_at")

@@ -1,0 +1,29 @@
+{
+  "old_image": "sha256:44a333283d6abd78846b0e8330f67e224c965e1e472ad3877f4f1ba876e79ad5",
+  "new_image": "sha256:03e4a1f08e0d7702339c622a69f553387dbd0399b73a8ea1bb27caad14bef436",
+  "changed": [
+    "platform-model-adapter.d.ts",
+    "workflow-harness-worker.js",
+    "workflow-harness-worker.js.map"
+  ],
+  "runtime_hashes": {
+    "async-queue.d.ts": "8b0c739a8d0f669e9d123e56ea871ec0676b9e3ffc652c82d825940149e93407",
+    "async-queue.js": "7fc34b9d80d02aa13e02adc7b5a2f2327cf64fb97a2cb7949041504804427a1b",
+    "async-queue.js.map": "0fd1834bcb90db93b41f5d232940503f76ae96a9ffbc4383e195ebf7de08c2ff",
+    "contracts.d.ts": "dbb4e550c4f8c6a4f31608605f58823209796222425a38873bc37239bf7613c8",
+    "contracts.js": "427a6852d1b4fbc59c12b396120836e73895fb11bee3ec3841f58f9c9f32499d",
+    "contracts.js.map": "4fcc757fb487479db32d5b2e7264542757309c43b177791ecfe6dd761150de26",
+    "index.d.ts": "a10b872eff6c612b0feb3d5248cc48933cec5fb3b35bfc7e740bf3a7131f932e",
+    "index.js": "0bc48cf6bcebefc1bbb41b81e6fc24f2587e78b3594b532178e77de7ddfe3b9c",
+    "index.js.map": "7516bb7889a40f0d3eba0839478fc85c54ae38edb9066c70176d6f5289e43312",
+    "pi-agent-adapter.d.ts": "5c64af6fd6c218d1d8c4a762ea487e51c6881c2c757611de1a17a43ff9abe015",
+    "pi-agent-adapter.js": "aea0a404be6c17e8e49dca48ebb9117103e8baec8436da2232633fbb5546902d",
+    "pi-agent-adapter.js.map": "178a912d9483012f125b9d9ef78b3861132cebaa5fc2bd1737e04dc7a0ba044e",
+    "platform-model-adapter.d.ts": "5574b63a07d600cd7078f4d44309d5a2bb1c5266321d1834713e95b7749c6502",
+    "platform-model-adapter.js": "97a98fe38e0e981218056bb66a05f4c413cba15fc9454b2a0a1bde7d6d55f9f2",
+    "platform-model-adapter.js.map": "9485f3b097d5882b6ff0dfaf26535efffe346077da555d1eede490a8b1d306b0",
+    "workflow-harness-worker.d.ts": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881",
+    "workflow-harness-worker.js": "6fd4457eb3a9b2373501650241d647978bca084e93693db5607cac4e0d6b9841",
+    "workflow-harness-worker.js.map": "79021bffb5af807c1cc397e06d55800596b50da53ac808099a2f48cc3e163086"
+  }
+}

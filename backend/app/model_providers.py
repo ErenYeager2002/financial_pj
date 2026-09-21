@@ -229,6 +229,34 @@ PROVIDERS: tuple[ProviderDefinition, ...] = (
         preferred_models=("deepseek-v4-flash", "glm-5.3-flash", "kimi-k2.6"),
     ),
     ProviderDefinition(
+        id="stepfun",
+        name="阶跃星辰 / StepFun",
+        protocol=PROTOCOL_CHAT_COMPLETIONS,
+        base_url="https://api.stepfun.com/v1",
+        discovery_mode=DISCOVERY_API,
+        # Documented general-purpose text/tool models. Audio, image generation
+        # and Step Plan-only routing IDs require different contracts.
+        # https://platform.stepfun.com/docs/zh/api-reference/models/list
+        include_patterns=(
+            r"^step-3\.(?:5|7)-flash(?:-\d{4})?$",
+            r"^step-5-preview$",
+        ),
+        preferred_models=("step-3.7-flash", "step-3.5-flash", "step-3.5-flash-2603", "step-5-preview"),
+    ),
+    ProviderDefinition(
+        id="agnes",
+        name="Agnes AI",
+        protocol=PROTOCOL_CHAT_COMPLETIONS,
+        base_url="https://apihub.agnes-ai.com/v1",
+        discovery_mode=DISCOVERY_API,
+        # Current stable Chat Completions models with documented tool calling.
+        # https://wiki.agnes-ai.com/en/docs/agnes-30-flash
+        # https://wiki.agnes-ai.com/en/docs/agnes-25-pro
+        # 2.0 Flash and Pro Alpha are deprecated; image/video use other APIs.
+        include_patterns=(r"^agnes-(?:3\.0-flash|2\.5-(?:flash|pro))$",),
+        preferred_models=("agnes-3.0-flash", "agnes-2.5-flash", "agnes-2.5-pro"),
+    ),
+    ProviderDefinition(
         id="custom_openai",
         name="自定义 OpenAI 兼容服务",
         protocol=PROTOCOL_CHAT_COMPLETIONS,

@@ -2,7 +2,8 @@ from pathlib import Path
 from types import SimpleNamespace
 import json
 import uuid
-from app.database import SessionLocal, init_db
+from app.database import SessionLocal
+from db_setup import migrate_test_database
 from app.models import FileRecord, AuditEvent
 from app.ar_material_candidates import candidate_year, material_candidates
 
@@ -14,7 +15,7 @@ def test_year_requires_one_unambiguous_four_digit_year():
 
 
 def test_candidates_preserve_defaults_scope_roles_and_distinct_same_year_files(tmp_path):
-    init_db()
+    migrate_test_database()
     owner = uuid.uuid4().hex
     user = SimpleNamespace(user_id=owner, department_id=owner)
     with SessionLocal() as db:
@@ -63,7 +64,8 @@ def test_stale_material_version_rejected_and_unchanged_selection_needs_no_upload
     from fastapi import HTTPException
     import pytest
     current = SimpleNamespace(id="new")
-    monkeypatch.setattr(service, "current_material_set", lambda *args: current)
+    from app import ar_material_lifecycle
+    monkeypatch.setattr(ar_material_lifecycle, "visible_material_set", lambda *args: current)
     monkeypatch.setattr(service, "material_set_bindings", lambda *args: {"profit_loss_ledgers": [{"file_id": "ledger"}]})
     permissions = []
     monkeypatch.setattr(service, "assert_skill_permission", lambda *args: permissions.append(args[-1]))
@@ -88,7 +90,7 @@ def test_hide_referenced_current_files_and_bulk_candidates_without_deleting(tmp_
     from app.storage import sha256_file
     from fastapi import HTTPException
     import pytest
-    init_db()
+    migrate_test_database()
     owner = uuid.uuid4().hex
     user = UserContext(user_id=owner, display_name="test", department_id=owner, role="finance_user")
     with SessionLocal() as db:

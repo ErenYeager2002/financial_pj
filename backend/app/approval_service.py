@@ -13,7 +13,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .audit_service import record_audit
-from .auth import UserContext
+from .auth import UserContext, require_admin
+from .authorization import refresh_active_user
 from .auth_models import User
 from .contracts import ApprovalRecord as ApprovalRead
 from .models import (
@@ -112,7 +113,7 @@ def _reset_waiting_workflow(
 ) -> None:
     if not record.workflow_id:
         return
-    workflow = db.get(WorkflowSession, record.workflow_id)
+    workflow = db.get(WorkflowSession, record.workflow_id, populate_existing=True)
     if not workflow or workflow.stage != "waiting_approval":
         return
     workflow.stage = "awaiting_apply_confirmation"
@@ -132,7 +133,7 @@ def _input_evidence(db: Session, workflow: WorkflowSession) -> dict[str, list[di
         for raw in raw_items:
             if not isinstance(raw, dict) or not isinstance(raw.get("file_id"), str):
                 raise HTTPException(status_code=409, detail="工作流输入文件记录不完整。")
-            record = db.get(FileRecord, raw["file_id"])
+            record = db.get(FileRecord, raw["file_id"], populate_existing=True)
             if (
                 not record
                 or record.kind != "input"
@@ -337,18 +338,26 @@ def request_workflow_approval(
     return serialize_approval(db, record)
 
 
+def _current_approval_administrator(db: Session, actor: UserContext) -> UserContext:
+    # Approval listing can expire records; both public entries are mutations.
+    from .scheduler import acquire_claim_lock
+    acquire_claim_lock(db)
+    current = refresh_active_user(db, actor)
+    require_admin(current)
+    return current
+
+
 def list_approvals(
     db: Session, actor: UserContext, *, status: str = "", limit: int = 200
 ) -> list[ApprovalRead]:
-    if not actor.is_admin:
-        raise HTTPException(status_code=403, detail="只有平台管理员可以查看审批。")
+    actor = _current_approval_administrator(db, actor)
     now = datetime.now(UTC)
     pending = list(
         db.scalars(
             select(ApprovalRecord).where(
                 ApprovalRecord.department_id == actor.department_id,
                 ApprovalRecord.status == "pending",
-            )
+            ).execution_options(populate_existing=True)
         ).all()
     )
     for item in pending:
@@ -370,7 +379,7 @@ def list_approvals(
         query = query.where(ApprovalRecord.status == status)
     records = list(
         db.scalars(
-            query.order_by(ApprovalRecord.created_at.desc(), ApprovalRecord.id.desc()).limit(
+            query.execution_options(populate_existing=True).order_by(ApprovalRecord.created_at.desc(), ApprovalRecord.id.desc()).limit(
                 min(max(limit, 1), 500)
             )
         ).all()
@@ -426,9 +435,11 @@ def decide_approval(
     decision: str,
     reason: str,
 ) -> ApprovalRead:
-    if not actor.is_admin:
-        raise HTTPException(status_code=403, detail="只有平台管理员可以审批写入任务。")
-    record = db.get(ApprovalRecord, approval_id)
+    actor = _current_approval_administrator(db, actor)
+    if decision not in {"approve", "reject"}:
+        raise HTTPException(status_code=422, detail="审批决定无效。")
+    record = db.scalar(select(ApprovalRecord).where(ApprovalRecord.id == approval_id)
+                       .with_for_update().execution_options(populate_existing=True))
     if not record or record.department_id != actor.department_id:
         raise HTTPException(status_code=404, detail="审批记录不存在。")
     now = datetime.now(UTC)
@@ -453,9 +464,15 @@ def decide_approval(
         raise HTTPException(status_code=409, detail="发起人不能审批自己的写入任务。")
     if record.resource_type != "workflow" or not record.workflow_id:
         raise HTTPException(status_code=409, detail="当前审批资源类型尚不支持执行。")
-    workflow = db.get(WorkflowSession, record.workflow_id)
+    workflow = db.scalar(select(WorkflowSession).where(WorkflowSession.id == record.workflow_id)
+                         .with_for_update().execution_options(populate_existing=True))
     if not workflow or workflow.department_id != actor.department_id:
         raise HTTPException(status_code=404, detail="审批对应的工作流不存在。")
+    if workflow.state != "waiting_approval" or workflow.stage != "waiting_approval":
+        raise HTTPException(status_code=409, detail="工作流已不再等待本次审批。")
+    if decision == "approve":
+        from .workflow_execution_policy import workflow_owner_context
+        workflow_owner_context(db, workflow)
     try:
         snapshot, preview, snapshot_hash, preview_hash = _workflow_evidence(db, workflow)
     except HTTPException as exc:
@@ -487,6 +504,9 @@ def decide_approval(
         workflow.stage = "awaiting_apply_confirmation"
         workflow.state = "waiting_confirmation"
         workflow.progress_message = "执行快照已变化，需要重新确认并申请审批"
+        record_audit(db, action="approval.revoke", actor=actor, resource_type="approval",
+                     resource_id=record.id, details={"workflow_id": workflow.id,
+                         "skill_id": workflow.skill_id, "cause": "snapshot_changed"})
         db.commit()
         raise HTTPException(status_code=409, detail="执行快照已经变化，原审批已失效。")
     record.decided_by = actor.user_id

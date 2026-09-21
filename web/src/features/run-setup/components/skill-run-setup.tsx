@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Icons } from '@/components/icons';
@@ -39,6 +39,7 @@ import {
 } from '@/features/run-setup/api/mutations';
 import { isRunnableSkill } from '@/features/run-setup/run-eligibility';
 import { createClientId } from '@/lib/client-id';
+import { submissionKey, completeSubmission } from '@/features/run-setup/submission-intent';
 import { cn } from '@/lib/utils';
 
 interface SchemaProperty {
@@ -175,7 +176,6 @@ export function SkillRunSetup({ skill, experience, draft, draftFiles = [] }: Ski
   const [removingFileId, setRemovingFileId] = useState<string | null>(null);
   const [confirmationOpen, setConfirmationOpen] = useState(false);
   const [createdRun, setCreatedRun] = useState<RunDetail | null>(null);
-  const idempotencyKey = useRef<string>(createClientId());
 
   const uploadMutation = useMutation(uploadSkillFileMutation);
   const deleteMutation = useMutation(deleteSkillFileMutation);
@@ -328,6 +328,9 @@ export function SkillRunSetup({ skill, experience, draft, draftFiles = [] }: Ski
   async function createAndConfirm() {
     let run: RunDetail | null = null;
     try {
+      const request = {skill_id:skill.id,message:'',parameters,files:runFiles()};
+      const scope = `run.create:${skill.id}`;
+      const key = draft ? '' : submissionKey(scope, request, createClientId);
       run = draft
         ? await draftMutation.mutateAsync({
             draftId: draft.id,
@@ -335,13 +338,11 @@ export function SkillRunSetup({ skill, experience, draft, draftFiles = [] }: Ski
             files: runFiles()
           })
         : await createMutation.mutateAsync({
-            skill_id: skill.id,
-            message: '',
-            parameters,
-            files: runFiles(),
-            idempotency_key: idempotencyKey.current
+            ...request,
+            idempotency_key: key
           });
       setCreatedRun(run);
+      if (!draft) completeSubmission(scope,key);
       if (run.confirmation_required && run.state === 'waiting_confirmation') {
         try {
           const confirmation = await confirmMutation.mutateAsync(run.id);

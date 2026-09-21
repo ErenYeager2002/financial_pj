@@ -182,6 +182,8 @@ def test_provider_registry_registers_builtin_providers() -> None:
         "doubao",
         "minimax",
         "opencode_go",
+        "stepfun",
+        "agnes",
     ]
     assert all(item.protocol == "chat_completions" for item in providers)
     assert all(not item.admin_only for item in providers)
@@ -551,6 +553,8 @@ def test_model_providers_endpoint_hides_admin_only_from_normal_users() -> None:
             "doubao",
             "minimax",
             "opencode_go",
+            "stepfun",
+            "agnes",
         ]
         assert all(not item["admin_only"] for item in public.json())
         assert all(

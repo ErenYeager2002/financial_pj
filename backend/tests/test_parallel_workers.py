@@ -10,14 +10,23 @@ import pytest
 from sqlalchemy import select
 
 from app import worker
-from app.database import SessionLocal, init_db
+from app.database import SessionLocal
+from db_setup import migrate_test_database
 from app.models import RunRecord, WorkflowAction, WorkflowSession
 from app.worker import claim_next_run, run_once
 from app.workflow_service import claim_next_workflow_action
 
 
 def setup_module() -> None:
-    init_db()
+    migrate_test_database()
+    # Concurrency fixtures use a real active synthetic owner. Denial cases have
+    # separate coverage in test_execution_authorization.
+    from app.auth_models import User
+    with SessionLocal() as db:
+        if db.get(User,"parallel-user") is None:
+            db.add(User(id="parallel-user",username="parallel-user",department_id="finance",
+                        role="skill_admin",password_hash="synthetic-unusable-password"))
+            db.commit()
 
 
 @pytest.fixture(autouse=True)
@@ -392,7 +401,7 @@ def test_worker_loop_survives_one_failed_iteration(monkeypatch) -> None:
         worker.STOP = True
         return False
 
-    monkeypatch.setattr(worker, "init_db", lambda: None)
+    monkeypatch.setattr(worker, "check_runtime_database", lambda: None)
     monkeypatch.setattr(
         worker,
         "settings",

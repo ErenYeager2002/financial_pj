@@ -68,18 +68,14 @@ def test_fresh_database_upgrades_to_head(tmp_path: Path) -> None:
     assert "version:" in verify.stdout
 
 
-def test_legacy_database_without_auth_tables_is_upgraded(tmp_path: Path) -> None:
-    """复现真实旧库：只有基线迁移前的表，没有认证表。
-
-    过去用最新 ORM create_all 构造“旧库”，实际上已包含认证表，掩盖了
-    “stamp head 却不执行迁移”的缺陷。本测试用基线迁移精确构造旧库结构。
-    """
+def test_legacy_database_without_auth_tables_requires_explicit_import(tmp_path: Path) -> None:
+    """Construct the historical baseline and verify startup refuses implicit adoption."""
     db_path = tmp_path / "legacy.db"
     data_dir = tmp_path / "data"
     db_url = f"sqlite:///{db_path.as_posix()}"
 
     baseline = _run_python(
-        "from app.database import _baseline_revision\nprint(_baseline_revision())",
+        "from app.database import _alembic_config\nfrom alembic.script import ScriptDirectory\nprint(ScriptDirectory.from_config(_alembic_config()).get_base())",
         db_url=db_url,
         data_dir=data_dir,
     )
@@ -113,7 +109,7 @@ def test_legacy_database_without_auth_tables_is_upgraded(tmp_path: Path) -> None
     assert seeded.returncode == 0, seeded.stderr
 
     # Alembic 建基线时会留下版本表；真实历史库没有该表，必须删除后再验证
-    # init_db 的“有业务表、无 alembic_version”接管分支。
+    # init_db 对无版本旧库的拒绝分支。
     remove_version = _run_python(
         "from sqlalchemy import text\n"
         "from app.database import engine\n"
@@ -124,66 +120,44 @@ def test_legacy_database_without_auth_tables_is_upgraded(tmp_path: Path) -> None
     )
     assert remove_version.returncode == 0, remove_version.stderr
 
-    # 3) 运行 init_db：旧库应先 stamp 基线，再 upgrade head，
-    #    真正创建认证表，并保留历史数据。
+    # Runtime startup must preserve this legacy database and require explicit import.
     run_init = (
-        "from app.database import init_db, SessionLocal\n"
-        "from app.models import FileRecord\n"
-        "init_db()\n"
-        "with SessionLocal() as db:\n"
-        "    row = db.get(FileRecord, 'legacy-file-0001')\n"
-        "    assert row is not None and row.original_name == 'legacy.xlsx'\n"
-        "print('upgraded')\n"
-    )
-    migrated = _run_python(run_init, db_url=db_url, data_dir=data_dir)
-    assert migrated.returncode == 0, migrated.stderr
-    assert "upgraded" in migrated.stdout
-
-    # 4) 校验认证表已真实创建，alembic_version 位于 head。
-    check = (
-        "from alembic.script import ScriptDirectory\n"
+        "from app.database import init_db, engine\n"
+        "from app.infrastructure.database.schema_check import SchemaCompatibilityError\n"
         "from sqlalchemy import inspect, text\n"
-        "from app.database import _alembic_config, engine\n"
-        "with engine.connect() as c:\n"
-        "    tables = set(inspect(c).get_table_names())\n"
-        "    version = c.scalar(text('select version_num from alembic_version'))\n"
-        "    assert {'users', 'user_sessions', 'user_skill_permissions'} <= tables\n"
-        "    columns = {item['name'] for item in inspect(c).get_columns('users')}\n"
-        "    assert {'clerk_user_id', 'clerk_organization_id'} <= columns\n"
-        "    head = ScriptDirectory.from_config(_alembic_config()).get_current_head()\n"
-        "    assert version == head\n"
-        "print('head:', version)\n"
+        "try:\n"
+        "    init_db()\n"
+        "except SchemaCompatibilityError as error:\n"
+        "    assert error.code == 'DATABASE_NOT_MIGRATED'\n"
+        "else:\n"
+        "    raise AssertionError('legacy database silently adopted')\n"
+        "with engine.connect() as connection:\n"
+        "    tables = set(inspect(connection).get_table_names())\n"
+        "    assert 'alembic_version' not in tables and 'users' not in tables\n"
+        "    assert connection.scalar(text(\"SELECT original_name FROM files WHERE id='legacy-file-0001'\")) == 'legacy.xlsx'\n"
     )
-    verified = _run_python(check, db_url=db_url, data_dir=data_dir)
-    assert verified.returncode == 0, verified.stderr
-    assert "head:" in verified.stdout
-
-    # 5) 管理员初始化必须可用（不再出现 no such table: users）。
-    bootstrap = (
-        "from app.database import SessionLocal, init_db\n"
-        "from app.auth_service import bootstrap_admin, get_user_by_username\n"
-        "init_db()\n"
-        "with SessionLocal() as db:\n"
-        "    username = bootstrap_admin(db)\n"
-        "    assert get_user_by_username(db, username) is not None\n"
-        "print('bootstrap-ok')\n"
-    )
-    bootstrapped = _run_python(bootstrap, db_url=db_url, data_dir=data_dir)
-    assert bootstrapped.returncode == 0, bootstrapped.stderr
-    assert "bootstrap-ok" in bootstrapped.stdout
+    unchanged = _run_python(run_init, db_url=db_url, data_dir=data_dir)
+    assert unchanged.returncode == 0, unchanged.stderr
 
 
-def test_upgrade_downgrade_roundtrip(tmp_path: Path) -> None:
+def test_forward_only_expansion_refuses_destructive_downgrade(tmp_path: Path) -> None:
     db_path = tmp_path / "roundtrip.db"
     data_dir = tmp_path / "data"
     db_url = f"sqlite:///{db_path.as_posix()}"
-
     up = _alembic(db_url, data_dir, "upgrade", "head")
     assert up.returncode == 0, up.stderr
     down = _alembic(db_url, data_dir, "downgrade", "base")
-    assert down.returncode == 0, down.stderr
-    up_again = _alembic(db_url, data_dir, "upgrade", "head")
-    assert up_again.returncode == 0, up_again.stderr
+    assert down.returncode != 0
+    assert "Forward-only repair" in down.stderr
+    preserved = _run_python(
+        "from app.database import engine\n"
+        "from sqlalchemy import inspect, text\n"
+        "with engine.connect() as connection:\n"
+        "    assert 'assistant_turns' in inspect(connection).get_table_names()\n"
+        "    assert connection.scalar(text('SELECT version_num FROM alembic_version')) == 'f2a3b4c5d6e7'\n",
+        db_url=db_url, data_dir=data_dir,
+    )
+    assert preserved.returncode == 0, preserved.stderr
 
 
 def test_model_trace_downgrade_removes_pre_draft_rows(tmp_path: Path) -> None:
@@ -191,7 +165,7 @@ def test_model_trace_downgrade_removes_pre_draft_rows(tmp_path: Path) -> None:
     data_dir = tmp_path / "data"
     db_url = f"sqlite:///{db_path.as_posix()}"
 
-    upgraded = _alembic(db_url, data_dir, "upgrade", "head")
+    upgraded = _alembic(db_url, data_dir, "upgrade", "e0f1a2b3c4d5")
     assert upgraded.returncode == 0, upgraded.stderr
     seeded = _run_python(
         "from sqlalchemy import text\n"
@@ -225,6 +199,7 @@ def test_model_trace_downgrade_removes_pre_draft_rows(tmp_path: Path) -> None:
         data_dir=data_dir,
     )
     assert verified.returncode == 0, verified.stderr
+
 
 
 def test_workflow_step_migration_preserves_existing_task_records(tmp_path: Path) -> None:
@@ -268,7 +243,7 @@ def test_workflow_step_migration_preserves_existing_task_records(tmp_path: Path)
     )
     assert seed.returncode == 0, seed.stderr
 
-    upgraded = _alembic(db_url, data_dir, "upgrade", "head")
+    upgraded = _alembic(db_url, data_dir, "upgrade", "e0f1a2b3c4d5")
     assert upgraded.returncode == 0, upgraded.stderr
 
     verify = _run_python(
@@ -357,6 +332,7 @@ def test_workflow_step_migration_preserves_existing_task_records(tmp_path: Path)
         data_dir=data_dir,
     )
     assert verify_down.returncode == 0, verify_down.stderr
+
 
 
 def test_workflow_binding_migration_blocks_raw_mutations(tmp_path: Path) -> None:
@@ -484,7 +460,7 @@ def test_fetched_bundle_migration_backfills_historical_previews_and_roundtrips(
     )
     assert seed.returncode == 0, seed.stderr
 
-    upgraded = _alembic(db_url, data_dir, "upgrade", "head")
+    upgraded = _alembic(db_url, data_dir, "upgrade", "e0f1a2b3c4d5")
     assert upgraded.returncode == 0, upgraded.stderr
 
     verify = _run_python(

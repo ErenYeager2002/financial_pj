@@ -1,0 +1,22 @@
+{
+  "at": "2026-09-21T01:38:23.540177+00:00",
+  "mode": "normal",
+  "active_counts": {
+    "runs": 0,
+    "batches": 1,
+    "actions": 1,
+    "discovery": 0,
+    "assistant": 0
+  },
+  "actions": [
+    {
+      "id": "691ea90e-a572-4eb4-9459-8c95c57e940c",
+      "name": "fetch_data",
+      "state": "ar_v2:running",
+      "date": "2026-09-07",
+      "heartbeat_at": "2026-09-21T01:38:10.954607+00:00"
+    }
+  ],
+  "deployed": false,
+  "last_apply_observation": "SSH channel-open reset; subsequent inspection confirmed no deploy process/report, original images and normal mode. New active financial work now prevents cutover."
+}

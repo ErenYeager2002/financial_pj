@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,6 +12,7 @@ import { fetchRun } from '@/features/runs/api/service';
 import { platformClientRequest } from '@/features/platform-api/client';
 import type { RunDetail } from '@/features/platform-api/types';
 import { createClientId } from '@/lib/client-id';
+import { submissionKey, completeSubmission } from '@/features/run-setup/submission-intent';
 
 const companies = [
   ['HEAD','北京本部'],['CULTURE','北京文化传媒'],['SHANGHAI','上海智译'],
@@ -45,7 +46,6 @@ export function ConsolidationSetup() {
   const [run,setRun]=useState<RunDetail|null>(null);
   const [parent,setParent]=useState('');
   const [error,setError]=useState('');
-  const key=useRef(createClientId());
   const result=(run?.result ?? {}) as Result;
   const running=Boolean(runId && (!run || !terminal.has(run.state)));
 
@@ -102,12 +102,16 @@ export function ConsolidationSetup() {
     if(fetchKingdee && !configured){setError('请先保存金蝶账号，或关闭金蝶取数后使用上传文件');return;}
     setBusy(true);setError('');
     try {
-      const task=await createRun({
+      const request={
         skill_id:'consolidated-statements',message:'',
         parameters:{period:month.replace('-',''),fetch_kingdee:fetchKingdee,...(parent?{parent_run_id:parent}:{})},
-        files:{reports:materials.map(x=>x.id)},idempotency_key:key.current
-      });
+        files:{reports:materials.map(x=>x.id)}
+      };
+      const scope='run.create:consolidated-statements';
+      const key=submissionKey(scope,request,createClientId);
+      const task=await createRun({...request,idempotency_key:key});
       setRun(task);setRunId(task.id);
+      completeSubmission(scope,key);
       const url=new URL(window.location.href);url.searchParams.set('run',task.id);window.history.replaceState(null,'',url);
     }catch(e){setError(e instanceof Error?e.message:'创建任务失败');}
     finally{setBusy(false);}
@@ -128,7 +132,7 @@ export function ConsolidationSetup() {
       }
       const period=String(run.parameters?.period ?? month.replace('-',''));
       setMonth(period.slice(0,4)+'-'+period.slice(4));setParent(run.id);
-      setMaterials(originals);setFetchKingdee(true);setRun(null);setRunId('');key.current=createClientId();
+      setMaterials(originals);setFetchKingdee(true);setRun(null);setRunId('');
       const url=new URL(window.location.href);url.searchParams.delete('run');window.history.replaceState(null,'',url);
       toast.success('已复用原始资料，运行后只补取尚未成功识别的金蝶报表');
     }catch(e){setError(e instanceof Error?e.message:'准备补充版本失败');}

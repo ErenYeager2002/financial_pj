@@ -97,16 +97,22 @@ def verify_updated_annual_materials(db, ancestor, selected, *, differences=None)
         previous = before.get((current.role, current.year))
         if current.role != "profit_loss_ledgers" or previous is None or current.sha256 == previous.sha256:
             continue
-        paths = []
+        rows = []
         for member in (previous, current):
             record = db.get(FileRecord, member.file_id)
             if record is None or (record.owner_id, record.department_id, record.skill_id) != (selected.owner_id, selected.department_id, selected.skill_id):
                 raise ValueError("盈亏表历史核实的文件归属不一致")
             path = Path(record.stored_path)
+            if not path.is_file() and member is previous and record.sha256 == member.sha256:
+                from .ar_material_lifecycle import retirement_receipt
+                receipt = retirement_receipt(db, record)
+                if receipt and isinstance(receipt.get("receipt_rows"), list):
+                    rows.append(receipt["receipt_rows"])
+                    continue
             if path.is_symlink() or not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != member.sha256:
                 raise ValueError("盈亏表历史核实的文件不存在或指纹已改变")
-            paths.append(path)
-        changes = history_differences(receipt_rows(paths[0]), receipt_rows(paths[1]), current.year)
+            rows.append(receipt_rows(path))
+        changes = history_differences(rows[0], rows[1], current.year)
         if differences is not None:
             differences.extend(changes)
         changed.append(current.year)

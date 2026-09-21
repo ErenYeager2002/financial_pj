@@ -1,0 +1,49 @@
+{
+  "at": "2026-09-20T04:21:18.540297+00:00",
+  "image": "sha256:97c7df3b05878815de09670ee1945a8d595d5c9a9f8ee93f24939bd5aeaf9ff0",
+  "services": {
+    "api": {
+      "image": "sha256:97c7df3b05878815de09670ee1945a8d595d5c9a9f8ee93f24939bd5aeaf9ff0",
+      "restarts": 0,
+      "verification": {
+        "hashes": "matched",
+        "count": 196,
+        "uid": 10001,
+        "revision": "f3a4b5c6d7e8",
+        "replay_only": false
+      }
+    },
+    "worker-standard": {
+      "image": "sha256:97c7df3b05878815de09670ee1945a8d595d5c9a9f8ee93f24939bd5aeaf9ff0",
+      "restarts": 0,
+      "verification": {
+        "hashes": "matched",
+        "count": 196,
+        "uid": 10001,
+        "revision": "f3a4b5c6d7e8",
+        "replay_only": false
+      }
+    },
+    "worker-task-discovery": {
+      "image": "sha256:97c7df3b05878815de09670ee1945a8d595d5c9a9f8ee93f24939bd5aeaf9ff0",
+      "restarts": 0,
+      "verification": {
+        "hashes": "matched",
+        "count": 196,
+        "uid": 10001,
+        "revision": "f3a4b5c6d7e8",
+        "replay_only": false
+      }
+    }
+  },
+  "platform": {
+    "mode": "normal",
+    "task_counts": {
+      "runs": 0,
+      "batches": 0,
+      "actions": 0,
+      "discovery": 0,
+      "assistant": 0
+    }
+  }
+}

@@ -134,3 +134,15 @@ def proposals(user: UserContext = Depends(get_current_user)):
 def publish_candidate(candidate_id: str, body: PublishCandidate, user: UserContext = Depends(get_current_user), db: Session = Depends(get_db)):
     from ..pi_skill_drafts import publish
     return publish(db,user,candidate_id,body.sha256)
+
+
+class AdminStopResult(BaseModel):
+    running: Literal[False]
+    environment_running: Literal[False]
+
+
+@router.post('/admin/users/{owner_id}/sessions/{session_id}/stop', response_model=AdminStopResult)
+def admin_stop_disabled_owner_session(owner_id: str, session_id: str,
+        user: UserContext = Depends(get_current_user), db: Session = Depends(get_db)):
+    from ..pi_admin_session_service import stop_disabled_owner_session
+    return stop_disabled_owner_session(db, user, owner_id, session_id)

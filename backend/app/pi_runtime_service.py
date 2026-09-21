@@ -16,7 +16,11 @@ from .settings import settings
 
 
 def owner_scope(user: UserContext) -> str:
-    return hashlib.sha256((user.user_id + "\0" + user.department_id).encode()).hexdigest()
+    return owner_scope_key(user.user_id, user.department_id)
+
+
+def owner_scope_key(owner_id: str, department_id: str) -> str:
+    return hashlib.sha256((owner_id + "\0" + department_id).encode()).hexdigest()
 
 
 def catalog(user: UserContext):
@@ -53,26 +57,34 @@ def create_session(user: UserContext, title: str, skill: dict | None = None, cha
     return {k: v for k, v in record.items() if k != 'owner'}
 
 
-def require_session(user: UserContext, session_id: str, *, check_skill: bool = True) -> str:
+def _session_record_for_owner(owner_id: str, department_id: str, session_id: str):
+    """Check catalog ownership only; callers must authorize their actual actor."""
     try:
         session_id = str(UUID(session_id))
     except (ValueError, TypeError):
         raise HTTPException(404, 'Pi 会话不存在。') from None
-    path = catalog(user) / (session_id + '.json')
+    scope = owner_scope_key(owner_id, department_id)
+    path = settings.data_dir / 'pi-runtime' / 'catalog' / scope / (session_id + '.json')
     if not path.is_file() or path.is_symlink():
         raise HTTPException(404, 'Pi 会话不存在。')
     record = json.loads(path.read_text())
-    if record.get('owner') != owner_scope(user) or record.get('id') != session_id:
+    if record.get('owner') != scope or record.get('id') != session_id:
         raise HTTPException(404, 'Pi 会话不存在。')
-    if check_skill:
-        names = [record['skill_id']] if record.get('skill_id') else record.get('mounted_skill_ids', [])
-        if names:
-            from .database import SessionLocal
-            from .authorization import refresh_active_user, allowed_skill_ids
-            with SessionLocal() as db:
-                current = refresh_active_user(db, user)
-                if not current.is_admin and not {'native--' + name for name in names}.issubset(allowed_skill_ids(db, current)):
-                    raise HTTPException(403, 'Skill 权限已变化，请停止环境后重新启动。')
+    return session_id, path, record
+
+
+def require_session(user: UserContext, session_id: str, *, check_skill: bool = True) -> str:
+    session_id, _, record = _session_record_for_owner(user.user_id, user.department_id, session_id)
+    # stop/jobs.cancel waive only the Skill grant, never active identity or
+    # the fixed owner/department scope. Called again after the session lock.
+    from .database import SessionLocal
+    from .authorization import refresh_active_user, allowed_skill_ids
+    with SessionLocal() as db:
+        current = refresh_active_user(db, user)
+        if check_skill:
+            names = [record['skill_id']] if record.get('skill_id') else record.get('mounted_skill_ids', [])
+            if names and not current.is_admin and not {'native--' + name for name in names}.issubset(allowed_skill_ids(db, current)):
+                raise HTTPException(403, 'Skill 权限已变化，请停止环境后重新启动。')
     return session_id
 
 
@@ -118,6 +130,14 @@ def _operate_locked(user: UserContext, session_id: str, operation: str, payload:
                 raise HTTPException(403, 'Skill 权限已变化，请重新启动。')
         record = json.loads((catalog(user) / (session_id + '.json')).read_text())
         store_mounted_skills(user, session_id, [*record.get('mounted_skill_ids', []), *[item['id'] for item in skill_bindings]])
+    result = _request_runtime(body)
+    if operation == 'start' and skill_bindings is not None:
+        store_mounted_skills(user, session_id, [item['id'] for item in skill_bindings])
+    return result
+
+
+def _request_runtime(body: dict) -> dict:
+    """Transport only; operation entry points own authorization and audit."""
     encoded = json.dumps(body, ensure_ascii=False).encode()
     if len(encoded) > 9 * 1024 * 1024:
         raise HTTPException(413, 'Pi 请求过大。')
@@ -129,11 +149,8 @@ def _operate_locked(user: UserContext, session_id: str, operation: str, payload:
     except httpx.HTTPError:
         raise HTTPException(503, 'Pi 运行环境暂时无法连接。') from None
     if response.status_code != 200:
-        messages = {404: 'Pi 文件或会话不存在。', 507: 'Pi 存储空间不足。', 409: 'Pi 会话状态冲突，请查询运行状态后重试。',
+        messages = {429: '运行环境名额已满，请打开对话页的运行环境，查看占用会话并关闭不用的环境后再发送。', 404: 'Pi 文件或会话不存在。', 507: 'Pi 存储空间不足。', 409: 'Pi 会话状态冲突，请查询运行状态后重试。',
                     422: 'Pi 操作参数无效，文件可能已变化，请刷新后重试。', 413: 'Pi 请求过大。'}
         raise HTTPException(response.status_code if response.status_code in messages else 503,
                             messages.get(response.status_code, 'Pi 运行环境操作失败。'))
-    result = response.json()
-    if operation == 'start' and skill_bindings is not None:
-        store_mounted_skills(user, session_id, [item['id'] for item in skill_bindings])
-    return result
+    return response.json()

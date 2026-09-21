@@ -3,11 +3,8 @@ from __future__ import annotations
 from collections.abc import Generator
 
 from alembic.config import Config
-from sqlalchemy import create_engine, event, inspect, text
-from sqlalchemy.exc import OperationalError
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
-
-from alembic import command
 
 from .settings import settings
 
@@ -32,49 +29,6 @@ if is_sqlite:
         cursor.close()
 
 
-SQLITE_RUNTIME_COLUMNS = {
-    "runs": {
-        "concurrency_limit": "INTEGER NOT NULL DEFAULT 1",
-        "worker_id": "VARCHAR(128) NOT NULL DEFAULT ''",
-        "attempt_count": "INTEGER NOT NULL DEFAULT 0",
-        "heartbeat_at": "DATETIME",
-        "lease_expires_at": "DATETIME",
-    },
-    "workflow_sessions": {
-        "concurrency_limit": "INTEGER NOT NULL DEFAULT 1",
-        "execution_mode": "VARCHAR(32) NOT NULL DEFAULT 'workflow'",
-        "batch_id": "VARCHAR(36)",
-        "batch_sequence": "INTEGER NOT NULL DEFAULT 0",
-        "previous_workflow_id": "VARCHAR(36) NOT NULL DEFAULT ''",
-    },
-    "workflow_batches": {
-        "execution_mode": "VARCHAR(32) NOT NULL DEFAULT 'workflow'",
-    },
-    "workflow_actions": {
-        "worker_id": "VARCHAR(128) NOT NULL DEFAULT ''",
-        "attempt_count": "INTEGER NOT NULL DEFAULT 0",
-        "heartbeat_at": "DATETIME",
-        "lease_expires_at": "DATETIME",
-    },
-}
-
-
-def _upgrade_sqlite_runtime_schema() -> None:
-    inspector = inspect(engine)
-    with engine.begin() as connection:
-        for table, definitions in SQLITE_RUNTIME_COLUMNS.items():
-            existing = {item["name"] for item in inspector.get_columns(table)}
-            for column, definition in definitions.items():
-                if column not in existing:
-                    try:
-                        connection.execute(
-                            text(f'ALTER TABLE "{table}" ADD COLUMN "{column}" {definition}')
-                        )
-                    except OperationalError as exc:
-                        if "duplicate column name" not in str(exc).lower():
-                            raise
-
-
 def _alembic_config() -> Config:
     """返回指向仓库 alembic.ini 的配置，脚本路径固定为绝对路径。"""
     project_root = settings.project_root
@@ -84,65 +38,16 @@ def _alembic_config() -> Config:
     return config
 
 
-def _has_alembic_version() -> bool:
-    return "alembic_version" in inspect(engine).get_table_names()
+def check_runtime_database():
+    """Runtime entry: read-only readiness, with no automatic schema repair."""
+    from .infrastructure.database.runtime_check import check_runtime_database as check
 
-
-def _has_platform_tables() -> bool:
-    names = set(inspect(engine).get_table_names())
-    return bool(names & {"runs", "files", "workflow_sessions"})
-
-
-def _baseline_revision() -> str:
-    """返回迁移链最底部的基线版本（down_revision 为空的第一个迁移）。
-
-    旧库由历史 create_all 建成，只等价于基线迁移之前的结构；必须先把版本
-    标记到基线，再 upgrade head，才会真正执行基线之后的迁移（如认证表）。
-    """
-    from alembic.script import ScriptDirectory
-
-    script = ScriptDirectory.from_config(_alembic_config())
-    baseline: str | None = None
-    for revision in script.walk_revisions():
-        if revision.down_revision is None:
-            baseline = revision.revision
-            break
-    if not baseline:
-        raise RuntimeError("无法定位 Alembic 基线迁移版本。")
-    return baseline
-
-
-def _upgrade_database() -> None:
-    """通过 Alembic 把数据库升级到 head。
-
-    - 全新数据库：直接执行全部迁移；
-    - 既有数据库（已由历史 create_all 建表，但没有 alembic_version）：
-      先 stamp 到基线版本（首个迁移），再 upgrade head，从而真正执行基线
-      之后的迁移（例如 users / user_sessions / user_skill_permissions）。
-      不重建基线内已有的表，不动既有数据。
-    """
-    if not _has_alembic_version():
-        if _has_platform_tables():
-            command.stamp(_alembic_config(), _baseline_revision())
-            command.upgrade(_alembic_config(), "head")
-        else:
-            command.upgrade(_alembic_config(), "head")
-    else:
-        command.upgrade(_alembic_config(), "head")
+    return check(engine)
 
 
 def init_db() -> None:
-    from . import models  # noqa: F401
-
-    _upgrade_database()
-    if is_sqlite:
-        _upgrade_sqlite_runtime_schema()
-    with engine.begin() as connection:
-        connection.execute(
-            text(
-                "INSERT INTO scheduler_locks (name) VALUES ('global') ON CONFLICT(name) DO NOTHING"
-            )
-        )
+    """Compatibility wrapper: readiness only; migrate explicitly before startup."""
+    check_runtime_database()
 
 
 def get_db() -> Generator[Session, None, None]:

@@ -9,7 +9,8 @@ from sqlalchemy import delete, select, update
 from test_skill_releases import _import_and_review, _preserve_skill
 
 from app import skill_rollout_service
-from app.database import SessionLocal, init_db
+from app.database import SessionLocal
+from db_setup import migrate_test_database
 from app.models import (
     RunRecord,
     SkillAvailability,
@@ -31,7 +32,7 @@ ROLLOUT_SKILLS = {
 
 @pytest.fixture(autouse=True)
 def isolate_rollouts():
-    init_db()
+    migrate_test_database()
     with SessionLocal() as db:
         db.execute(delete(SkillRollout))
         db.execute(delete(SkillAvailability))

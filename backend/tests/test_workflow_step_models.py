@@ -1130,9 +1130,10 @@ def test_legacy_run_step_api_returns_empty_timeline() -> None:
     from helpers import auth_client
 
     from app.auth_service import get_user_by_username
-    from app.database import SessionLocal, init_db
+    from app.database import SessionLocal
+    from db_setup import migrate_test_database
 
-    init_db()
+    migrate_test_database()
     username = f"legacy-step-api-{uuid.uuid4().hex[:8]}"
     run_id = str(uuid.uuid4())
 

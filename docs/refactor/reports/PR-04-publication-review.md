@@ -1,0 +1,15 @@
+# PR-04 Pi Skill 发布授权修复
+
+2026-09-20，发布与运行回读已通过。范围为pi_skill_drafts.publish与source_guard的可选非阻塞模式；不代表PR-04完成。
+
+确定根因：原入口先对请求中的历史角色require_admin，后续require_native_skill刷新但丢弃返回身份；有工具权限的降权用户可能继续发布。published重放更直接跳过刷新。新增3个测试在旧逻辑中均未抛403，复现停用、部门变化、降权后的失效角色问题。
+
+最终实现：准备前刷新并检查当前管理员，等待源码锁后再检查；包校验与不可变包生成在全局调度锁之外。最终短发布段取得global，再以非阻塞方式取得源码锁，刷新身份并核对管理员、草稿摘要及当前版本，随后更新正式索引、草稿状态和审计。源码锁竞争返回409，调用方回滚释放global，保留原正式版本。
+
+初版global后等待source锁的实现被两轴审查指出可能阻塞调度，已修复，未部署该初版。最终Spec和Standards独立静态审查均未发现确定问题；审查员未运行测试。
+
+PostgreSQL专项29项通过，包括撤权、锁等待后的降权、源码锁竞争后调度可继续、真实合成ZIP发布和准备完成后撤权拒绝激活。合成包与账号只存在隔离测试环境。候选与恢复镜像的隔离数据库/事务探针通过；候选相较此前线上97c7df3b0587仅pi_skill_drafts.py和skill_source_service.py不同。证据见PR-04-publish-candidate-check.json、PR-04-publish-recovery-check.json。
+
+后续确认入口：admin_skills.admin_prepare_install仍只在调用install_native_skill前require_admin；安装服务会等待源码锁并访问Git，需检查长准备后的最终授权。Workflow/AR的write/publish/readback阶段和管理员代停仍待逐项实现与验收。完整PR00至PR21目标保持不变。
+
+线上镜像092c8c20296c，API和两个Worker各196个源码哈希匹配、UID10001、重启计数0；数据库唯一f3a4b5c6d7e8，平台normal，五类活动任务0。证据PR-04-publish-deployment.json及PR-04-publish-runtime-verified.json。未发布真实业务Skill、未执行核销、未提交或推送，看板未操作。

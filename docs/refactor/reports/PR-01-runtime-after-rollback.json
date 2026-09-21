@@ -1,0 +1,27 @@
+{
+  "mode": "normal",
+  "revision": "f2a3b4c5d6e7",
+  "services": {
+    "api": {
+      "image": "sha256:e314f8d13e016d77fd2b7c0886b4416f0180accf3b87590320a8ed797ce0a5e6",
+      "running": true,
+      "restarts": 0
+    },
+    "worker-standard": {
+      "image": "sha256:e314f8d13e016d77fd2b7c0886b4416f0180accf3b87590320a8ed797ce0a5e6",
+      "running": true,
+      "restarts": 0
+    },
+    "worker-task-discovery": {
+      "image": "sha256:e314f8d13e016d77fd2b7c0886b4416f0180accf3b87590320a8ed797ce0a5e6",
+      "running": true,
+      "restarts": 0
+    },
+    "worker-agent": {
+      "image": "sha256:44a333283d6abd78846b0e8330f67e224c965e1e472ad3877f4f1ba876e79ad5",
+      "running": true,
+      "restarts": 11
+    }
+  },
+  "session_http": 401
+}

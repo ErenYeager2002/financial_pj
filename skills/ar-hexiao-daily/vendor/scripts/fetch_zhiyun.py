@@ -49,6 +49,7 @@ import sys
 import tempfile
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from zhiyun_pagination import PageAccumulator
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 # ── 常量（表 ID / 字段 ID 来自 2026-07-09/22/23 勘探，非密钥）────────────────
@@ -372,9 +373,8 @@ class ZhiyunClient:
     ) -> Tuple[List[dict], int]:
         """按日期字段筛单日（filterType 11 + dateRange 18 已实测）。**只此一个条件。**"""
         ps = page_size or self.page_size
-        rows: List[dict] = []
         page = 1
-        total = 0
+        collector = PageAccumulator(ps, FetchError)
         while True:
             d = self.post(
                 "worksheet/getFilterRows",
@@ -405,23 +405,16 @@ class ZhiyunClient:
                     "navGroupFilters": [],
                 },
             )
-            batch = d.get("data") if isinstance(d, dict) else d
-            batch = batch if isinstance(batch, list) else []
-            if isinstance(d, dict):
-                total = int(d.get("count") or total or 0)
-            rows.extend(batch)
-            if not batch or (total and len(rows) >= total) or len(batch) < ps:
+            if collector.accept(d):
                 break
             page += 1
-            if page > 500:
-                raise FetchError(f"翻页超过 500，worksheet={worksheet_id}")
-        return rows, total or len(rows)
+        return collector.rows, collector.total if collector.total is not None else len(collector.rows)
 
     def search_rows(self, worksheet_id: str, keyword: str, page_size: int = 200) -> List[dict]:
         """全文检索（用于按 SO 找订单明细）。调用方必须再做精确过滤。"""
-        rows: List[dict] = []
         page = 1
-        while page <= 20:
+        collector = PageAccumulator(page_size, FetchError)
+        while True:
             d = self.post(
                 "worksheet/getFilterRows",
                 {
@@ -439,22 +432,19 @@ class ZhiyunClient:
                     "navGroupFilters": [],
                 },
             )
-            batch = d.get("data") if isinstance(d, dict) else d
-            batch = batch if isinstance(batch, list) else []
-            rows.extend(batch)
-            if len(batch) < page_size:
+            if collector.accept(d):
                 break
             page += 1
-        return rows
+        return collector.rows
 
     def relation_rows(
         self, worksheet_id: str, row_id: str, control_id: str, page_size: int = 100
     ) -> Tuple[List[dict], List[dict]]:
         """返回 (行列表, 目标表 controls)。"""
-        rows: List[dict] = []
         controls: List[dict] = []
         page = 1
-        while page <= 50:
+        collector = PageAccumulator(page_size, FetchError)
+        while True:
             d = self.post(
                 "worksheet/getRowRelationRows",
                 {
@@ -467,20 +457,13 @@ class ZhiyunClient:
                     "getWorksheet": page == 1,
                 },
             )
-            batch: Any = []
-            if isinstance(d, dict):
-                batch = d.get("data") or d.get("rows") or []
-                if isinstance(batch, dict):
-                    batch = batch.get("data") or []
-                if page == 1:
-                    w = d.get("worksheet") or {}
-                    controls = (w.get("template") or {}).get("controls") or w.get("controls") or []
-            batch = batch if isinstance(batch, list) else []
-            rows.extend(batch)
-            if len(batch) < page_size:
+            if isinstance(d, dict) and page == 1:
+                w = d.get("worksheet") or {}
+                controls = (w.get("template") or {}).get("controls") or w.get("controls") or []
+            if collector.accept(d, relation=True):
                 break
             page += 1
-        return rows, controls
+        return collector.rows, controls
 
 
 def pick_named(
@@ -1071,8 +1054,7 @@ def fetch_day(
             try:
                 hits = client.search_rows(ws_sodline, so)
             except Exception as e:
-                print(f"WARN: 订单明细检索失败 SO={so}: {type(e).__name__}", file=sys.stderr)
-                hits = []
+                raise FetchError(f"订单明细检索失败 SO={so}: {type(e).__name__}，本次取数未完成") from e
             n = 0
             for r in hits:
                 v = pick_named(r, sl_names, sl_opts, SODLINE_COLS)
@@ -1087,8 +1069,7 @@ def fetch_day(
             if n == 0:
                 so_without_sod.append(so)
     elif all_so:
-        print(f"WARN: 找不到「{REL_SODLINE}」表，SOD 取不到", file=sys.stderr)
-        so_without_sod = list(all_so)
+        raise FetchError(f"找不到「{REL_SODLINE}」数据源，本次取数未完成")
 
     summary = {
         "day": day,

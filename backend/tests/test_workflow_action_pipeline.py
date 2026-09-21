@@ -10,11 +10,12 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy import select, text
 
-from app.database import SessionLocal, init_db
+from app.database import SessionLocal
+from db_setup import migrate_test_database
 from app.auth_models import User, UserSkillPermission
 from app.models import FetchedBundle, WorkflowAction, WorkflowSession
 from app.resource_policy import workflow_root
-from app.workflow_service import confirm_fetched_data_review, execute_workflow_action
+from app.workflow_service import confirm_fetched_data_review, execute_workflow_action, workflow_owner_context
 
 
 def _workflow(db) -> WorkflowSession:
@@ -48,7 +49,7 @@ def _workflow(db) -> WorkflowSession:
 def test_terminal_snapshot_cleanup_failure_preserves_completed_result(monkeypatch):
     from app import workflow_service
 
-    init_db()
+    migrate_test_database()
     def unavailable(*_args):
         raise PermissionError("private-path-must-not-be-disclosed")
 
@@ -78,7 +79,7 @@ def test_terminal_snapshot_cleanup_failure_preserves_completed_result(monkeypatc
 def test_fetch_pipeline_runs_one_named_action_per_phase(monkeypatch) -> None:
     from app import workflow_service
 
-    init_db()
+    migrate_test_database()
     calls: list[str] = []
     build_preview = workflow_service._build_fetch_preview_action
 
@@ -196,7 +197,7 @@ def test_fetch_preview_error_explains_prewrite_failure(reason, expected_code, ex
 def test_prepare_workspace_reuses_reviewable_bundle_by_rebuilding_preview(monkeypatch) -> None:
     from app import workflow_service
 
-    init_db()
+    migrate_test_database()
     monkeypatch.setattr(
         workflow_service,
         "_prepare_workspace_action",
@@ -241,7 +242,7 @@ def test_prepare_workspace_reuses_reviewable_bundle_by_rebuilding_preview(monkey
 
 
 def test_fetched_data_confirmation_is_idempotent_for_plan_action() -> None:
-    init_db()
+    migrate_test_database()
     with SessionLocal() as db:
         workflow = _workflow(db)
         workflow.stage = "awaiting_fetched_data_confirmation"
@@ -259,7 +260,7 @@ def test_fetched_data_confirmation_is_idempotent_for_plan_action() -> None:
         db.add(workflow)
         db.commit()
 
-        actor = SimpleNamespace(user_id=workflow.owner_id)
+        actor = workflow_owner_context(db, workflow)
         confirm_fetched_data_review(db, workflow, actor)
         confirm_fetched_data_review(db, workflow, actor)
 
@@ -269,7 +270,7 @@ def test_fetched_data_confirmation_is_idempotent_for_plan_action() -> None:
 
 
 def test_named_fetch_pipeline_cannot_confirm_without_a_bundle() -> None:
-    init_db()
+    migrate_test_database()
     with SessionLocal() as db:
         workflow = _workflow(db)
         workflow.stage = "awaiting_fetched_data_confirmation"
@@ -300,7 +301,7 @@ def test_named_fetch_pipeline_cannot_confirm_without_a_bundle() -> None:
             confirm_fetched_data_review(
                 db,
                 workflow,
-                SimpleNamespace(user_id=workflow.owner_id),
+                workflow_owner_context(db, workflow),
             )
 
 
@@ -310,7 +311,7 @@ def test_fetch_action_accepts_current_skill_export_schema_and_publishes_bundle(
 ) -> None:
     from app import fetched_bundle_service, workflow_service
 
-    init_db()
+    migrate_test_database()
     workspace = tmp_path / "workflow-space"
     export_dir = workspace / workflow_service.FETCH_SNAPSHOT_DIR
     export_dir.mkdir(parents=True)
@@ -386,7 +387,7 @@ def test_fetch_action_accepts_current_skill_export_schema_and_publishes_bundle(
 def test_action_failure_recovers_failed_transaction_before_recording_error(monkeypatch) -> None:
     from app import workflow_service
 
-    init_db()
+    migrate_test_database()
     monkeypatch.setattr(workflow_service, "assert_workflow_execution_enabled", lambda _item: None)
     monkeypatch.setattr(workflow_service, "sync_reminder_from_workflow", lambda *_args: None)
     monkeypatch.setattr(workflow_service, "_cleanup_terminal_fetched_snapshot", lambda *_args: None)
@@ -427,7 +428,7 @@ def test_action_failure_recovers_failed_transaction_before_recording_error(monke
 def test_fetch_action_replays_bundle_without_live_fetch(monkeypatch, tmp_path: Path) -> None:
     from app import workflow_service
 
-    init_db()
+    migrate_test_database()
     workspace = tmp_path / "replay-workspace"
     workspace.mkdir()
     reconciliation_date = "2026-08-20"

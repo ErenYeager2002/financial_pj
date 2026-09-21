@@ -19,29 +19,29 @@ def initial_budget() -> dict:
 
 
 def reserve_agent_call(db: Session, workflow: WorkflowSession, action: WorkflowAction,
-                       worker_id: str, kind: str) -> None:
+                       worker_id: str, kind: str, *, attempt: int) -> None:
     """Reserve before a model/tool call; concurrent requests share one limit."""
     from .scheduler import acquire_claim_lock
     from .workflow_service import workflow_owner_context
 
-    if (json.loads(workflow.context_json or "{}").get("ar_execution") or {}).get("schema_version") != CONTRACT_VERSION:
-        return
     if kind not in {"model_calls", "tool_calls"}:
         raise ValueError("unsupported Agent budget counter")
     db.commit()
     acquire_claim_lock(db)
     db.refresh(workflow)
-    db.refresh(action)
-    now = datetime.now(UTC)
-    deadline = action.lease_expires_at
-    if deadline is not None and deadline.tzinfo is None:
-        deadline = deadline.replace(tzinfo=UTC)
-    if (action.workflow_id != workflow.id or action.name != "pi_harness_execute"
-            or action.state != "running" or action.worker_id != worker_id
-            or deadline is None or deadline <= now or workflow.state not in {"running", "active"}):
-        raise HTTPException(status_code=409, detail="Agent 租约或任务状态已失效，未继续调用。")
+    from .pi_harness_lease import require_harness_lease, lease_now
+    action = require_harness_lease(db, workflow.id, action.id, worker_id, attempt)
+    now = lease_now(db)
+    if workflow.state not in {"running", "active"}:
+        raise HTTPException(status_code=409, detail="Agent 任务状态已失效，未继续调用。")
     workflow_owner_context(db, workflow)
     context = json.loads(workflow.context_json or "{}")
+    if (context.get("ar_execution") or {}).get("schema_version") != CONTRACT_VERSION:
+        # Legacy calls have no contract budget, but still cross the same live
+        # lease/owner boundary before an external call. Preserve their counters.
+        workflow_owner_context(db, workflow, observe_phase="start", action=action)
+        db.commit()
+        return
     budget = context.get("ar_agent_budget") or {}
     if budget.get("schema_version") != "ar-agent-budget-v1":
         raise HTTPException(status_code=409, detail="任务缺少固定的 Agent 调用预算，不能继续执行。")
@@ -68,6 +68,7 @@ def reserve_agent_call(db: Session, workflow: WorkflowSession, action: WorkflowA
         workflow.context_json = json.dumps(context, ensure_ascii=False)
         db.commit()
         raise HTTPException(status_code=429, detail=reason + " 已保留检查点，未完成的检查不能视为通过；需核查恢复条件。")
+    workflow_owner_context(db, workflow, observe_phase="start", action=action)
     budget[kind] = used + 1
     context["ar_agent_budget"] = budget
     workflow.context_json = json.dumps(context, ensure_ascii=False)

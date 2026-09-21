@@ -11,7 +11,7 @@ if str(BACKEND_DIR) not in sys.path:
 
 from app.auth import UserContext
 from app.auth_models import User
-from app.database import SessionLocal, init_db
+from app.database import SessionLocal, check_runtime_database
 from app.models import FileRecord
 from app.workflow_material_service import (
     create_or_replace_current_set,
@@ -47,7 +47,7 @@ def _entry(record: FileRecord) -> dict[str, object]:
 
 def main() -> int:
     args = parser().parse_args()
-    init_db()
+    check_runtime_database()
     with SessionLocal() as db:
         admin = db.get(User, args.admin_id)
         owner = db.get(User, args.owner_id)

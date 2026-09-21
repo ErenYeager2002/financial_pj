@@ -10,10 +10,10 @@ def pending_sos(item):
 
 
 def entries(item):
-    from build_flow_plan import STRONG
+    from build_flow_plan import AUTO_MATCH_BASES
     from flow_monthly import money, number
-    if item.get('hits') != 1 or item.get('matched_by') not in STRONG:
-        raise ValueError('订单信息必须强三键唯一命中')
+    if item.get('hits') != 1 or item.get('matched_by') not in AUTO_MATCH_BASES:
+        raise ValueError('订单信息必须强三键或日期金额弱匹配唯一命中')
     if item.get('order_amount_conflicts'):
         raise ValueError('同一订单的金额依据冲突，需人工核对')
     wanted=pending_sos(item)
@@ -82,6 +82,9 @@ def prefill_items(items):
     selected=[]
     for source in items:
         if source.get('verdict')!='write' or not pending_sos(source):continue
+        # Source-confirmed receipts are registered in the monetary stage.
+        # Do not prefill a delivery amount that could obstruct that deduction.
+        if source.get('source_receipts'):continue
         item=copy.deepcopy(source)
         item.update(order_only=True,monthly_entries=[],monthly_require_existing=[])
         entries(item)

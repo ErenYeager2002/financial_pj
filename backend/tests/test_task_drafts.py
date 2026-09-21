@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 import json
 import uuid
 from datetime import UTC, datetime
@@ -90,6 +92,13 @@ def _bank_recommendation() -> AssistantRecommendation:
 
 
 def test_prepare_draft_does_not_create_run_until_confirmed(monkeypatch) -> None:
+    from app import run_service
+    from app.database import engine
+    original_snapshot = run_service._snapshot_skill
+    def snapshot_without_database_transaction(*args, **kwargs):
+        assert engine.pool.checkedout() == 0
+        return original_snapshot(*args, **kwargs)
+    monkeypatch.setattr(run_service, "_snapshot_skill", snapshot_without_database_transaction)
     username = "assistant-draft-owner"
     with auth_client(username=username) as client:
         _configure_profile(username)
@@ -544,3 +553,88 @@ def test_assistant_requires_profile_and_rejects_unauthorized_recommendation(monk
             user = get_user_by_username(db, username)
             assert user is not None
             assert db.query(TaskDraftRecord).filter_by(owner_id=user.id).count() == 0
+
+
+@pytest.mark.parametrize("recovery_change", ["publication", "editing", "numeric_type"])
+def test_draft_submission_failure_rolls_back_and_recovers_frozen_input(monkeypatch, recovery_change):
+    from datetime import timedelta
+    from fastapi import HTTPException
+    from app.modules.execution import draft_submission
+    from app.models import IdempotencyRequest
+    from app import run_service
+    username = "draft-atomic-" + uuid.uuid4().hex[:8]
+    with auth_client(username=username) as client:
+        _configure_profile(username)
+        bank_id = _upload(client, "atomic-bank.xlsx")
+        ledger_id = _upload(client, "atomic-ledger.xlsx")
+        monkeypatch.setattr(draft_service, "_call_recommender", lambda *a:_bank_recommendation())
+        response = client.post("/api/assistant/prepare", json={"message":"synthetic draft", "file_ids":[bank_id,ledger_id]})
+        assert response.status_code == 200, response.text
+        draft_id = response.json()["id"]
+        with SessionLocal() as db:
+            before = db.query(RunRecord).count()
+        original = draft_submission.consume_prepared_draft
+        def fail_after_consumption(*args):
+            original(*args)
+            raise HTTPException(409, "synthetic failure after draft consumption")
+        monkeypatch.setattr(draft_submission,"consume_prepared_draft",fail_after_consumption)
+        failed = client.post(f"/api/task-drafts/{draft_id}/confirm")
+        assert failed.status_code == 409, failed.text
+        with SessionLocal() as db:
+            assert db.query(RunRecord).count() == before
+            draft = db.get(TaskDraftRecord,draft_id)
+            assert draft.state == "ready" and draft.run_id is None
+            receipt = db.query(IdempotencyRequest).filter_by(operation="draft.confirm",request_key="draft:"+draft_id+":0").one()
+            assert receipt.status == "prepared" and receipt.execution_id is None
+            receipt_id, original_token = receipt.id, receipt.reservation_token
+            receipt.reservation_expires_at = datetime.now(UTC)-timedelta(minutes=1)
+            db.commit()
+        from dataclasses import replace
+        from app.modules.execution import run_submission
+        with monkeypatch.context() as recovery_mode:
+            recovery_mode.setattr(run_submission,"settings",replace(run_submission.settings,submission_replay_only=True))
+            denied_new = client.post(f"/api/task-drafts/{draft_id}/confirm")
+            assert denied_new.status_code == 503
+            assert denied_new.json()["detail"]["request_id"] == receipt_id
+            status = client.get(f"/api/submissions/{receipt_id}")
+            assert status.status_code == 200, status.text
+            assert status.json() == {"request_id":receipt_id,"operation":"draft.confirm","status":"prepared","run_id":None,"response_version":1}
+            assert original_token not in status.text
+        with SessionLocal() as db:
+            assert db.get(IdempotencyRequest,receipt_id).reservation_token == original_token
+        with auth_client(username=username+"-other",department_id="other") as other:
+            assert other.get(f"/api/submissions/{receipt_id}").status_code == 404
+        monkeypatch.setattr(draft_submission,"consume_prepared_draft",original)
+        def no_reprepare(*a,**kw):
+            raise AssertionError("Frozen draft input must not invoke preparation again")
+        if recovery_change == "publication":
+            monkeypatch.setattr(run_service,"prepare_run",no_reprepare)
+            monkeypatch.setattr(draft_service.registry,"get",lambda *a: None)
+        else:
+            changed = client.patch(f"/api/task-drafts/{draft_id}",json={"parameters":{"amount_tolerance":1.0 if recovery_change == "numeric_type" else 7,"date_tolerance_days":2}})
+            assert changed.status_code == 200, changed.text
+            with SessionLocal() as db:
+                assert db.get(TaskDraftRecord,draft_id).content_revision == 1
+            # A no-op PATCH must keep the same intent across browser retries.
+            unchanged = client.patch(f"/api/task-drafts/{draft_id}",json={"parameters":changed.json()["parameters"]})
+            assert unchanged.status_code == 200
+            with SessionLocal() as db:
+                assert db.get(TaskDraftRecord,draft_id).content_revision == 1
+        recovered = client.post(f"/api/task-drafts/{draft_id}/confirm")
+        assert recovered.status_code == 200, recovered.text
+        with SessionLocal() as db:
+            assert db.query(RunRecord).count() == before+1
+            draft = db.get(TaskDraftRecord,draft_id)
+            receipt = db.query(IdempotencyRequest).filter_by(operation="draft.confirm",execution_id=recovered.json()["id"]).one()
+            assert draft.state == "consumed" and draft.run_id == recovered.json()["id"]
+            assert receipt.status == "bound" and receipt.execution_id == draft.run_id
+            bound_receipt_id = receipt.id
+            if recovery_change == "editing":
+                assert json.loads(db.get(RunRecord, draft.run_id).parameters_json)["amount_tolerance"] == 7
+            from app.auth_models import UserSkillPermission
+            permission = db.query(UserSkillPermission).filter_by(user_id=draft.owner_id,skill_id=draft.skill_id).one()
+            permission.can_run = False
+            db.commit()
+        denied = client.post(f"/api/task-drafts/{draft_id}/confirm")
+        assert denied.status_code == 403, denied.text
+        assert client.get(f"/api/submissions/{bound_receipt_id}").status_code == 403

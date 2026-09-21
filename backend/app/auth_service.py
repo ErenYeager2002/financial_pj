@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import os
+import tempfile
 import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -13,7 +15,7 @@ try:
     from argon2.exceptions import InvalidHash
 except ImportError:  # pragma: no cover - compatibility with older argon2-cffi
     from argon2.exceptions import InvalidHashError as InvalidHash
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -254,14 +256,17 @@ def change_password(db: Session, user: User, current_password: str, new_password
 
 def _write_bootstrap_password(token_file: Path, password: str) -> None:
     token_file.parent.mkdir(parents=True, exist_ok=True)
-    token_file.write_text(
-        f"首次初始化管理员密码（请登录后立即修改，修改成功后此文件会被删除）：{password}\n",
-        encoding="utf-8",
-    )
+    descriptor, name = tempfile.mkstemp(prefix=".bootstrap-", dir=token_file.parent)
+    temporary = Path(name)
     try:
-        token_file.chmod(0o600)
-    except OSError:
-        pass
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            stream.write(f"首次初始化管理员密码（请登录后立即修改，修改成功后此文件会被删除）：{password}\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        # mkstemp creates mode 0600 before any secret is written; replace is atomic.
+        os.replace(temporary, token_file)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def delete_initial_password_file() -> bool:
@@ -276,29 +281,35 @@ def delete_initial_password_file() -> bool:
 
 
 def bootstrap_admin(db: Session) -> str:
-    """确保至少存在一个管理员账号；已存在时幂等。
+    """Initialize once in an owned transaction; callers must provide a fresh Session.
 
-    管理员使用独立 UUID，不继承 demo-user 的历史数据；历史演示数据的所有者
-    归属由 P0-07 专项迁移处理。自动生成的初始密码标记为“必须首次修改”。
+    Serialize the existence check, insert, password publication and commit. An
+    existing account (including its password/role) is never silently replaced.
     """
-    existing = db.scalar(select(User).where(User.username == settings.bootstrap_admin_username))
-    if existing:
-        return existing.username
-    if settings.bootstrap_admin_password:
-        password = settings.bootstrap_admin_password
-        must_change = False
-    else:
-        password = secrets.token_urlsafe(12)
-        _write_bootstrap_password(settings.data_dir / "initial_admin_password.txt", password)
-        must_change = True
-    create_user(
-        db,
-        username=settings.bootstrap_admin_username,
-        password=password,
-        display_name="Skill 管理员",
-        role="skill_admin",
-        department_id="finance",
-        must_change_password=must_change,
-    )
-    db.commit()
+    if db.in_transaction() or db.new or db.dirty or db.deleted:
+        raise RuntimeError("BOOTSTRAP_REQUIRES_FRESH_SESSION")
+    with db.begin():
+        connection = db.connection()
+        if connection.dialect.name == "sqlite":
+            connection.exec_driver_sql("BEGIN IMMEDIATE")
+        elif connection.dialect.name == "postgresql":
+            connection.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": 0x46494E41444D})
+        else:
+            raise RuntimeError("BOOTSTRAP_DATABASE_UNSUPPORTED")
+        existing = db.scalar(select(User).where(User.username == settings.bootstrap_admin_username))
+        if existing:
+            return existing.username
+        configured = settings.bootstrap_admin_password
+        password = configured or secrets.token_urlsafe(12)
+        create_user(
+            db,
+            username=settings.bootstrap_admin_username,
+            password=password,
+            display_name="Skill 管理员",
+            role="skill_admin",
+            department_id="finance",
+            must_change_password=not bool(configured),
+        )
+        if not configured:
+            _write_bootstrap_password(settings.data_dir / "initial_admin_password.txt", password)
     return settings.bootstrap_admin_username

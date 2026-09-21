@@ -10,6 +10,7 @@ class Plan:
 
 PLANS = {
     'frontend': Plan(('next',), 'full', False, 'NEXT_IMAGE'),
+    'backend-schema': Plan(('api', 'worker-standard', 'worker-task-discovery'), 'full', True, 'BACKEND_IMAGE'),
     'backend': Plan(('api', 'egress-proxy', 'worker-standard', 'worker-task-discovery', 'worker-agent'), 'full', True, 'BACKEND_IMAGE'),
     'workers': Plan(('worker-standard', 'worker-task-discovery', 'worker-agent'), 'worker', True),
     'agent': Plan(('worker-agent',), 'worker', True, 'AGENT_IMAGE'),
@@ -49,8 +50,24 @@ def deploy(adapter, name, image=None):
             # A failed drain made no service changes: restore normal access.
             adapter.set_mode('normal')
         else:
-            # A failed readiness check or failed normal-state verification stays closed.
             adapter.set_mode(plan.mode)
+            if name in ('backend-schema', 'frontend'):
+                try:
+                    if name == 'frontend':
+                        restored = adapter.rollback_frontend()
+                    else:
+                        restored = adapter.restore_before_schema_migration()
+                        if not restored:
+                            restored = adapter.rollback_after_schema_migration()
+                    if restored:
+                        adapter.wait_healthy(plan)
+                        adapter.set_mode('normal')
+                        adapter.verify_mode('normal')
+                        adapter.record('restored-service', name)
+                except BaseException:
+                    adapter.set_mode(plan.mode)
+                    adapter.record('recovery-required', name)
+                    raise
         adapter.record('failed', name)
         raise
 
@@ -82,4 +99,31 @@ def recover_frontend(adapter, image):
     except BaseException:
         adapter.set_mode('full')
         adapter.record('failed', 'frontend-recovery')
+        raise
+
+
+def recover_schema(adapter, image):
+    """Continue a confirmed original migration under retained full maintenance."""
+    plan = PLANS['backend-schema']
+    adapter.preflight_schema_recovery(image)
+    adapter.backup()
+    try:
+        adapter.wait_idle()
+        adapter.cutover(plan, image)
+        adapter.wait_healthy(plan)
+        adapter.set_mode('normal')
+        adapter.verify_mode('normal')
+        adapter.record('recovered', 'backend-schema')
+    except BaseException:
+        adapter.set_mode('full')
+        try:
+            adapter.rollback_after_schema_migration()
+            adapter.wait_healthy(plan)
+            adapter.set_mode('normal')
+            adapter.verify_mode('normal')
+            adapter.record('restored-service', 'schema-recovery')
+        except BaseException:
+            adapter.set_mode('full')
+            adapter.record('failed', 'schema-recovery')
+            raise
         raise

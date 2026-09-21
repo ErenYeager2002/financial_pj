@@ -85,7 +85,10 @@ def attach(results,records,ledger):
     grouped=defaultdict(list)
     for rec,result in zip(records,results):grouped[(rec.get('so'),rec.get('sod'))].append((rec,result))
     for (so,sod),pairs in grouped.items():
-        if any(r.get('bucket')!='auto' and r.get('code') not in ('E5','E8') for _,r in pairs):continue
+        if all(r.get('ordinary_receipt_proof') for _,r in pairs):continue
+        if any(r.get('bucket')!='auto' and r.get('code') not in ('E5','E8')
+               and not (r.get('code')=='E_RECEIPT_OWNERSHIP_UNRESOLVED'
+                        and r.get('receipt_ownership_state')=='ambiguous') for _,r in pairs):continue
         try:
             rows=BR.ledger_rows(ledger,so,sod)
             if set(map(int,rows))!=set(ledger.so_index.get(so,[])):continue
@@ -96,7 +99,7 @@ def attach(results,records,ledger):
         for rec,result in pairs:
             identity=BR.event_key(rec);refs=proof['event_rows'][identity]
             primary=max(refs,key=lambda ref:(BR.cents(rows[ref].get('回款明细')) or 0,-int(ref)))
-            for key in ('receipt_correction','baseline_receipt_audit','row_operation','so_accrual_backfills'):result.pop(key,None)
+            for key in ('receipt_correction','baseline_receipt_audit','row_operation','so_accrual_backfills','ordinary_receipt_proof'):result.pop(key,None)
             result.update(bucket='auto',code='E5',ledger_row_ref=int(primary),five_cols={**{k:proof['after_rows'][primary][k] for k in FIVE},'实收SOD':sod},derived_cols={},current_receipt_group=copy.deepcopy(proof),current_receipt_event=identity,receipt_sequence_cases=cases,row_operation={'type':OPERATION},reason='当前整组来源累计与应收总额一致，按完整回款组纠正日期及拆散记录，不重复计款')
 
 def check(item,rows):

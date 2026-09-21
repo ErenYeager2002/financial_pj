@@ -126,6 +126,8 @@ def build(workspace: Path, checked: Path) -> dict:
     counts["initial_skipped_records"] = len(initial_skip)
     counts["final_classified_records"] = len(final)
     flow = json.loads((output / "流转阶段执行结果.json").read_text(encoding="utf-8"))
+    flow_plan = output / f"流转状态回填计划_{tag}.json"
+    flow["report_items"] = (json.loads(flow_plan.read_text(encoding="utf-8")).get("items") or []) if flow_plan.is_file() else []
     holds = json.loads((output / "挂账重扫结果.json").read_text(encoding="utf-8"))
     if common.norm_date(holds.get("reconciliation_date")) != day:
         raise ValueError("挂账重扫结果与最终报告日期不一致")
@@ -154,6 +156,53 @@ def build(workspace: Path, checked: Path) -> dict:
             "publication_note": "此报告记录已复核的业务结果；正式材料版本与发布状态以平台执行记录为准。"}
 
 
+def flow_explanation(ar: str, flow: dict, records: list[dict]) -> tuple[str, str]:
+    """Describe recorded flow execution, without inferring a successful write."""
+    phases = flow.get("phases") or {}
+    manual = next((x for x in flow.get("manual_items", []) if x.get("ar") == ar), None)
+    planned = next((x for x in flow.get("report_items", []) if x.get("ar") == ar), {})
+    prefilled = any(x.get("AR") == ar for x in (phases.get("prefill") or {}).get("changes", [])) or any(
+        x.get("AR") == ar and x.get("操作") == "仅预填订单信息"
+        for x in (phases.get("status") or {}).get("changes", []))
+    details = []
+    phase_names = {"plan": "流转计划", "prefill": "订单预填", "status": "流转状态回填"}
+    for phase, result in phases.items():
+        if result.get("state") == "failed":
+            problems = ([result["reason"]] if result.get("reason") else []) + list(result.get("problems") or [])
+            for problem in problems:
+                text = phase_names.get(phase, phase) + "阶段失败：" + str(problem)
+                if text not in details:
+                    details.append(text)
+    if manual and manual.get("reason"):
+        details.append(str(manual["reason"]))
+    if planned.get("reason") and planned["reason"] not in details:
+        details.append(str(planned["reason"]))
+    for record in records:
+        if record.get("ar") != ar:
+            continue
+        reason = record.get("final_reason") or record.get("execution_reason")
+        if reason:
+            text = str(record.get("so") or record.get("case_id") or ar) + "：" + str(reason)
+            if text not in details:
+                details.append(text)
+    if not flow.get("flow_written"):
+        label = "流转未完成"
+        prefix = flow.get("reason") or "流转阶段未完整完成，不能确认登记结果。"
+    elif manual:
+        label, prefix = "手填", "本次未自动完成流转登记。"
+    elif prefilled:
+        label, prefix = "已预填，待核销", "已预填单号和金额；本次未据此扣减预收，未新增完成标记。"
+    elif planned.get("order_only"):
+        label, prefix = "预填未新增改动", "订单预填阶段未新增改动；本次未据此扣减预收或新增完成标记。"
+    elif planned.get("verdict") == "skip":
+        label, prefix = "暂未登记", "本次流转登记已跳过。"
+    else:
+        label, prefix = "未新增登记", "本次没有新增流转变更记录。"
+    if not details:
+        details.append("执行记录未保存逐笔原因，暂不能判断是已有登记还是未执行；需核对流转阶段明细。")
+    return label, str(prefix) + "\n" + "\n".join(details)
+
+
 def write_report(payload: dict, target: Path, initial_result: dict, checked_plan: dict) -> None:
     import openpyxl
     from openpyxl.styles import Alignment, Font
@@ -174,12 +223,15 @@ def write_report(payload: dict, target: Path, initial_result: dict, checked_plan
     flow_result = payload.get("flow") or {}
     status = (flow_result.get("phases") or {}).get("status") or {}
     actual_flow = {x.get("AR"):x for x in status.get("changes", [])}
-    manual_flow = {x.get("ar"):x.get("reason") for x in flow_result.get("manual_items", [])}
     flow_sheet = workbook["流转表怎么填"]
     for cells in flow_sheet.iter_rows(min_row=2):
         ar = cells[0].value
         actual = actual_flow.get(ar)
-        if actual and flow_result.get("flow_written"):
+        if actual and actual.get("操作") == "仅预填订单信息":
+            cells[1].value, cells[11].value = flow_explanation(ar, flow_result, payload.get("records") or [])
+            cells[4].value = "本次未新增完成标记"
+            cells[6].value = "仅预填订单信息"
+        elif actual and flow_result.get("flow_written"):
             cells[1].value = "已写入"
             cells[4].value = actual.get("是否更新应收款") or "是"
             cells[5].value = actual.get("单号") or ""
@@ -188,10 +240,10 @@ def write_report(payload: dict, target: Path, initial_result: dict, checked_plan
             cells[10].value = str(actual.get("sheet") or "") + " 第" + str(actual.get("行号")) + "行"
             cells[11].value = "预收余额：" + str(actual.get("预收余额"))
         elif cells[4].value == "待写后确认":
-            cells[1].value = "手填" if ar in manual_flow or not flow_result.get("flow_written") else "未新增登记"
-            cells[4].value = "未新增更新"
-            cells[5].value = ""
-            cells[11].value = manual_flow.get(ar) or flow_result.get("reason") or "本次未新增流转登记，以实际材料为准"
+            cells[1].value, cells[11].value = flow_explanation(ar, flow_result, payload.get("records") or [])
+            cells[4].value = "本次未新增完成标记"
+            # Keep the planned order information; the explanation distinguishes prefill from settlement.
+            cells[6].value = cells[1].value
     summary = workbook.create_sheet("任务范围", 0)
     summary.append(["项目", "结果"])
     summary.append(["核销日期", payload["reconciliation_date"]])

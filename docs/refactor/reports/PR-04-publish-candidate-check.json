@@ -1,0 +1,6 @@
+{
+  "image": "sha256:092c8c20296c23bfba5a64d16e7b7d6fbdbe8d3cf8d7fe918365ce78a8f83f6c",
+  "exit_code": 0,
+  "output": "{\"previous_revision\": \"f2a3b4c5d6e7\", \"target_revision\": \"f3a4b5c6d7e8\", \"upgrade\": \"passed\", \"repeat_migration\": \"passed\", \"single_seed\": \"passed\", \"no_ddl_role_runtime_check\": \"passed\"}\n{\"candidate_transaction_rollback\": \"passed\", \"candidate_claim\": \"passed\", \"candidate_independent_progress\": \"passed\", \"candidate_failure_discards_unpublished_result\": \"passed\"}\n",
+  "stderr": ""
+}

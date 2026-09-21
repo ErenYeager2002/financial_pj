@@ -1,0 +1,9 @@
+# Preserve current application code while accepting the additive PR-01 schema.
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+COPY backend/app/database.py /app/backend/app/database.py
+COPY backend/app/infrastructure /app/backend/app/infrastructure
+USER 0
+RUN python -c "import shutil; shutil.rmtree('/app/backend/alembic')"
+COPY backend/alembic /app/backend/alembic
+USER 10001:10001

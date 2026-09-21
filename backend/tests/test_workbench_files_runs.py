@@ -252,7 +252,7 @@ def test_file_center_latest_view_hides_older_duplicate_outputs() -> None:
         assert old_input.id not in {item["id"] for item in body["items"]}
 
 
-def test_failed_read_only_run_retry_is_bounded_and_audited() -> None:
+def test_failed_read_only_run_retry_is_bounded_and_audited(monkeypatch) -> None:
     username = "stage5-retry-owner"
     with auth_client(username=username) as client:
         source_id, _, _ = _create_failed_run(client, username)
@@ -266,9 +266,15 @@ def test_failed_read_only_run_retry_is_bounded_and_audited() -> None:
             "date_tolerance_days": 2,
         }
 
-        duplicate = client.post(f"/api/runs/{source_id}/retry")
-        assert duplicate.status_code == 200, duplicate.text
-        assert duplicate.json()["id"] == first_body["id"]
+        from app import run_service
+        def forbidden_latest(*args, **kwargs):
+            raise AssertionError("Retry replay must not resolve latest Skill or reprepare")
+        with monkeypatch.context() as replay_patch:
+            replay_patch.setattr(run_service.registry, "get", forbidden_latest)
+            replay_patch.setattr(run_service, "prepare_run", forbidden_latest)
+            duplicate = client.post(f"/api/runs/{source_id}/retry")
+            assert duplicate.status_code == 200, duplicate.text
+            assert duplicate.json()["id"] == first_body["id"]
 
         denied = client.post(f"/api/runs/{first_body['id']}/retry")
         assert denied.status_code == 409
@@ -285,3 +291,14 @@ def test_failed_read_only_run_retry_is_bounded_and_audited() -> None:
                 limit=20,
             )
             assert any(item.resource_id == first_body["id"] for item in events)
+
+            from app.auth_models import UserSkillPermission
+            from sqlalchemy import select
+            permission = db.scalar(select(UserSkillPermission).where(
+                UserSkillPermission.user_id == user.id,
+                UserSkillPermission.skill_id == first_body["skill_id"]))
+            assert permission is not None
+            permission.can_run = False
+            db.commit()
+        revoked = client.post(f"/api/runs/{source_id}/retry")
+        assert revoked.status_code == 403, revoked.text

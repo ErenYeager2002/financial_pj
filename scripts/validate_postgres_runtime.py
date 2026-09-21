@@ -6,7 +6,7 @@ import uuid
 from datetime import UTC, datetime
 
 from app.auth_models import User
-from app.database import SessionLocal, engine, init_db
+from app.database import SessionLocal, engine, check_runtime_database
 from app.models import (
     RunEvent,
     RunRecord,
@@ -45,7 +45,7 @@ def _manifest(skill_id: str) -> str:
 def main() -> int:
     if engine.dialect.name != "postgresql":
         raise RuntimeError("阶段十并发验证必须连接 PostgreSQL。")
-    init_db()
+    check_runtime_database()
     probe = f"stage10-probe-{uuid.uuid4()}"
     owner_id = str(uuid.uuid4())
     now = datetime.now(UTC)

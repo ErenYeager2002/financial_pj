@@ -15,9 +15,9 @@
      PayPal/美元户的英文付款方名称可通过「到账名称→系统客户名称」对照表转换后，
      与智云客户名称比较；对照缺失或一对多不自动猜；
   3. 微信/支付宝另允许到账日期 +（净额 + 手续费）按同样名称规则匹配；
-  4. 日期金额命中但四种名称组合都不成立 → **弱命中**，列入人工处理。
+  4. 日期金额命中但四种名称组合都不成立 → **弱命中**，唯一候选可自动处理，多候选列入人工处理。
 - 命中 0 → E0；命中 >1 → E12；命中 1 → 给出行号与建议单号。
-- 匹配只读；**写入**见 `apply_flow.py`（日清和写前校验通过后、仅强三键唯一命中）。
+- 匹配只读；**写入**见 `apply_flow.py`（日清和写前校验通过后、仅强三键或日期金额弱匹配唯一命中）。
 """
 
 from __future__ import annotations
@@ -237,7 +237,7 @@ class FlowLedger:
                     continue
                 formula_rows = list(wb_formula[ws.title].iter_rows(values_only=True))
                 opt = {}
-                for k in ["收款形式", "是否更新应收款", "是否已登记系统"]:
+                for k in ["收款形式", "是否更新应收款", "是否已登记系统", "预收"]:
                     idx = common.fuzzy_find_col(
                         headers, aliases.get("到账流转", {}).get(k, [k])
                     )
@@ -289,6 +289,7 @@ class FlowLedger:
                             "formula_rate": formula_rate,
                             "order_cell": str(cell(cols["单号"]) or "").strip(),
                             "form": form,
+                            "prepayment": cell(opt.get("预收")),
                             "updated": str(cell(opt.get("是否更新应收款")) or "").strip()
                             if "是否更新应收款" in opt
                             else "",
@@ -316,6 +317,40 @@ class FlowLedger:
         return cls.from_paths(paths, name_map_paths=name_map_paths or paths)
 
     # ---------- 匹配 ----------
+
+    def match_carry(self, rec: dict) -> dict:
+        """Bind a carried row using current source identity and workbook evidence."""
+        from flow_monthly import SO, parsed_balance, legacy_period_opening, money
+        evidence = rec.get("flow_carry_evidence") or {}
+        known = set(evidence.get("known_sos") or [])
+        limit = common.to_number(evidence.get("opening_limit"))
+        day = common.norm_date(rec.get("hexiao_date"))
+        arrival = common.norm_date(rec.get("shoukuan_date"))
+        names = {normalize_name(rec.get(k)) for k in ("customer", "sales_name")} - {""}
+        candidates = []
+        if known and limit is not None and day and arrival:
+            for row in self.rows:
+                if row.get("form") != "冲预收" or not row.get("date") or not arrival <= row["date"] <= day:
+                    continue
+                if normalize_name(row.get("payer")) not in names:
+                    continue
+                # Rows explicitly transferred onward are closed predecessors.
+                if re.search(r'转(?:[0-9]{1,2}月)?\s*$', str(row.get('prepayment') or '')) or re.search(r'转[0-9]{1,2}月',row.get('order_cell') or ''):
+                    continue
+                orders = set(SO.findall(row.get("order_cell") or ""))
+                if not orders or not orders.issubset(known):
+                    continue
+                try:
+                    parsed = parsed_balance(row.get("prepayment"))
+                    opening = parsed.get("opening")
+                    amount = money(row.get("amount"))
+                    if (opening is None or not 0 <= parsed['remaining'] <= opening <= money(limit)
+                            or (opening != amount and legacy_period_opening(row.get('form'),amount,parsed) is None)):
+                        continue
+                except (ValueError, TypeError):
+                    continue
+                candidates.append(row)
+        return {"hits":len(candidates),"rows":candidates,"matched_by":"同回款历史单号及预收承接"}
 
     def match(
         self,
@@ -627,12 +662,19 @@ def annotate_records(
                 sales_name=rec.get("sales_name") or "",
             )
         hit = cache[key]
+        if hit["hits"] == 0:
+            carry = flow.match_carry(rec)
+            if carry["hits"]:
+                hit = carry
         d = common.norm_date(rec.get("shoukuan_date"))
         covered = dmin is not None and d is not None and dmin <= d <= dmax
-        if not covered:
+        if not covered and hit["hits"] == 0:
             rec["flow_hits"] = None
             rec["flow_matched_by"] = "流转表未覆盖该日期(未做三键)"
             rec["flow_locate"] = ""
+            rec["flow_file"] = ""
+            rec["flow_sheet"] = ""
+            rec["flow_row_no"] = None
             continue
         if hit["hits"] == 0 and not complete:
             rec["flow_hits"] = None  # 不判 E0：可能只是这个渠道的表没给

@@ -1,0 +1,13 @@
+# Build context is restricted by scripts/refactor/build_pr01_image.py.
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+COPY backend/app/auth_service.py /app/backend/app/auth_service.py
+COPY backend/app/database.py /app/backend/app/database.py
+COPY backend/app/main.py /app/backend/app/main.py
+COPY backend/app/worker.py /app/backend/app/worker.py
+COPY backend/app/task_discovery_worker.py /app/backend/app/task_discovery_worker.py
+COPY backend/app/infrastructure /app/backend/app/infrastructure
+USER 0
+RUN python -c "import shutil; shutil.rmtree('/app/backend/alembic')"
+COPY backend/alembic /app/backend/alembic
+USER 10001:10001

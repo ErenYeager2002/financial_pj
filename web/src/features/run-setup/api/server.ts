@@ -1,3 +1,4 @@
+import type { SubmissionReceiptRead } from '@/features/platform-api/generated';
 import 'server-only';
 
 import { PlatformApiError } from '@/features/platform-api/errors';
@@ -133,8 +134,8 @@ function checkedRunCreate(value: unknown): RunCreate {
 
 export async function createSafeRun(value: unknown): Promise<RunDetail> {
   const body = checkedRunCreate(value);
-  safeSkill(await getSkillCatalogItem(body.skill_id));
-  return platformServerRequest<RunDetail>('/api/runs', {
+  // The backend checks current authorization and the pinned submission manifest.
+  return platformServerRequest<RunDetail>('/api/runs?standard_only=true', {
     method: 'POST',
     body: JSON.stringify(body)
   });
@@ -145,4 +146,8 @@ export function confirmCreatedRun(runId: string): Promise<RunActionResponse> {
     `/api/runs/${checkedId(runId, '任务标识', UUID)}/confirm`,
     { method: 'POST' }
   );
+}
+
+export function getSubmissionReceipt(requestId: string): Promise<SubmissionReceiptRead> {
+  return platformServerRequest<SubmissionReceiptRead>(`/api/submissions/${checkedId(requestId, '提交标识', UUID)}`);
 }

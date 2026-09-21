@@ -1,0 +1,5 @@
+{
+  "exit_code": 1,
+  "stdout": "{\"schema_version\": \"isolated-check-v1\", \"results\": [{\"suite\": \"execution-authorization\", \"command\": [\"/usr/local/bin/python\", \"-B\", \"-m\", \"pytest\", \"backend/tests/test_execution_authorization.py\", \"backend/tests/test_pi_admin_stop.py\", \"--basetemp\", \"/tmp/financial-refactor-j434orb6/authorization-pytest\", \"-p\", \"no:cacheprovider\", \"-q\"], \"status\": \"failed\", \"reason\": \"TimeoutExpired\"}]}\n\n",
+  "stderr": ""
+}

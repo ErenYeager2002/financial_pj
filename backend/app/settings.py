@@ -64,6 +64,7 @@ class Settings:
         0,
         int(os.getenv("FINANCIAL_FETCH_BUNDLE_RETENTION_DAYS", "0")),
     )
+    submission_replay_only: bool = _env_bool("FINANCIAL_SUBMISSION_REPLAY_ONLY", False)
     task_draft_ttl_minutes: int = max(5, int(os.getenv("FINANCIAL_TASK_DRAFT_TTL_MINUTES", "30")))
     approval_ttl_minutes: int = max(5, int(os.getenv("FINANCIAL_APPROVAL_TTL_MINUTES", "30")))
     queue_poll_seconds: float = float(os.getenv("FINANCIAL_QUEUE_POLL_SECONDS", "1"))

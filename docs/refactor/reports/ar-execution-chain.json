@@ -1,0 +1,185 @@
+{
+  "evidence": "source-inspection-only",
+  "commit": "6fce5bf1195c0591d8f8cfb53b84c32c0356f36d",
+  "hashes": {
+    "backend/app/main.py": "bfb2b2f17c5f27ac2f229670ad4f433cd026c103b48ec169600006544e388e62",
+    "backend/app/routers/pi_harness.py": "fd82b409e43534c17b2c3ad0a1aae77f954b07c39f7973e60c7cfa072b390ee4",
+    "backend/app/worker.py": "b30e58d0ec8d9c922734238cc00b8e5815bc990c1c4707f399386d7ec048aec3",
+    "backend/app/workflow_service.py": "88d2d83dc3501363f3f04445a5beae874973ee8cd512c022d6e5872009b2804a",
+    "backend/app/ar_execution_runner.py": "3ef25aeafb110b25aef9f3cec7bf624506da99b8a9dcbd7580cca28b033aa118",
+    "backend/app/ar_execution_contract.py": "c4b203accc655f0f48ba3041151e8691756c79c55e798452ef3e5c758d036c52",
+    "backend/app/workflow_material_service.py": "2b250a2214a001cfa1e3cfe929a25e31144b5b50b5bbfc6c7faac42c32e86ed1"
+  },
+  "entrypoints": [
+    {
+      "file": "backend/app/main.py",
+      "symbol": "new_workflow",
+      "start": 816,
+      "end": 821,
+      "direct_commit_lines": [],
+      "direct_rollback_lines": []
+    },
+    {
+      "file": "backend/app/workflow_service.py",
+      "symbol": "create_workflow",
+      "start": 2914,
+      "end": 2987,
+      "direct_commit_lines": [
+        2985
+      ],
+      "direct_rollback_lines": []
+    },
+    {
+      "file": "backend/app/routers/pi_harness.py",
+      "symbol": "request_pi_harness_tool",
+      "start": 571,
+      "end": 690,
+      "direct_commit_lines": [
+        621,
+        644,
+        667,
+        588,
+        600,
+        683
+      ],
+      "direct_rollback_lines": []
+    },
+    {
+      "file": "backend/app/workflow_service.py",
+      "symbol": "queue_pi_harness_tool",
+      "start": 4486,
+      "end": 4655,
+      "direct_commit_lines": [
+        4653,
+        4525
+      ],
+      "direct_rollback_lines": []
+    },
+    {
+      "file": "backend/app/ar_execution_runner.py",
+      "symbol": "queue_execution_phase",
+      "start": 636,
+      "end": 718,
+      "direct_commit_lines": [
+        643,
+        717
+      ],
+      "direct_rollback_lines": []
+    },
+    {
+      "file": "backend/app/worker.py",
+      "symbol": "run_once",
+      "start": 231,
+      "end": 256,
+      "direct_commit_lines": [],
+      "direct_rollback_lines": []
+    },
+    {
+      "file": "backend/app/workflow_service.py",
+      "symbol": "claim_next_workflow_action",
+      "start": 5020,
+      "end": 5132,
+      "direct_commit_lines": [
+        5131
+      ],
+      "direct_rollback_lines": []
+    },
+    {
+      "file": "backend/app/workflow_service.py",
+      "symbol": "execute_workflow_action",
+      "start": 7499,
+      "end": 8176,
+      "direct_commit_lines": [
+        7606,
+        7678,
+        7765
+      ],
+      "direct_rollback_lines": [
+        7977,
+        7525,
+        7985,
+        8090,
+        8099,
+        7530,
+        7990,
+        8095
+      ]
+    },
+    {
+      "file": "backend/app/workflow_service.py",
+      "symbol": "run_workflow_action_once",
+      "start": 8179,
+      "end": 8197,
+      "direct_commit_lines": [
+        8195
+      ],
+      "direct_rollback_lines": []
+    },
+    {
+      "file": "backend/app/ar_execution_runner.py",
+      "symbol": "execute_phase",
+      "start": 595,
+      "end": 633,
+      "direct_commit_lines": [
+        617
+      ],
+      "direct_rollback_lines": []
+    },
+    {
+      "file": "backend/app/ar_execution_runner.py",
+      "symbol": "transition_phase",
+      "start": 721,
+      "end": 791,
+      "direct_commit_lines": [],
+      "direct_rollback_lines": []
+    },
+    {
+      "file": "backend/app/ar_execution_runner.py",
+      "symbol": "publish_reconciliation",
+      "start": 527,
+      "end": 569,
+      "direct_commit_lines": [],
+      "direct_rollback_lines": []
+    },
+    {
+      "file": "backend/app/ar_execution_runner.py",
+      "symbol": "complete_reconciliation",
+      "start": 571,
+      "end": 592,
+      "direct_commit_lines": [],
+      "direct_rollback_lines": []
+    },
+    {
+      "file": "backend/app/workflow_service.py",
+      "symbol": "_apply_confirmed",
+      "start": 6591,
+      "end": 6790,
+      "direct_commit_lines": [],
+      "direct_rollback_lines": []
+    },
+    {
+      "file": "backend/app/workflow_service.py",
+      "symbol": "_publish_verified_material_set",
+      "start": 6569,
+      "end": 6588,
+      "direct_commit_lines": [],
+      "direct_rollback_lines": []
+    },
+    {
+      "file": "backend/app/workflow_material_service.py",
+      "symbol": "publish_workflow_material_set",
+      "start": 369,
+      "end": 394,
+      "direct_commit_lines": [],
+      "direct_rollback_lines": []
+    },
+    {
+      "file": "backend/app/workflow_material_service.py",
+      "symbol": "create_or_replace_current_set",
+      "start": 258,
+      "end": 350,
+      "direct_commit_lines": [],
+      "direct_rollback_lines": []
+    }
+  ]
+}

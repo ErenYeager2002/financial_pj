@@ -21,7 +21,7 @@ def read_formal_ledger_bundle(db: Session, source: WorkflowSession) -> tuple[dic
     execution = context.get("ar_execution") or {}
     if execution.get("completed") != [phase.name for phase in PHASES]:
         raise ValueError("来源材料尚未完成全部核销阶段，必须先恢复原任务的正式登记。")
-    publication = publication_manifest(db, source)
+    publication = publication_manifest(db, source, allow_retired=True)
     ref = context.get("formal_ledgers") or {}
     record = db.get(FileRecord, str(ref.get("file_id") or ""))
     candidate = ((execution.get("steps") or {}).get("complete_reconciliation") or {}).get("formal_ledger_candidate") or {}
@@ -41,6 +41,12 @@ def read_formal_ledger_bundle(db: Session, source: WorkflowSession) -> tuple[dic
         raw = handle.read(limit + 1)
     if len(raw) > limit or hashlib.sha256(raw).hexdigest() != record.sha256:
         raise ValueError("正式辅助台账实际文件超限或指纹不一致。")
+    payload, contents = decode_formal_ledger_payload(raw, publication)
+    return payload, record, contents
+
+
+def decode_formal_ledger_payload(raw: bytes, publication: dict) -> tuple[dict, dict[str, bytes]]:
+    """Validate the same package contract before registration and on later reads."""
     try:
         payload = json.loads(raw)
     except ValueError as exc:
@@ -66,7 +72,7 @@ def read_formal_ledger_bundle(db: Session, source: WorkflowSession) -> tuple[dic
         if hashlib.sha256(content).hexdigest() != data.get("sha256"):
             raise ValueError("正式挂账台账的内嵌文件指纹不一致。")
         contents[name] = content
-    return payload, record, contents
+    return payload, contents
 
 
 def _confirmed_empty_fetch_dates(

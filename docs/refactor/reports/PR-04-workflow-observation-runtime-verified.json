@@ -1,0 +1,51 @@
+{
+  "at": "2026-09-20T09:11:55.242307+00:00",
+  "image": "sha256:e71f8f147022f50d0298de44af99ed538cb402857542c07333224340e03b55bd",
+  "services": {
+    "api": {
+      "hash_count": 453,
+      "mismatches": [],
+      "uid": 10001,
+      "revisions": [
+        "f4b5c6d7e8f9"
+      ],
+      "replay_only": false,
+      "image": "sha256:e71f8f147022f50d0298de44af99ed538cb402857542c07333224340e03b55bd",
+      "status": "running",
+      "restarts": 0
+    },
+    "worker-standard": {
+      "hash_count": 453,
+      "mismatches": [],
+      "uid": 10001,
+      "revisions": [
+        "f4b5c6d7e8f9"
+      ],
+      "replay_only": false,
+      "image": "sha256:e71f8f147022f50d0298de44af99ed538cb402857542c07333224340e03b55bd",
+      "status": "running",
+      "restarts": 0
+    },
+    "worker-task-discovery": {
+      "hash_count": 453,
+      "mismatches": [],
+      "uid": 10001,
+      "revisions": [
+        "f4b5c6d7e8f9"
+      ],
+      "replay_only": false,
+      "image": "sha256:e71f8f147022f50d0298de44af99ed538cb402857542c07333224340e03b55bd",
+      "status": "running",
+      "restarts": 0
+    }
+  },
+  "mode": "normal",
+  "public_mode": "normal",
+  "active_counts": {
+    "runs": 0,
+    "batches": 0,
+    "actions": 0,
+    "discovery": 0,
+    "assistant": 0
+  }
+}

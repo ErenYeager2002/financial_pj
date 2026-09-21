@@ -282,24 +282,25 @@ def _writeoff_business_amount(
     *,
     explicit_local: Optional[float] = None,
     explicit_orig: Optional[float] = None,
+    currency: Optional[str] = None,
 ) -> Tuple[Optional[float], Optional[str]]:
-    """
-    智云核销业务金额口径。
-
-    有“本次核销金额本币”时按同一子核销金额的原/本币比例落到当前 SOD；
-    没有本币列时直接使用“本次核销金额”，不再反向要求父回款汇率，也不读取、
-    扣减或分配手续费。调用方必须保证金额来自同一 SO 的核销明细或最新交付额。
-    """
+    """Allocate a complete source-local amount; never relabel foreign originals."""
     value = common.to_number(amount)
     if value is None:
         return None, "E7"
     local = common.to_number(explicit_local)
     original = common.to_number(explicit_orig)
-    if local is not None and original is not None and abs(float(original)) > TOL:
-        return round(float(value) * float(local) / float(original), 2), None
-    return round(float(value), 2), None
+    if local is not None and original is not None:
+        if abs(float(original)) > TOL:
+            return round(float(value) * float(local) / float(original), 2), None
+        if value == original:
+            return round(float(local), 2), None
+    if currency and common.is_cny(currency):
+        return round(float(value), 2), None
+    return None, "E7"
 
-def _order_delivery_local(
+
+def _order_amount_local(
     amount_orig: Optional[float], p: dict, rates: Dict[str, float], order: Optional[dict],
     *, explicit_local: Optional[float] = None, explicit_orig: Optional[float] = None,
 ) -> Tuple[Optional[float], Optional[str]]:
@@ -309,16 +310,39 @@ def _order_delivery_local(
     if amount is None:
         return None, "E7"
     currency = order.get("currency") or p.get("currency") or ""
-    if common.is_cny(currency):
-        return round(float(amount), 2), None
     local = common.to_number(explicit_local)
     original = common.to_number(explicit_orig)
     if local is not None and original is not None and abs(float(original)) > TOL:
         return round(float(amount) * float(local) / float(original), 2), None
+    if common.is_cny(currency):
+        return round(float(amount), 2), None
     rate = common.to_number(order.get("rate"))
     if rate is not None and float(rate) > 0:
         return round(float(amount) * float(rate), 2), None
     return None, "E6"
+
+
+def _order_delivery_local(
+    amount_orig: Optional[float], p: dict, rates: Dict[str, float], order: Optional[dict],
+    *, explicit_local: Optional[float] = None, explicit_orig: Optional[float] = None,
+) -> Tuple[Optional[float], Optional[str]]:
+    # Delivery only: apportion SO local using the same SO original.
+    # Never pass receipt amounts; a SOD receives only its share.
+    order = order or {}
+    local = common.to_number(order.get("deliver_local"))
+    original = common.to_number(order.get("deliver"))
+    amount = common.to_number(amount_orig)
+    if local is not None:
+        if amount is None or original is None:
+            return None, "E7"
+        if abs(float(amount) - float(original)) <= TOL:
+            return round(float(local), 2), None
+        if abs(float(original)) <= TOL:
+            return None, "E7"
+        return round(float(amount) * float(local) / float(original), 2), None
+    return _order_amount_local(amount_orig, p, rates, order,
+                               explicit_local=explicit_local, explicit_orig=explicit_orig)
+
 
 def _currency_key(value: Any) -> str:
     """用于父回款原币与订单原币的保守可比性判断。"""

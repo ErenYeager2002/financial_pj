@@ -1,0 +1,36 @@
+{
+  "checked_at": "2026-09-20T06:59:19.608833+00:00",
+  "files": {
+    "backend/app/workflow_service.py": "2f183951175bd8fa0c707c136dc5238cfcc3dbb199e2da01f83af1dda33e6752",
+    "backend/app/main.py": "237bfaa237cbebc507ab28bd631416f7be46b7fa4ef27a6fe0c19903cc2ff868",
+    "backend/app/fetched_bundle_service.py": "a6475976d2ed3bed8e89c3f43f6d092e00609b7160bd457d38e34c16a89e8f3d",
+    "backend/app/routers/pi_harness.py": "fd82b409e43534c17b2c3ad0a1aae77f954b07c39f7973e60c7cfa072b390ee4",
+    "backend/app/ar_agent_budget.py": "6ea4288fea6b441afb5fc48cb51c9ddc2e6e4c186689025291faf2c092074633"
+  },
+  "confirmation_core_commits": [
+    1854,
+    1823
+  ],
+  "production_callers": [
+    {
+      "file": "backend/app/workflow_service.py",
+      "function": "confirm_batch_fetched_data_review",
+      "line": 2520
+    },
+    {
+      "file": "backend/app/workflow_service.py",
+      "function": "queue_pi_harness_tool",
+      "line": 4578
+    },
+    {
+      "file": "backend/app/workflow_service.py",
+      "function": "execute_workflow_action",
+      "line": 8042
+    },
+    {
+      "file": "backend/app/main.py",
+      "function": "confirm_workflow_fetched_data",
+      "line": 1232
+    }
+  ]
+}

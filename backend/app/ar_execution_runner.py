@@ -32,6 +32,9 @@ def lock_execution(db: Session, action: WorkflowAction, workflow: WorkflowSessio
     from .scheduler import acquire_claim_lock
 
     expected_worker = getattr(action, "_ar_claim_worker_id", action.worker_id)
+    expected_attempt = getattr(action, "_ar_claim_attempt", action.attempt_count)
+    action._ar_claim_worker_id = expected_worker
+    action._ar_claim_attempt = expected_attempt
     db.commit()
     acquire_claim_lock(db)
     db.refresh(action)
@@ -41,6 +44,8 @@ def lock_execution(db: Session, action: WorkflowAction, workflow: WorkflowSessio
         deadline = deadline.replace(tzinfo=UTC)
     if (
         action.state != "running" or not expected_worker
+        or type(expected_attempt) is not int or expected_attempt <= 0
+        or action.attempt_count != expected_attempt
         or action.worker_id != expected_worker or deadline is None
         or deadline <= datetime.now(UTC)
         or workflow.state not in {"running", "cancelling"}
@@ -147,7 +152,7 @@ class ArExecution:
         from .ar_lab_execution import cached_command
 
         lock_execution(self.db, self.action, self.workflow)
-        self.verify_input_binding()
+        self.verify_input_binding(observe_phase="write" if self.action.name in {"ar_write_ledger", "ar_write_receipt_flow"} else "start")
         latest_context = json.loads(self.workflow.context_json or "{}")
         if (self.workflow.state == "cancelling" or latest_context.get("stop_after_action")) and self.action.name != "ar_complete_reconciliation":
             raise ExecutionCancelled("任务已请求取消，未启动下一脚本")
@@ -165,15 +170,35 @@ class ArExecution:
             ])
         return stdout
 
-    def verify_input_binding(self) -> None:
+    def verify_input_binding(self, *, observe_phase=None) -> None:
+        if observe_phase is None:
+            self.service.workflow_owner_context(self.db, self.workflow)
+        else:
+            self.service.workflow_owner_context(self.db, self.workflow,
+                                                observe_phase=observe_phase, action=self.action)
+        self._verify_material_binding()
+
+    def _verify_material_binding(self) -> None:
         from .workflow_material_service import current_material_set
 
-        self.service.workflow_owner_context(self.db, self.workflow)
         current = current_material_set(
             self.db, self.workflow.owner_id, self.workflow.department_id, self.workflow.skill_id,
         )
         expected = (self.execution.get("steps", {}).get("publish_reconciliation")
                     if self.execution.get("publication") == "verified" else self.execution) or {}
+        if (current is not None
+                and (current.id != expected.get("material_set_id")
+                     or current.version != expected.get("material_version"))
+                and self.execution.get("reconciliation_date") == self.date
+                and self.execution.get("skill_hash") == self.workflow.skill_hash
+                and self.action.name == "ar_complete_reconciliation"
+                and json.loads(self.workflow.context_json or "{}").get("stop_after_action") is True):
+            # Only finish an immutable historical publication, then stop. This
+            # does not permit writing, republishing, or advancing the old batch.
+            from .ar_publication import publication_manifest
+
+            publication_manifest(self.db, self.workflow)
+            return
         if (
             self.execution.get("reconciliation_date") != self.date
             or self.execution.get("skill_hash") != self.workflow.skill_hash
@@ -532,7 +557,7 @@ class ArExecution:
         if not final_path.is_relative_to(stage) or self.service.sha256_file(final_path) != final["fingerprint"]:
             raise ValueError("最终核销结果与已复核版本不一致")
         lock_execution(self.db, self.action, self.workflow)
-        self.verify_input_binding()
+        self.verify_input_binding(observe_phase="publish")
         if self.workflow.state in {"cancelling", "cancelled"}:
             raise ExecutionCancelled("任务已请求取消，未发布暂存材料")
         ledgers = annual_ledgers_in_copy(self.workspace, stage, self.ledgers)
@@ -604,7 +629,7 @@ def execute_phase(db: Session, action: WorkflowAction, workflow: WorkflowSession
     execution = ArExecution(db, action, workflow)
     requested = action.name.removeprefix("ar_")
     phase = require_phase(execution.execution.get("completed") or [], requested)
-    execution.verify_input_binding()
+    execution.verify_input_binding(observe_phase="start")
     context = json.loads(workflow.context_json or "{}")
     context.update(current_step=phase.name, current_step_label=phase.label)
     context["ar_process_journal"] = {"schema_version": SCHEMA_VERSION, "action_id": action.id,
@@ -635,7 +660,7 @@ def execute_phase(db: Session, action: WorkflowAction, workflow: WorkflowSession
 
 def queue_execution_phase(
     db: Session, workflow: WorkflowSession, tool: str, arguments: dict[str, Any], *,
-    harness_action_id: str, worker_id: str,
+    harness_action_id: str, worker_id: str, attempt: int,
 ) -> WorkflowAction:
     from . import workflow_service as service
     from .scheduler import acquire_claim_lock
@@ -643,16 +668,8 @@ def queue_execution_phase(
     db.commit()
     acquire_claim_lock(db)
     db.refresh(workflow)
-    harness = db.get(WorkflowAction, harness_action_id)
-    if harness is not None:
-        db.refresh(harness)
-    deadline = harness.lease_expires_at if harness else None
-    if deadline is not None and deadline.tzinfo is None:
-        deadline = deadline.replace(tzinfo=UTC)
-    if (harness is None or harness.workflow_id != workflow.id or harness.name != "pi_harness_execute"
-            or harness.state != "running" or harness.worker_id != worker_id
-            or deadline is None or deadline <= datetime.now(UTC)):
-        raise HTTPException(status_code=409, detail="Agent 执行租约已失效，未派发新阶段。")
+    from .pi_harness_lease import require_harness_lease
+    require_harness_lease(db, workflow.id, harness_action_id, worker_id, attempt)
     if workflow.state in {"failed", "succeeded", "cancelled", "cancelling"}:
         raise HTTPException(status_code=409, detail="当前任务已停止，不能派发执行阶段。")
     service.workflow_owner_context(db, workflow)
@@ -736,13 +753,55 @@ def transition_phase(db: Session, action: WorkflowAction, workflow: WorkflowSess
         # A pending bundle becomes authoritative atomically with the completed
         # phase. A lost response therefore cannot require another workbook write.
         execution = ArExecution(db, action, workflow)
-        execution.verify_input_binding()
-        bundle = Path(formal["path"]).resolve()
-        if service.sha256_file(bundle) != formal["fingerprint"]:
-            raise ValueError("正式辅助台账在登记前发生变化")
+        completion_after_revocation = ""
+        try:
+            execution.verify_input_binding()
+        except HTTPException as error:
+            if error.status_code != 403:
+                raise
+            from .ar_completion_authorization import require_finished_completion
+
+            completion_after_revocation = require_finished_completion(action, workflow, result)
+            execution._verify_material_binding()
+        candidate_path = Path(formal["path"])
+        bundle = candidate_path.resolve()
+        from .ar_formal_ledger_service import decode_formal_ledger_payload
+        from .ar_publication import publication_manifest
+
+        # Batch dates stage under the primary workflow, then register an output
+        # under their own workflow. Validate the candidate against both scopes.
+        root = service._workflow_storage_root(db, workflow).resolve()
+        stage, _ = execution.staging()
+        expected = stage / "formal-ledger-build" / action.id / f"核销辅助台账_{execution.tag}.json"
+        if (candidate_path.is_symlink() or not bundle.is_file()
+                or not bundle.is_relative_to(root) or bundle != expected
+                or expected.resolve() != expected):
+            raise ValueError("正式辅助台账候选不属于当前日期执行的暂存目录或已经缺失")
+        with bundle.open("rb") as handle:
+            raw = handle.read(256 * 1024 * 1024 + 1)
+        if len(raw) > 256 * 1024 * 1024 or hashlib.sha256(raw).hexdigest() != formal["fingerprint"]:
+            raise ValueError("正式辅助台账在登记前发生变化或超过读取上限")
+        decode_formal_ledger_payload(raw, publication_manifest(db, workflow))
         artifact = service._register_artifact(db, workflow, bundle, action.id)
+        if artifact["sha256"] != formal["fingerprint"]:
+            service._discard_registered_artifacts(db, workflow, [artifact], action.id)
+            raise ValueError("正式辅助台账复制后的指纹与已校验候选不一致，未登记完成")
         result["artifacts"] = [artifact]
         result["formal_ledgers"] = {"file_id": artifact["file_id"], "sha256": artifact["sha256"]}
+        if completion_after_revocation:
+            from .audit_service import record_audit
+
+            result["stop_after_action"] = True
+            result["completion_after_revocation"] = True
+            record_audit(db, actor_id="system", actor_role="system", department_id=workflow.department_id,
+                action="workflow.completion_after_revocation", resource_type="workflow", resource_id=workflow.id,
+                details={"action_id":action.id, "process_exit_sha256":completion_after_revocation,
+                         "formal_ledger_sha256":artifact["sha256"]})
+            if workflow.batch_id:
+                # Reuse normal safe cancellation; never queue the next date.
+                batch = workflow.batch
+                batch.state = "cancelling"
+                batch.progress_message = "权限已变化，已保存本日收尾结果，后续日期停止"
     action.result_json = service._json(result)
     action.state = "succeeded"
     action.finished_at = service.datetime.now(service.UTC)
@@ -758,7 +817,11 @@ def transition_phase(db: Session, action: WorkflowAction, workflow: WorkflowSess
     if (context.get("stop_after_action") or workflow.state in {"cancelling", "cancelled"}) and not needs_formal_completion:
         workflow.state = "cancelled"
         workflow.stage = "cancelled"
-        workflow.progress_message = "当前步骤已结束，按取消请求停止后续执行"
+        workflow.progress_message = ("权限已变化，已保存已完成步骤的结果，后续执行已停止"
+                                     if result.get("completion_after_revocation") else
+                                     "当前步骤已结束，按取消请求停止后续执行")
+        if result.get("completion_after_revocation"):
+            service.finalize_requested_batch_cancellation(db, workflow.batch_id)
         return
     if result.get("empty_day_skipped"):
         expected = {"schema": "ar-empty-day-v1", "date": workflow.reconciliation_date, "empty": True}

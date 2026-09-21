@@ -1,0 +1,7 @@
+{
+  "at": "2026-09-20T04:31:26.632373+00:00",
+  "image": "sha256:092c8c20296c23bfba5a64d16e7b7d6fbdbe8d3cf8d7fe918365ce78a8f83f6c",
+  "exit_code": 0,
+  "stdout": "Maintenance mode: notice\nUnfinished task counts: {\"runs\": 0, \"batches\": 0, \"actions\": 0, \"discovery\": 0, \"assistant\": 0}\nUnfinished task counts: {\"runs\": 0, \"batches\": 0, \"actions\": 0, \"discovery\": 0, \"assistant\": 0}\nUnfinished task counts: {\"runs\": 0, \"batches\": 0, \"actions\": 0, \"discovery\": 0, \"assistant\": 0}\nMaintenance mode: full\nUnfinished task counts: {\"runs\": 0, \"batches\": 0, \"actions\": 0, \"discovery\": 0, \"assistant\": 0}\nUnfinished task counts: {\"runs\": 0, \"batches\": 0, \"actions\": 0, \"discovery\": 0, \"assistant\": 0}\nUnfinished task counts: {\"runs\": 0, \"batches\": 0, \"actions\": 0, \"discovery\": 0, \"assistant\": 0}\nUnfinished task counts: {\"runs\": 0, \"batches\": 0, \"actions\": 0, \"discovery\": 0, \"assistant\": 0}\nUnfinished task counts: {\"runs\": 0, \"batches\": 0, \"actions\": 0, \"discovery\": 0, \"assistant\": 0}\nUnfinished task counts: {\"runs\": 0, \"batches\": 0, \"actions\": 0, \"discovery\": 0, \"assistant\": 0}\nMaintenance mode: normal\n{\"at\": \"2026-09-20T04:31:26.619031+00:00\", \"outcome\": \"succeeded\", \"plan\": \"backend-schema\", \"mode\": \"normal\"}\n",
+  "stderr": ""
+}

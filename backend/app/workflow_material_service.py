@@ -114,6 +114,11 @@ def list_material_sets(
     *,
     limit: int = 50,
 ) -> list[WorkflowMaterialSet]:
+    from .ar_skill_identity import is_ar_skill
+    if is_ar_skill(skill_id):
+        from .ar_material_lifecycle import visible_material_set
+        visible = visible_material_set(db, user.user_id, user.department_id, skill_id)
+        return [visible] if visible else []
     return list(
         db.scalars(
             select(WorkflowMaterialSet)
@@ -146,6 +151,10 @@ def _validated_members(
     source_workflow_id: str = "",
     annual_years: dict[str, int] | None = None,
 ) -> list[tuple[str, int, FileRecord]]:
+    from .ar_material_lifecycle import retired_file_ids
+    ids = [entry.get("file_id") for entries in bindings.values() for entry in entries]
+    if db.scalar(select(FileRecord.id).where(FileRecord.id.in_(ids), FileRecord.id.in_(retired_file_ids())).limit(1)):
+        raise ValueError("旧工作簿已被成功任务的最新材料替换并清理，请使用当前材料。")
     unknown = set(bindings) - MATERIAL_ROLES
     if unknown:
         raise ValueError(f"业务材料包含未知用途：{sorted(unknown)}")
@@ -240,6 +249,9 @@ def serialize_material_set(
         if material_set.source_workflow_id
         else None
     )
+    from .ar_skill_identity import is_ar_skill
+    from .ar_material_lifecycle import visible_material_set
+    visible = visible_material_set(db, material_set.owner_id, material_set.department_id, material_set.skill_id) if is_ar_skill(material_set.skill_id) else None
     return {
         "id": material_set.id,
         "skill_id": material_set.skill_id,
@@ -249,7 +261,7 @@ def serialize_material_set(
         "source_workflow_display_id": (
             source_workflow.display_id if source_workflow and source_workflow.display_id else ""
         ),
-        "state": material_set.state,
+        "state": "current" if visible and visible.id == material_set.id else material_set.state,
         "published_at": material_set.published_at,
         "files": files,
     }
@@ -272,6 +284,12 @@ def create_or_replace_current_set(
     # existing first-registration filename fallback.
     fixed_years = {item.file_id: item.year for item in current.files
                    if item.role == ANNUAL_LEDGER_ROLE} if current else {}
+    from .ar_material_lifecycle import visible_material_set
+    visible = visible_material_set(db, user.user_id, user.department_id, skill_id)
+    if visible:
+        for item in visible.files:
+            if item.role == ANNUAL_LEDGER_ROLE:
+                fixed_years.setdefault(item.file_id, item.year)
     if annual_years is not None:
         annual_ids = [str(entry.get("file_id", ""))
                       for entry in bindings.get(ANNUAL_LEDGER_ROLE, [])]

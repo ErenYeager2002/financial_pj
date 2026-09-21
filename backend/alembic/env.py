@@ -5,6 +5,7 @@ from logging.config import fileConfig
 from pathlib import Path
 
 from sqlalchemy import create_engine, pool
+from sqlalchemy.engine import Connection
 
 from alembic import context
 
@@ -25,7 +26,7 @@ target_metadata = Base.metadata
 
 
 def _database_url() -> str:
-    return settings.database_url
+    return config.attributes.get("database_url", settings.database_url)
 
 
 def run_migrations_offline() -> None:
@@ -41,24 +42,38 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
+def _run_with_connection(connection: Connection) -> None:
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        compare_type=True,
+        compare_server_default=True,
+    )
+    with context.begin_transaction():
+        context.run_migrations()
+
+
 def run_migrations_online() -> None:
+    if "connection" in config.attributes:
+        connection = config.attributes["connection"]
+        if not isinstance(connection, Connection):
+            raise TypeError("Migration requires a SQLAlchemy Connection")
+        # The caller owns its transaction, advisory lock, and connection lifetime.
+        _run_with_connection(connection)
+        return
+    database_url = _database_url()
     connectable = create_engine(
-        _database_url(),
+        database_url,
         poolclass=pool.NullPool,
         connect_args={"check_same_thread": False, "timeout": 30}
-        if _database_url().startswith("sqlite")
+        if database_url.startswith("sqlite")
         else {},
     )
-    with connectable.connect() as connection:
-        context.configure(
-            connection=connection,
-            target_metadata=target_metadata,
-            compare_type=True,
-            compare_server_default=True,
-        )
-        with context.begin_transaction():
-            context.run_migrations()
-    connectable.dispose()
+    try:
+        with connectable.connect() as connection:
+            _run_with_connection(connection)
+    finally:
+        connectable.dispose()
 
 
 if context.is_offline_mode():

@@ -1,0 +1,12 @@
+{
+  "static_diff_check": "passed",
+  "spec_review": "passed after original/current input_hash validation and actual entry tests",
+  "standards_review": "passed after expired ORM no_autoflush fix",
+  "focused_tests": 255,
+  "ordinary_e2e": 4,
+  "draft_submission": 5,
+  "submission_orchestration": 10,
+  "candidate_migration": "passed f3 to f4 plus repeated migration",
+  "recovery_migration": "passed f3 to f4 plus replay-only",
+  "business_merge_files": 16
+}

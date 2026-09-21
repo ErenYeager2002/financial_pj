@@ -98,6 +98,10 @@ def test_workflow_agent_date_commands_use_platform_calendar(monkeypatch) -> None
 
 
 def test_apply_workflow_agent_action_only_updates_state_and_requests_confirmation(monkeypatch) -> None:
+    # State-machine unit fixture; real identity/lock behavior is covered by
+    # test_direct_workflow_agent_action_current_actor_and_stage in PostgreSQL.
+    monkeypatch.setattr("app.workflow_service.acquire_claim_lock", lambda *_args: None)
+    monkeypatch.setattr("app.workflow_service.execution_actor", lambda _db, _flow, actor, _phase: actor)
     monkeypatch.setattr("app.workflow_service.workflow_owner_context", lambda *_args: _actor())
     class FakeDb:
         def __init__(self) -> None:
@@ -148,6 +152,10 @@ def test_apply_workflow_agent_action_only_updates_state_and_requests_confirmatio
 
 
 def test_ar_hexiao_agent_execution_actions_follow_the_deployment_gate(monkeypatch) -> None:
+    # State-machine unit fixture; real identity/lock behavior is covered by
+    # test_direct_workflow_agent_action_current_actor_and_stage in PostgreSQL.
+    monkeypatch.setattr("app.workflow_service.acquire_claim_lock", lambda *_args: None)
+    monkeypatch.setattr("app.workflow_service.execution_actor", lambda _db, _flow, actor, _phase: actor)
     monkeypatch.setattr("app.workflow_service.workflow_owner_context", lambda *_args: _actor())
     monkeypatch.setattr(
         workflow_execution_policy,
@@ -155,6 +163,9 @@ def test_ar_hexiao_agent_execution_actions_follow_the_deployment_gate(monkeypatc
         replace(workflow_execution_policy.settings, ar_hexiao_execution_enabled=False),
     )
     class FakeDb:
+        def refresh(self, _value: object) -> None:
+            return None
+
         def commit(self) -> None:
             raise AssertionError("the blocked action must not commit")
 

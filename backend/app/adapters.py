@@ -15,12 +15,16 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from .auth import UserContext
-from .events import emit_event
+from .events import publish_run_progress
 from .run_fencing import assert_run_fence
 from .models import FileRecord, RunRecord
+from .modules.execution.authorization import ExecutionPhase, execution_owner
+from .modules.execution.preconditions import assert_skill_snapshot, assert_run_input_snapshot
+from .resource_policy import assert_owner
 from .network_policy import assert_url_allowed, skill_subprocess_environment
 from .registry import SkillManifest
 from .storage import copy_input_to_workspace, register_output, sha256_file
@@ -44,7 +48,7 @@ class ExecutionContext:
         event_type: str = "progress",
         data: dict[str, Any] | None = None,
     ) -> None:
-        emit_event(
+        publish_run_progress(
             self.db,
             self.run,
             event_type=event_type,
@@ -63,6 +67,9 @@ def _json_load(raw: str) -> Any:
 
 
 def build_execution_request(ctx: ExecutionContext) -> tuple[dict[str, Any], Path]:
+    ctx.owner = execution_owner(ctx.db, ctx.run, ExecutionPhase.READ)
+    assert_skill_snapshot(ctx.run, ctx.manifest, ctx.skill_dir)
+    assert_run_input_snapshot(ctx.run, ExecutionPhase.START)
     inputs_dir = ctx.workspace / "inputs"
     outputs_dir = ctx.workspace / "outputs"
     outputs_dir.mkdir(parents=True, exist_ok=True)
@@ -72,19 +79,39 @@ def build_execution_request(ctx: ExecutionContext) -> tuple[dict[str, Any], Path
         items = binding if isinstance(binding, list) else ([binding] if binding else [])
         copied: list[dict[str, Any]] = []
         for item in items:
-            record = ctx.db.get(FileRecord, item["file_id"])
+            if not isinstance(item, dict) or not isinstance(item.get("file_id"), str):
+                raise RuntimeError("任务固定的输入文件记录不完整。")
+            expected_hash = item.get("sha256")
+            if not isinstance(expected_hash, str) or len(expected_hash) != 64:
+                raise RuntimeError("任务固定的输入文件哈希缺失或无效。")
+            record = ctx.db.get(FileRecord, item["file_id"], populate_existing=True)
             if not record:
-                raise RuntimeError(f"输入文件记录不存在：{item['file_id']}")
-            if record.owner_id != ctx.run.owner_id or record.kind != "input":
-                raise RuntimeError(f"输入文件所有者校验失败：{record.id}")
+                raise RuntimeError("任务输入文件记录已经不存在。")
+            if (
+                record.department_id != ctx.run.department_id
+                or record.kind != "input"
+            ):
+                raise RuntimeError("任务输入文件的归属或类型已经变化。")
+            try:
+                assert_owner(record.owner_id, ctx.owner, "输入文件", record.department_id)
+            except HTTPException:
+                raise RuntimeError("任务输入文件已经不可访问。") from None
             source = Path(record.stored_path).resolve()
-            if not source.is_file() or record.sha256 != sha256_file(source):
-                raise RuntimeError(f"输入文件完整性校验失败：{record.id}")
+            if (
+                record.sha256 != expected_hash
+                or not source.is_file()
+                or sha256_file(source) != expected_hash
+            ):
+                raise RuntimeError("任务输入文件与提交时的内容不一致。")
             local_path = copy_input_to_workspace(
                 source,
                 inputs_dir,
                 f"{role}_{len(copied) + 1}__{Path(record.original_name).stem}",
             )
+            # Verify the bytes the adapter will consume, including changes
+            # between the source check and the workspace copy.
+            if sha256_file(local_path) != expected_hash:
+                raise RuntimeError("任务输入文件在复制过程中发生变化，未启动执行器。")
             copied.append(
                 {
                     "file_id": record.id,
@@ -355,7 +382,8 @@ class SubprocessAdapter:
         if consolidation:
             from .consolidation_store import persist
             persist(ctx, result)
-        ctx.db.commit()
+        # Artifact registrations commit with the Worker's validated terminal result.
+        ctx.db.flush()
         return result
 
 

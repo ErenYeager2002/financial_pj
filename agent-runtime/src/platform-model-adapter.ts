@@ -10,7 +10,7 @@ export interface PlatformModelOptions {
   modelId: string;
   gatewayUrl: string;
   accessToken: string | (() => Promise<string>);
-  gatewayFields?: Readonly<Record<string, string>>;
+  gatewayFields?: Readonly<Record<string, string | number>>;
   contextWindow?: number;
   maxTokens?: number;
 }

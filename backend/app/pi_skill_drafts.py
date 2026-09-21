@@ -63,30 +63,53 @@ def propose(db,user,session_id,skill_id,base_commit,archive):
 
 def publish(db,user,identity,expected):
     from .auth import require_admin
+    from .authorization import refresh_active_user
+    from .scheduler import acquire_claim_lock
+    user = refresh_active_user(db, user)
     require_admin(user)
+    prepared = None
     with native.source._source_guard():
+        user = refresh_active_user(db, user)
+        require_admin(user)
+        value=get(user,identity)
+        if value['sha256']!=expected:raise HTTPException(409,'待确认版本不匹配。')
+        if value['state']!='published':
+            require_native_skill(db,user,value['skill_id'])
+            current=native.installed_skill(value['skill_id'])
+            directory=locate(user,identity)
+            raw=(directory/'package.zip').read_bytes()
+            if hashlib.sha256(raw).hexdigest()!=expected:raise HTTPException(409,'发布草稿完整性检查失败。')
+            files=_package_files(raw);title,description,_=native.parse_instructions(files['SKILL.md'],value['skill_id'])
+            # Content revision, not a claimed Git commit. Existing native snapshots use a 40-hex key.
+            revision=hashlib.sha256(b'pi-draft-v1\0'+raw).hexdigest()[:40]
+            if current.commit not in {value['base_commit'],revision}:raise HTTPException(409,'线上 Skill 已更新，请重新准备草稿。')
+            package=native.native_root()/'packages'/value['skill_id']/revision
+            if not package.exists():
+                stage=package.parent/('.draft-'+uuid4().hex);stage.mkdir(parents=True)
+                try:
+                    with zipfile.ZipFile(io.BytesIO(raw)) as archive:executable={i.filename for i in archive.infolist() if (i.external_attr>>16)&0o111}
+                    for name,content in files.items():
+                        p=stage/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(content);p.chmod(0o755 if name in executable else 0o644)
+                    os.replace(stage,package)
+                finally:
+                    if stage.exists():shutil.rmtree(stage)
+            prepared = (revision, title, description)
+    # Never wait for source/network work while holding the scheduler lock.
+    # If the final source lock is busy, the request transaction is rolled back
+    # by its caller, with no installed index or proposal state changed.
+    acquire_claim_lock(db)
+    with native.source._source_guard(blocking=False):
+        user = refresh_active_user(db, user)
+        require_admin(user)
         value=get(user,identity)
         if value['sha256']!=expected:raise HTTPException(409,'待确认版本不匹配。')
         if value['state']=='published':return value
+        if prepared is None:raise HTTPException(409,'发布草稿状态已变化，请刷新后重试。')
         require_native_skill(db,user,value['skill_id'])
+        revision,title,description=prepared
         current=native.installed_skill(value['skill_id'])
-        directory=locate(user,identity)
-        raw=(directory/'package.zip').read_bytes()
-        if hashlib.sha256(raw).hexdigest()!=expected:raise HTTPException(409,'发布草稿完整性检查失败。')
-        files=_package_files(raw);title,description,_=native.parse_instructions(files['SKILL.md'],value['skill_id'])
-        # Content revision, not a claimed Git commit. Existing native snapshots use a 40-hex key.
-        revision=hashlib.sha256(b'pi-draft-v1\0'+raw).hexdigest()[:40]
         if current.commit not in {value['base_commit'],revision}:raise HTTPException(409,'线上 Skill 已更新，请重新准备草稿。')
-        package=native.native_root()/'packages'/value['skill_id']/revision
-        if not package.exists():
-            stage=package.parent/('.draft-'+uuid4().hex);stage.mkdir(parents=True)
-            try:
-                with zipfile.ZipFile(io.BytesIO(raw)) as archive:executable={i.filename for i in archive.infolist() if (i.external_attr>>16)&0o111}
-                for name,content in files.items():
-                    p=stage/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(content);p.chmod(0o755 if name in executable else 0o644)
-                os.replace(stage,package)
-            finally:
-                if stage.exists():shutil.rmtree(stage)
+        directory=locate(user,identity)
         updated=current.model_copy(update={'commit':revision,'name':title,'description':description,'source_path':'pi-draft/'+identity,'installed_at':datetime.now(timezone.utc).isoformat()})
         atomic_json(native.native_root()/'installed'/(current.id+'.json'),updated.model_dump())
         value.update(state='published',revision=revision);atomic_json(directory/'proposal.json',value)

@@ -36,6 +36,8 @@ interface DeclaredTool {
 
 interface HarnessClaim {
   action_id: string;
+  attempt: number;
+  protocol_version: 'pi-harness-attempt-v1';
   workflow: HarnessWorkflow;
   skill: {
     id: string;
@@ -90,22 +92,22 @@ async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   return payload as T;
 }
 
-async function heartbeat(actionId: string): Promise<void> {
-  await apiRequest(`/api/internal/pi-harness/actions/${encodeURIComponent(actionId)}/heartbeat`, {
+async function heartbeat(claim: HarnessClaim): Promise<void> {
+  await apiRequest(`/api/internal/pi-harness/actions/${encodeURIComponent(claim.action_id)}/heartbeat`, {
     method: 'POST',
-    body: JSON.stringify({ worker_id: workerId })
+    body: JSON.stringify({ worker_id: workerId, attempt: claim.attempt })
   });
 }
 
 async function waitForTool(
   workflowId: string,
   actionId: string,
-  harnessActionId: string
+  claim: HarnessClaim
 ): Promise<ToolResponse> {
   while (!stopping) {
-    await heartbeat(harnessActionId);
+    await heartbeat(claim);
     const result = await apiRequest<ToolResponse>(
-      `/api/internal/pi-harness/workflows/${encodeURIComponent(workflowId)}/actions/${encodeURIComponent(actionId)}?worker_id=${encodeURIComponent(workerId)}`
+      `/api/internal/pi-harness/workflows/${encodeURIComponent(workflowId)}/actions/${encodeURIComponent(actionId)}?worker_id=${encodeURIComponent(workerId)}&harness_action_id=${encodeURIComponent(claim.action_id)}&attempt=${claim.attempt}`
     );
     if (result.state === 'succeeded') return result;
     if (result.state === 'failed') {
@@ -187,12 +189,13 @@ function createHarnessTools(claim: HarnessClaim): AgentTool[] {
           body: JSON.stringify({
             arguments: argumentsPayload,
             worker_id: workerId,
-            harness_action_id: claim.action_id
+            harness_action_id: claim.action_id,
+            attempt: claim.attempt
           })
         }
       );
       const result = queued.action_id
-        ? await waitForTool(claim.workflow.workflow_id, queued.action_id, claim.action_id)
+        ? await waitForTool(claim.workflow.workflow_id, queued.action_id, claim)
         : queued;
       const visibleResult = result.data === undefined
         ? result.workflow
@@ -235,11 +238,14 @@ function systemPrompt(claim: HarnessClaim): string {
 async function finish(claim: HarnessClaim, outcome: 'succeeded' | 'failed', message = '') {
   await apiRequest(`/api/internal/pi-harness/actions/${encodeURIComponent(claim.action_id)}/finish`, {
     method: 'POST',
-    body: JSON.stringify({ worker_id: workerId, outcome, message })
+    body: JSON.stringify({ worker_id: workerId, attempt: claim.attempt, outcome, message })
   });
 }
 
 async function executeClaim(claim: HarnessClaim): Promise<void> {
+  if (claim.protocol_version !== 'pi-harness-attempt-v1' || !Number.isSafeInteger(claim.attempt) || claim.attempt < 1) {
+    throw new Error('平台没有返回有效的 Pi 执行代次协议。');
+  }
   const modelHandle = createPlatformModel({
     modelId: claim.model,
     gatewayUrl: `${apiBase}/api/internal/pi-harness/model`,
@@ -247,12 +253,13 @@ async function executeClaim(claim: HarnessClaim): Promise<void> {
     gatewayFields: {
       workflow_id: claim.workflow.workflow_id,
       harness_action_id: claim.action_id,
-      worker_id: workerId
+      worker_id: workerId,
+      attempt: claim.attempt
     }
   });
   const runtime = new PiAgentRuntime({ streamFn: modelHandle.streamSimple, maxSessions: 1 });
   const heartbeatTimer = setInterval(() => {
-    void heartbeat(claim.action_id).catch(() => {
+    void heartbeat(claim).catch(() => {
       stopping = true;
     });
   }, 10_000);
@@ -270,7 +277,7 @@ async function executeClaim(claim: HarnessClaim): Promise<void> {
       if (event.type === 'error') runtimeError = event.message;
     }
     const current = await apiRequest<ToolResponse>(
-      `/api/internal/pi-harness/workflows/${encodeURIComponent(claim.workflow.workflow_id)}/actions/${encodeURIComponent(claim.action_id)}?worker_id=${encodeURIComponent(workerId)}`
+      `/api/internal/pi-harness/workflows/${encodeURIComponent(claim.workflow.workflow_id)}/actions/${encodeURIComponent(claim.action_id)}?worker_id=${encodeURIComponent(workerId)}&harness_action_id=${encodeURIComponent(claim.action_id)}&attempt=${claim.attempt}`
     );
     if (!runtimeError && ['succeeded', 'cancelled'].includes(current.workflow.state)) {
       await finish(claim, 'succeeded');
@@ -295,7 +302,7 @@ async function main(): Promise<void> {
   while (!stopping) {
     const claim = await apiRequest<HarnessClaim | null>('/api/internal/pi-harness/claim', {
       method: 'POST',
-      body: JSON.stringify({ worker_id: workerId, execution_contracts: ['ar-execution-v2'] })
+      body: JSON.stringify({ worker_id: workerId, execution_contracts: ['ar-execution-v2'], protocol_version: 'pi-harness-attempt-v1' })
     });
     if (claim) await executeClaim(claim);
     else await delay(pollMilliseconds);

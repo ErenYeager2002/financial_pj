@@ -1,0 +1,6 @@
+# Finance-only Python source context; preserve the pinned runtime dependencies.
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+COPY backend/app /app/backend/app
+COPY backend/alembic /app/backend/alembic
+USER 10001:10001

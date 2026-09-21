@@ -311,6 +311,10 @@ def resolve_item_row(item: dict, rows: Dict[int, dict]) -> tuple[Optional[int], 
     sod = str(item.get("sod") or "").strip()
     if _matches_identity(rows.get(ref), so, sod):
         return ref, ""
+    import ordinary_receipt_identity as OI
+    blank_ref = OI.unique_blank_sod_target(item, rows)
+    if blank_ref is not None:
+        return blank_ref, ""
 
     candidates = [
         row_no for row_no, row in rows.items()
@@ -872,6 +876,10 @@ def check_one(item: dict, rows: Dict[int, dict]) -> dict:
     zero = receipt_history.check_zero(item, rows)
     if zero is not None:
         return zero
+    import ordinary_receipt_identity as OI
+    registered = OI.check(item, rows)
+    if registered is not None:
+        return registered
     import receipt_correction
     correction = receipt_correction.check(item, rows)
     if correction is not None:
@@ -1191,8 +1199,9 @@ def validate(
     if allocation_errors is None:
         allocation_errors = parent_allocation_history_errors(plan, rows)
     import current_receipt_group
+    import source_history_gap
     for it in items:
-        audit_error = (duplicate_audit_error(plan, it) or allocation_errors.get(it.get("ar"))
+        audit_error = (source_history_gap.unsafe_write(it, items, rows) or duplicate_audit_error(plan, it) or allocation_errors.get(it.get("ar"))
                        or _history_chain_source_error(it, by_case_id)
                        or current_receipt_group.source_error(it, by_case_id))
         scope_error = BR.check_scope(it, rows)
@@ -1221,11 +1230,14 @@ def validate(
         # 分笔链必须逐行复核完整性，不能因为其中已有一行结账就短路为“整单已写”。
         # 1元尾差聚合行也必须复核判定时快照，防止计划生成后被人工改动。
         settled_ref = None if (is_split_chain or is_guarded_aggregate) else settled_without_open_row(it, rows)
-        if audit_error:
+        if it.get("code") == "OK_SOURCE_SETTLED_MATERIAL_GAP":
+            import source_history_gap
+            res = ({"verdict": "conflict", "reason": audit_error} if audit_error else source_history_gap.check(it, rows, by_case_id))
+        elif audit_error:
             res = {"verdict": "conflict", "reason": audit_error}
         elif scope_error:
             res = scope_error
-        elif it.get("current_receipt_group") or it.get("receipt_correction") or it.get("zero_delivery_audit") or it.get("baseline_receipt_audit"):
+        elif it.get("ordinary_receipt_proof") or it.get("current_receipt_group") or it.get("receipt_correction") or it.get("zero_delivery_audit") or it.get("baseline_receipt_audit"):
             res = check_one(it, rows)
         elif it.get("code") == settlement_status.SO_ALREADY_SETTLED:
             settlement = settlement_status.inspect_so(it.get("so"), (
@@ -1293,6 +1305,10 @@ def validate(
                     "verdict": "write",
                     "reason": f"{res.get('reason') or ''}；{backfill_res['reason']}".strip("；"),
                 }
+        import ordinary_receipt_identity as OI
+        registration_error = OI.registration_error(it, rows, res['verdict'])
+        if registration_error:
+            res = {'verdict': 'conflict', 'reason': registration_error}
         ref = it.get("ledger_row_ref")
         # 合法分笔回款链允许多个父 AR 计划共享同一个源行；写入层会为每一笔创建
         # 独立业务行。没有同一链标记的重复行仍然冲突。
@@ -1524,6 +1540,11 @@ def main(argv=None) -> int:
         return 2
 
     result = validate_by_year(plan, rows_by_year, ledger_paths)
+    try:
+        FAL.preflight(ws, result)
+    except ValueError as error:
+        print(f"ERROR: 分配台账写前校验未通过：{error}", file=sys.stderr)
+        return 2
     # 没给 --out 就落进**解析后的工作区**的 04_产出/，别落到 plan 旁边（会跟日清分家）
     out_p = Path(args.out) if args.out else (out_dir / "写入计划_校验后.json")
     out_p.parent.mkdir(parents=True, exist_ok=True)

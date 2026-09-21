@@ -1,3 +1,29 @@
+# 当前事务提交者（PR-02 已上线）
+
+下表是已核对的当前调用链；其后保留历史候选表和实施记录，不以旧行号或旧提交行为代表当前源码。全仓可重复扫描命令：`python3 -B scripts/refactor/transaction_inventory.py`。结果包含每个源文件 SHA-256、直接调用点、类别及分类依据；动态别名、SQL 字符串和非 Python 持久化不在 AST 证明范围内。
+
+| 路径 | 唯一提交者 | 参与同事务的事实 |
+| --- | --- | --- |
+| 普通任务创建 | main.new_run | Run、步骤、文件绑定、模型追踪、初始事件 |
+| 普通任务确认 | main.confirm | 确认字段、排队步骤、状态事件 |
+| 普通任务取消 | main.cancel | 取消请求或取消终态、步骤、事件 |
+| 普通任务重试 | main.retry | 新任务及 run.retry 审计 |
+| 草稿确认消费 | routers.assistant.confirm_draft | 新任务、必要确认、consumed/run_id、draft.confirm 审计 |
+| 草稿过期读取 | routers.assistant.get_draft | 过期状态；辅助函数只 flush |
+| 草稿创建/更新/删除 | 对应 assistant 路由 | 草稿变更及审计；模型调用事实另见下一行 |
+| 模型调用独立事实 | draft_service._persist_model_trace | 自有 Session 内模型事实；后续父草稿关联由调用方提交 |
+| Worker 领取 | worker.claim_next_run | 租约、attempt、领取事件、执行步骤 |
+| Worker 完成/失败/超时/取消 | worker._execute_claimed_run 对应分支 | 校验后的结果、文件登记、步骤、终态事件及失败审计 |
+| 长任务进度 | events.publish_run_progress | 独立 Session 和原 fence 下的进度字段/事件；不能持有父事务的任务写锁 |
+| 普通任务心跳 | leases.LeaseHeartbeat._touch | 独立 Session 条件更新租约 |
+| 暂存清理心跳 | ar_staging_retention.maintain_staging.heartbeat | 使用调用方 Session 的阶段检查点，非独立心跳 |
+
+旧 emit_event 业务调用剩余 3 处：native_skill_service.execute_command 两处、reap_abandoned_runs 一处。兼容 wrapper 保留，不对 Native 命令路径做全仓替换；Native 幂等/生命周期改造按后续阶段处理。
+
+分类状态：所有直接调用均有类别，但 helper-implicit-commit 类表示服务内部提交、需结合调用方检查，不表示错误已确认或已经修复。管理权限 replace_user_permissions 依方案单列；全平台其他领域的事务改造不得据此自动扩大 PR-02 范围。PR-02 已随 PR-03 后端部署，验收汇总见 reports/PR-02.md。
+
+---
+
 # Transaction boundary candidates
 
 Baseline `2cd58e91348ff566250f03b882f22c46425bbe1f`. Static AST evidence only; dynamic dispatch, imported aliases and runtime reachability require targeted verification.
@@ -775,3 +801,109 @@ This lists commit/rollback/flush expressions, not confirmed transaction ownershi
 - backend/app/audit_service.py:record_audit：db.add + db.flush，无 commit；事务所有者是调用方。与 emit_event 共用 Session 时由后者默认提交。
 
 其余表格项仍是候选，尚未核实唯一提交者。
+
+
+## PR-02 当前源码核验（2026-09-18）
+
+更新后的 Python AST 清单见 `reports/PR-02-transaction-call-inventory.json`：537 个直接 commit 表达式、14 个 emit_event 调用，解析错误为零。数字包含测试及可能同名的非数据库方法，不等同于已完成语义分类；动态别名和非 Python 调用尚需另查。以下事实已逐函数检查，旧表行号仅用于历史基线。
+
+| 用例 | 当前行为 | 所需调整 |
+| --- | --- | --- |
+| create_run | 初始 emit_event 默认提交任务、步骤、模型追踪 | prepare/persist 分离，persist 接受外层事务 |
+| confirm_run | emit_event 提交确认字段和步骤 | 外层用例唯一提交 |
+| cancel_run | 两条分支都依赖 emit_event 提交 | 外层用例唯一提交 |
+| confirm_task_draft | create_run 先提交，必要时 confirm_run 再提交，之后才 flush consumed 和 run_id | 任务与草稿消费必须同事务，排除任务已保存而草稿未消费窗口 |
+| record_audit | add/flush，无 commit | 保留追加行为，新 append_run_event 不得提交 |
+| _get_owned_draft | 过期时隐式 commit | 检查调用者后移动提交边界 |
+| prepare_task_draft | 模型事实先 commit，后续草稿仅 flush | 审查独立事实事务，避免提前提交调用方数据 |
+
+run_fencing 的 before_flush 在未绑定 fence 时返回；绑定时检查 Worker、attempt、状态与租约并加行锁。新 Session 不会自动继承 fence，进度短事务必须重新绑定并核验。
+
+当前仅完成以上诊断与调用清单，尚未修改提交行为。下一步核对路由唯一提交者及文件绑定，再引入兼容事件接口和失败注入测试；不将静态清单视为完整事务审计或上线验收。未执行真实财务任务，未操作看板平台。
+
+
+### PR-02 事件接口实现进度
+
+已新增 append_run_event，事件及失败审计参与调用方事务，不自行 commit。emit_event 保留原签名和默认提交行为，现有 14 个业务调用尚未迁移。
+
+隔离合成 SQLite 经正式 Alembic 迁移后，event-transactions 套件 8 项通过：三种状态的回滚、整体提交及失败审计脱敏、旧 wrapper 的两种 commit 选项、审计追加后异常回滚、过期 Worker fence 拒绝写入。测试容器无网络、源码只读、测试库位于临时内存目录；没有真实任务或财务写入。静态 git diff --check 通过。
+
+已核实当前普通 new_run/confirm/cancel 路由没有显式 commit；assistant.confirm_draft 路由在追加 draft.confirm 审计后 commit。下一步必须把 prepare/persist、普通路由、retry_run 和草稿消费一起改为清晰的事务所有权，不能仅替换事件调用后上线。本接口尚未部署，PR-02 未完成。
+
+
+### PR-02 普通提交调用链实施进度
+
+已将 run_service 拆为 prepare_run 与 persist_run，PreparedRun 保存未入库任务及模型解析事实；persist_run 创建任务、五个步骤、模型追踪和初始事件，不 commit。create_run 是组合入口，不再隐式提交；confirm_run/cancel_run 同样改用 append_run_event。main.new_run/confirm/cancel 显式提交；main.retry 原有审计后提交覆盖新任务；assistant.confirm_draft 原有审计后提交覆盖任务、确认和草稿消费。
+
+隔离 event-transactions 17 项通过，新增实际 persist_run 在任务、步骤、事件、审计后的异常回滚，以及实际 confirm_task_draft 的绑定失败注入，覆盖需要确认和无需确认两种任务。绑定失败时任务及关联记录为零，重新读取草稿仍为 ready 且 run_id 为空；成功提交后整体存在。ordinary-e2e 上传、任务创建、确认、Worker 执行、下载通过。git diff --check 通过。
+
+尚未完成：准备阶段长操作事务边界、独立进度事务及 fence 传递、全调用表语义分类、其他入口/别名与过期草稿提交核验、真实 PostgreSQL 专项验证、代码审查与部署。本阶段修改仅存在远程持久化源码，线上仍为 PR-01 版本；不宣称 PR-02 已完成。
+
+
+### 2026-09-20 恢复实施
+
+运行核对：财务平台三个后端服务仍使用 PR-01 镜像 1a051c67b34d，API healthy；五类活动计数均为零。只检查财务 Compose 项目，未操作看板。
+
+_get_owned_draft 的过期状态改为 flush，GET 路由拥有持久化提交；拒绝确认/更新时由请求会话回滚，不再提交调用方无关数据。模型调用事实通过 _persist_model_trace 的独立 Session 保存，再加入调用方 Session 完成草稿关联；模型失败事实仍可保留，调用方未提交任务不会被连带提交。
+
+event-transactions 19 项通过，包括过期草稿与独立模型事实的新回归。task-drafts 10 项通过、1 项失败：test_assistant_profile_details_are_admin_only 在 assistant/status 多返回 model 字段的旧断言处失败；相关实现、响应模型和测试与 HEAD 相同，本轮没有改动该接口契约。失败保留，不能宣称该套件全通过。git diff --check 通过。仍未部署 PR-02，后续需完成进度短事务、准备阶段边界、调用分类、PostgreSQL 专项和审查。
+
+
+### Worker 领取与终态事务
+
+claim_next_run 现在只提交一次，领取租约、运行事件与执行步骤同事务。Worker 终态分支显式 commit，全部使用 append_run_event。SubprocessAdapter.register_artifacts 改为 flush，文件登记和报表数据库快照跟随 Worker 校验后的成功终态提交，不再由辅助函数提前提交。
+
+执行异常时 _reload_after_execution_failure 先 rollback，再按固定 run_id 重新读取并以原 fence 验证租约，才追加失败/超时/取消事实。租约丢失不覆盖其他执行者结果；终态提交已成功而响应丢失时，回读终态不再符合运行 fence，因此保留成功结果，不误记为失败。
+
+event-transactions 25 项通过，新增领取步骤失败整体回滚、领取仅一次提交、普通异常/超时/取消撤销未发布结果、成功提交后连接异常保持成功。ordinary-e2e 通过，git diff --check 通过。仍未部署；ExecutionContext.emit 的长操作进度独立事务、准备阶段复制边界和 PostgreSQL 验证仍待完成。看板平台无操作。
+
+
+### 长操作进度与 PostgreSQL 验证
+
+ExecutionContext.emit 已改为 publish_run_progress：独立 Session、显式传递原 fence、写入前加锁检查执行者/attempt/状态/租约；只允许 running/waiting_user_action 状态，终态仍由 Worker 用例提交。回填调用方 ORM 时只同步实际已提交的进度字段，不刷新或提交未发布结果；若对应字段有调用方待写修改，拒绝覆盖。PostgreSQL 进度行锁等待上限 5 秒，不能为保存进度强行提交父事务。
+
+SQLite event-transactions 28 项通过，ordinary-e2e 通过。相同 28 项通过独立 PostgreSQL 容器验证，每项使用随机独立 schema 和正式迁移。首轮 17 项因合成夹具缺少 workflow_definitions 所需用户外键而失败，补齐合成用户后全部通过；未禁用 PostgreSQL 约束。测试容器无生产网络、无生产数据挂载、无对外端口，按所有权标签清理完毕。新增测试覆盖进度单独提交而主事务结果回滚、缺失和错误 attempt fence 拒绝进度。
+
+未部署；准备阶段长操作、完整调用分类和代码审查仍未完成。独立进度在调用方已经持有同一任务写锁时可能等待并报锁超时，需后续核对所有适配器路径，不能把该情况下的测试缺失当作已验收。
+
+
+### 快照暂存和中期审查
+
+_snapshot_skill 先复制到唯一 skill.staging-UUID 目录，全部复制成功才重命名为 skill。失败保留可回收孤儿，不发布部分目录；已有正式快照拒绝替换。SQLite 30 项通过；PostgreSQL 31 项通过，包含新快照测试和父事务已经 flush 时进度行锁超时测试，证明不会替父事务提交、回滚或保存未完成结果。该锁冲突边界已经写进接口契约，内置适配器当前均在产物 flush 之前发送进度。
+
+双轴中期审查见 reports/PR-02-review.md：没有规范硬性阻断，但准备阶段事务分离与全仓提交分类仍未完成，阶段不可交付。LlmConfig 类型已补齐。未部署、未操作看板。
+
+
+### 准备阶段的自有查询会话
+
+prepare_run 通过明确拥有的 Session 获取权限/模型配置，关闭后才调用模型；解析完成后的父任务/文件查询也使用独立 Session，关闭后才复制快照。调用方 Session 不被提交、回滚或关闭，即使其中存在已经 flush 的写入也保留。幂等命中只将 ID 带出读取会话，再由调用方读取 ORM 实例。
+
+新增 PostgreSQL 回归验证模型和快照函数进入时所有准备查询会话均无活动事务，同时调用方已 flush 的未提交任务仍存在于原事务、对其他会话不可见，最终由调用方成功提交。PostgreSQL 32 项通过，ordinary-e2e 通过。
+
+此改动关闭了自有查询事务跨外部操作的缺口；不声称外层组合用例的既有事务也已结束。入库前可变事实重检、路由/草稿组合阶段的完整事务范围以及提交点分类仍需继续核对，PR-02 未部署。
+
+
+### 持久化前事实重检
+
+create_run 在 prepare_run 返回新准备结果后、persist_run 之前，执行 _revalidate_prepared_run：刷新账号状态和部门、重新检查工具版本/启用状态/执行及上传权限、刷新文件记录并检查归属和内容 SHA-256、比较完整文件绑定及输入哈希、重查合并报表父任务范围。拒绝时不创建 Run/Step/Trace/Event，暂存快照作为可回收孤儿保留。既有幂等命中路径保持原行为，强幂等及全面权限收敛属于后续 PR-03/04。
+
+PostgreSQL 36 项通过，新增停用、部门变化、版本变化和绑定变化的拒绝测试；ordinary-e2e 通过。首轮新增测试因合成未持久化 Run 未设置 parameters_json 而失败，补齐夹具后通过；未用生产数据校验。文件归属核验移至读取内容哈希之前。git diff --check 通过。
+
+仍需完整提交点分类、端点/草稿组合边界复核及最终审查、部署验收。PR-02 未上线，不能将专项测试通过当作整阶段完成。
+
+
+### 请求入口的读取/准备/写入分段
+
+main.new_run 在认证完成后结束其拥有的请求读事务，再准备任务。main.retry 先生成纯 RunCreate 重试请求，结束其读事务，再准备及写入。assistant.confirm_draft 先由 prepare_draft_run_request 读取并冻结草稿请求，结束请求读事务后执行 prepare_run；最终 confirm_task_draft 重读草稿并比较 expected_request，变化则拒绝，未变化才将任务及草稿消费一起提交。通用服务不擅自结束调用方事务。
+
+普通 HTTP 端到端与草稿确认 HTTP 测试在真实 _snapshot_skill 调用前断言 engine.pool.checkedout()==0，均通过，直接证明入口复制期间未持有数据库连接。事务套件 SQLite 35 通过、1 个 PG 行锁专项按方言跳过；草稿回归仍为10通过、1个已记录状态接口旧断言失败。新增接口分段尚需专项失效草稿测试及审查；PR-02 未部署。
+
+
+## PR-04 聊天模型请求分段
+
+send_workflow_message 由请求服务拥有两段事务：第一段锁后刷新身份及任务、保存用户消息并冻结决策输入，显式提交；外部模型调用期间无数据库事务和 scheduler 锁；第二段重新加锁、刷新授权与确认对象，验证后应用决定并提交。变化或撤权只阻止决策，不删除已保存的用户消息。真实PG专项验证模型期间第二连接可取得全局锁并更新任务，确认日期与确认写入两个分支均覆盖。见reports/PR-04-chat-boundary.md。
+
+
+## PR-04 补取申请事务
+
+单日与批次补取公开服务持有调度锁并负责唯一成功提交：准备函数不提交，动作/状态/消息与当前实际操作者审计一起提交；HTTP不再在服务提交后单独审计。审计异常后回滚可恢复全部补取修改，真实PG两路由用例通过。旧材料失败标记仍保留原有独立提交语义，并在授权后、补取准备前发生。见reports/PR-04-supplement-boundary.md。

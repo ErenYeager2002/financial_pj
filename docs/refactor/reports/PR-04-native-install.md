@@ -1,0 +1,15 @@
+# PR-04 Native安装授权（已上线并验证）
+
+2026-09-20。install_native_skill原先只有HTTP路由在调用前require_admin；Git取数之后可以继续使用旧管理员身份。新增3个合成测试在旧代码上复现：降权、停用和换部门均未拒绝，安装索引被更新。
+
+修复在服务入口、等待源码锁后和最终激活前刷新当前用户并检查管理员。Git取数、ZIP检查与不可变包准备不持scheduler global；最终global→非阻塞source锁内再次核验固定部门和管理员，以原installed索引字节作为并发比较条件，避免覆盖另一请求已经激活的新版本。原包保留，冲突返回409。最终审计记录当前实际操作者。
+
+34项PostgreSQL授权专项通过，包含真实合成ZIP成功安装、取数后撤权不激活、并发激活不被覆盖。Spec/Standards两项独立静态审查通过，审查员没有重跑测试。候选a327561ba911相对前一镜像仅native_skill_service.py变化；恢复6f0b5a73239c保留同一授权核心。隔离PG探针通过，见PR-04-native-candidate-check.json及PR-04-native-recovery-check.json。
+
+## 后续必须验证的AR边界
+
+ar_execution_runner.script每次脚本前lock_execution与verify_input_binding；write_ledger对writer返回的ledger_verified做硬检查，write_receipt_flow的失败恢复仅作用于暂存副本。verify_reconciliation内依次verify_execution_write、classify_hexiao、validate_plan，各次script都会再次检查权限。需要通过合成测试区分已开始写入的必要回读和新的业务写入，撤权时不能粗暴终止已进入的原子步骤，也不能为了完成复核放开下一写入或发布。当前这些剩余规则尚未验收，不因安装授权修复而算完成。
+
+未执行真实安装、真实核销、权限修改、提交或推送；看板无操作。PR-04及完整PR00–PR21目标仍未完成。
+
+发布退出0；三个后端服务各196个源码哈希匹配，UID10001，重启次数0，DB仍f3，平台normal，五类活动任务0。证据PR-04-native-deployment.json与PR-04-native-runtime-verified.json。

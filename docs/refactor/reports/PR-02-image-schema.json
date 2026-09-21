@@ -1,0 +1,1 @@
+{"previous_revision": "f1a2b3c4d5e6", "target_revision": "f2a3b4c5d6e7", "upgrade": "passed", "repeat_migration": "passed", "single_seed": "passed", "no_ddl_role_runtime_check": "passed"}

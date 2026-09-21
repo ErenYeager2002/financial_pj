@@ -28,6 +28,7 @@ from ..ar_execution_service import read_evidence_page, record_evidence_read
 from ..ar_agent_budget import reserve_agent_call
 from ..audit_service import record_audit
 from ..database import SessionLocal, get_db
+from ..pi_harness_lease import PROTOCOL_VERSION, lease_now, require_harness_lease
 from ..leases import lease_deadline
 from ..model_visible_data import (
     MAX_MODEL_VISIBLE_BYTES,
@@ -63,6 +64,13 @@ class PiHarnessClaimRequest(BaseModel):
 
     worker_id: str = Field(min_length=1, max_length=128)
     execution_contracts: list[str] = Field(default_factory=list, max_length=8)
+    protocol_version: Literal["pi-harness-attempt-v1"]
+
+
+class PiHarnessLeaseRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    worker_id: str = Field(min_length=1, max_length=128)
+    attempt: int = Field(strict=True, ge=1)
 
 
 class PiHarnessToolRequest(BaseModel):
@@ -70,18 +78,21 @@ class PiHarnessToolRequest(BaseModel):
 
     arguments: dict[str, Any] = Field(default_factory=dict)
     worker_id: str = Field(min_length=1, max_length=128)
-    harness_action_id: str = Field(default="", max_length=36)
+    harness_action_id: str = Field(min_length=1, max_length=36)
+    attempt: int = Field(strict=True, ge=1)
 
 
 class PiHarnessFinishRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     worker_id: str = Field(min_length=1, max_length=128)
+    attempt: int = Field(strict=True, ge=1)
     outcome: Literal["succeeded", "failed"]
     message: str = Field(default="", max_length=1000)
 
 
 class PiHarnessModelRequest(AgentModelRequest):
+    attempt: int = Field(strict=True, ge=1)
     workflow_id: str = Field(min_length=36, max_length=36)
     harness_action_id: str = Field(min_length=36, max_length=36)
     worker_id: str = Field(min_length=1, max_length=128)
@@ -199,34 +210,9 @@ def _claim_payload(db: Session, workflow: WorkflowSession, action: WorkflowActio
 
 
 def _assert_active_harness(
-    db: Session,
-    workflow_id: str,
-    action_id: str | None,
-    worker_id: str,
+    db: Session, workflow_id: str, action_id: str, worker_id: str, attempt: int,
 ) -> WorkflowAction:
-    action = (
-        db.get(WorkflowAction, action_id)
-        if action_id
-        else db.scalar(
-            select(WorkflowAction)
-            .where(
-                WorkflowAction.workflow_id == workflow_id,
-                WorkflowAction.name == PI_HARNESS_ACTION,
-                WorkflowAction.state == "running",
-                WorkflowAction.worker_id == worker_id,
-            )
-            .order_by(WorkflowAction.queued_at.desc())
-        )
-    )
-    if (
-        action is None
-        or action.workflow_id != workflow_id
-        or action.name != PI_HARNESS_ACTION
-        or action.state != "running"
-        or action.worker_id != worker_id
-    ):
-        raise HTTPException(status_code=409, detail="Pi Harness 租约已经失效。")
-    return action
+    return require_harness_lease(db, workflow_id, action_id, worker_id, attempt)
 
 
 def _fetched_preview_page(
@@ -473,12 +459,13 @@ def claim_pi_harness_work(
         return None
     record_audit(
         db,
-        actor=workflow_owner_context(db, workflow),
+        actor=workflow_owner_context(db, workflow, observe_phase="claim", action=action),
         action="workflow.pi_harness.claimed",
         resource_type="workflow",
         resource_id=workflow.id,
         details={"skill_id": workflow.skill_id},
     )
+    payload.update(protocol_version=PROTOCOL_VERSION, attempt=action.attempt_count)
     db.commit()
     return payload
 
@@ -486,19 +473,15 @@ def claim_pi_harness_work(
 @router.post("/actions/{action_id}/heartbeat", include_in_schema=False)
 def heartbeat_pi_harness_work(
     action_id: str,
-    body: PiHarnessClaimRequest,
+    body: PiHarnessLeaseRequest,
     _: None = Depends(require_pi_harness_token),
     db: Session = Depends(get_db),
 ) -> dict[str, str]:
     action = db.get(WorkflowAction, action_id)
-    if (
-        action is None
-        or action.name != PI_HARNESS_ACTION
-        or action.state != "running"
-        or action.worker_id != body.worker_id
-    ):
+    if action is None:
         raise HTTPException(status_code=409, detail="Pi Harness 租约已经失效。")
-    now = datetime.now(UTC)
+    action = require_harness_lease(db, action.workflow_id, action_id, body.worker_id, body.attempt)
+    now = lease_now(db)
     action.heartbeat_at = now
     action.lease_expires_at = lease_deadline(now)
     db.commit()
@@ -516,13 +499,9 @@ def finish_pi_harness_work(
 
     acquire_claim_lock(db)
     action = db.get(WorkflowAction, action_id)
-    if (
-        action is None
-        or action.name != PI_HARNESS_ACTION
-        or action.state != "running"
-        or action.worker_id != body.worker_id
-    ):
+    if action is None:
         raise HTTPException(status_code=409, detail="Pi Harness 租约已经失效。")
+    action = require_harness_lease(db, action.workflow_id, action_id, body.worker_id, body.attempt)
     workflow = db.get(WorkflowSession, action.workflow_id)
     if workflow is None:
         raise HTTPException(status_code=404, detail="任务不存在。")
@@ -578,9 +557,7 @@ def request_pi_harness_tool(
     workflow = db.get(WorkflowSession, workflow_id)
     if workflow is None:
         raise HTTPException(status_code=404, detail="任务不存在。")
-    active_action = _assert_active_harness(db, workflow.id, body.harness_action_id or None, body.worker_id)
-    if (json.loads(workflow.context_json or "{}").get("ar_execution") and not body.harness_action_id):
-        raise HTTPException(status_code=422, detail="新版工具请求必须绑定本次 Agent 动作，旧会话不能借用恢复后的租约。")
+    active_action = _assert_active_harness(db, workflow.id, body.harness_action_id, body.worker_id, body.attempt)
     try:
         workflow_owner_context(db, workflow)
     except HTTPException:
@@ -604,7 +581,7 @@ def request_pi_harness_tool(
         ) from exc
     if tool_name not in {item["name"] for item in declared_tools}:
         raise HTTPException(status_code=422, detail="任务固定的 Skill 没有声明该工具。")
-    reserve_agent_call(db, workflow, active_action, body.worker_id, "tool_calls")
+    reserve_agent_call(db, workflow, active_action, body.worker_id, "tool_calls", attempt=body.attempt)
     if tool_name == "inspect_order_evidence":
         allowed = {"offset", "limit", "query", "record_id", "detail_offset", "fingerprint"}
         args = body.arguments
@@ -622,7 +599,7 @@ def request_pi_harness_tool(
         acquire_claim_lock(db)
         db.refresh(workflow)
         db.refresh(active_action)
-        _assert_active_harness(db, workflow.id, active_action.id, body.worker_id)
+        _assert_active_harness(db, workflow.id, active_action.id, body.worker_id, body.attempt)
         deadline = active_action.lease_expires_at
         if deadline is not None and deadline.tzinfo is None:
             deadline = deadline.replace(tzinfo=UTC)
@@ -651,6 +628,12 @@ def request_pi_harness_tool(
             if tool_name == "inspect_fetched_data"
             else _task_text_file_page(workflow, body.arguments)
         )
+        db.commit()
+        require_harness_lease(db, workflow.id, active_action.id, body.worker_id, body.attempt)
+        db.refresh(workflow)
+        if workflow.state not in {"active", "running"}:
+            raise HTTPException(status_code=409, detail="读取期间任务已停止，本页未计入成功读取。")
+        actor = workflow_owner_context(db, workflow)
         record_audit(
             db,
             actor=actor,
@@ -673,7 +656,7 @@ def request_pi_harness_tool(
         }
     try:
         action = queue_pi_harness_tool(db, workflow, tool_name, body.arguments,
-                                       harness_action_id=active_action.id, worker_id=body.worker_id)
+                                       harness_action_id=active_action.id, worker_id=body.worker_id, attempt=body.attempt)
     except HTTPException as exc:
         # The harness action is already running. A permission change must end
         # that action explicitly instead of leaving the task in a false
@@ -695,6 +678,8 @@ def read_pi_harness_tool(
     workflow_id: str,
     action_id: str,
     worker_id: str,
+    harness_action_id: str,
+    attempt: int,
     _: None = Depends(require_pi_harness_token),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
@@ -702,7 +687,7 @@ def read_pi_harness_tool(
     action = db.get(WorkflowAction, action_id)
     if workflow is None or action is None or action.workflow_id != workflow.id:
         raise HTTPException(status_code=404, detail="工具动作不存在。")
-    active_action = _assert_active_harness(db, workflow.id, None, worker_id)
+    active_action = _assert_active_harness(db, workflow.id, harness_action_id, worker_id, attempt)
     try:
         workflow_owner_context(db, workflow)
     except HTTPException:
@@ -733,6 +718,7 @@ def stream_pi_harness_model(
         workflow.id,
         body.harness_action_id,
         body.worker_id,
+        body.attempt,
     )
     try:
         owner = workflow_owner_context(db, workflow)
@@ -751,7 +737,7 @@ def stream_pi_harness_model(
         payload = build_agent_model_payload(config, safe_model_request)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    reserve_agent_call(db, workflow, active_action, body.worker_id, "model_calls")
+    reserve_agent_call(db, workflow, active_action, body.worker_id, "model_calls", attempt=body.attempt)
     stream_context = open_agent_model_stream(
         config,
         payload,

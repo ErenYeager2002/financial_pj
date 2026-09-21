@@ -8,6 +8,7 @@ from typing import List
 from typing import Optional
 from typing import Sequence
 from typing import Tuple
+import writeoff_local_amounts as WLA
 import common
 import datetime as dt
 import json
@@ -246,6 +247,8 @@ def reconcile_writeoff_details(
             }:
                 unresolved_sos.setdefault(so, []).append(ar)
             continue
+        for item in logical:
+            item['_resolved_amount_local'] = WLA.detail_local(item)
         logical_rows.extend(logical)
 
     by_ar = {p["ar"]: p for p in payments}
@@ -285,6 +288,15 @@ def reconcile_writeoff_details(
         p["_source_order_keys_by_date"] = {
             day: sorted(keys) for day, keys in source_keys_by_ar.get(p["ar"], {}).items()
         }
+    # Identity evidence only; never use these older records to deduct balances.
+    for p in payments:
+        day = target_date or p.get("hexiao_date")
+        prior = [item for item in logical_rows if item["ar"] == p["ar"]
+                 and item.get("date") and day and item["date"] < day]
+        p["flow_carry_evidence"] = {
+            "known_sos": sorted({item["so"] for item in prior}),
+            "opening_limit": p.get("total_amount_local") or p.get("amount_local"),
+        }
     current_rows: List[dict] = []
     for item in logical_rows:
         p = by_ar.get(item["ar"])
@@ -293,11 +305,7 @@ def reconcile_writeoff_details(
             current_rows.append(item)
             w = p["writeoffs"]
             w[item["so"]] = round(w.get(item["so"], 0.0) + float(item["amount"]), 2)
-            if item.get("amount_local") is not None:
-                wl = p["writeoffs_local"]
-                wl[item["so"]] = round(
-                    wl.get(item["so"], 0.0) + float(item["amount_local"]), 2
-                )
+            WLA.add_complete(p["writeoffs_local"], item["so"], item.get("_resolved_amount_local"))
             if item.get("snapshot_date") and target_date and item["snapshot_date"] > target_date:
                 p["_source_meta"]["historical_detail_rows"] += 1
 
@@ -330,11 +338,8 @@ def reconcile_writeoff_details(
             global_cumulative.get(so, 0.0) + float(item["amount"]), 2
         )
         cumulative_after_parent_so[(item["ar"], so)] = global_cumulative[so]
-        if item.get("amount_local") is not None:
-            global_cumulative_local[so] = round(
-                global_cumulative_local.get(so, 0.0) + float(item["amount_local"]), 2
-            )
-            cumulative_local_after_parent_so[(item["ar"], so)] = global_cumulative_local[so]
+        WLA.add_complete(global_cumulative_local, so, item.get("_resolved_amount_local"))
+        cumulative_local_after_parent_so[(item["ar"], so)] = global_cumulative_local[so]
         sequence_after_parent_so[(item["ar"], so)] = sequence_key(item)
     for p in payments:
         p_sos = {
@@ -568,10 +573,11 @@ def load_exports(workspace: Path, target_date: Optional[dt.date] = None) -> List
                     "source": path.name, "snapshot_date": _export_date(path),
                 }
                 order_map[key] = old
-            if amt is not None:
-                old["deliver"] = amt
-            if deliver_local is not None:
-                old["deliver_local"] = deliver_local
+            if amt is not None or deliver_local is not None:
+                # Do not combine a newer original amount with stale local/rate.
+                old.update(deliver=amt, deliver_local=deliver_local,
+                           rate=common.to_number(_get(vals, i_rate)),
+                           currency=str(_get(vals, i_cur) or "").strip())
             if written_present:
                 old["written_off"] = common.to_number(written_raw)
                 old["written_off_present"] = True
@@ -583,10 +589,6 @@ def load_exports(workspace: Path, target_date: Optional[dt.date] = None) -> List
             name = str(_get(vals, i_name) or "").strip()
             delivery_raw = _get(vals, i_delivery_date)
             delivery_status = str(_get(vals, i_delivery_status) or "").strip()
-            if rate is not None:
-                old["rate"] = rate
-            if currency:
-                old["currency"] = currency
             if name:
                 old["name"] = name
             if delivery_raw not in (None, ""):

@@ -5,6 +5,7 @@ from typing import Dict
 from typing import Optional
 import baseline_receipts as BR
 import common
+import amount_policy
 import datetime as dt
 import fallback_allocation_ledger as FAL
 import fallback_sequence as FS
@@ -58,6 +59,11 @@ def _record_event_coverage(
         receipt_time,
         payment_way,
     )
+    import ordinary_receipt_identity as OI
+    ownership = OI.inspect({**rec, 'amount_local': local}, ledger)
+    if ownership['state'] in {'new', 'ambiguous', 'conflict'}:
+        coverage['status'] = 'uncovered'
+        coverage['basis'] = 'source_identity_' + ownership['state']
     coverage["source_ar"] = rec.get("ar") or ""
     coverage["source_writeoff_sequence_key"] = rec.get("writeoff_sequence_key")
     return coverage
@@ -97,6 +103,25 @@ def _mark_event_idempotent(
         },
     })
     return result
+
+def _missing_ledger_result(result, rec, ledger, year_now):
+    """Use one material-missing explanation across early and normal row checks."""
+    year = rec.get("target_ledger_year")
+    previous_year = year is not None and int(year) != int(year_now)
+    result["bucket"] = "hold"
+    result["code"] = "E3" if previous_year else "E2"
+    if ledger is None and not rec.get("_missing_from_provided_ledgers"):
+        result["reason"] = (
+            f"没有提供 {int(year)} 年盈亏核算表工作副本" if previous_year
+            else "未提供本年度盈亏表，无法确认 SO 是否在明细"
+        )
+    else:
+        result["reason"] = (
+            f"已检查 {int(year)} 年盈亏表，但明细里没有这张单" if previous_year
+            else "当前任务的盈亏材料未包含这张订单，需补齐对应明细；不能据此判断订单未交付"
+        )
+    return result
+
 
 def classify_one(
     rec: dict,
@@ -182,6 +207,8 @@ def classify_one(
             "fallback_sequence_key": rec.get("fallback_sequence_key"),
         },
     }
+    import flow_source_receipts
+    result['flow_source_receipt'] = flow_source_receipts.proof(rec)
     if "_year_route_order" in rec:
         result["_year_route_order"] = rec["_year_route_order"]
     if rec.get("so"):
@@ -228,14 +255,36 @@ def classify_one(
     zero = receipt_history.zero_candidate(rec, result, ledger)
     if zero is not None:
         return zero
+    import ordinary_receipt_identity as OI
+    ownership = OI.inspect(rec, ledger)
+    # Whole-order completion remains a separate business conclusion. An
+    # unattributed legacy event must not turn a completed order into unfinished
+    # work, nor may it repair a row or prove this receipt was registered.
+    ownership_blocks = ownership['state'] == 'conflict' or (
+        ownership['state'] == 'ambiguous' and not ledger.so_settlement(rec['so'])['all_settled'])
+    if ownership_blocks and not rec.get('forced_code') and not rec.get('customer_archive_failed'):
+        result.update(bucket='hold', code='E_RECEIPT_OWNERSHIP_UNRESOLVED', reason=ownership['reason'], receipt_ownership_state=ownership['state'])
+        return result
+    if ownership['state'] == 'owned' and not rec.get('forced_code') and not rec.get('customer_archive_failed'):
+        correction = receipt_history.candidate(rec, result, ledger)
+        if correction is not None:
+            audit = correction.get('receipt_correction') or {}
+            if audit.get('before') != audit.get('after'):
+                return correction
+        result = _mark_event_idempotent(result, ledger,
+            {'status': 'covered', 'row': min(map(int, ownership['rows'])),
+             'matched_rows': list(map(int, ownership['rows'])), 'basis': 'registered_source_identity'},
+            'OK_REGISTERED_RECEIPT_ALREADY_APPLIED', '本次回款身份及当前材料中的登记数量已核实，不重复写入')
+        result['ordinary_receipt_proof'] = ownership
+        return result
     import receipt_correction
-    correction = receipt_correction.candidate(rec, result, ledger, rates, thr, year_now)
+    correction = None if ownership['state'] == 'ambiguous' else receipt_correction.candidate(rec, result, ledger, rates, thr, year_now)
     if correction is not None:
         return correction
 
-    # Select delivery/baseline handling before any row-filled or settled skip.
-    baseline_candidate = BR.candidate(rec, result, ledger)
-    if baseline_candidate is not None:
+    # Preserve verified current-receipt proof for flow completion even when the SO is closed.
+    baseline_candidate = None if ownership['state'] == 'ambiguous' else BR.candidate(rec, result, ledger)
+    if baseline_candidate is not None and (baseline_candidate.get('baseline_receipt_audit') or {}).get('disposition') == 'skip':
         return baseline_candidate
 
     # 整 SO 业务状态与本批事件幂等分开；父 AR 硬闸已在前面检查。
@@ -266,6 +315,10 @@ def classify_one(
             if source_notes:
                 result["warning_codes"].append("W_SETTLED_SO_SOURCE_DIFFERENCE")
             return result
+
+    # Apply baseline preservation only to unfinished orders.
+    if baseline_candidate is not None:
+        return baseline_candidate
 
     # 未整单结账时，仍按本批金额、日期和方式判断事件幂等。
     allocation = rec.get("parent_allocation_audit") or {}
@@ -319,6 +372,14 @@ def classify_one(
             return _mark_event_idempotent(
                 result, ledger, event_coverage, idem_code, idem_reason
             )
+
+    # SOD 分配必须有实际盈亏行承接；缺少整张订单时先说明材料缺失。
+    # 付款级硬闸和既有回款身份校验仍在此之前执行。
+    if (rec.get("forced_code") == "E5" and rec.get("so")
+            and ((ledger is None and (not rec.get("_provided_ledger_years")
+                                      or rec.get("_missing_from_provided_ledgers")))
+                 or (ledger is not None and not ledger.so_index.get(rec["so"])) )):
+        return _missing_ledger_result(result, rec, ledger, year_now)
 
     # 展开阶段已定性的（分笔/超额/没回满/无下单…）直接落地
     forced = rec.get("forced_code")
@@ -382,15 +443,7 @@ def classify_one(
         return result
 
     if ledger is None:
-        result["bucket"] = "hold"
-        target_year = rec.get("target_ledger_year")
-        if target_year is not None and int(target_year) != int(year_now):
-            result["code"] = "E3"
-            result["reason"] = f"没有提供 {int(target_year)} 年盈亏核算表工作副本"
-        else:
-            result["code"] = "E2"
-            result["reason"] = "未提供本年度盈亏表，无法确认 SO 是否在明细"
-        return result
+        return _missing_ledger_result(result, rec, ledger, year_now)
 
     so, sod = rec.get("so") or "", rec.get("sod") or ""
     preferred_row = rec.get("preferred_ledger_row")
@@ -407,20 +460,15 @@ def classify_one(
             if len(outstanding) == 1:
                 row, how, cands = outstanding[0], "本父回款待写SOD唯一未结清行", outstanding
 
-    # 定位不到唯一行 → 用「整段逐位对齐」严格消歧（对不齐就继续挂起）
-    align_note = ""
-    if how in ("E8", "E2") and sod and rec.get("so_all_lines"):
-        aligned = ledger.positional_row(so, sod, rec["so_all_lines"])
-        if aligned is not None:
-            row, kind, ratio = aligned
-            how, cands = "SO整段按SOD序对齐", []
-            if kind == "ratio":
-                snap0 = ledger.row_snapshot.get(row) or {}
-                align_note = (
-                    f"⚠ 智云交付额 {amount_orig} 与你表里应收 {snap0.get('yingshou')} 不一致"
-                    f"（这个 SO 每一行都差同一个比例 {ratio:.6f}），已按**智云金额**填；"
-                    "口径待确认，填之前扫一眼"
-                )
+    if how == "E_SO_SOD_MISMATCH":
+        result["bucket"] = "hold"
+        result["code"] = "E_SO_SOD_MISMATCH"
+        result["candidates"] = cands
+        result["reason"] = (
+            f"目标 SO={so}、SOD={sod}，但该 SOD 在盈亏表中登记于其他 SO；"
+            f"候选行：{','.join(map(str, cands))}。请核对 SO/SOD 对应关系，不能跨 SO 借用业务行。"
+        )
+        return result
 
     if how == "E8":
         result["bucket"] = "hold"
@@ -438,16 +486,7 @@ def classify_one(
         result["reason"] = "无单号"
         return result
     if how == "E2" or row is None:
-        # 已按交付年度选定盈亏表；只有目标年度表缺单时才挂账。
-        y = rec.get("target_ledger_year")
-        result["bucket"] = "hold"
-        if y is not None and int(y) != int(year_now):
-            result["code"] = "E3"
-            result["reason"] = f"已检查 {int(y)} 年盈亏表，但明细里没有这张单"
-        else:
-            result["code"] = "E2"
-            result["reason"] = "当前任务的盈亏材料未包含这张订单，需补齐对应明细；不能据此判断订单未交付"
-        return result
+        return _missing_ledger_result(result, rec, ledger, year_now)
 
     snap = ledger.row_snapshot.get(row, {})
     yingshou = common.to_number(snap.get("yingshou"))
@@ -462,6 +501,8 @@ def classify_one(
         ceiling is not None
         and common.is_cny(rec.get("currency") or "")
         and float(local) > float(ceiling) + max(thr, TOL)
+        # A known delivery allows the same cumulative tail policy below.
+        and (deliver is None or not amount_policy.within_business_tolerance(local, deliver))
     ):
         result["code"] = "E4"
         src = "智云这单交付额" if deliver is not None else "你表里应收"
@@ -484,13 +525,7 @@ def classify_one(
     result["split_payment_source"]["amount_local"] = local_f
 
     if event_coverage is None:
-        event_coverage = ledger.payment_event_coverage(
-            so,
-            sod,
-            local_f,
-            r_time,
-            way,
-        )
+        event_coverage = _record_event_coverage({**rec, "amount_local": local_f}, ledger, rates)
         result["idempotence_audit"] = event_coverage
 
     # 所有目标行都已结账，但本批事件没有在表中留下可核对的证据时，
@@ -656,7 +691,7 @@ def classify_one(
     business_tail_settled = (
         settlement_delta is not None
         and abs(settlement_delta) > max(thr, TOL)
-        and abs(settlement_delta) <= BUSINESS_SETTLEMENT_TOL
+        and amount_policy.within_business_tolerance(cumulative_received, deliver)
     )
     if business_tail_settled:
         result["settlement_tolerance_audit"] = {
@@ -797,9 +832,8 @@ def classify_one(
     # 对不上，一律顶一个 ⚠ 到「怎么办」。以前只有 ratio 消歧路径会提醒，靠 SOD / SO 唯一行
     # 命中的（她已手动改过应收、或压根没写 SOD）就闷声按智云额填、不吭声——她要的是**每一笔
     # 都被明确检查一次**。回款明细用本次实际核销额，计提目标用智云最新交付额；只是多一句让她扫。
-    # align_note 已经说过（比例差）就不重复。
     disc_note = ""
-    if not align_note and baseline_for_difference is not None:
+    if baseline_for_difference is not None:
         if abs(jiti_target - float(baseline_for_difference)) > max(thr, TOL):
             disc_note = (
                 f"⚠ 智云最新实际交付额 {jiti_target} 与表里原始应收 "
@@ -827,7 +861,7 @@ def classify_one(
             "绝对值不超过 1.00 元，按业务结清尾差处理；实际回款金额保持不变，不新增未回款行"
         )
     tail = "；".join(
-        x for x in (align_note, disc_note, duplicate_note, settlement_note) if x
+        x for x in (disc_note, duplicate_note, settlement_note) if x
     )
     result["reason"] = f"{rec.get('match_basis') or '判定'} · 定位={how}" + (
         f"；{tail}" if tail else ""

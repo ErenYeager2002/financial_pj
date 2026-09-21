@@ -1,0 +1,11 @@
+# Restricted finance-only context; no dependency download or schema change.
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+COPY backend/app/adapters.py /app/backend/app/adapters.py
+COPY backend/app/draft_service.py /app/backend/app/draft_service.py
+COPY backend/app/events.py /app/backend/app/events.py
+COPY backend/app/main.py /app/backend/app/main.py
+COPY backend/app/routers/assistant.py /app/backend/app/routers/assistant.py
+COPY backend/app/run_service.py /app/backend/app/run_service.py
+COPY backend/app/worker.py /app/backend/app/worker.py
+USER 10001:10001

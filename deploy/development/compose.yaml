@@ -83,9 +83,21 @@ services:
     <<: *backend
     restart: "no"
     command:
-      - /bin/sh
-      - -ec
-      - cd /app && python -m alembic -c /app/alembic.ini upgrade head
+      - python
+      - -m
+      - app.infrastructure.database.cli
+      - --dialect
+      - postgresql
+      - --host
+      - postgres
+      - --port
+      - "5432"
+      - --database
+      - financial
+      - --expected-revision
+      - ${FINANCIAL_MIGRATION_EXPECTED_REVISION:?Set the reviewed existing revision or none for a new database}
+      - --target-revision
+      - ${FINANCIAL_MIGRATION_TARGET_REVISION:?Set the reviewed exact target revision}
     depends_on:
       postgres:
         condition: service_healthy

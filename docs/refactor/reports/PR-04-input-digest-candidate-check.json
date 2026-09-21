@@ -1,0 +1,10 @@
+{
+  "image": "sha256:d60f2a7c0063a54352d8fa28468d9838fe55d8144d2715b319a9898429a99352",
+  "exit_code": 0,
+  "skill_preservation": {
+    "skill_files": 209,
+    "mismatches": []
+  },
+  "stdout": "{\"previous_revision\": \"f2a3b4c5d6e7\", \"target_revision\": \"f3a4b5c6d7e8\", \"upgrade\": \"passed\", \"repeat_migration\": \"passed\", \"single_seed\": \"passed\", \"no_ddl_role_runtime_check\": \"passed\"}\n{\"candidate_transaction_rollback\": \"passed\", \"candidate_claim\": \"passed\", \"candidate_independent_progress\": \"passed\", \"candidate_failure_discards_unpublished_result\": \"passed\"}\n",
+  "stderr": ""
+}

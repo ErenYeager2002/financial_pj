@@ -1,0 +1,49 @@
+{
+  "at": "2026-09-20T04:37:59.585970+00:00",
+  "image": "sha256:a327561ba9112cb6658f887c84e4a54329e160c0f0ea1b15e00ffc691f50cbfa",
+  "services": {
+    "api": {
+      "image": "sha256:a327561ba9112cb6658f887c84e4a54329e160c0f0ea1b15e00ffc691f50cbfa",
+      "restarts": 0,
+      "verification": {
+        "hashes": "matched",
+        "file_count": 196,
+        "uid": 10001,
+        "revision": "f3a4b5c6d7e8",
+        "replay_only": false
+      }
+    },
+    "worker-standard": {
+      "image": "sha256:a327561ba9112cb6658f887c84e4a54329e160c0f0ea1b15e00ffc691f50cbfa",
+      "restarts": 0,
+      "verification": {
+        "hashes": "matched",
+        "file_count": 196,
+        "uid": 10001,
+        "revision": "f3a4b5c6d7e8",
+        "replay_only": false
+      }
+    },
+    "worker-task-discovery": {
+      "image": "sha256:a327561ba9112cb6658f887c84e4a54329e160c0f0ea1b15e00ffc691f50cbfa",
+      "restarts": 0,
+      "verification": {
+        "hashes": "matched",
+        "file_count": 196,
+        "uid": 10001,
+        "revision": "f3a4b5c6d7e8",
+        "replay_only": false
+      }
+    }
+  },
+  "platform": {
+    "mode": "normal",
+    "task_counts": {
+      "runs": 0,
+      "batches": 0,
+      "actions": 0,
+      "discovery": 0,
+      "assistant": 0
+    }
+  }
+}

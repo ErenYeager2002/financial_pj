@@ -71,3 +71,13 @@
 Pi model-broker 与 egress 的 Compose 标签指向当前发布源码中的 deployment/compose.pi-runtime.yaml。另有 3 个独立 Pi 会话容器，未记录用户或会话标识。financial-native-sandbox.service 和 financial-pi-runtime.service 在 systemd 中 active/running。
 
 未检查系统计划任务和各 systemd ExecStart 对应源码哈希；PR-00 部署盘点仍未完成。
+
+## 2026-09-18 运行文件回读
+
+只读探针结果见 reports/runtime-source-map.json。API、standard/discovery Worker 内 workflow_service.py、ar_execution_runner.py、worker.py 共 9 次文件哈希回读，与当前发布目录及重构工作树对应文件一致；这只证明选定文件，不代表全镜像与源码一致。
+
+Native sandbox 与 Pi runtime 的两个 systemd 单元 active/running；单元文件及实际主进程引用的 Python 脚本哈希均与仓库对应文件一致，主进程仍引用 rebuild-e95b527 发布目录。Agent Worker 是 Node 运行环境，不能用 Python 源码探针判断其未部署；已记录可见构建产物哈希，源码到构建产物的映射尚未验证。Next 等服务仅记录镜像与状态。
+
+lee 用户 crontab 有 1 条名称匹配本平台的任务，已保存时间字段、脚本路径与哈希，不复制命令中的潜在敏感参数。root crontab 读取退出 1，不据此断言绝无计划任务。没有发现名称匹配 financial 的 systemd timer；通用包装脚本、其他用户、at 和外部调度仍需核实。未读取业务记录或环境变量，未重启服务。
+
+文件保留 cron 已确认不是容器内部路径：宿主 Python 直接执行不存在的 deployment/retain_files.py，日志有对应无法打开文件证据。属于配置存在且定时调用、执行入口失效；运行情况详见 runtime-source-map.json。PR-00 未更改定时任务。

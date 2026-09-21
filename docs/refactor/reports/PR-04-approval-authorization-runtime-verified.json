@@ -1,0 +1,57 @@
+{
+  "at": "2026-09-20T08:21:18.644156+00:00",
+  "image": "sha256:a2058278611fe69958e79ed76f153ab67036b98be5d8b75dd8b7ec43c7280631",
+  "backend_hash_count": 202,
+  "preserved_ar_skill_hash_count": 240,
+  "services": {
+    "api": {
+      "hash_count": 442,
+      "mismatches": [],
+      "uid": 10001,
+      "revisions": [
+        "f4b5c6d7e8f9"
+      ],
+      "replay_only": false,
+      "image": "sha256:a2058278611fe69958e79ed76f153ab67036b98be5d8b75dd8b7ec43c7280631",
+      "status": "running",
+      "restarts": 0
+    },
+    "worker-standard": {
+      "hash_count": 442,
+      "mismatches": [],
+      "uid": 10001,
+      "revisions": [
+        "f4b5c6d7e8f9"
+      ],
+      "replay_only": false,
+      "image": "sha256:a2058278611fe69958e79ed76f153ab67036b98be5d8b75dd8b7ec43c7280631",
+      "status": "running",
+      "restarts": 0
+    },
+    "worker-task-discovery": {
+      "hash_count": 442,
+      "mismatches": [],
+      "uid": 10001,
+      "revisions": [
+        "f4b5c6d7e8f9"
+      ],
+      "replay_only": false,
+      "image": "sha256:a2058278611fe69958e79ed76f153ab67036b98be5d8b75dd8b7ec43c7280631",
+      "status": "running",
+      "restarts": 0
+    }
+  },
+  "anonymous_http": {
+    "/api/admin/approvals": 401,
+    "/api/admin/approvals/unknown/decision": 401
+  },
+  "mode": "normal",
+  "public_mode": "normal",
+  "active_counts": {
+    "runs": 0,
+    "batches": 0,
+    "actions": 0,
+    "discovery": 0,
+    "assistant": 0
+  }
+}

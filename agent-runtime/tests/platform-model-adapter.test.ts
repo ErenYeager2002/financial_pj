@@ -7,7 +7,7 @@ test('platform model binds workflow connection fields into the gateway payload',
     modelId: 'synthetic-workflow-model',
     gatewayUrl: 'https://platform.synthetic.example/api/assistant/model',
     accessToken: 'platform-session-token',
-    gatewayFields: { connection_id: 'connection-1' }
+    gatewayFields: { connection_id: 'connection-1', attempt: 2 }
   });
   let captured: Record<string, unknown> | undefined;
   let requestedUrl = '';
@@ -48,6 +48,7 @@ test('platform model binds workflow connection fields into the gateway payload',
     'https://platform.synthetic.example/api/assistant/model/chat/completions'
   );
   assert.equal(captured?.connection_id, 'connection-1');
+  assert.equal(captured?.attempt, 2);
   assert.equal(captured?.stream, true);
   assert.equal('store' in (captured ?? {}), false);
   assert.equal('prompt_cache_key' in (captured ?? {}), false);

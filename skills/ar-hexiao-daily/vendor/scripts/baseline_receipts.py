@@ -45,12 +45,12 @@ def normalized(row: dict) -> dict:
     return result
 
 
-def ledger_rows(ledger, so: str, sod: str) -> dict:
+def ledger_rows(ledger, so: str, sod: str, row=None) -> dict:
     aliases = dict(zip(FIELDS, ("so", "sod", "yingshou", "jiti", "huikuan", "jiezhang",
                                "shoukuan_time", "shoukuan_way", "chayi")))
     return {str(ref): normalized({key: ledger.row_snapshot[ref].get(alias)
                                  for key, alias in aliases.items()})
-            for ref in ledger.business_rows(so, sod)}
+            for ref in (ledger.business_rows(so, sod, row) if row is not None else ledger.business_rows(so, sod))}
 
 
 def group_key(so, sod):
@@ -91,12 +91,12 @@ def candidate(rec: dict, result: dict, ledger) -> dict | None:
     blank_receipts = [row for row in values if row["应收金额"] is None and (cents(row["回款明细"]) or 0) > 0]
     preserved = (bool(rec.get("receivable_group_scope")) and delivery != baseline) or bool(journal and not journal.get("scope_only")) or bool(len(nonblank) == 1 and blank_receipts)
     prospective = cumulative if cumulative is not None else received + (amount or 0)
+    # Delivery above the original receivable uses blank-receivable installments
+    # from the first partial receipt; do not wait until receipts exceed baseline.
     # D == B0 uses ordinary splitting unless historical structure pins this mode.
     changed = delivery is not None and delivery != baseline
-    batch_total = cents(rec.get("_baseline_batch_cumulative"))
     first_total = cents(rec.get("_baseline_batch_first_cumulative"))
     select = preserved or (changed and delivery > baseline and
-                          max(prospective, batch_total or 0) > baseline and
                           min(prospective, first_total if first_total is not None else prospective) < delivery)
     if not select:
         return None
@@ -373,7 +373,9 @@ def check(item: dict, rows: dict) -> dict:
 def merge_journal(existing: dict, checked: dict) -> dict:
     """Called only after successful write/readback, or in isolated review copies."""
     import receipt_history
-    updated = receipt_history.merge(existing, checked)
+    import ordinary_receipt_identity
+    ordinary_receipt_identity.preflight(existing, checked)
+    updated = ordinary_receipt_identity.merge(receipt_history.merge(existing, checked), checked)
     writes = checked.get("write") or []
     handled = set()
     for item in writes:
@@ -429,7 +431,17 @@ def validate_journal(groups: dict) -> None:
         if not isinstance(group, dict) or not isinstance(group.get("events"), dict) or (cents(group.get("baseline_receivable")) or 0) <= 0:
             raise ValueError("回款身份台账缺少历史应收或事件集合")
         scope = group.get("receivable_group_scope")
-        if group.get("scope_only") and ((not scope and not group.get("ordinary_events")) or group["events"]):
+        unbound_ordinary = group.get("unbound_ordinary_events", {})
+        if not isinstance(unbound_ordinary, dict):
+            raise ValueError("已解除绑定的普通回款存档结构无效")
+        if unbound_ordinary:
+            # 存档接受同等身份、金额和日期校验，但不计入当前已写回款。
+            validate_journal({key: {
+                "baseline_receivable": group["baseline_receivable"],
+                "scope_only": True, "events": {},
+                "ordinary_events": unbound_ordinary,
+            }})
+        if group.get("scope_only") and ((not scope and not group.get("ordinary_events") and not unbound_ordinary) or group["events"]):
             raise ValueError("普通应收组口径登记不能包含保留应收回款事件")
         if scope and (not isinstance(scope, dict) or scope.get("basis") != "so_latest_delivery" or
                       key != group_key(scope.get("so"), scope.get("ledger_sod")) or
@@ -448,9 +460,12 @@ def validate_journal(groups: dict) -> None:
                 if (len(parts) != 4 or group_key(parts[1], parts[2]) != key or not all(parts)
                         or len(sig) != 3 or (cents(sig[0]) or 0) <= 0
                         or not common.norm_date(sig[1]) or not sig[2]
-                        or tuple(sig) in ordinary_signatures):
+                        or not isinstance(event.get('signature_index', 0), int)
+                        or isinstance(event.get('signature_index', 0), bool)
+                        or event.get('signature_index', 0) < 0
+                        or (tuple(sig), event.get('signature_index', 0)) in ordinary_signatures):
                     raise ValueError("普通回款身份或金额无效")
-                ordinary_signatures.add(tuple(sig))
+                ordinary_signatures.add((tuple(sig), event.get('signature_index', 0)))
             except (ValueError, TypeError, KeyError, IndexError) as exc:
                 raise ValueError("普通回款身份无法核实") from exc
         slots = set()

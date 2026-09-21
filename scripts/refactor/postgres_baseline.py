@@ -1,4 +1,5 @@
 """Disposable PostgreSQL baseline; no production network, mounts, or ports."""
+import argparse
 import json
 import os
 from pathlib import Path
@@ -16,7 +17,7 @@ def command(args, **kwargs):
 def cleanup(name, identity):
     value = command(["docker", "inspect", name, "--format", '{{json .Config.Labels}}'], timeout=10)
     if value.returncode:
-        if "No such object" in value.stderr or "No such container" in value.stderr: return
+        if "no such object" in value.stderr.lower() or "no such container" in value.stderr.lower(): return
         raise RuntimeError("TEST_CONTAINER_INSPECTION_FAILED")
     labels = json.loads(value.stdout)
     if labels.get(LABEL) != identity: raise RuntimeError("TEST_CONTAINER_CLEANUP_OWNERSHIP_MISMATCH")
@@ -24,13 +25,16 @@ def cleanup(name, identity):
     if result.returncode: raise RuntimeError("TEST_CONTAINER_CLEANUP_FAILED")
 
 
-def main():
+def main(argv=()):
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--suite", choices=["pi-attempt", "approval-authorization", "execution-lifecycle", "execution-authorization", "postgres-integration", "migration-postgres", "transactions-postgres", "submission-reservations", "native-identity", "submission-orchestration", "draft-locking", "ordinary-e2e", "draft-submission"], default="postgres-integration")
+    args = parser.parse_args(argv)
     identity = uuid.uuid4().hex
     name = "financial-refactor-pg-" + identity[:12]
     test_name = "financial-refactor-client-" + identity[:12]
     try:
         result = command(["docker", "run", "-d", "--name", name, "--label", LABEL+"="+identity,
-            "--network", "none", "--tmpfs", "/var/lib/postgresql/data:rw,size=512m", "--tmpfs", "/var/run/postgresql",
+            "--network", "none", "--tmpfs", "/var/lib/postgresql/data:rw,size=1g", "--tmpfs", "/var/run/postgresql",
             "-e", "POSTGRES_DB=financial_refactor_test_retention", "-e", "POSTGRES_USER=synthetic",
             "-e", "POSTGRES_PASSWORD=synthetic-only",
             os.environ.get("REFACTOR_POSTGRES_IMAGE", "docker.m.daocloud.io/library/postgres:16-alpine")], timeout=60)
@@ -44,7 +48,7 @@ def main():
             "--tmpfs", "/tmp:rw,size=512m", "-v", str(ROOT)+":/workspace:ro", "-w", "/workspace",
             "-e", "REFACTOR_POSTGRES_URL=postgresql+psycopg://synthetic:synthetic-only@127.0.0.1:5432/financial_refactor_test_retention",
             "--entrypoint", "python", os.environ.get("REFACTOR_BACKEND_TEST_IMAGE", "financial-refactor-test:baseline-20260918"), "-B",
-            "scripts/refactor/check.py", "--suite", "postgres-integration", "--timeout", "180"], timeout=210)
+            "scripts/refactor/check.py", "--suite", args.suite, "--timeout", "180"], timeout=210)
         print(result.stdout)
         if result.stderr: print(result.stderr, file=sys.stderr)
         return result.returncode
@@ -55,4 +59,4 @@ def main():
             except Exception as error: errors.append(error)
         if errors: raise RuntimeError("TEST_CONTAINER_CLEANUP_INCOMPLETE") from errors[0]
 
-if __name__ == '__main__': raise SystemExit(main())
+if __name__ == '__main__': raise SystemExit(main(sys.argv[1:]))

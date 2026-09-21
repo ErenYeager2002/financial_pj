@@ -141,8 +141,11 @@ def _git_command(repository: Path | None, *args: str, timeout: int = 120) -> byt
 
 
 @contextmanager
-def _source_guard() -> Iterator[None]:
-    with _SOURCE_LOCK:
+def _source_guard(*, blocking: bool = True) -> Iterator[None]:
+    busy = "另一个 Skill 源码检查仍在进行，请稍后重试。"
+    if not _SOURCE_LOCK.acquire(blocking=blocking):
+        raise HTTPException(status_code=409, detail=busy)
+    try:
         lock_path = settings.data_dir / ".skill-source.fetch.lock"
         lock_path.parent.mkdir(parents=True, exist_ok=True)
         with lock_path.open("a+b") as handle:
@@ -153,18 +156,14 @@ def _source_guard() -> Iterator[None]:
             handle.seek(0)
             if os.name == "nt":
                 import msvcrt
-
-                deadline = time.monotonic() + 30
+                deadline = time.monotonic() + (30 if blocking else 0)
                 while True:
                     try:
                         msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
                         break
                     except OSError as exc:
                         if time.monotonic() >= deadline:
-                            raise HTTPException(
-                                status_code=409,
-                                detail="另一个 Skill 源码检查仍在进行，请稍后重试。",
-                            ) from exc
+                            raise HTTPException(status_code=409, detail=busy) from exc
                         time.sleep(0.1)
                 try:
                     yield
@@ -173,12 +172,16 @@ def _source_guard() -> Iterator[None]:
                     msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
             else:
                 import fcntl
-
-                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+                try:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | (0 if blocking else fcntl.LOCK_NB))
+                except BlockingIOError as exc:
+                    raise HTTPException(status_code=409, detail=busy) from exc
                 try:
                     yield
                 finally:
                     fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    finally:
+        _SOURCE_LOCK.release()
 
 
 def _tree_sha256_directory(root: Path) -> str:

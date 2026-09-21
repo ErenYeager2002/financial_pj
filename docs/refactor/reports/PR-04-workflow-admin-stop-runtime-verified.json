@@ -1,0 +1,57 @@
+{
+  "at": "2026-09-20T07:39:27.699843+00:00",
+  "image": "sha256:34623fa49afc199e07cdbc2df0e7a33e25d7074618faa8950dd86e25c9d55933",
+  "backend_hash_count": 199,
+  "preserved_ar_skill_hash_count": 236,
+  "services": {
+    "api": {
+      "hash_count": 435,
+      "mismatches": [],
+      "uid": 10001,
+      "revisions": [
+        "f3a4b5c6d7e8"
+      ],
+      "replay_only": false,
+      "image": "sha256:34623fa49afc199e07cdbc2df0e7a33e25d7074618faa8950dd86e25c9d55933",
+      "status": "running",
+      "restarts": 0
+    },
+    "worker-standard": {
+      "hash_count": 435,
+      "mismatches": [],
+      "uid": 10001,
+      "revisions": [
+        "f3a4b5c6d7e8"
+      ],
+      "replay_only": false,
+      "image": "sha256:34623fa49afc199e07cdbc2df0e7a33e25d7074618faa8950dd86e25c9d55933",
+      "status": "running",
+      "restarts": 0
+    },
+    "worker-task-discovery": {
+      "hash_count": 435,
+      "mismatches": [],
+      "uid": 10001,
+      "revisions": [
+        "f3a4b5c6d7e8"
+      ],
+      "replay_only": false,
+      "image": "sha256:34623fa49afc199e07cdbc2df0e7a33e25d7074618faa8950dd86e25c9d55933",
+      "status": "running",
+      "restarts": 0
+    }
+  },
+  "anonymous_http": {
+    "/api/admin/workflows/unknown/stop-disabled-owner": 401,
+    "/api/admin/workflow-batches/unknown/stop-disabled-owner": 401
+  },
+  "mode": "normal",
+  "public_mode": "normal",
+  "active_counts": {
+    "runs": 1,
+    "batches": 0,
+    "actions": 0,
+    "discovery": 0,
+    "assistant": 0
+  }
+}

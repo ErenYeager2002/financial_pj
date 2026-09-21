@@ -1,0 +1,8 @@
+{
+  "started_at": "2026-09-20T03:06:28.618866+00:00",
+  "finished_at": "2026-09-20T03:07:59.034169+00:00",
+  "candidate_image": "sha256:826d3ab09bccbe654f8f0f8cdc7c37ee10a79abd1053ace6029d13f61b6650c3",
+  "recovery_image": "sha256:917890ff4cb7d01d73d47704954d8e7cb76c91867d53652223fd225c51af5335",
+  "exit_code": 0,
+  "output": "Maintenance mode: notice\nUnfinished task counts: {\"runs\": 0, \"batches\": 0, \"actions\": 0, \"discovery\": 0, \"assistant\": 0}\nUnfinished task counts: {\"runs\": 0, \"batches\": 0, \"actions\": 0, \"discovery\": 0, \"assistant\": 0}\nUnfinished task counts: {\"runs\": 0, \"batches\": 0, \"actions\": 0, \"discovery\": 0, \"assistant\": 0}\nMaintenance mode: full\nUnfinished task counts: {\"runs\": 0, \"batches\": 0, \"actions\": 0, \"discovery\": 0, \"assistant\": 0}\nUnfinished task counts: {\"runs\": 0, \"batches\": 0, \"actions\": 0, \"discovery\": 0, \"assistant\": 0}\nUnfinished task counts: {\"runs\": 0, \"batches\": 0, \"actions\": 0, \"discovery\": 0, \"assistant\": 0}\nUnfinished task counts: {\"runs\": 0, \"batches\": 0, \"actions\": 0, \"discovery\": 0, \"assistant\": 0}\nUnfinished task counts: {\"runs\": 0, \"batches\": 0, \"actions\": 0, \"discovery\": 0, \"assistant\": 0}\nUnfinished task counts: {\"runs\": 0, \"batches\": 0, \"actions\": 0, \"discovery\": 0, \"assistant\": 0}\nMaintenance mode: normal\n{\"at\": \"2026-09-20T03:07:59.021136+00:00\", \"outcome\": \"succeeded\", \"plan\": \"backend-schema\", \"mode\": \"normal\"}\n"
+}

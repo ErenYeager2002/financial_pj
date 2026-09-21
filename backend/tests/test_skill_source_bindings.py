@@ -11,7 +11,8 @@ from helpers import auth_client
 from sqlalchemy import delete, select
 
 from app import skill_source_service
-from app.database import SessionLocal, init_db
+from app.database import SessionLocal
+from db_setup import migrate_test_database
 from app.models import AuditEvent, SkillSourceBinding
 
 REPOSITORY = "https://gitee.com/Lee157/finance-skills.git"
@@ -20,7 +21,7 @@ COMMIT = "7f4f2d8622a3c50a8159c1ff4fc1c3a9e818be16"
 
 @pytest.fixture(autouse=True)
 def isolate_source_bindings():
-    init_db()
+    migrate_test_database()
     with SessionLocal() as db:
         db.execute(delete(SkillSourceBinding))
         db.commit()

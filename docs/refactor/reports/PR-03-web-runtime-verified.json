@@ -1,0 +1,14 @@
+{
+  "image": "sha256:882434f388fd1f7598af3d2e505f891a3eb90c1282cd7b1e9870ea91b63fefbb",
+  "status": "running",
+  "restarts": 0,
+  "probe": {
+    "source_digest": "dc3a9f25c2b84389a7ab35b902fd0fac0e56f8785cf8f6ff62ed0e4b48c818c6",
+    "checks": {
+      "/auth/sign-in": 200,
+      "/api/auth/session": 401,
+      "/api/platform/submissions/00000000-0000-4000-8000-000000000000": 401
+    }
+  },
+  "check": "{\"mode\": \"normal\", \"task_counts\": {\"runs\": 0, \"batches\": 0, \"actions\": 0, \"discovery\": 0, \"assistant\": 0}, \"read_only\": true, \"plan\": \"check\"}\n"
+}

@@ -4,7 +4,9 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import text
 
-from app.database import SessionLocal, init_db
+from app.database import SessionLocal
+from db_setup import migrate_test_database
+from test_refactor_event_transactions import database
 from app.models import WorkflowAction, WorkflowSession
 from app.leases import LeaseHeartbeat
 from app.workflow_service import pi_harness_task_context
@@ -14,7 +16,7 @@ from app.ar_evidence_paging import PAGE_BYTES, detail_page
 
 
 def test_context_orders_reloaded_and_new_actions_by_actual_time():
-    init_db()
+    migrate_test_database()
     with SessionLocal() as db:
         workflow = WorkflowSession(
             id=str(uuid4()), owner_id="boundary-test", owner_name="Test", department_id="test",
@@ -37,23 +39,31 @@ def test_context_orders_reloaded_and_new_actions_by_actual_time():
         db.rollback()
 
 
-def test_v2_action_heartbeat_preserves_queue_isolation():
-    init_db()
-    with SessionLocal() as db:
-        action = WorkflowAction(id=str(uuid4()), workflow_id="isolated-heartbeat", name="ar_write_ledger",
-            state="ar_v2:running", worker_id="v2-worker", lease_expires_at=datetime.now(UTC) - timedelta(seconds=1))
+def test_v2_action_heartbeat_preserves_queue_isolation(database, monkeypatch):
+    from sqlalchemy.orm import Session
+    from app import leases
+    from test_execution_authorization import _cancellation_fixture
+    monkeypatch.setattr(leases, "SessionLocal", lambda: Session(database))
+    with Session(database) as db:
+        _cancellation_fixture(db, "workflow")
+        db.flush()
+        action = WorkflowAction(id=str(uuid4()), workflow_id="cancel-workflow", name="ar_write_ledger",
+            state="ar_v2:running", worker_id="v2-worker", attempt_count=1,
+            lease_expires_at=datetime.now(UTC)+timedelta(seconds=30))
         db.add(action)
         db.commit()
-        LeaseHeartbeat("workflow_action", action.id, "wrong-worker")._touch()
+        original_deadline = action.lease_expires_at
+        assert not LeaseHeartbeat("workflow_action", action.id, "wrong-worker", attempt=1)._touch()
         db.refresh(action)
-        assert action.lease_expires_at.replace(tzinfo=UTC) < datetime.now(UTC)
-        LeaseHeartbeat("workflow_action", action.id, "v2-worker")._touch()
+        assert action.lease_expires_at == original_deadline
+        assert LeaseHeartbeat("workflow_action", action.id, "v2-worker", attempt=1)._touch()
         db.refresh(action)
         assert action.lease_expires_at.replace(tzinfo=UTC) > datetime.now(UTC)
-        assert db.execute(text("select state from workflow_actions where id=:id"), {"id": action.id}).scalar_one() == "ar_v2:running"
-        assert db.execute(text("select count(*) from workflow_actions where id=:id and state='running'"), {"id": action.id}).scalar_one() == 0
-        action.state = "cancelled"
+        assert db.execute(text("select state from workflow_actions where id=:id"), {"id":action.id}).scalar_one() == "ar_v2:running"
+        assert db.execute(text("select count(*) from workflow_actions where id=:id and state='running'"), {"id":action.id}).scalar_one() == 0
+        action.lease_expires_at = datetime.now(UTC)-timedelta(seconds=1)
         db.commit()
+        assert not LeaseHeartbeat("workflow_action", action.id, "v2-worker", attempt=1)._touch()
 
 
 def test_final_evidence_requires_current_complete_detail_not_summary_or_initial_read():

@@ -1,0 +1,18 @@
+{
+  "missing_tables": [
+    "assistant_turns"
+  ],
+  "missing_columns": {},
+  "missing_indexes": {
+    "fetched_bundles": [
+      "ix_fetched_bundles_department_id",
+      "ix_fetched_bundles_owner_id",
+      "ix_fetched_bundles_skill_id",
+      "ix_fetched_bundles_source_workflow_id",
+      "ix_fetched_bundles_state"
+    ],
+    "fetched_bundle_files": [
+      "ix_fetched_bundle_files_reconciliation_date"
+    ]
+  }
+}

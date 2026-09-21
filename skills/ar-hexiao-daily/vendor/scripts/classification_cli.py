@@ -110,9 +110,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             payments = payments_from_fixture(json.loads(Path(args.fixture).read_text(encoding="utf-8")))
         else:
             payments = load_exports(ws, target_date=requested_date)
-        allocation_state = FAL.load(ws)
-        for ledger in ledgers.values():
-            ledger.baseline_receipt_state = allocation_state.get("baseline_receipts") or {}
+        import current_run_basis
+        allocation_state = current_run_basis.initialize(ledgers.values())
         import current_parent_allocation
         for payment in payments:
             current_parent_allocation.attach(payment, ledgers, payments=payments)
@@ -211,7 +210,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "itemized_fee_policy": "whole_parent_conservation_then_no_double_allocation",
         "writeoff_basis": "zhiyun_current_writeoff_direct",
         "parent_fallback_allocation": "missing_itemized_amount_delivery_ascending_outstanding_waterfall",
-        "parent_fallback_state": FAL.LEDGER_NAME,
+        "parent_fallback_state": "current_plan_audit_only",
+        "decision_basis": current_run_basis.POLICY,
         "ledger_settled_precheck": (
             "all_so_business_rows_settled_skip_without_financial_write_else_current_event_signature"
         ),

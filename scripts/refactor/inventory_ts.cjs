@@ -4,7 +4,19 @@ const path = require('node:path');
 const ts = require(process.env.REFACTOR_TYPESCRIPT_PATH || 'typescript');
 const input = JSON.parse(fs.readFileSync(0, 'utf8'));
 const {safeSource} = require('./safe_source.cjs');
+const {classify} = require('./ts_facts.cjs');
+const crypto = require('node:crypto');
 const records = [];
+const assets = [];
+const manifests = [];
+for (const name of input.files.filter(n => /\.(css|scss|sass|less)$/.test(n) || /(?:^|\/)package\.json$/.test(n))) {
+  const content = fs.readFileSync(safeSource(input.root, name));
+  const sha256 = crypto.createHash('sha256').update(content).digest('hex');
+  if (name.endsWith('package.json')) {
+    const pkg = JSON.parse(content);
+    manifests.push({path:name,sha256,dependencies:pkg.dependencies || {},devDependencies:pkg.devDependencies || {},peerDependencies:pkg.peerDependencies || {},scripts:Object.keys(pkg.scripts || {})});
+  } else assets.push({path:name,sha256,kind:'stylesheet'});
+}
 for (const name of input.files.filter(n => /\.(ts|tsx|js|jsx|mjs|cjs)$/.test(n))) {
   const absolute = safeSource(input.root, name);
   const source = ts.createSourceFile(name, fs.readFileSync(absolute, 'utf8'), ts.ScriptTarget.Latest, true);
@@ -26,6 +38,6 @@ for (const name of input.files.filter(n => /\.(ts|tsx|js|jsx|mjs|cjs)$/.test(n))
     if (ts.isPropertyAssignment(node) && node.name.getText(source)==='queryKey') record.query_keys.push({line:line(node),kind:ts.SyntaxKind[node.initializer.kind]});
     ts.forEachChild(node,walk);
   }
-  walk(source);records.push(record);
+  walk(source);Object.assign(record,classify(ts,source,name));records.push(record);
 }
-process.stdout.write(JSON.stringify({schema_version:'typescript-inventory-v1',compiler:ts.version,files:records}));
+process.stdout.write(JSON.stringify({schema_version:'typescript-inventory-v2',compiler:ts.version,files:records,stylesheets:assets,package_manifests:manifests,limitations:['Static candidates only; JSX-free wrappers and runtime injection require manual mapping','Query literal values are intentionally omitted','Model SDK calls include non-generation APIs; candidates are not confirmed requests']}));

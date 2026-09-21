@@ -1,0 +1,5 @@
+{
+  "returncode": 0,
+  "stdout": "{\"mode\": \"normal\", \"task_counts\": {\"runs\": 0, \"batches\": 1, \"actions\": 1, \"discovery\": 0, \"assistant\": 0}, \"read_only\": true, \"plan\": \"backend-schema\", \"services\": [\"api\", \"worker-standard\", \"worker-task-discovery\", \"worker-agent\"]}\n",
+  "stderr": ""
+}

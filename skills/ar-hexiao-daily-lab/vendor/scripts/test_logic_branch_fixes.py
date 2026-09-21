@@ -64,7 +64,9 @@ class IdentityCorrections(unittest.TestCase):
             self.assertEqual(V.check_one(result,actual)['verdict'],'conflict')
         unowned=copy.deepcopy(ledger);unowned.baseline_receipt_state[key]['events'].pop(BR.event_key(rec))
         result=classify_one(rec,unowned,{},.01,2026)
-        self.assertEqual(result['baseline_receipt_audit']['disposition'],'conflict')
+        self.assertEqual(result['code'],'OK_SO_ALREADY_SETTLED')
+        self.assertEqual(result['five_cols'],{})
+        self.assertNotIn('baseline_receipt_audit',result)
 
 
     def test_zero_difference_representation(self):

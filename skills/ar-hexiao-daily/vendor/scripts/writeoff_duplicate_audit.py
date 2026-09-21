@@ -303,6 +303,49 @@ def _audit_whole_payment_orders(
     return logical, audit
 
 
+def _order_duplicate_evidence(payment, rows, basis, tolerance_cents):
+    """A remaining parent balance must not hide an exact duplicate at SO level."""
+    by_so = defaultdict(list)
+    for row in rows:
+        by_so[str(row.get("so") or "").strip()].append(row)
+    orders = defaultdict(list)
+    for order in payment.get("orders") or []:
+        orders[str(order.get("so") or "").strip()].append(order)
+    evidence = {}
+    amount_key = "amount_local" if basis == "detail_local" else "amount"
+    delivery_key = "deliver_local" if basis == "detail_local" else "deliver"
+    for so, group in by_so.items():
+        linked = orders.get(so, [])
+        capacities = {_cents(order.get(delivery_key)) for order in linked}
+        if len(capacities) != 1 or None in capacities:
+            continue
+        capacity = next(iter(capacities))
+        if capacity <= 0 or len(group) < 2:
+            continue
+        currencies = {_currency(row.get("currency")) for row in group}
+        if not all(currencies) or len(currencies) != 1:
+            continue
+        if basis == "detail_original" and any(_currency(order.get("currency")) not in currencies for order in linked):
+            continue
+        ids = [str(row.get("record_id") or "").strip() for row in group]
+        dates = {str(row.get("date") or "") for row in group}
+        if not all(ids) or len(set(ids)) != len(ids) or len(dates) != 1 or not all(dates):
+            continue
+        amounts = [_cents(row.get(amount_key)) for row in group]
+        if any(value is None or value <= 0 for value in amounts) or sum(amounts) <= capacity + tolerance_cents:
+            continue
+        unique = {}
+        for row in group:
+            identity = (_cents(row.get("amount")), _cents(row.get("amount_local")), _currency(row.get("currency")))
+            unique[identity] = _cents(row.get(amount_key))
+        folded = sum(unique.values())
+        if len(unique) < len(group) and abs(folded - capacity) <= tolerance_cents:
+            evidence[so] = {"basis": basis, "delivery": _money(capacity),
+                            "raw_total": _money(sum(amounts)), "folded_total": _money(folded),
+                            "record_ids": sorted(ids), "date": next(iter(dates))}
+    return evidence
+
+
 def audit_parent_writeoffs(
     payment: dict,
     raw_rows: Iterable[dict],
@@ -480,7 +523,9 @@ def audit_parent_writeoffs(
     audit["delta_dedup"] = _money(delta_raw_cents)
     audit["delta"] = _money(delta_raw_cents)
 
-    if delta_raw_cents >= -tolerance_cents:
+    order_duplicates = _order_duplicate_evidence(payment, physical_kept, basis, tolerance_cents)
+    audit["order_duplicate_evidence"] = order_duplicates
+    if delta_raw_cents >= -tolerance_cents and not order_duplicates:
         audit["status"] = "tolerance" if delta_raw_cents < 0 else "normal"
         audit["reason"] = (
             "负差在1元容差内，不启动相同SO同金额业务去重"
@@ -514,6 +559,8 @@ def audit_parent_writeoffs(
     duplicate_groups: List[dict] = []
     proposed_ignored_ids = set()
     for group in grouped.values():
+        if delta_raw_cents >= -tolerance_cents and str(group[0].get("so") or "").strip() not in order_duplicates:
+            continue
         ids = sorted(str(row.get("record_id") or "").strip() for row in group)
         if len(ids) <= 1 or len(set(ids)) <= 1:
             continue
@@ -565,6 +612,6 @@ def audit_parent_writeoffs(
             marked[index] = _public_row(
                 row,
                 "system_duplicate_ignored",
-                "明显超核销且精确重复折叠后恢复到1元容差内",
+                "订单级超核销且同日精确重复折叠后与交付额一致" if delta_raw_cents >= -tolerance_cents else "明显超核销且精确重复折叠后恢复到1元容差内",
             )
     return dedup_rows, audit

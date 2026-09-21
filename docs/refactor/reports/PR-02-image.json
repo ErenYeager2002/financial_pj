@@ -1,0 +1,15 @@
+{
+  "stage": "PR-02",
+  "base_image": "sha256:1a051c67b34d7151ad60dd818aa44ef91d3122827f65c922eff96c7badddb610",
+  "image_id": "sha256:ea30cc8f5de5a4dd50f29f943ab85aa757c6b2c23efd9a36e3245fed95bf87f7",
+  "source_hashes": {
+    "deployment/Dockerfile.refactor-pr02": "cd0df417ddf41ec8e7b3b546c2c9db6ccd506bc7027e6fb3daf5d6a61284b9b7",
+    "backend/app/adapters.py": "6e304369b939864d65bdb2ab769aa9adef3842b119a0e2776f09a919cf4306c1",
+    "backend/app/draft_service.py": "48f148e8b540c82e0b3a35bf6ba8c6c155624384407f5f7570b8abd6a06e4aba",
+    "backend/app/events.py": "0f31b680c2cda4f13f35e63306e5b64faaa3b7905ba16c9624c3d709beb66ae8",
+    "backend/app/main.py": "56ae891f733f761604c800819c518775b4252039e9e9283d39079e6bbaf87e5b",
+    "backend/app/routers/assistant.py": "80c6cab97fbd49e8d2a85054b8416442051a2081b1fb1f7b041e2fb1f39e12a6",
+    "backend/app/run_service.py": "b0825c3d8a51157325b4fe362b5c7d3558298094d4e0ae15de5314afb8fddfcb",
+    "backend/app/worker.py": "92dc47914cfaee7f33688ab15eb9eb81313e0761d8917e61abd0409fc6e3606b"
+  }
+}

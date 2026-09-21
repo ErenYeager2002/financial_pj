@@ -427,8 +427,13 @@ HASH_IGNORES = {
 
 
 def _hash_skill(manifest_path: Path, manifest: SkillManifest) -> str:
+    return hash_skill_directory(manifest_path.parent)
+
+
+def hash_skill_directory(directory: Path) -> str:
+    """Use the registry revision algorithm for source and staged snapshots."""
     digest = hashlib.sha256()
-    skill_dir = manifest_path.parent.resolve()
+    skill_dir = directory.resolve()
     for path in sorted(skill_dir.rglob("*"), key=lambda item: item.as_posix()):
         if not path.is_file() or any(part in HASH_IGNORES for part in path.parts):
             continue

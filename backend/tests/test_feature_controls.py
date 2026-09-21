@@ -3,13 +3,14 @@ from __future__ import annotations
 from helpers import auth_client
 from sqlalchemy import delete, select
 
-from app.database import SessionLocal, init_db
+from app.database import SessionLocal
+from db_setup import migrate_test_database
 from app.feature_control_service import TASK_DISCOVERY, task_discovery_enabled
 from app.models import AuditEvent, PlatformFeatureControl
 
 
 def _clear_task_discovery_override() -> None:
-    init_db()
+    migrate_test_database()
     with SessionLocal() as db:
         db.execute(
             delete(PlatformFeatureControl).where(PlatformFeatureControl.key == TASK_DISCOVERY)

@@ -55,6 +55,7 @@ def candidate_year(name: str) -> int | None:
 
 
 def material_candidates(db, user, skill_id, bindings, *, page=1, page_size=30):
+    from .ar_material_lifecycle import retired_file_ids
     # Defaults stay the current published business version. Candidates never
     # enter task bindings until explicitly submitted by the user.
     bound_ids = [entry["file_id"] for entries in bindings.values() for entry in entries]
@@ -62,11 +63,16 @@ def material_candidates(db, user, skill_id, bindings, *, page=1, page_size=30):
     result = {role: [dict(entry, selected=True) for entry in entries if entry["file_id"] not in hidden_bound]
               for role, entries in bindings.items()}
     existing = {entry["file_id"] for entries in result.values() for entry in entries}
+    from .ar_material_lifecycle import visible_material_set
+    current = visible_material_set(db, user.user_id, user.department_id, skill_id)
+    candidate_filters = [FileRecord.created_at >= current.created_at] if current else []
     records = list(db.scalars(select(FileRecord).where(
+        *candidate_filters,
         FileRecord.owner_id == user.user_id,
         FileRecord.department_id == user.department_id,
         FileRecord.skill_id == skill_id,
         FileRecord.kind == "input",
+        FileRecord.id.not_in(retired_file_ids()),
         FileRecord.id.not_in(hidden_candidate_ids(user)),
     ).order_by(FileRecord.created_at.desc(), FileRecord.id.desc())
       .offset((page - 1) * page_size).limit(page_size + 1)))

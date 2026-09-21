@@ -9,7 +9,8 @@ import pytest
 from fastapi import HTTPException
 
 from app import workflow_execution_policy, workflow_service
-from app.database import SessionLocal, init_db
+from app.database import SessionLocal
+from db_setup import migrate_test_database
 from app.models import FetchedBundle, WorkflowFetchedDataPreview, WorkflowSession
 
 
@@ -82,7 +83,7 @@ def test_snapshot_replay_cannot_queue_live_supplement() -> None:
     )
 
     with pytest.raises(HTTPException) as error:
-        workflow_service.request_fetched_data_supplement(
+        workflow_service._prepare_fetched_data_supplement(
             SimpleNamespace(), workflow, ["AR26070140"], []
         )
 
@@ -115,7 +116,7 @@ def test_fetch_history_distinguishes_replayable_bundle_from_purged_preview(
 ) -> None:
     date_value = "2026-08-26"
     monkeypatch.setattr(workflow_service, "assert_skill_permission", lambda *_args: None)
-    init_db()
+    migrate_test_database()
     marker = datetime.now(UTC).strftime("%H%M%S%f")
     owner_id = f"history-owner-{marker}"
     with SessionLocal() as db:

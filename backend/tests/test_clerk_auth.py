@@ -14,7 +14,8 @@ from app import auth as auth_module
 from app import clerk_auth as clerk_auth_module
 from app.auth_service import create_user, get_user_by_clerk_id
 from app.clerk_auth import ClerkIdentity, ClerkTokenError, verify_clerk_token
-from app.database import SessionLocal, init_db
+from app.database import SessionLocal
+from db_setup import migrate_test_database
 from app.main import app
 from app.routers import admin_users as admin_users_router_module
 from app.routers import auth as auth_router_module
@@ -35,7 +36,7 @@ def _mapped_user(
     status: str = "active",
     role: str = "finance_user",
 ) -> None:
-    init_db()
+    migrate_test_database()
     with SessionLocal() as db:
         user = create_user(
             db,

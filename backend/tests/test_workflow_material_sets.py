@@ -9,7 +9,8 @@ import pytest
 
 from app import workflow_service
 from app.auth import UserContext
-from app.database import SessionLocal, init_db
+from app.database import SessionLocal
+from db_setup import migrate_test_database
 from app.models import FileRecord, WorkflowSession
 from app.storage import file_delete_status, sha256_file
 from app.workflow_material_service import (
@@ -89,7 +90,7 @@ def _workflow(user: UserContext, material_set_id: str | None) -> WorkflowSession
 
 
 def test_legacy_started_workflow_establishes_first_material_version() -> None:
-    init_db()
+    migrate_test_database()
     user = _user("legacy-first")
     with SessionLocal() as db:
         ledger = _file(db, user, name="2026年盈亏核算表.xlsx")
@@ -120,7 +121,7 @@ def test_legacy_started_workflow_establishes_first_material_version() -> None:
 
 
 def test_legacy_started_workflow_binds_matching_current_version() -> None:
-    init_db()
+    migrate_test_database()
     user = _user("legacy-match")
     with SessionLocal() as db:
         ledger = _file(db, user, name="2026年盈亏核算表.xlsx")
@@ -149,7 +150,7 @@ def test_legacy_started_workflow_binds_matching_current_version() -> None:
 
 
 def test_legacy_started_workflow_cannot_replace_different_current_version() -> None:
-    init_db()
+    migrate_test_database()
     user = _user("legacy-conflict")
     with SessionLocal() as db:
         current_ledger = _file(db, user, name="2026年盈亏核算表.xlsx")
@@ -191,7 +192,7 @@ def test_legacy_started_workflow_cannot_replace_different_current_version() -> N
 
 
 def test_bound_stale_workflow_is_rejected_before_writing() -> None:
-    init_db()
+    migrate_test_database()
     user = _user("bound-stale")
     with SessionLocal() as db:
         ledger_v1 = _file(db, user, name="2026年盈亏核算表.xlsx")
@@ -234,7 +235,7 @@ def test_bound_stale_workflow_is_rejected_before_writing() -> None:
 
 
 def test_prepare_workspace_rejects_a_superseded_material_version() -> None:
-    init_db()
+    migrate_test_database()
     user = _user("prepare-stale")
     with SessionLocal() as db:
         ledger_v1 = _file(db, user, name="2026年盈亏核算表.xlsx")
@@ -274,7 +275,7 @@ def test_prepare_workspace_rejects_a_superseded_material_version() -> None:
 
 
 def test_upload_set_becomes_current_and_preserves_all_annual_ledgers() -> None:
-    init_db()
+    migrate_test_database()
     user = _user()
     with SessionLocal() as db:
         ledger_2025 = _file(db, user, name="2025年盈亏核算表.xlsx")
@@ -304,7 +305,7 @@ def test_upload_set_becomes_current_and_preserves_all_annual_ledgers() -> None:
 
 
 def test_successful_workflow_publishes_successor_used_by_next_task() -> None:
-    init_db()
+    migrate_test_database()
     user = _user()
     with SessionLocal() as db:
         source_ledger = _file(db, user, name="2026年盈亏核算表.xlsx")
@@ -361,7 +362,7 @@ def test_successful_workflow_publishes_successor_used_by_next_task() -> None:
 
 
 def test_stale_workflow_cannot_replace_a_newer_current_version() -> None:
-    init_db()
+    migrate_test_database()
     user = _user()
     with SessionLocal() as db:
         source_ledger = _file(db, user, name="2026年盈亏核算表.xlsx")
@@ -438,7 +439,7 @@ def test_stale_workflow_cannot_replace_a_newer_current_version() -> None:
 def test_material_version_readback_failure_keeps_previous_current(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    init_db()
+    migrate_test_database()
     user = _user("material-readback")
     with SessionLocal() as db:
         ledger = _file(db, user, name="2026年盈亏核算表.xlsx")
@@ -503,7 +504,7 @@ def test_material_version_readback_failure_keeps_previous_current(
 
 
 def test_material_set_rejects_files_from_another_owner() -> None:
-    init_db()
+    migrate_test_database()
     owner = _user("owner")
     other = UserContext(
         user_id=f"other-{uuid.uuid4().hex[:8]}",
@@ -527,7 +528,7 @@ def test_material_set_rejects_files_from_another_owner() -> None:
 
 
 def test_next_independent_workflow_can_copy_published_output_version() -> None:
-    init_db()
+    migrate_test_database()
     user = _user()
     with SessionLocal() as db:
         source_ledger = _file(db, user, name="2026年盈亏核算表.xlsx")
@@ -599,7 +600,7 @@ def test_next_independent_workflow_can_copy_published_output_version() -> None:
 
 
 def test_history_lists_current_first_and_restore_creates_a_new_version() -> None:
-    init_db()
+    migrate_test_database()
     user = _user()
     with SessionLocal() as db:
         ledger_v1 = _file(db, user, name="2026年盈亏核算表.xlsx")
@@ -628,9 +629,9 @@ def test_history_lists_current_first_and_restore_creates_a_new_version() -> None
         db.commit()
 
         history = list_material_sets(db, user, "ar-hexiao-daily")
-        assert [item.version for item in history] == [2, 1]
+        assert [item.version for item in history] == [2]  # Public AR materials keep only the latest completed set.
         assert history[0].state == "current"
-        assert history[1].state == "superseded"
+        assert version_one.state == "superseded"  # Internal provenance remains, but is not listed.
 
         restored = restore_material_set(db, user, "ar-hexiao-daily", version_one.id)
         db.commit()
@@ -644,7 +645,7 @@ def test_history_lists_current_first_and_restore_creates_a_new_version() -> None
 
 
 def test_restore_rejects_material_set_from_another_user() -> None:
-    init_db()
+    migrate_test_database()
     owner = _user("restore-owner")
     other = _user("restore-other")
     with SessionLocal() as db:
@@ -666,7 +667,7 @@ def test_restore_rejects_material_set_from_another_user() -> None:
 
 
 def test_file_in_material_version_cannot_be_deleted() -> None:
-    init_db()
+    migrate_test_database()
     user = _user()
     with SessionLocal() as db:
         ledger = _file(db, user, name="2026年盈亏核算表.xlsx")

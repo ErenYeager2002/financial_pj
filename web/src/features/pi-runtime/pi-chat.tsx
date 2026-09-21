@@ -9,6 +9,7 @@ import {uploadFile,type UploadedFile} from './pi-file-transfer';
 import {PiChatArtifacts} from './pi-chat-artifacts';
 import {PiDialogs,type PiDialog} from './pi-dialogs';
 import type {PiSession} from './pi-workspace';
+import {SessionEnvironments} from './session-environments';
 
 type Model={id:string;provider:string;name?:string};
 type Event={sequence:number;generation?:number;kind:string;event?:Record<string,unknown>};
@@ -124,7 +125,7 @@ function ChatSession({sessionId,controls}:{sessionId:string;controls:ReactNode})
       <div className={styles.toolbar}><div className={styles.toolbarLeft}>
        <button type='button' className={styles.iconButton} aria-label='上传文件' title='上传文件' disabled={uploading||sending} onClick={()=>picker.current?.click()}><IconPlus size={19}/></button>
        <button type='button' className={styles.chip} aria-label='选择 Skill、模板或扩展命令' aria-expanded={commandsOpen} onClick={()=>{setCommandsOpen(value=>!value);if(running)void action('get_commands')}}>/ 命令</button>
-       <select aria-label='Agent 模型' value={model} disabled={!running||working} onChange={e=>{const [provider,modelId]=JSON.parse(e.target.value);void action('set_model',{provider,modelId})}} className={styles.chip}><option value='' disabled>默认模型</option>{models.map(item=><option key={JSON.stringify([item.provider,item.id])} value={JSON.stringify([item.provider,item.id])}>{item.name??item.id}</option>)}</select>
+       <select aria-label='当前会话模型' title='仅切换当前会话使用的模型' value={model} disabled={!running||working} onChange={e=>{const [provider,modelId]=JSON.parse(e.target.value);void action('set_model',{provider,modelId})}} className={styles.chip}><option value='' disabled>{running?'正在读取会话模型':'启动会话后可切换'}</option>{models.map(item=><option key={JSON.stringify([item.provider,item.id])} value={JSON.stringify([item.provider,item.id])}>{item.name??item.id}</option>)}</select>
        <select aria-label='思考强度' value={thinking} disabled={!running||working} onChange={e=>void action('set_thinking_level',{level:e.target.value})} className={styles.chip}>{Object.entries({off:'关闭推理',minimal:'最少推理',low:'低推理',medium:'中等推理',high:'高推理',xhigh:'更高推理',max:'最高推理'}).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select>
        {working&&<select aria-label='运行时消息处理方式' value={queueMode} onChange={e=>setQueueMode(e.target.value)} className={styles.chip}><option value='follow_up'>完成后继续</option><option value='steer'>调整当前任务</option></select>}
       </div>{working&&!input.trim()&&!attachments.length?<button className={styles.send} aria-label='中断回复' title='中断回复' onClick={()=>void action('abort')}><IconSquare size={13} fill='currentColor'/></button>:<button className={styles.send} aria-label={sending?'发送中':working?'发送补充':'发送消息'} title={working?'发送补充':'发送消息'} disabled={sending||uploading||(!input.trim()&&!attachments.length)} onClick={()=>void submit()}><IconArrowUp size={19}/></button>}</div>
@@ -134,12 +135,13 @@ function ChatSession({sessionId,controls}:{sessionId:string;controls:ReactNode})
   </section>
   {dialogs.length>0&&<div className='bg-background fixed right-4 bottom-4 z-40 max-h-[70dvh] w-[min(32rem,calc(100vw-2rem))] overflow-y-auto rounded-xl border p-4 shadow-xl'><PiDialogs requests={dialogs} reply={command=>op('send',{command})}/></div>}
  </div>;}
-export function PiChat({initialSessions,initialSessionId,skillId}:{initialSessions:PiSession[];initialSessionId?:string;skillId?:string}){
+export function PiChat({initialSessions,initialSessionId,skillId,modelSettings}:{initialSessions:PiSession[];initialSessionId?:string;skillId?:string;modelSettings?:ReactNode}){
  const history=useRef<HTMLDialogElement>(null);
  const [sessions,setSessions]=useState(initialSessions);const [selected,setSelected]=useState(initialSessions.some(item=>item.id===initialSessionId)?initialSessionId!:initialSessions[0]?.id??'');const [error,setError]=useState('');const [creating,setCreating]=useState(false);
+ useEffect(()=>{if(initialSessionId&&initialSessions.some(item=>item.id===initialSessionId))setSelected(initialSessionId)},[initialSessionId,initialSessions]);
  useEffect(()=>{const url=new URL(window.location.href);if(selected)url.searchParams.set('session',selected);else url.searchParams.delete('session');window.history.replaceState(null,'',url)},[selected]);
  async function create(){setCreating(true);setError('');try{const item=await api<PiSession>('/sessions',{channel:'assistant',title:skillId?`${skillId} 对话`:'新对话',...(skillId?{skill_id:skillId}:{})});setSessions(old=>[item,...old]);setSelected(item.id)}catch(e){setError(e instanceof Error?e.message:'创建失败')}finally{setCreating(false)}}
- const controls=<div className={styles.controls}><button className={styles.iconButton} aria-label='打开会话列表' title='会话列表' onClick={()=>history.current?.showModal()}><IconLayoutSidebar size={19}/></button><h1 className={styles.title}>{sessions.find(item=>item.id===selected)?.title||'AI 助手'}</h1><button className={styles.iconButton} aria-label='新建对话' title='新建对话' disabled={creating} onClick={()=>void create()}><IconEdit size={19}/></button></div>;
+ const controls=<div className={`${styles.controls} flex-1 flex-wrap`}><button className={styles.iconButton} aria-label='打开会话列表' title='会话列表' onClick={()=>history.current?.showModal()}><IconLayoutSidebar size={19}/></button><h1 className={styles.title}>{sessions.find(item=>item.id===selected)?.title||'AI 助手'}</h1><button className={styles.iconButton} aria-label='新建对话' title='新建对话' disabled={creating} onClick={()=>void create()}><IconEdit size={19}/></button><SessionEnvironments currentSessionId={selected}/>{modelSettings&&<div className="ml-auto">{modelSettings}</div>}</div>;
  return <div className='min-w-0'>
   <dialog ref={history} className={styles.history} aria-label='会话列表'><div className='flex items-center justify-between px-2'><h2 className='text-sm font-medium'>会话</h2><button className={styles.iconButton} aria-label='关闭会话列表' onClick={()=>history.current?.close()}><IconX size={18}/></button></div><div className={styles.historyList}>{sessions.map(item=><button key={item.id} className={styles.historyItem} aria-current={item.id===selected?'true':undefined} onClick={()=>{setSelected(item.id);history.current?.close()}}><span>{item.title}</span><small>{item.id.slice(0,8)}</small></button>)}{!sessions.length&&<p className='text-muted-foreground p-3 text-sm'>尚无会话</p>}</div></dialog>
   {error&&<p role='alert'>{error}</p>}

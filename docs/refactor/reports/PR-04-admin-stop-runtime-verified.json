@@ -1,0 +1,52 @@
+{
+  "at": "2026-09-20T04:55:41.593050+00:00",
+  "image": "sha256:f0c678e4861c6b5f210dc4b6b4ef0ce58545b653721ff2ffdcca8bdfc9c83050",
+  "services": {
+    "api": {
+      "image": "sha256:f0c678e4861c6b5f210dc4b6b4ef0ce58545b653721ff2ffdcca8bdfc9c83050",
+      "restarts": 0,
+      "verification": {
+        "hashes": "matched",
+        "file_count": 197,
+        "uid": 10001,
+        "revision": "f3a4b5c6d7e8",
+        "replay_only": false,
+        "admin_stop_contract": true
+      }
+    },
+    "worker-standard": {
+      "image": "sha256:f0c678e4861c6b5f210dc4b6b4ef0ce58545b653721ff2ffdcca8bdfc9c83050",
+      "restarts": 0,
+      "verification": {
+        "hashes": "matched",
+        "file_count": 197,
+        "uid": 10001,
+        "revision": "f3a4b5c6d7e8",
+        "replay_only": false,
+        "admin_stop_contract": true
+      }
+    },
+    "worker-task-discovery": {
+      "image": "sha256:f0c678e4861c6b5f210dc4b6b4ef0ce58545b653721ff2ffdcca8bdfc9c83050",
+      "restarts": 0,
+      "verification": {
+        "hashes": "matched",
+        "file_count": 197,
+        "uid": 10001,
+        "revision": "f3a4b5c6d7e8",
+        "replay_only": false,
+        "admin_stop_contract": true
+      }
+    }
+  },
+  "platform": {
+    "mode": "normal",
+    "task_counts": {
+      "runs": 0,
+      "batches": 0,
+      "actions": 0,
+      "discovery": 0,
+      "assistant": 0
+    }
+  }
+}

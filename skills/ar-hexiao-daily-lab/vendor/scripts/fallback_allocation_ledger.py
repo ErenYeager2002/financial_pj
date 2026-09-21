@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import copy
+import os
+import tempfile
 import datetime as dt
 import json
 import math
@@ -10,11 +13,14 @@ from typing import Dict, Iterable, Optional, Tuple
 
 import fallback_sequence as FS
 import amount_policy
+from allocation_contract import readback_payload, stable_payload as _stable_payload
 import baseline_receipts
+import current_run_basis
 
 
 LEDGER_NAME = "父回款顺序分配台账.json"
 VERSION = 2
+ORDINARY_RECEIPT_VERSION = 3
 
 
 def _norm_date(value) -> Optional[dt.date]:
@@ -38,7 +44,7 @@ def ledger_path(workspace: Path) -> Path:
 
 
 def load(workspace: Path) -> dict:
-    path = ledger_path(workspace)
+    path = Path(workspace) / "03_台账" / LEDGER_NAME
     if not path.is_file():
         return {"version": VERSION, "parents": {}}
     try:
@@ -47,7 +53,7 @@ def load(workspace: Path) -> dict:
         raise ValueError("父回款顺序分配台账无法读取，不能按未分配重新核销；请恢复对应工作簿的台账。") from exc
     if not isinstance(data, dict) or not isinstance(data.get("parents"), dict):
         raise ValueError("父回款顺序分配台账结构无效，不能按空历史继续核销。")
-    if int(data.get("version") or 0) not in {1, VERSION}:
+    if int(data.get("version") or 0) not in {1, VERSION, ORDINARY_RECEIPT_VERSION}:
         raise ValueError(f"不支持的父回款顺序分配台账版本：{data.get('version')!r}")
     for ar, entry in data["parents"].items():
         if not isinstance(entry, dict) or not isinstance(entry.get("allocations"), list):
@@ -92,7 +98,7 @@ def _successful_pairs(checked: dict) -> set[Tuple[str, str]]:
     pairs = set()
     for bucket in ("write", "skip"):
         for item in checked.get(bucket) or []:
-            if item.get("code") == "OK_SO_ALREADY_SETTLED":
+            if item.get("code") in {"OK_SO_ALREADY_SETTLED", "OK_SOURCE_SETTLED_MATERIAL_GAP"}:
                 continue  # 整单业务状态不能证明这个父回款的正金额已写入。
             ar = str(item.get("ar") or "").strip()
             so = str(item.get("so") or "").strip()
@@ -117,7 +123,7 @@ def eligible_entries(checked: dict) -> Dict[str, dict]:
         allocated.discard("")
         cases = dict(audit.get("applied_cases") or {})
         for item in [*(checked.get("write") or []), *(checked.get("skip") or [])]:
-            if item.get("ar") != ar or item.get("code") == "OK_SO_ALREADY_SETTLED":
+            if item.get("ar") != ar or item.get("code") in {"OK_SO_ALREADY_SETTLED", "OK_SOURCE_SETTLED_MATERIAL_GAP"}:
                 continue
             if item.get("same_so_multi_sod_absorbed") or item.get("tail_tolerance_absorbed"):
                 continue
@@ -165,27 +171,9 @@ def eligible_entries(checked: dict) -> Dict[str, dict]:
     return out
 
 
-def readback_payload(entry: dict) -> dict:
-    """Compare persisted allocation and execution evidence, excluding timestamps."""
-    return {
-        key: value
-        for key, value in entry.items()
-        if key not in {"applied_at", "last_verified_at", "reused_successful_allocation"}
-    }
-
-
-def _stable_payload(entry: dict) -> dict:
-    # Current-workbook provenance can be added during reconstruction without
-    # changing the allocation. Keep readback_payload strict for evidence checks.
-    # Unknown fields remain compared so new financial semantics fail closed.
-    return {key: value for key, value in readback_payload(entry).items()
-            if key not in {"applied_sos", "applied_cases",
-                           "reconstructed_from_current_material", "current_material_evidence"}}
-
-
-def commit(workspace: Path, checked: dict) -> Tuple[Path, int]:
-    """Merge successful allocations after the workbook write succeeds; reruns are idempotent."""
-    data = load(workspace)
+def prepare_commit(state: dict, checked: dict) -> tuple[dict, int]:
+    """Build the same prospective journal for preflight and post-write commit."""
+    data = current_run_basis.empty_state() if current_run_basis.enabled(checked) else copy.deepcopy(state)
     parents = data.setdefault("parents", {})
     now = dt.datetime.now().isoformat(timespec="seconds")
     changed = 0
@@ -195,8 +183,9 @@ def commit(workspace: Path, checked: dict) -> Tuple[Path, int]:
             "ar": ar,
             "hexiao_date": checked.get("hexiao_date") or audit.get("hexiao_date") or "",
         }
+        candidate = _stable_payload(entry)
         old = parents.get(ar)
-        if old is not None and _stable_payload(old) != _stable_payload(entry):
+        if old is not None and _stable_payload(old) != candidate:
             raise ValueError(f"父回款 {ar} 已有成功分配记录，但本次分配不同，禁止覆盖")
         if old is None:
             entry["applied_at"] = now
@@ -223,12 +212,40 @@ def commit(workspace: Path, checked: dict) -> Tuple[Path, int]:
     baseline_receipts.validate_journal(receipts)
     if receipts or "baseline_receipts" in data:
         data["baseline_receipts"] = receipts
-    path = ledger_path(workspace)
     # Version 1 readers assume every allocation was fully written. They must
     # reject partial execution records instead of counting pending money.
     if any("applied_cases" in entry for entry in parents.values()):
-        data["version"] = VERSION
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        data["version"] = max(int(data.get("version") or VERSION), VERSION)
+    # Multiple source events sharing one visible signature need an explicit
+    # format boundary. Old readers must reject it before planning financial work.
+    if any(event.get("signature_index", 0) > 0
+           for group in receipts.values()
+           for event in (group.get("ordinary_events") or {}).values()):
+        data["version"] = ORDINARY_RECEIPT_VERSION
+    return data, changed
+
+
+def preflight(workspace: Path, checked: dict) -> None:
+    """Validate the complete prospective journal without changing files."""
+    prepare_commit(current_run_basis.prior_state(workspace, checked), checked)
+
+
+def commit(workspace: Path, checked: dict) -> Tuple[Path, int]:
+    """Persist only after all financial and provenance checks have passed."""
+    data, changed = prepare_commit(current_run_basis.prior_state(workspace, checked), checked)
+    path = ledger_path(workspace)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
+                                         prefix=".allocation-", suffix=".tmp", delete=False) as stream:
+            temporary = Path(stream.name)
+            json.dump(data, stream, ensure_ascii=False, indent=2)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
     return path, changed
 
 

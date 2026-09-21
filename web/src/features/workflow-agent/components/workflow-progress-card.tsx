@@ -15,6 +15,7 @@ import {
 import type { WorkflowRead } from '@/features/platform-api/types';
 import { isTerminalWorkflow, isWaitingWorkflow } from '@/features/workflow-agent/workflow-batch-selection';
 import { formatDate } from '@/lib/format';
+import { publishedMaterialLabel, writeStatusLabel } from '@/lib/task-write-status';
 import { taskErrorCategoryLabel } from '@/features/workflows/step-display';
 
 interface WorkflowProgressCardProps {
@@ -32,12 +33,6 @@ function nodeIcon(state: WorkflowFlowState): React.JSX.Element {
   return <span className='size-2 rounded-full bg-current' aria-hidden='true' />;
 }
 
-function writeStatusLabel(value: unknown): string {
-  if (value === 'not_started') return '尚未开始写入';
-  if (value === 'verification_pending') return '已进入写入后校验，发布状态待核实';
-  if (value === 'published') return '已有发布记录';
-  return '待核实';
-}
 
 export function WorkflowProgressCard({
   workflow,
@@ -157,11 +152,7 @@ export function WorkflowProgressCard({
                 <div>
                   <dt className='text-muted-foreground'>已发布材料版本</dt>
                   <dd>
-                    {typeof workflow.step_error_detail?.published_material_version === 'number' ||
-                    (typeof workflow.step_error_detail?.published_material_version === 'string' &&
-                      workflow.step_error_detail.published_material_version.trim())
-                      ? workflow.step_error_detail.published_material_version
-                      : '待核实'}
+                    {publishedMaterialLabel(workflow.step_error_detail?.published_material_version, workflow.step_error_detail?.write_status)}
                   </dd>
                 </div>
                 <div>

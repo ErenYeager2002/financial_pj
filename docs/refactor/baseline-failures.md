@@ -79,3 +79,15 @@ source 与 builder 的 pnpm-lock.yaml SHA-256 均为 cf195412254aaca683fc849a45e
 实际运行在 require_turn_command 查询时失败：sqlite OperationalError，no such table: assistant_turns。同次日志证明 init_db 已执行全部 30 个 Alembic 迁移至 e0f1a2b3c4d5。因此新库迁移未满足当前 Native 调用链所需模型。未在测试中临时 create_all 绕过。该失败加入 CI 并保持可见；PR-01 需审查模型表与迁移链覆盖，PR-13 需继续验证命令收据与会话边界。
 
 日志：本地 .scratch/refactor-20260918/native-artifacts-baseline.txt。尚未到达产物断言，不能宣称成果归档通过。未连接生产 DB。
+
+## 后端格式、静态和契约基线
+
+使用只读源码、无网络测试容器复验。初次 Ruff 因默认 .ruff_cache 无法写入而未得到有效代码结果；检查器现传 --no-cache。复验：backend-format 退出 1，162 个文件需格式整理、95 个已符合；backend-static 退出 1，1440 项诊断。保留原始诊断，不执行批量 --fix。记录包含本轮新增测试的格式问题，不全部归因于既有源码。
+
+contracts 退出 1，导出的 OpenAPI 与已提交快照不一致。独立隔离检查按 paths/schemas 对比结构，详情见 reports/openapi-baseline-delta.json；未重写正式契约文件。完整本地证据：.scratch/refactor-20260918/backend-quality-baselines.jsonl、backend-quality-baselines-nocache.jsonl。检查器退出状态与代码质量失败分别记录。
+
+## 文件保留计划任务失效基线
+
+lee crontab 每分钟直接用宿主 Python 执行部署根 deployment/retain_files.py；该路径当前不存在。journalctl 指定财务文件保留标签，近 15 分钟找到 15 条该路径无法打开的错误，已只记录计数和时间戳，不复制日志内容。仓库脚本存在，但其持久化源码位置校验要求位于 releases 下，不能仅复制到缺失位置当作正确修复。部署入口迁移阶段需同时修正调用位置与来源约束，并保留删除审计/当前任务保护。PR-00 只记录，不执行 --apply 或补跑文件删除。
+
+PR-01 更新：正式 assistant_turns revision 在隔离 SQLite/PostgreSQL 验证后，Native 产物专项已通过；原失败记录保留为修复前基线。该结果不表示已部署生产，见 reports/PR-01.md。

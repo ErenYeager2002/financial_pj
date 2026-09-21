@@ -29,6 +29,7 @@ import {
   TERMINAL_RUN_STATES
 } from '@/features/runs/run-display';
 import { formatDate } from '@/lib/format';
+import { publishedMaterialLabel, writeStatusLabel } from '@/lib/task-write-status';
 import { cn, formatBytes } from '@/lib/utils';
 import { stepTypeLabel, taskErrorCategoryLabel } from '@/features/workflows/step-display';
 
@@ -82,13 +83,6 @@ function stepStateLabel(state: string): string {
   return labels[state] ?? state;
 }
 
-function writeStatusLabel(value: unknown): string {
-  if (value === 'not_applicable') return '不涉及业务写入';
-  if (value === 'not_started') return '尚未开始写入';
-  if (value === 'verification_pending') return '写入后校验未完成，发布状态待核实';
-  if (value === 'published') return '已有发布记录';
-  return '待核实';
-}
 
 interface RunDetailViewProps {
   runId: string;
@@ -295,7 +289,7 @@ export function RunDetailView({ runId }: RunDetailViewProps): React.JSX.Element 
                     </div>
                     <div>
                       <dt className='text-muted-foreground'>已发布材料版本</dt>
-                      <dd>{String(run.failure_detail.published_material_version || '待核实')}</dd>
+                      <dd>{publishedMaterialLabel(run.failure_detail.published_material_version, run.failure_detail.write_status)}</dd>
                     </div>
                     <div>
                       <dt className='text-muted-foreground'>恢复条件</dt>

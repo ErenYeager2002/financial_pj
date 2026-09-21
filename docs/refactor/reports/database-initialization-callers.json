@@ -1,0 +1,458 @@
+[
+  {
+    "path": "backend/app/main.py",
+    "line": 192,
+    "callee": "init_db",
+    "category": "runtime-or-utility"
+  },
+  {
+    "path": "backend/app/task_discovery_worker.py",
+    "line": 209,
+    "callee": "init_db",
+    "category": "runtime-or-utility"
+  },
+  {
+    "path": "backend/app/worker.py",
+    "line": 260,
+    "callee": "init_db",
+    "category": "runtime-or-utility"
+  },
+  {
+    "path": "backend/app/worker.py",
+    "line": 301,
+    "callee": "init_db",
+    "category": "runtime-or-utility"
+  },
+  {
+    "path": "backend/tests/helpers.py",
+    "line": 30,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_ar_execution_boundaries.py",
+    "line": 17,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_ar_execution_boundaries.py",
+    "line": 41,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_ar_material_candidates.py",
+    "line": 17,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_ar_material_candidates.py",
+    "line": 91,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_clerk_auth.py",
+    "line": 38,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_feature_controls.py",
+    "line": 12,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_fetched_bundle_models.py",
+    "line": 55,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_fetched_bundle_service.py",
+    "line": 127,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_fetched_bundle_service.py",
+    "line": 168,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_fetched_bundle_service.py",
+    "line": 203,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_fetched_bundle_service.py",
+    "line": 250,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_fetched_bundle_service.py",
+    "line": 296,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_fetched_bundle_service.py",
+    "line": 336,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_fetched_bundle_service.py",
+    "line": 358,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_fetched_bundle_service.py",
+    "line": 397,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_fetched_bundle_service.py",
+    "line": 451,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_fetched_bundle_service.py",
+    "line": 495,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_fetched_bundle_service.py",
+    "line": 601,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_fetched_bundle_service.py",
+    "line": 634,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_fetched_bundle_service.py",
+    "line": 712,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_fetched_bundle_service.py",
+    "line": 735,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_fetched_bundle_service.py",
+    "line": 756,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_fetched_bundle_service.py",
+    "line": 783,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_fetched_bundle_service.py",
+    "line": 804,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_fetched_bundle_service.py",
+    "line": 846,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_fetched_bundle_service.py",
+    "line": 876,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_fetched_bundle_service.py",
+    "line": 922,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_fetched_bundle_service.py",
+    "line": 968,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_fetched_bundle_service.py",
+    "line": 1032,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_fetched_bundle_service.py",
+    "line": 1075,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_fetched_bundle_service.py",
+    "line": 1126,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_fetched_bundle_service.py",
+    "line": 1166,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_fetched_bundle_service.py",
+    "line": 1225,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_fetched_bundle_service.py",
+    "line": 1292,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_fetched_bundle_service.py",
+    "line": 1338,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_fetched_bundle_service.py",
+    "line": 1375,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_fetched_bundle_service.py",
+    "line": 1408,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_fetched_bundle_service.py",
+    "line": 1444,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_parallel_workers.py",
+    "line": 20,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_refactor_native_artifacts.py",
+    "line": 22,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_skill_dedications.py",
+    "line": 29,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_skill_rollouts.py",
+    "line": 34,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_skill_source_bindings.py",
+    "line": 23,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_snapshot_replay.py",
+    "line": 118,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_task_reminders.py",
+    "line": 35,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_workflow.py",
+    "line": 242,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_workflow_action_pipeline.py",
+    "line": 51,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_workflow_action_pipeline.py",
+    "line": 81,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_workflow_action_pipeline.py",
+    "line": 199,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_workflow_action_pipeline.py",
+    "line": 244,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_workflow_action_pipeline.py",
+    "line": 272,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_workflow_action_pipeline.py",
+    "line": 313,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_workflow_action_pipeline.py",
+    "line": 389,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_workflow_action_pipeline.py",
+    "line": 430,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_workflow_material_sets.py",
+    "line": 92,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_workflow_material_sets.py",
+    "line": 123,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_workflow_material_sets.py",
+    "line": 152,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_workflow_material_sets.py",
+    "line": 194,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_workflow_material_sets.py",
+    "line": 237,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_workflow_material_sets.py",
+    "line": 277,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_workflow_material_sets.py",
+    "line": 307,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_workflow_material_sets.py",
+    "line": 364,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_workflow_material_sets.py",
+    "line": 441,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_workflow_material_sets.py",
+    "line": 506,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_workflow_material_sets.py",
+    "line": 530,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_workflow_material_sets.py",
+    "line": 602,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_workflow_material_sets.py",
+    "line": 647,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_workflow_material_sets.py",
+    "line": 669,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "backend/tests/test_workflow_step_models.py",
+    "line": 1135,
+    "callee": "init_db",
+    "category": "test"
+  },
+  {
+    "path": "scripts/select_current_workflow_material_set.py",
+    "line": 50,
+    "callee": "init_db",
+    "category": "runtime-or-utility"
+  },
+  {
+    "path": "scripts/validate_postgres_runtime.py",
+    "line": 48,
+    "callee": "init_db",
+    "category": "runtime-or-utility"
+  }
+]

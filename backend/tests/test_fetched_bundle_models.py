@@ -6,7 +6,8 @@ from datetime import UTC, datetime
 import pytest
 from sqlalchemy.exc import IntegrityError
 
-from app.database import SessionLocal, init_db
+from app.database import SessionLocal
+from db_setup import migrate_test_database
 from app.models import FetchedBundle, FetchedBundleFile, WorkflowSession
 from app.schemas import FetchedBundleRead
 
@@ -52,7 +53,7 @@ def _bundle(workflow: WorkflowSession, **overrides: object) -> FetchedBundle:
 
 
 def test_fetched_bundle_model_enforces_replay_and_member_uniqueness() -> None:
-    init_db()
+    migrate_test_database()
     owner_id = f"bundle-owner-{uuid.uuid4().hex[:8]}"
     with SessionLocal() as db:
         workflow = _workflow(owner_id)

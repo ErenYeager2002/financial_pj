@@ -1,0 +1,57 @@
+{
+  "at": "2026-09-20T03:37:26.305676+00:00",
+  "candidate_image": "sha256:ccf975fae6569ca8c548ce602f0d1599dd68528081d3b0f868082cdc662c1c2e",
+  "services": {
+    "api": {
+      "image": "sha256:ccf975fae6569ca8c548ce602f0d1599dd68528081d3b0f868082cdc662c1c2e",
+      "running": true,
+      "restarts": 0,
+      "verification": {
+        "source_hashes": "matched",
+        "file_count": 195,
+        "revision": "f3a4b5c6d7e8",
+        "replay_only": false,
+        "receipt_query_contract": true,
+        "uid": 10001
+      }
+    },
+    "worker-standard": {
+      "image": "sha256:ccf975fae6569ca8c548ce602f0d1599dd68528081d3b0f868082cdc662c1c2e",
+      "running": true,
+      "restarts": 0,
+      "verification": {
+        "source_hashes": "matched",
+        "file_count": 195,
+        "revision": "f3a4b5c6d7e8",
+        "replay_only": false,
+        "receipt_query_contract": true,
+        "uid": 10001
+      }
+    },
+    "worker-task-discovery": {
+      "image": "sha256:ccf975fae6569ca8c548ce602f0d1599dd68528081d3b0f868082cdc662c1c2e",
+      "running": true,
+      "restarts": 0,
+      "verification": {
+        "source_hashes": "matched",
+        "file_count": 195,
+        "revision": "f3a4b5c6d7e8",
+        "replay_only": false,
+        "receipt_query_contract": true,
+        "uid": 10001
+      }
+    }
+  },
+  "platform": {
+    "mode": "normal",
+    "task_counts": {
+      "runs": 0,
+      "batches": 0,
+      "actions": 0,
+      "discovery": 0,
+      "assistant": 0
+    },
+    "read_only": true,
+    "plan": "check"
+  }
+}

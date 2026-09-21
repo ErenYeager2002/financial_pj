@@ -28,9 +28,17 @@ workflow_manifest.write_text(
 
 os.environ["FINANCIAL_ENV"] = "test"
 os.environ["FINANCIAL_DATA_DIR"] = str(TEST_DATA_DIR)
-os.environ["FINANCIAL_DATABASE_URL"] = (
-    f"sqlite:///{(TEST_DATA_DIR / 'financial-tests.db').as_posix()}"
-)
+if os.environ.get("REFACTOR_HTTP_POSTGRES") == "1":
+    import sys
+    sys.path.insert(0, str(PROJECT_ROOT / "scripts/refactor"))
+    from verify_isolation import verify
+    verify(os.environ)
+    if not os.environ.get("FINANCIAL_DATABASE_URL", "").startswith("postgresql+psycopg://"):
+        raise RuntimeError("HTTP_TEST_REQUIRES_ISOLATED_POSTGRES")
+else:
+    os.environ["FINANCIAL_DATABASE_URL"] = (
+        f"sqlite:///{(TEST_DATA_DIR / 'financial-tests.db').as_posix()}"
+    )
 os.environ["FINANCIAL_SKILL_DIR"] = str(TEST_SKILL_DIR)
 # 测试使用固定管理员口令，避免 bootstrap 随机口令阻塞自动化登录。
 os.environ["FINANCIAL_BOOTSTRAP_ADMIN_PASSWORD"] = "test-admin-password"

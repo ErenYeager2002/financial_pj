@@ -1,0 +1,6 @@
+{
+  "image_id": "sha256:826d3ab09bccbe654f8f0f8cdc7c37ee10a79abd1053ace6029d13f61b6650c3",
+  "exit_code": 0,
+  "stdout": "{\"previous_revision\": \"f2a3b4c5d6e7\", \"target_revision\": \"f3a4b5c6d7e8\", \"upgrade\": \"passed\", \"repeat_migration\": \"passed\", \"single_seed\": \"passed\", \"no_ddl_role_runtime_check\": \"passed\"}\n{\"candidate_transaction_rollback\": \"passed\", \"candidate_claim\": \"passed\", \"candidate_independent_progress\": \"passed\", \"candidate_failure_discards_unpublished_result\": \"passed\"}\n",
+  "stderr": ""
+}

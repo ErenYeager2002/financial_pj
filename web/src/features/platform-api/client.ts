@@ -1,4 +1,4 @@
-import { platformErrorMessage } from './errors';
+import { platformApiError } from './errors';
 
 export async function platformClientRequest<T>(
   path: string,
@@ -13,7 +13,7 @@ export async function platformClientRequest<T>(
     } catch {
       // Use the bounded fallback for non-JSON responses.
     }
-    throw new Error(platformErrorMessage(body, fallback));
+    throw platformApiError(response.status, body, fallback);
   }
   return (await response.json()) as T;
 }

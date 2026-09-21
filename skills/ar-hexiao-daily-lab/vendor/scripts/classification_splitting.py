@@ -167,6 +167,17 @@ def _make_split_payment_chain(
     snap = ledger.row_snapshot.get(int(ref)) or {}
     current_receivable = common.to_number(snap.get("yingshou"))
     source_receivable = opening_remaining
+    # 新材料中的空白待收行保留其原应收，不能用智云历史累计尾差改写基线。
+    # 仅接受业务容差内的差额；各父回款的实际金额仍由步骤 amount 决定。
+    if (
+        current_receivable is not None
+        and snap.get("huikuan") in (None, "")
+        and snap.get("shoukuan_time") in (None, "")
+        and snap.get("shoukuan_way") in (None, "")
+        and str(snap.get("jiezhang") or "").strip() != "是"
+        and abs(float(current_receivable) - opening_remaining) <= BUSINESS_SETTLEMENT_TOL
+    ):
+        source_receivable = round(float(current_receivable), 2)
 
     # 已有完整聚合结清行时，1 元以内的父回款尾差不再触发逐父 AR 拆行。
     # 例如 0.12 + 211463.88 = 211464.00：0.12 虽然实际到账，但业务口径
@@ -266,7 +277,10 @@ def _make_split_payment_chain(
         settled = remaining <= max(tolerance, TOL)
         if settled and index != len(effective_prepared) - 1:
             return None, "分笔链在最后一笔之前已经结清，后续回款会造成超额"
-        paid_receivable = previous_remaining if settled else round(previous_remaining - remaining, 2)
+        # Keep the material baseline through partial receipts. A small difference
+        # from the source cumulative belongs to the final settlement row.
+        paid_receivable = previous_remaining if settled else amount
+        remaining = 0.0 if settled else round(previous_remaining - amount, 2)
         if paid_receivable < -max(tolerance, TOL):
             return None, "分笔后剩余应收反而增加，连续拆行不守恒"
         five = dict(result.get("five_cols") or {})

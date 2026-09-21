@@ -1,0 +1,77 @@
+{
+  "at": "2026-09-21T02:02:23.532055+00:00",
+  "mode": "normal",
+  "public": "normal",
+  "active": {
+    "runs": 0,
+    "batches": 0,
+    "actions": 0,
+    "discovery": 0,
+    "assistant": 0
+  },
+  "services": {
+    "api": {
+      "image": "sha256:849681a966d3eff0f6361b950ed9ed14a5754b56f8f4d88eca301daef9486688",
+      "verified_files": 454,
+      "user": "10001:10001",
+      "restarts": 0
+    },
+    "worker-standard": {
+      "image": "sha256:849681a966d3eff0f6361b950ed9ed14a5754b56f8f4d88eca301daef9486688",
+      "verified_files": 454,
+      "user": "10001:10001",
+      "restarts": 0
+    },
+    "worker-task-discovery": {
+      "image": "sha256:849681a966d3eff0f6361b950ed9ed14a5754b56f8f4d88eca301daef9486688",
+      "verified_files": 454,
+      "user": "10001:10001",
+      "restarts": 0
+    },
+    "next": {
+      "unchanged": true
+    },
+    "egress-proxy": {
+      "unchanged": true
+    },
+    "postgres": {
+      "unchanged": true
+    },
+    "gateway": {
+      "unchanged": true
+    },
+    "agent": {
+      "image": "sha256:03e4a1f08e0d7702339c622a69f553387dbd0399b73a8ea1bb27caad14bef436",
+      "verified_files": 18,
+      "restarts": 0
+    }
+  },
+  "api": {
+    "protocol_checks": [
+      {
+        "route": "/claim",
+        "status": 422
+      },
+      {
+        "route": "/claim",
+        "status": 422
+      },
+      {
+        "route": "/actions/00000000-0000-0000-0000-000000000000/heartbeat",
+        "status": 422
+      },
+      {
+        "route": "/actions/00000000-0000-0000-0000-000000000000/heartbeat",
+        "status": 409
+      }
+    ],
+    "submission_replay_only": false
+  },
+  "schema": {
+    "state": "exited",
+    "running": false,
+    "exit_code": 0,
+    "container_name": "financial-platform-isolated-schema-32a2b01aef40",
+    "recorded_phase": "completed"
+  }
+}

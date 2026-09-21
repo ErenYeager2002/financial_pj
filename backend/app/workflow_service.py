@@ -33,6 +33,7 @@ from .ar_execution_contract import ExecutionCancelled, ExecutionLeaseLost, Execu
 from .audit_service import record_audit
 from .auth import UserContext
 from .authorization import assert_skill_permission, refresh_active_user
+from .modules.execution.authorization import ExecutionPhase, execution_actor
 from .fetched_bundle_service import (
     FetchedBundleError,
     FetchedBundleReplayAdapter,
@@ -702,6 +703,8 @@ def get_workflow_or_404(
     db: Session,
     workflow_id: str,
     user: UserContext,
+    *,
+    refresh: bool = False,
 ) -> WorkflowSession:
     workflow = db.scalar(
         select(WorkflowSession)
@@ -712,6 +715,7 @@ def get_workflow_or_404(
             selectinload(WorkflowSession.fetched_bundle),
         )
         .where(WorkflowSession.id == workflow_id)
+        .execution_options(populate_existing=refresh)
     )
     if not workflow:
         raise HTTPException(status_code=404, detail="对话任务不存在。")
@@ -754,6 +758,8 @@ def serialize_workflow(workflow: WorkflowSession) -> WorkflowRead:
         if isinstance(stored_error_detail, dict)
         else {}
     )
+    from .ar_failure_status import normalize_detail, public_message
+    safe_error_detail = normalize_detail(workflow, context, safe_error_detail)
     if workflow.state == "failed" or workflow.stage == "failed":
         from .ar_rebuild_policy import legacy_rebuild_block_reason
 
@@ -780,6 +786,8 @@ def serialize_workflow(workflow: WorkflowSession) -> WorkflowRead:
         if workflow.state == "failed" or workflow.stage == "failed"
         else workflow.error_message
     )
+    if safe_error_detail.get("error_code") in {"WORKFLOW_AR_PHASE_FAILED", "WORKFLOW_REVIEW_ALLOCATION_FAILED"}:
+        public_error_message = public_message(workflow, safe_error_detail)
     return WorkflowRead(
         id=workflow.id,
         display_id=workflow.display_id or workflow.id,
@@ -1738,17 +1746,18 @@ def confirm_fetched_data_review(
     queue_plan: bool = True,
     automatic: bool = False,
 ) -> WorkflowSession:
-    # Both manual and automatic acceptance must recheck the task owner.
+    # Callers own the scheduling lock, audit and transaction commit.
+    db.execute(
+        select(WorkflowSession.id).where(WorkflowSession.id == workflow.id).with_for_update()
+    ).scalar_one()
+    db.refresh(workflow)
+    actor = execution_actor(db, workflow, actor, ExecutionPhase.CONFIRM)
     workflow_owner_context(db, workflow)
     if workflow.execution_mode == "pi_harness" and queue_plan:
         raise HTTPException(
             status_code=409,
             detail="该任务由 Pi Harness 全程执行，人工入口不能接管取数确认。",
         )
-    db.execute(
-        select(WorkflowSession.id).where(WorkflowSession.id == workflow.id).with_for_update()
-    ).scalar_one()
-    db.refresh(workflow)
     existing_plan_action = db.scalar(
         select(WorkflowAction)
         .where(
@@ -1815,9 +1824,6 @@ def confirm_fetched_data_review(
         if workflow.batch_id:
             _advance_batch(db, workflow, _pass_through_batch_result(workflow, context))
         sync_reminder_from_workflow(db, workflow)
-        if not automatic:
-            db.commit()
-            db.refresh(workflow)
         return workflow
     context["current_step"] = "inspect_inputs"
     context["current_step_label"] = "取数数据已确认，等待检查输入文件"
@@ -1846,9 +1852,6 @@ def confirm_fetched_data_review(
         ),
         {"kind": "fetched_data_review_confirmed", "automatic": automatic},
     )
-    if not automatic:
-        db.commit()
-        db.refresh(workflow)
     return workflow
 
 
@@ -1889,8 +1892,34 @@ def request_fetched_data_supplement(
     ar_ids: list[str],
     so_ids: list[str],
     reconciliation_date: str | None = None,
+    *,
+    actor: UserContext,
 ) -> tuple[WorkflowSession, dict[str, Any]]:
+    acquire_claim_lock(db)
+    db.refresh(workflow)
+    actor = execution_actor(db, workflow, actor, ExecutionPhase.READ)
     workflow_owner_context(db, workflow)
+    workflow, supplement = _prepare_fetched_data_supplement(
+        db, workflow, ar_ids, so_ids, reconciliation_date,
+    )
+    record_audit(
+        db, actor=actor, action="workflow.fetched_data.supplement",
+        resource_type="workflow", resource_id=workflow.id,
+        details={"skill_id": workflow.skill_id, **supplement_audit_summary(supplement)},
+    )
+    db.commit()
+    db.refresh(workflow)
+    return workflow, supplement
+
+
+def _prepare_fetched_data_supplement(
+    db: Session,
+    workflow: WorkflowSession,
+    ar_ids: list[str],
+    so_ids: list[str],
+    reconciliation_date: str | None = None,
+) -> tuple[WorkflowSession, dict[str, Any]]:
+    """Prepare changes under the caller's authorization/claim lock; never commit."""
     if workflow.stage != "awaiting_fetched_data_confirmation":
         raise HTTPException(status_code=409, detail="当前任务不在取数检查阶段。")
     checked_ar_ids = _normalized_business_ids(ar_ids, AR_ID_PATTERN, "AR 编号")
@@ -1924,8 +1953,6 @@ def request_fetched_data_supplement(
         "已收到缺失编号，正在按编号补取智云数据；完成后仍会暂停等待再次检查。",
         {"kind": "fetched_data_supplement_requested", **supplement},
     )
-    db.commit()
-    db.refresh(workflow)
     return workflow, supplement
 
 
@@ -2488,9 +2515,14 @@ def confirm_batch_fetched_data_review(
     batch: WorkflowBatch,
     actor: UserContext,
 ) -> WorkflowBatch:
+    acquire_claim_lock(db)
+    actor = refresh_active_user(db, actor)
+    batch = get_workflow_batch_or_404(db, batch.id, actor, refresh=True)
+    actor = execution_actor(db, batch, actor, ExecutionPhase.CONFIRM)
+    workflow_owner_context(db, batch)
     _reject_superseded_batch_material(db, batch)
     confirm_fetched_data_review(db, _batch_fetched_data_workflow(batch), actor)
-    db.refresh(batch)
+    db.flush()
     return batch
 
 
@@ -2500,18 +2532,31 @@ def request_batch_fetched_data_supplement(
     reconciliation_date: str,
     ar_ids: list[str],
     so_ids: list[str],
+    *,
+    actor: UserContext,
 ) -> tuple[WorkflowBatch, dict[str, Any]]:
+    acquire_claim_lock(db)
+    actor = refresh_active_user(db, actor)
+    batch = get_workflow_batch_or_404(db, batch.id, actor, refresh=True)
+    actor = execution_actor(db, batch, actor, ExecutionPhase.READ)
+    workflow_owner_context(db, batch)
     _reject_superseded_batch_material(db, batch)
     dates = _load(batch.reconciliation_dates_json, [])
     if reconciliation_date not in dates:
         raise HTTPException(status_code=422, detail="核销日期不属于当前批次。")
-    workflow, supplement = request_fetched_data_supplement(
-        db,
-        _batch_fetched_data_workflow(batch),
-        ar_ids,
-        so_ids,
-        reconciliation_date=reconciliation_date,
+    workflow = _batch_fetched_data_workflow(batch)
+    actor = execution_actor(db, workflow, actor, ExecutionPhase.READ)
+    workflow_owner_context(db, workflow)
+    workflow, supplement = _prepare_fetched_data_supplement(
+        db, workflow, ar_ids, so_ids, reconciliation_date=reconciliation_date,
     )
+    record_audit(
+        db, actor=actor, action="workflow_batch.fetched_data.supplement.requested",
+        resource_type="workflow_batch", resource_id=batch.id,
+        details={"skill_id": batch.skill_id, "reconciliation_date": reconciliation_date,
+                 "requested": supplement_audit_summary(supplement)},
+    )
+    db.commit()
     db.refresh(batch)
     return batch, supplement
 
@@ -2524,6 +2569,8 @@ def get_workflow_batch_or_404(
     db: Session,
     batch_id: str,
     user: UserContext,
+    *,
+    refresh: bool = False,
 ) -> WorkflowBatch:
     workflow_load = selectinload(WorkflowBatch.workflows)
     batch = db.scalar(
@@ -2535,6 +2582,7 @@ def get_workflow_batch_or_404(
             workflow_load.selectinload(WorkflowSession.fetched_bundle),
         )
         .where(WorkflowBatch.id == batch_id)
+        .execution_options(populate_existing=refresh)
     )
     if not batch:
         raise HTTPException(status_code=404, detail="核销批次不存在。")
@@ -2578,8 +2626,9 @@ def _reusable_file_bindings(
     skill: RegisteredSkill,
     user: UserContext,
 ) -> dict[str, list[dict[str, Any]]]:
-    """Return the current immutable business version, or legacy uploads before migration."""
-    current_set = current_material_set(
+    """Return the latest completed business material, or initial legacy uploads."""
+    from .ar_material_lifecycle import visible_material_set
+    current_set = visible_material_set(
         db,
         user.user_id,
         user.department_id,
@@ -2783,9 +2832,10 @@ def reusable_workflow_files(
     else:
         assert_workflow_skill_execution_enabled(skill_id)
     assert_skill_permission(db, user, skill_id)
-    material_set = current_material_set(db, user.user_id, user.department_id, skill_id)
-    files = ({} if include_candidates and is_ar_skill(skill_id) and material_set is None
-             else _reusable_file_bindings(db, skill, user))
+    from .ar_material_lifecycle import visible_material_set
+    material_set = visible_material_set(db, user.user_id, user.department_id, skill_id)
+    files = (material_set_bindings(db, material_set) if material_set else
+             ({} if is_ar_skill(skill_id) else _reusable_file_bindings(db, skill, user)))
     metadata = {
         "material_set_id": material_set.id if material_set else None,
         "material_version": material_set.version if material_set else None,
@@ -2989,7 +3039,8 @@ def create_workflow(
 
 def _assert_start_material_selection(db, user, request):
     """Check the displayed version under the start lock; unchanged IDs need no upload permission."""
-    current = current_material_set(db, user.user_id, user.department_id, request.skill_id)
+    from .ar_material_lifecycle import visible_material_set
+    current = visible_material_set(db, user.user_id, user.department_id, request.skill_id)
     expected = request.expected_material_set_id
     if expected is not None and expected != (current.id if current else ""):
         raise HTTPException(status_code=409, detail="任务材料已有新版本，请刷新页面后重新选择。")
@@ -3429,6 +3480,7 @@ def start_workflow_batch(
 
 
 def _workflow_error_detail(workflow: WorkflowSession, reason: object) -> TaskErrorDetail:
+    from .ar_failure_status import phase_detail
     context = _load(workflow.context_json, {})
     step_key = str(context.get("current_step", "unknown"))
     raw_reason = str(reason)
@@ -3502,6 +3554,11 @@ def _workflow_error_detail(workflow: WorkflowSession, reason: object) -> TaskErr
         error_code, category = "WORKFLOW_WRITE_CHECK_FAILED", "input_material"
         write_status = "not_started"
         recovery_allowed = True
+    elif (phase_state := phase_detail(workflow, context)) is not None:
+        safe_reason = phase_state["reason"]
+        error_code, category = "WORKFLOW_AR_PHASE_FAILED", "unknown"
+        write_status = phase_state["write_status"]
+        recovery_allowed = False
     elif step_key == "write_files" or workflow.stage == "applying":
         safe_reason = "写入阶段未完成，当前发布状态待核实。"
         error_code, category = "WORKFLOW_WRITE_STATUS_UNKNOWN", "version_conflict"
@@ -3510,9 +3567,8 @@ def _workflow_error_detail(workflow: WorkflowSession, reason: object) -> TaskErr
     else:
         safe_reason = "当前步骤未完成，请联系管理员查看审计记录。"
         recovery_allowed = True
-    material_version = context.get("material_version")
-    if material_version is None and workflow.material_set is not None:
-        material_version = workflow.material_set.version
+    from .ar_failure_status import published_version
+    material_version = published_version(workflow, context)
     return build_task_error(
         employee=workflow.owner_name or workflow.owner_id,
         skill_id=workflow.skill_id,
@@ -3533,6 +3589,9 @@ def _workflow_public_error(workflow: WorkflowSession, detail: TaskErrorDetail) -
     if detail.step_key == "finalize_batch":
         message = "批次报告汇总失败：各日期已完成的核销结果保留，请修复原因后仅恢复报告汇总。"
         error_type = "batch_report_failed"
+    elif detail.error_code in {"WORKFLOW_AR_PHASE_FAILED", "WORKFLOW_REVIEW_ALLOCATION_FAILED"}:
+        message = f"{date_label} {detail.step}未完成：{detail.reason}"
+        error_type = "ar_phase_failed"
     elif detail.error_code == "WORKFLOW_FETCH_UNAVAILABLE":
         message = (
             f"{date_label} 取数未完成：智云暂时无法访问，本次取数未完成。请稍后点击“重试失败日期”。"
@@ -3625,9 +3684,7 @@ def mark_workflow_action_execution_rejected(
         "error_code": "WORKFLOW_PERMISSION_RECHECK_FAILED",
         "category": "permission",
         "write_status": "not_started",
-        "published_material_version": (
-            str(material_version) if material_version is not None else ""
-        ),
+        "published_material_version": "",
         "recovery_allowed": False,
         "failed_at": now.isoformat(),
     }
@@ -3737,14 +3794,70 @@ def finalize_requested_batch_cancellation(db: Session, batch_id: str | None) -> 
     _cleanup_terminal_fetched_snapshot(db, _batch_primary_workflow(batch))
 
 
-def cancel_workflow_batch(
+def _authorize_disabled_workflow_owner_stop(db: Session, resource, actor: UserContext) -> UserContext:
+    from .auth import require_admin
+    from .auth_models import User
+
+    actor = refresh_active_user(db, actor)
+    require_admin(actor)
+    owner = db.get(User, resource.owner_id, populate_existing=True)
+    if (resource.department_id != actor.department_id or owner is None
+            or owner.department_id != resource.department_id):
+        raise HTTPException(status_code=404, detail="任务不存在。")
+    if owner.status != "disabled":
+        raise HTTPException(status_code=409, detail="该入口仅用于停止已停用账号的任务。")
+    return actor
+
+
+def stop_disabled_owner_workflow(
+    db: Session, resource_id: str, actor: UserContext, *, batch: bool = False,
+):
+    """Administrator stop retains ordinary cancellation and atomic-write guards."""
+    acquire_claim_lock(db)
+    actor = refresh_active_user(db, actor)
+    if batch:
+        resource = get_workflow_batch_or_404(db, resource_id, actor, refresh=True)
+    else:
+        resource = get_workflow_or_404(db, resource_id, actor, refresh=True)
+    actor = _authorize_disabled_workflow_owner_stop(db, resource, actor)
+    if batch:
+        resource = _cancel_workflow_batch(db, resource_id, actor, admin_stop=True)
+    else:
+        resource = _request_workflow_cancellation(db, resource, actor, admin_stop=True)
+        sync_reminder_from_workflow(db, resource)
+        _cleanup_terminal_fetched_snapshot(db, resource)
+    record_audit(
+        db, actor=actor, action="workflow.admin_stop_disabled_owner",
+        resource_type="workflow_batch" if batch else "workflow", resource_id=resource.id,
+        details={"owner_id": resource.owner_id, "reason": "owner_disabled", "state": resource.state},
+    )
+    db.commit()
+    db.refresh(resource)
+    return resource
+
+
+def cancel_workflow_batch(db: Session, batch_id: str, user: UserContext) -> WorkflowBatch:
+    batch = _cancel_workflow_batch(db, batch_id, user)
+    db.commit()
+    db.refresh(batch)
+    return batch
+
+
+def _cancel_workflow_batch(
     db: Session,
     batch_id: str,
     user: UserContext,
+    *,
+    admin_stop: bool = False,
 ) -> WorkflowBatch:
     acquire_claim_lock(db)
-    batch = get_workflow_batch_or_404(db, batch_id, user)
-    if batch.owner_id != user.user_id:
+    user = refresh_active_user(db, user)
+    batch = get_workflow_batch_or_404(db, batch_id, user, refresh=True)
+    if batch.department_id != user.department_id:
+        raise HTTPException(status_code=404, detail="批次任务不存在。")
+    if admin_stop:
+        user = _authorize_disabled_workflow_owner_stop(db, batch, user)
+    elif batch.owner_id != user.user_id:
         raise HTTPException(status_code=403, detail="只有任务发起人可以取消批次。")
     if batch.state in TERMINAL_WORKFLOW_STATES:
         from .ar_business_investigation import cancel_investigation
@@ -3752,8 +3865,6 @@ def cancel_workflow_batch(
         for workflow in batch.workflows:
             cancel_investigation(db, workflow, user)
         _cleanup_terminal_fetched_snapshot(db, _batch_primary_workflow(batch))
-        db.commit()
-        db.refresh(batch)
         return batch
     if batch.state == "cancelling":
         return batch
@@ -3808,8 +3919,6 @@ def cancel_workflow_batch(
         resource_id=batch.id,
         details={"display_id": batch.display_id, "state": batch.state},
     )
-    db.commit()
-    db.refresh(batch)
     return batch
 
 
@@ -3817,8 +3926,17 @@ def _request_workflow_cancellation(
     db: Session,
     workflow: WorkflowSession,
     user: UserContext,
+    *,
+    admin_stop: bool = False,
 ) -> WorkflowSession:
-    if workflow.owner_id != user.user_id:
+    # All callers hold the scheduler lock; recheck identity and state after waiting.
+    user = refresh_active_user(db, user)
+    workflow = get_workflow_or_404(db, workflow.id, user, refresh=True)
+    if workflow.department_id != user.department_id:
+        raise HTTPException(status_code=404, detail="对话任务不存在。")
+    if admin_stop:
+        user = _authorize_disabled_workflow_owner_stop(db, workflow, user)
+    elif workflow.owner_id != user.user_id:
         raise HTTPException(status_code=403, detail="只有任务发起人可以取消任务。")
     from .ar_business_investigation import cancel_investigation
 
@@ -3887,7 +4005,10 @@ def cancel_workflow(
     user: UserContext,
 ) -> WorkflowSession:
     acquire_claim_lock(db)
+    user = refresh_active_user(db, user)
     workflow = get_workflow_or_404(db, workflow_id, user)
+    if workflow.department_id != user.department_id:
+        raise HTTPException(status_code=404, detail="对话任务不存在。")
     _request_workflow_cancellation(db, workflow, user)
     sync_reminder_from_workflow(db, workflow)
     _cleanup_terminal_fetched_snapshot(db, workflow)
@@ -3902,6 +4023,8 @@ def _validate_file_bindings(
     bindings: dict[str, list[str]],
     user: UserContext,
 ) -> dict[str, list[dict[str, Any]]]:
+    from .ar_material_lifecycle import visible_material_set
+    visible = visible_material_set(db, user.user_id, user.department_id, skill.manifest.id)
     specs = {item.role: item for item in skill.manifest.file_inputs}
     unknown = set(bindings) - set(specs) - {LEGACY_FILE_ROLE}
     if unknown:
@@ -3943,7 +4066,7 @@ def _validate_file_bindings(
                         WorkflowMaterialSet.owner_id == user.user_id,
                         WorkflowMaterialSet.department_id == user.department_id,
                         WorkflowMaterialSet.skill_id == skill.manifest.id,
-                        WorkflowMaterialSet.state == "current",
+                        WorkflowMaterialSet.id == (visible.id if visible else None),
                     )
                 )
                 if record and record.kind == "output"
@@ -4026,6 +4149,8 @@ def reset_workflow(
     actor: UserContext,
 ) -> WorkflowSession:
     acquire_claim_lock(db)
+    db.refresh(workflow)
+    actor = execution_actor(db, workflow, actor, ExecutionPhase.CONFIRM)
     workflow_owner_context(db, workflow)
     _assert_single_flight_available(
         db,
@@ -4059,6 +4184,10 @@ def reset_workflow(
         "任务已重置。已清空核销日期、文件绑定和本次输出列表；"
         "历史记录及已经完成的写入不会撤销。请重新告诉我要跑的核销日期。",
         {"kind": "workflow_reset"},
+    )
+    record_audit(
+        db, actor=actor, action="workflow.reset", resource_type="workflow",
+        resource_id=workflow.id, details={"skill_id": workflow.skill_id},
     )
     db.commit()
     db.refresh(workflow)
@@ -4199,6 +4328,7 @@ def rebuild_failed_workflow(
     db.commit()
     acquire_claim_lock(db)
     db.refresh(source)
+    actor = execution_actor(db, source, actor, ExecutionPhase.CREATE)
     db.expire(source, ["actions"])
     rebuild_reason = legacy_rebuild_block_reason(source)
     if rebuild_reason:
@@ -4221,8 +4351,8 @@ def rebuild_failed_workflow(
         )
 
     # This re-reads the owner and current Skill permission at the moment the
-    # new executable task is created. The caller's identity is still checked
-    # by the route, but the task owner is the authoritative execution subject.
+    # new executable task is created. The actual caller was checked under the
+    # same lock above; the fixed owner must independently remain eligible.
     owner = workflow_owner_context(db, source)
     if actor.department_id != owner.department_id or (
         not actor.is_admin and actor.user_id != owner.user_id
@@ -4491,8 +4621,13 @@ def queue_pi_harness_tool(
     *,
     harness_action_id: str = "",
     worker_id: str = "",
+    attempt: int,
 ) -> WorkflowAction | None:
     """Validate and queue one Skill-owned Pi tool against the pinned task state."""
+    acquire_claim_lock(db)
+    db.refresh(workflow)
+    from .pi_harness_lease import require_harness_lease
+    harness = require_harness_lease(db, workflow.id, harness_action_id, worker_id, attempt)
     if workflow.execution_mode != "pi_harness":
         raise HTTPException(status_code=409, detail="当前任务没有使用 Pi Harness 执行模式。")
     if workflow.state in TERMINAL_WORKFLOW_STATES:
@@ -4501,17 +4636,7 @@ def queue_pi_harness_tool(
         raise HTTPException(status_code=409, detail="任务正在取消，Pi Harness 不会继续调用工具。")
     actor = workflow_owner_context(db, workflow)
     assert_skill_permission(db, actor, workflow.skill_id)
-    harness_started_at = db.scalar(
-        select(WorkflowAction.queued_at)
-        .where(
-            WorkflowAction.workflow_id == workflow.id,
-            WorkflowAction.name == PI_HARNESS_ACTION,
-            WorkflowAction.state == "running",
-        )
-        .order_by(WorkflowAction.queued_at.desc())
-    )
-    if harness_started_at is None:
-        raise HTTPException(status_code=409, detail="Pi Harness 执行租约不存在。")
+    harness_started_at = harness.queued_at
     if tool_name == "accept_fetched_data":
         confirm_fetched_data_review(db, workflow, actor, queue_plan=False)
         record_audit(
@@ -4529,7 +4654,7 @@ def queue_pi_harness_tool(
 
     if tool_name in TOOL_PHASE:
         return queue_execution_phase(db, workflow, tool_name, arguments,
-                                      harness_action_id=harness_action_id, worker_id=worker_id)
+                                      harness_action_id=harness_action_id, worker_id=worker_id, attempt=attempt)
     if tool_name == "initialize_reconciliation":
         from .ar_execution_runner import execution_version
 
@@ -4878,6 +5003,9 @@ def apply_workflow_agent_action(
     actor: UserContext,
 ) -> WorkflowAgentActionResult:
     """Apply one Pi-requested workflow action without exposing execution internals."""
+    acquire_claim_lock(db)
+    db.refresh(workflow)
+    actor = execution_actor(db, workflow, actor, ExecutionPhase.CONFIRM)
     harness_started = (
         workflow.execution_mode == "pi_harness"
         and db.scalar(
@@ -4947,6 +5075,9 @@ def send_workflow_message(
     content: str,
     user: UserContext,
 ) -> WorkflowSession:
+    acquire_claim_lock(db)
+    db.refresh(workflow)
+    user = execution_actor(db, workflow, user, ExecutionPhase.READ)
     harness_started = (
         workflow.execution_mode == "pi_harness"
         and db.scalar(
@@ -4990,11 +5121,22 @@ def send_workflow_message(
             workflow.model_name,
         )
     )
+    # Freeze the decision target while the short request transaction is owned
+    # here. Never hold a connection or scheduler lock across the model call.
+    decision_fields = (
+        "owner_id", "department_id", "stage", "state", "reconciliation_date",
+        "material_set_id", "files_json", "context_json", "artifacts_json",
+        "skill_id", "skill_hash", "skill_version", "execution_mode",
+        "model_connection_id", "model_name",
+    )
+    decision_binding = tuple(getattr(workflow, field) for field in decision_fields)
+    decision_stage, decision_date = workflow.stage, workflow.reconciliation_date
+    db.commit()
     decision = decide_workflow_turn(
         llm,
-        workflow.stage,
+        decision_stage,
         content,
-        workflow.reconciliation_date,
+        decision_date,
         history,
     )
     if decision.action == "confirm_date" and not _is_explicit_confirmation(
@@ -5007,10 +5149,20 @@ def send_workflow_message(
         apply=True,
     ):
         decision = WorkflowDecision("show_status", {}, "backend_guard")
-    if decision.action == "cancel":
-        db.commit()
-        acquire_claim_lock(db)
-        db.refresh(workflow)
+    acquire_claim_lock(db)
+    db.refresh(workflow)
+    phase = ExecutionPhase.CANCEL if decision.action == "cancel" else ExecutionPhase.CONFIRM
+    user = execution_actor(db, workflow, user, phase)
+    if decision.action != "cancel":
+        workflow_owner_context(db, workflow)
+        assert_workflow_execution_enabled(workflow)
+    if decision.action not in {"cancel", "reply", "show_status"} and (
+        tuple(getattr(workflow, field) for field in decision_fields) != decision_binding
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="等待回复期间任务日期、材料或阶段已变化，本次操作未执行，请刷新后重新确认。",
+        )
     target = _apply_decision(db, workflow, decision, user) or workflow
     db.commit()
     db.refresh(target)
@@ -5122,8 +5274,10 @@ def claim_next_workflow_action(
             action.started_at = now
             action.worker_id = worker_id
             action.attempt_count += 1
+            action._ar_claim_attempt = action.attempt_count
             action.heartbeat_at = now
             action.lease_expires_at = lease_deadline(now)
+            workflow_owner_context(db, workflow, observe_phase="claim", action=action)
             selected = action
             break
     finally:
@@ -6074,7 +6228,7 @@ def _execute_named_workflow_phase(
                 "workspace": workspace,
             }
             if len(batch_dates) > 1:
-                fetch_payload.update({"date_from": batch_dates[0], "date_to": batch_dates[-1]})
+                fetch_payload.update({"dates": list(batch_dates)})
             else:
                 fetch_payload["reconciliation_date"] = hexiao_date
             _run_secure_fetch_with_retry(
@@ -7204,12 +7358,12 @@ def _advance_batch(
 def retry_workflow_batch(
     db: Session,
     batch: WorkflowBatch,
-    actor: UserContext | None = None,
+    actor: UserContext,
 ) -> WorkflowBatch:
     acquire_claim_lock(db)
     db.refresh(batch)
+    actor = execution_actor(db, batch, actor, ExecutionPhase.CREATE)
     owner = workflow_owner_context(db, batch)
-    actor = actor or owner
     if batch.state != "failed":
         raise HTTPException(status_code=409, detail="只有失败并暂停的批次可以继续。")
     from .ar_report_recovery import recover_report
@@ -7499,7 +7653,8 @@ def _transition_reconciliation_plan_result(
 def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
     action_id = action.id
     workflow_id = action.workflow_id
-    action._ar_claim_worker_id = action.worker_id
+    action._ar_claim_worker_id = getattr(action, "_ar_claim_worker_id", action.worker_id)
+    action._ar_claim_attempt = getattr(action, "_ar_claim_attempt", action.attempt_count)
     workflow = db.get(WorkflowSession, workflow_id)
     if not workflow:
         action.state = "failed"
@@ -8186,7 +8341,7 @@ def run_workflow_action_once(
     action = claim_next_workflow_action(db, pools, worker_id, execution_contracts=execution_contracts)
     if not action:
         return False
-    with LeaseHeartbeat("workflow_action", action.id, worker_id):
+    with LeaseHeartbeat("workflow_action", action.id, worker_id, attempt=action._ar_claim_attempt):
         execute_workflow_action(db, action)
     if db.info.pop("ar_execution_lease_lost", False):
         return True

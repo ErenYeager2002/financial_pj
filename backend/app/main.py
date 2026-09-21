@@ -1,4 +1,7 @@
 from __future__ import annotations
+from .modules.execution.http_errors import SUBMISSION_CONFLICT_RESPONSES
+from .modules.execution.receipt_query import SubmissionReceiptRead, read_submission_receipt
+from uuid import UUID as SubmissionUUID
 
 import asyncio
 import json
@@ -51,7 +54,7 @@ from .contracts import (
     Workbench,
     domain_contract_schemas,
 )
-from .database import SessionLocal, get_db, init_db
+from .database import SessionLocal, get_db, check_runtime_database
 from .file_service import (
     get_file_detail,
     list_file_groups,
@@ -95,7 +98,7 @@ from .run_service import (
     create_run,
     get_run_or_404,
     list_runs_page,
-    retry_run,
+    prepare_retry_request,
     retry_status,
     serialize_run,
 )
@@ -189,7 +192,7 @@ async def lifespan(_: FastAPI):
             "生产环境必须设置 FINANCIAL_SESSION_COOKIE_SECURE=true（并要求 HTTPS）。"
         )
     settings.ensure_directories()
-    init_db()
+    check_runtime_database()
     registry.refresh()
     with SessionLocal() as db:
         bootstrap_admin(db)
@@ -739,6 +742,9 @@ def download_file(
     if not record:
         raise HTTPException(status_code=404, detail="文件不存在。")
     assert_owner(record.owner_id, user, "文件", record.department_id)
+    from .ar_material_lifecycle import retirement_receipt
+    if retirement_receipt(db, record):
+        raise HTTPException(status_code=410, detail="旧工作簿已被最新任务材料替换并清理，不再提供下载。")
     path = Path(record.stored_path).resolve()
     allowed_roots = (settings.upload_dir, settings.run_dir, settings.workflow_dir)
     if not any(path.is_relative_to(root.resolve()) for root in allowed_roots):
@@ -792,13 +798,24 @@ def remove_uploaded_file(
     db.commit()
 
 
-@app.post("/api/runs", response_model=RunDetail)
+@app.get("/api/submissions/{request_id}", response_model=SubmissionReceiptRead)
+def submission_status(request_id: SubmissionUUID, db: Session = Depends(get_db),
+                      user: UserContext = Depends(get_current_user)) -> SubmissionReceiptRead:
+    return read_submission_receipt(db, request_id, user)
+
+
+@app.post("/api/runs", response_model=RunDetail, responses=SUBMISSION_CONFLICT_RESPONSES)
 def new_run(
     body: RunCreate,
+    standard_only: bool = False,
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ) -> RunDetail:
-    run = create_run(db, body, user)
+    # Authentication reads are finished; this endpoint owns this Session.
+    db.rollback()
+    from .modules.execution.run_submission import submit_run
+    run = submit_run(db, body, user, standard_only=standard_only)
+    db.commit()
     return serialize_run(run)
 
 
@@ -939,6 +956,11 @@ def confirm_workflow_batch_fetched_data(
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ) -> WorkflowBatchRead:
+    from .scheduler import acquire_claim_lock
+    from .authorization import refresh_active_user
+
+    acquire_claim_lock(db)
+    user = refresh_active_user(db, user)
     batch = get_workflow_batch_or_404(db, batch_id, user)
     assert_skill_permission(db, user, batch.skill_id)
     confirmed = confirm_batch_fetched_data_review(db, batch, user)
@@ -972,21 +994,30 @@ def supplement_workflow_batch_fetched_data(
         body.reconciliation_date,
         body.ar_ids,
         body.so_ids,
-    )
-    record_audit(
-        db,
         actor=user,
-        action="workflow_batch.fetched_data.supplement.requested",
-        resource_type="workflow_batch",
-        resource_id=batch.id,
-        details={
-            "skill_id": batch.skill_id,
-            "reconciliation_date": body.reconciliation_date,
-            "requested": supplement_audit_summary(supplement),
-        },
     )
-    db.commit()
     return _serialize_workflow_batch_for_user(db, user, requested)
+
+
+@app.post("/api/admin/workflows/{workflow_id}/stop-disabled-owner", response_model=WorkflowRead)
+def admin_stop_disabled_workflow(
+    workflow_id: str,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> WorkflowRead:
+    from .workflow_service import stop_disabled_owner_workflow
+    return serialize_workflow(stop_disabled_owner_workflow(db, workflow_id, user))
+
+
+@app.post("/api/admin/workflow-batches/{batch_id}/stop-disabled-owner", response_model=WorkflowBatchRead)
+def admin_stop_disabled_workflow_batch(
+    batch_id: str,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> WorkflowBatchRead:
+    from .workflow_service import stop_disabled_owner_workflow
+    result = stop_disabled_owner_workflow(db, batch_id, user, batch=True)
+    return _serialize_workflow_batch_for_user(db, user, result)
 
 
 @app.post("/api/workflows/{workflow_id}/cancel", response_model=WorkflowRead)
@@ -1225,6 +1256,11 @@ def confirm_workflow_fetched_data(
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ) -> WorkflowRead:
+    from .scheduler import acquire_claim_lock
+    from .authorization import refresh_active_user
+
+    acquire_claim_lock(db)
+    user = refresh_active_user(db, user)
     workflow = get_workflow_or_404(db, workflow_id, user)
     assert_skill_permission(db, user, workflow.skill_id)
     confirmed = confirm_fetched_data_review(db, workflow, user)
@@ -1257,19 +1293,8 @@ def supplement_workflow_fetched_data(
         workflow,
         body.ar_ids,
         body.so_ids,
-    )
-    record_audit(
-        db,
         actor=user,
-        action="workflow.fetched_data.supplement",
-        resource_type="workflow",
-        resource_id=workflow.id,
-        details={
-            "skill_id": workflow.skill_id,
-            **supplement_audit_summary(supplement),
-        },
     )
-    db.commit()
     return serialize_workflow(requested)
 
 
@@ -1522,21 +1547,26 @@ def get_run_event_history(
     ]
 
 
-@app.post("/api/runs/{run_id}/retry", response_model=RunDetail)
+@app.post("/api/runs/{run_id}/retry", response_model=RunDetail, responses=SUBMISSION_CONFLICT_RESPONSES)
 def retry(
     run_id: str,
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ) -> RunDetail:
+    from .modules.execution.idempotency import Operation
+    from .modules.execution.run_submission import prepare_retry_submission_request, submit_run
     source = get_run_or_404(db, run_id, user)
-    retried = retry_run(db, source, user)
+    source_id, source_skill_id = source.id, source.skill_id
+    request = prepare_retry_submission_request(db, source, user)
+    db.rollback()
+    retried = submit_run(db, request, user, operation=Operation.RUN_RETRY)
     record_audit(
         db,
         actor=user,
         action="run.retry",
         resource_type="run",
         resource_id=retried.id,
-        details={"source_run_id": source.id, "skill_id": source.skill_id},
+        details={"source_run_id": source_id, "skill_id": source_skill_id},
     )
     db.commit()
     return serialize_run(retried)
@@ -1548,9 +1578,13 @@ def confirm(
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ) -> RunActionResponse:
-    stored = get_run_or_404(db, run_id, user)
-    assert_skill_permission(db, user, stored.skill_id)
+    from .scheduler import acquire_claim_lock
+    from .authorization import refresh_active_user
+    acquire_claim_lock(db)
+    user = refresh_active_user(db, user)
+    stored = get_run_or_404(db, run_id, user, lock=True)
     run = confirm_run(db, stored, user)
+    db.commit()
     return RunActionResponse(id=run.id, state=run.state, message="任务已确认。")
 
 
@@ -1560,7 +1594,13 @@ def cancel(
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ) -> RunActionResponse:
-    run = cancel_run(db, get_run_or_404(db, run_id, user))
+    from .scheduler import acquire_claim_lock
+    from .authorization import refresh_active_user
+    acquire_claim_lock(db)
+    user = refresh_active_user(db, user)
+    stored = get_run_or_404(db, run_id, user, lock=True)
+    run = cancel_run(db, stored, user)
+    db.commit()
     return RunActionResponse(id=run.id, state=run.state, message="取消请求已提交。")
 
 

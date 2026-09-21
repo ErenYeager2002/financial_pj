@@ -14,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [safety, linux-ipc, ar-synthetic, ar-source-synthetic, native-artifacts, backend-format, backend-static, backend-unit, contracts]
+        suite: [schema-release, bootstrap-admin, database-lifecycle, migrate, migration-lock, schema-check, migration-connection, safety, linux-ipc, ar-synthetic, ar-source-synthetic, fetch-bundle-synthetic, ordinary-e2e, pi-files, native-artifacts, backend-format, backend-static, backend-unit, contracts]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -41,6 +41,11 @@ jobs:
           REFACTOR_BACKEND_TEST_IMAGE: financial-refactor-test:ci
           REFACTOR_POSTGRES_IMAGE: postgres:16-alpine
         run: python3 -B scripts/refactor/postgres_baseline.py
+      - name: PostgreSQL migration locks and read-only role
+        env:
+          REFACTOR_BACKEND_TEST_IMAGE: financial-refactor-test:ci
+          REFACTOR_POSTGRES_IMAGE: postgres:16-alpine
+        run: python3 -B scripts/refactor/postgres_baseline.py --suite migration-postgres
   frontend:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -50,6 +55,13 @@ jobs:
           persist-credentials: false
       - name: Build locked dependencies including local Agent runtime
         run: docker build -f scripts/refactor/Dockerfile.frontend-test -t financial-refactor-web-test:ci .
+      - name: Scanner and process isolation regression tests
+        run: >-
+          docker run --rm --read-only --network none --tmpfs /tmp:rw,size=512m
+          -v "$GITHUB_WORKSPACE:/source:ro" -w /source
+          -e REFACTOR_TYPESCRIPT_PATH=/app/web/node_modules/typescript
+          --entrypoint sh financial-refactor-web-test:ci
+          -c 'node --test scripts/refactor/tests/*.test.cjs'
       - name: Typecheck, lint, contracts, synthetic tests and build
         run: >-
           docker run --rm --read-only --network none --tmpfs /tmp:rw,size=3g

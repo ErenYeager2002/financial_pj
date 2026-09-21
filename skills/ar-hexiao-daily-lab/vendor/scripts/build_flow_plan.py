@@ -3,8 +3,8 @@
 """
 从判定结果生成《流转写入计划_校验后.json》。
 
-verdict=write 当且仅当：强三键唯一命中 + 可定位 + 有可写内容。
-弱命中 / 0 / 多命中 → hand（须手填）。不写任何用户 Excel。
+verdict=write 当且仅当：强三键或日期金额弱匹配唯一命中 + 可定位 + 有可写内容。
+0 / 多命中 / 未知匹配方式 → hand（须手填）。不写任何用户 Excel。
 """
 from __future__ import annotations
 
@@ -36,6 +36,8 @@ STRONG = frozenset({
     "三键(原币公式,中英文对照)",
     "三键(原币公式含手续费,中英文对照)",
 })
+AUTO_MATCH_BASES = STRONG | {"日期+金额(名字不符)", "同回款历史单号及预收承接"}
+
 _LOC_RE = re.compile(
     r"^(?P<file>.+)#(?P<sheet>.+) 第(?P<row>\d+)行（(?P<by>[^）]*)）\s*$"
 )
@@ -160,7 +162,9 @@ def plan_item_for_ar(ar: str, items: List[dict], summary_row: Optional[dict]) ->
     if updated in ("（空白）", "空白", "空"):
         updated = ""
 
+    import flow_source_receipts
     base = {
+        'source_receipts': flow_source_receipts.collect(items),
         "ar": ar,
         "file": file_,
         "sheet": sheet,
@@ -194,14 +198,12 @@ def plan_item_for_ar(ar: str, items: List[dict], summary_row: Optional[dict]) ->
     if hits and int(hits) > 1:
         return {**base, "verdict": "hand", "reason": f"按{matched_by or '当前匹配条件'}多命中 hits={hits}，须人工指定行"}
 
-    # hits == 1：准入必须是精确强三键集合（禁止 startswith 放宽）
-    if matched_by not in STRONG:
-        if "名字不符" in matched_by or matched_by == "日期+金额(名字不符)":
-            return {**base, "verdict": "hand", "reason": "弱命中（名字不符），须人工确认"}
-        return {**base, "verdict": "hand", "reason": f"非强三键（{matched_by or '未知'}）"}
+    # 名称不符但日期金额唯一命中也可自动处理；保留原匹配依据供审计。
+    if hits != 1 or matched_by not in AUTO_MATCH_BASES:
+        return {**base, "verdict": "hand", "reason": f"不支持的匹配方式（{matched_by or '未知'}）"}
 
     if not file_ or not sheet or row_no is None:
-        return {**base, "verdict": "hand", "reason": "强命中但无法解析 file/sheet/row"}
+        return {**base, "verdict": "hand", "reason": "唯一命中但无法解析 file/sheet/row"}
 
     # 至少要写单号或是否更新之一；单号空则只写是否更新
     if not base["write_order"] and not base["write_updated"]:
@@ -212,61 +214,14 @@ def plan_item_for_ar(ar: str, items: List[dict], summary_row: Optional[dict]) ->
 
 def finalize_plan_after_ledger(flow_plan: dict, checked_plan: dict, *, workspace: Optional[Path] = None) -> dict:
     """根据盈亏表实际可写/已写结果回填“是/部分/空白”和未核销红字。"""
-    good = {
-        ((x.get("ar") or "").strip(), (x.get("so") or "").strip())
-        for key in ("write", "skip")
-        for x in (checked_plan.get(key) or [])
-    }
-    bad = {
-        ((x.get("ar") or "").strip(), (x.get("so") or "").strip())
-        for x in (checked_plan.get("conflict") or [])
-    }
-    good_cases = {
-        str(x.get("case_id") or "").strip()
-        for key in ("write", "skip")
-        for x in (checked_plan.get(key) or [])
-        if str(x.get("case_id") or "").strip()
-    }
-    bad_cases = {
-        str(x.get("case_id") or "").strip()
-        for x in (checked_plan.get("conflict") or [])
-        if str(x.get("case_id") or "").strip()
-    }
     finalized = json.loads(json.dumps(flow_plan, ensure_ascii=False))
-    for item in finalized.get("items") or []:
-        if item.get("verdict") != "write":
-            continue
-        ar = (item.get("ar") or "").strip()
-        completed: List[str] = []
-        incomplete: List[str] = []
-        outcomes = item.get("so_outcomes") or [
-            {"so": so, "buckets": ["auto"]} for so in (item.get("so_list") or [])
-        ]
-        for outcome in outcomes:
-            so = (outcome.get("so") or "").strip()
-            buckets = [str(x or "") for x in (outcome.get("buckets") or [])]
-            cases = [str(x).strip() for x in (outcome.get("case_ids") or []) if str(x).strip()]
-            if cases:
-                is_complete = all(case in good_cases for case in cases) and not any(
-                    case in bad_cases for case in cases
-                )
-            else:
-                is_complete = bool(so and (ar, so) in good and (ar, so) not in bad)
-            is_complete = is_complete and all(x in ("auto", "ready") for x in buckets)
-            (completed if is_complete else incomplete).append(so)
-            outcome["completed"] = bool(is_complete)
-        if completed and not incomplete:
-            status = "是"
-        elif completed:
-            status = "部分"
-        else:
-            status = ""
-        item["updated_suggest"] = status
-        item["red_sos"] = incomplete if status == "部分" else []
-        item["order_rich_runs"] = _rich_runs(item.get("order_suggest") or "", item["red_sos"])
-        item["phase"] = "post_ledger"
     import flow_monthly
     flow_monthly.finalize(finalized.get("items") or [], checked_plan)
+    for item in finalized.get("items") or []:
+        status = item.get("updated_suggest") or ""
+        item["red_sos"] = [o["so"] for o in item.get("so_outcomes", [])
+                           if not o.get("completed")] if status == "部分" else []
+        item["order_rich_runs"] = _rich_runs(item.get("order_suggest") or "", item["red_sos"])
     if workspace is not None:
         flow_monthly.prepare(workspace, finalized.get("items") or [])
     finalized["counts"] = {kind: sum(x.get("verdict")==kind for x in finalized.get("items") or [])

@@ -6,6 +6,7 @@ remain active for the financial validators; original events remain auditable.
 from collections import Counter
 from copy import deepcopy
 from decimal import Decimal
+import json
 
 
 def _fact(row):
@@ -17,6 +18,19 @@ def _event_fact(event):
     return _fact({"so":event.get("so"), "sod":event.get("sod"),
                   "amount":event.get("回款明细"), "date":event.get("收款时间"),
                   "method":event.get("收款方式")})
+
+
+def _group_event_facts(key, group):
+    """Compare both journal kinds without guessing which duplicate is missing."""
+    result = {("events", identity): _event_fact(event)
+              for identity, event in (group.get("events") or {}).items()}
+    ordinary = group.get("ordinary_events") or {}
+    if ordinary:
+        so, sod = next(iter(result.values()))[:2] if result else json.loads(key)
+        for identity, event in ordinary.items():
+            amount, day, method = event["signature"]
+            result[("ordinary_events", identity)] = (so, sod, Decimal(str(amount)), day or "", method or "")
+    return result
 
 
 def rebind_missing_baseline_events(ledger, differences):
@@ -31,22 +45,28 @@ def rebind_missing_baseline_events(ledger, differences):
         missing[expected] = max(missing.get(expected, 0), int(difference.get("count", 0)))
     audit = []
     for key, group in updated.get("baseline_receipts", {}).items():
-        events = group.get("events") or {}
-        counts = Counter(_event_fact(event) for event in events.values())
-        removed = {identity:event for identity,event in events.items()
-                   if 0 < counts[_event_fact(event)] <= missing.get(_event_fact(event), 0)}
-        if not removed:
+        facts = _group_event_facts(key, group)
+        counts = Counter(facts.values())
+        removed = {kind: {} for kind in ("events", "ordinary_events")}
+        for (kind, identity), fact in facts.items():
+            if 0 < counts[fact] <= missing.get(fact, 0):
+                removed[kind][identity] = group[kind][identity]
+        if not any(removed.values()):
             continue
-        group["events"] = {identity:event for identity,event in events.items() if identity not in removed}
-        group.setdefault("unbound_events", {}).update(deepcopy(removed))
-        # A former fully settled result cannot describe a workbook that omits
-        # one of its receipts. The classifier recomputes settlement from source.
+        for kind, items in removed.items():
+            if items:
+                group[kind] = {identity: event for identity, event in group[kind].items() if identity not in items}
+                group.setdefault("unbound_" + kind, {}).update(deepcopy(items))
+        # Recompute completion on the selected workbook; preserve source allocation.
         group.pop("settled", None)
         group.pop("accrual", None)
-        if not group["events"] and (group.get("receivable_group_scope") or group.get("ordinary_events")):
+        if not group.get("events"):
             group["scope_only"] = True
-        audit.append({"group":key,"event_ids":sorted(removed),
-                      "reason":"verified_missing_from_selected_material"})
+        entry = {"group": key, "event_ids": sorted(removed["events"]),
+                 "reason": "verified_missing_from_selected_material"}
+        if removed["ordinary_events"]:
+            entry["ordinary_event_ids"] = sorted(removed["ordinary_events"])
+        audit.append(entry)
     return updated, audit
 
 
@@ -57,19 +77,15 @@ def differences_from_current_rows(ledger, current_rows):
     They continue through the ordinary current-workbook validators.
     """
     differences = []
-    for group in ledger.get("baseline_receipts", {}).values():
-        events = group.get("events") or {}
-        if not events:
+    for key, group in ledger.get("baseline_receipts", {}).items():
+        facts = Counter(_group_event_facts(key, group).values())
+        if not facts:
             continue
-        facts = Counter(_event_fact(event) for event in events.values())
         so, sod = next(iter(facts))[:2]
         rows = [row for row in current_rows if (row.get("so"), row.get("sod")) == (so, sod)]
         if not rows:
             continue  # A missing annual workbook is not an unwritten receipt.
         known = Counter(facts)
-        for identity, event in (group.get("ordinary_events") or {}).items():
-            amount, day, method = event['signature']
-            known[(so, sod, Decimal(str(amount)), day, method)] += 1
         actual = Counter(_fact(row) for row in rows if Decimal(str(row.get("amount", 0))))
         dirty = any(not Decimal(str(row.get("amount", 0))) and
                     (row.get("date") or row.get("method")) for row in rows)

@@ -23,6 +23,7 @@ from sqlalchemy.ext.hybrid import hybrid_property
 
 from .auth_models import User, UserSession, UserSkillPermission  # noqa: F401
 from .database import Base
+from .modules.execution.idempotency_models import IdempotencyRequest  # noqa: F401
 
 
 def utcnow() -> datetime:
@@ -290,6 +291,7 @@ class TaskDraftRecord(Base):
     skill_version: Mapped[str] = mapped_column(String(64))
     skill_hash: Mapped[str] = mapped_column(String(64))
     state: Mapped[str] = mapped_column(String(24), default="draft", index=True)
+    content_revision: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     source: Mapped[str] = mapped_column(String(24), default="assistant")
     message: Mapped[str] = mapped_column(Text, default="")
     confidence: Mapped[int] = mapped_column(Integer, default=0)
@@ -954,6 +956,7 @@ event.listen(StepRun, "before_update", _validate_step_run_retry)
 class RunRecord(Base):
     __tablename__ = "runs"
     __table_args__ = (
+        Index("ix_runs_source_session_scope", "owner_id", "department_id", "adapter", "source_session_key"),
         Index(
             "ux_runs_id_owner_department",
             "id",
@@ -991,6 +994,8 @@ class RunRecord(Base):
     files_json: Mapped[str] = mapped_column(Text, default="{}")
     input_hash: Mapped[str] = mapped_column(String(64), default="")
     idempotency_key: Mapped[str] = mapped_column(String(128), default="", index=True)
+    source_session_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    source_command_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     result_json: Mapped[str] = mapped_column(Text, default="{}")
     error_message: Mapped[str] = mapped_column(Text, default="")
     confirmation_required: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -1008,6 +1013,16 @@ class RunRecord(Base):
     model_audit: Mapped[RunModelAudit | None] = relationship(
         back_populates="run", cascade="all, delete-orphan", uselist=False
     )
+
+
+class RunExecutionSnapshot(Base):
+    __tablename__ = "run_execution_snapshots"
+    run_id: Mapped[str] = mapped_column(String(36), ForeignKey("runs.id", ondelete="CASCADE"), primary_key=True)
+    schema_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    snapshot_json: Mapped[str] = mapped_column(Text, nullable=False)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class RunEvent(Base):

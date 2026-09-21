@@ -1,4 +1,5 @@
 from __future__ import annotations
+from ..modules.execution.http_errors import SUBMISSION_CONFLICT_RESPONSES
 
 import sys
 
@@ -45,13 +46,15 @@ from ..contracts import (
 from ..database import SessionLocal, get_db
 from ..draft_service import (
     confirm_task_draft,
+    prepare_draft_run_request,
     delete_task_draft,
     get_task_draft,
     list_agent_skill_details,
     prepare_task_draft,
     update_task_draft,
 )
-from ..run_service import serialize_run
+from ..run_service import prepare_run, serialize_run
+from ..schemas import RunCreate
 from ..schemas_assistant import (
     AdminAssistantProfileWrite,
     AgentModelRequest,
@@ -292,7 +295,9 @@ def get_draft(
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ) -> TaskDraft:
-    return get_task_draft(db, draft_id, user)
+    draft = get_task_draft(db, draft_id, user)
+    db.commit()
+    return draft
 
 
 @router.patch("/api/task-drafts/{draft_id}", response_model=TaskDraft)
@@ -315,13 +320,14 @@ def update_draft(
     return draft
 
 
-@router.post("/api/task-drafts/{draft_id}/confirm", response_model=RunDetail)
+@router.post("/api/task-drafts/{draft_id}/confirm", response_model=RunDetail, responses=SUBMISSION_CONFLICT_RESPONSES)
 def confirm_draft(
     draft_id: str,
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ) -> RunDetail:
-    run = confirm_task_draft(db, draft_id, user)
+    from ..modules.execution.draft_submission import submit_draft
+    run = submit_draft(db, draft_id, user)
     record_audit(
         db,
         actor=user,

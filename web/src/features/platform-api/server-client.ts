@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { credentialHeaders, platformCredential } from '@/features/auth/server-auth';
-import { PlatformApiError, platformErrorMessage } from './errors';
+import { PlatformApiError, platformApiError } from './errors';
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
@@ -87,9 +87,8 @@ export async function platformServerResponse(
     });
     if (!response.ok) {
       const body = await responseBody(response);
-      throw new PlatformApiError(
-        response.status,
-        platformErrorMessage(body, `财务平台请求失败（${response.status}）。`)
+      throw platformApiError(
+        response.status, body, `财务平台请求失败（${response.status}）。`
       );
     }
     return response;

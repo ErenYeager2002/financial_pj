@@ -8,7 +8,8 @@ import pytest
 from helpers import TEST_PASSWORD, auth_client
 
 from app.auth_service import create_user
-from app.database import SessionLocal, init_db
+from app.database import SessionLocal
+from db_setup import migrate_test_database
 from app.scheduler import recover_expired_jobs
 from app.task_discovery import (
     TaskDiscoveryDayResult,
@@ -32,7 +33,7 @@ from app.workflow_service import (
 
 
 def _create_employee(username: str) -> str:
-    init_db()
+    migrate_test_database()
     with SessionLocal() as db:
         user = create_user(
             db,

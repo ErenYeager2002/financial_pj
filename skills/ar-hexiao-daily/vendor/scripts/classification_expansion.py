@@ -9,7 +9,7 @@ from typing import Tuple
 import common
 import fallback_allocation_ledger as FAL
 import fallback_sequence as FS
-from classification_amounts import _currency_key, _hold, _hold_each_source_order, _order_delivery_local, _prepare_parent_totals, _writeoff_business_amount, subset_sum_unique
+from classification_amounts import _currency_key, _hold, _hold_each_source_order, _order_delivery_local, _order_amount_local, _prepare_parent_totals, _writeoff_business_amount, subset_sum_unique
 from classification_contract import CoverageError, TOL
 
 
@@ -96,6 +96,16 @@ def expand_payment(p: dict, rates: Dict[str, float]) -> List[dict]:
             item.setdefault("delivery_date", route_fields.get("delivery_date"))
             item.setdefault("delivery_date_issue", route_fields.get("delivery_date_issue") or "")
             item.setdefault("sales_name", p.get("sales_name") or "")
+            source_order = order_by_so.get(str(item.get("so") or "").strip()) or {}
+            local = common.to_number(source_order.get("deliver_local"))
+            original = common.to_number(source_order.get("deliver"))
+            rate = common.to_number(source_order.get("rate"))
+            if local is not None:
+                item["delivery_amount_basis"] = "zhiyun_delivery_local"
+                if original is not None and rate is not None and rate > 0 and abs(round(original * rate, 2) - local) > TOL:
+                    item.setdefault("warning_codes", []).append("W_DELIVERY_LOCAL_RATE_DIFFERENCE")
+        for item in items:
+            item["flow_carry_evidence"] = p.get("flow_carry_evidence") or {}
         if duplicate_audit:
             for item in items:
                 item["duplicate_writeoff_audit"] = duplicate_audit
@@ -108,7 +118,8 @@ def expand_payment(p: dict, rates: Dict[str, float]) -> List[dict]:
                 ):
                     so = str(item.get("so") or "").strip()
                     order = order_by_so.get(so) or {}
-                    if common.to_number((p.get("writeoffs_local") or {}).get(so)) is not None:
+                    if (common.to_number((p.get("writeoffs_local") or {}).get(so)) is not None
+                            or common.to_number(order.get("deliver_local")) is not None):
                         item["local_amount_basis"] = "zhiyun_delivery_local"
                     elif (
                         common.to_number(order.get("rate")) is not None
@@ -153,6 +164,17 @@ def expand_payment(p: dict, rates: Dict[str, float]) -> List[dict]:
     has_itemized_writeoff = bool(writeoffs)
     detail_cumulative_orig = dict(p.get("cumulative_writeoffs") or {})
     detail_cumulative_local = dict(p.get("cumulative_writeoffs_local") or {})
+    # Incomplete source prefixes cannot be repaired with another receipt's ratio.
+    unresolved_local_sos = {
+        so for amounts in (p.get("writeoffs_local") or {}, detail_cumulative_local)
+        for so, value in amounts.items() if value is None
+    }
+    if not has_itemized_writeoff and unresolved_local_sos.intersection(
+        str(order.get("so") or "") for order in orders
+    ):
+        return finish(_hold_each_source_order(
+            p, "E7", "关联订单核销明细缺少可确认的本币金额或明细汇率，累计金额不完整",
+        ))
     fallback_history_orig: Dict[str, float] = {}
     fallback_history_local: Dict[str, float] = {}
     effective_cumulative_orig = dict(detail_cumulative_orig)
@@ -263,7 +285,11 @@ def expand_payment(p: dict, rates: Dict[str, float]) -> List[dict]:
             amount,
             explicit_local=explicit_local,
             explicit_orig=explicit_orig,
+            currency=(order or {}).get("currency") or p.get("currency"),
         )
+
+    def _delivery_local(amount: Optional[float], order: dict):
+        return _order_delivery_local(amount, p, rates, order)
 
     out: List[dict] = []
     deliver_by_so: Dict[str, float] = {}
@@ -275,21 +301,15 @@ def expand_payment(p: dict, rates: Dict[str, float]) -> List[dict]:
             deliver_by_so[o["so"]] = round(deliver_by_so.get(o["so"], 0.0) + float(o["deliver"]), 2)
 
     for so, h in H.items():
+        if so in unresolved_local_sos:
+            out.append(_hold(p, "E7", "核销明细本币金额或自身汇率缺失，当前或累计金额不完整", so=so))
+            continue
         lines = sod_lines.get(so) or []
         chosen: Optional[List[dict]] = None
         how = ""
         order = order_by_so.get(so) or {}
         so_delivery_orig = deliver_by_so.get(so)
-        if has_itemized_writeoff:
-            so_delivery_local, _ = itemized_local(
-                so_delivery_orig, order,
-                explicit_local=business_local_by_so.get(so),
-                explicit_orig=h,
-            )
-        else:
-            so_delivery_local, _ = _order_delivery_local(
-                so_delivery_orig, p, rates, order
-            )
+        so_delivery_local, _ = _delivery_local(so_delivery_orig, order)
         all_sods = sorted({
             str(x.get("sod") or "").strip() for x in lines
             if str(x.get("sod") or "").strip()
@@ -302,18 +322,7 @@ def expand_payment(p: dict, rates: Dict[str, float]) -> List[dict]:
             one_delivery = common.to_number(one_line.get("deliver"))
             if not one_sod or one_delivery is None:
                 continue
-            if has_itemized_writeoff:
-                one_local, _ = itemized_local(
-                    one_delivery, order,
-                    explicit_local=business_local_by_so.get(so),
-                    explicit_orig=h,
-                )
-            else:
-                one_local, _ = _order_delivery_local(
-                    one_delivery, p, rates, order,
-                    explicit_local=business_local_by_so.get(so),
-                    explicit_orig=h,
-                )
+            one_local, _ = _delivery_local(one_delivery, order)
             if one_local is not None:
                 sod_delivery_local[one_sod] = round(
                     sod_delivery_local.get(one_sod, 0.0) + float(one_local), 2
@@ -326,24 +335,18 @@ def expand_payment(p: dict, rates: Dict[str, float]) -> List[dict]:
                 explicit_orig=h,
             )
         else:
-            current_local, _ = _order_delivery_local(
+            current_local, _ = _order_amount_local(
                 h, p, rates, order,
                 explicit_local=business_local_by_so.get(so),
                 explicit_orig=h,
             )
+        if current_local is None:
+            out.append(_hold(p, "E7", "本次核销金额缺少可确认的本币依据", so=so))
+            continue
         default_lines = []
         for one_line in lines:
             one = dict(one_line)
-            if has_itemized_writeoff:
-                one["deliver_local"], _ = itemized_local(
-                    one.get("deliver"), order,
-                    explicit_local=business_local_by_so.get(so),
-                    explicit_orig=h,
-                )
-            else:
-                one["deliver_local"], _ = _order_delivery_local(
-                    one.get("deliver"), p, rates, order
-                )
+            one["deliver_local"], _ = _delivery_local(one.get("deliver"), order)
             default_lines.append(one)
         default_cumulative_local = None
         default_cumulative_orig = (
@@ -359,7 +362,7 @@ def expand_payment(p: dict, rates: Dict[str, float]) -> List[dict]:
                     explicit_orig=default_cumulative_orig,
                 )
             else:
-                default_cumulative_local, _ = _order_delivery_local(
+                default_cumulative_local, _ = _order_amount_local(
                     default_cumulative_orig,
                     p,
                     rates,
@@ -438,16 +441,13 @@ def expand_payment(p: dict, rates: Dict[str, float]) -> List[dict]:
                         explicit_orig=h,
                     )
                 else:
-                    current_local, _ = _order_delivery_local(
+                    current_local, _ = _order_amount_local(
                         h, p, rates, order,
                         explicit_local=business_local_by_so.get(so),
                         explicit_orig=h,
                     )
                 deliver_orig = deliver_by_so.get(so)
-                if has_itemized_writeoff:
-                    deliver_local, _ = itemized_local(deliver_orig, order)
-                else:
-                    deliver_local, _ = _order_delivery_local(deliver_orig, p, rates, order)
+                deliver_local, _ = _delivery_local(deliver_orig, order)
                 cumulative_orig = (
                     effective_cumulative_orig.get(so)
                     if has_itemized_writeoff
@@ -466,7 +466,7 @@ def expand_payment(p: dict, rates: Dict[str, float]) -> List[dict]:
                             explicit_orig=cumulative_orig,
                         )
                     else:
-                        cumulative_local, _ = _order_delivery_local(
+                        cumulative_local, _ = _order_amount_local(
                             cumulative_orig, p, rates, order,
                             explicit_local=(
                                 (p.get("cumulative_writeoffs_local") or {}).get(so)
@@ -518,22 +518,14 @@ def expand_payment(p: dict, rates: Dict[str, float]) -> List[dict]:
                     explicit_local=business_local_by_so.get(so),
                     explicit_orig=h,
                 )
-                deliver_local, _ = itemized_local(
-                    line_orig, order,
-                    explicit_local=business_local_by_so.get(so),
-                    explicit_orig=h,
-                )
+                deliver_local, _ = _delivery_local(line_orig, order)
             else:
-                current_local, _ = _order_delivery_local(
+                current_local, _ = _order_amount_local(
                     current_orig, p, rates, order,
                     explicit_local=business_local_by_so.get(so),
                     explicit_orig=h,
                 )
-                deliver_local, _ = _order_delivery_local(
-                    line_orig, p, rates, order,
-                    explicit_local=business_local_by_so.get(so),
-                    explicit_orig=h,
-                )
+                deliver_local, _ = _delivery_local(line_orig, order)
             cumulative_local = None
             cumulative_orig = (
                 effective_cumulative_orig.get(so)
@@ -552,7 +544,7 @@ def expand_payment(p: dict, rates: Dict[str, float]) -> List[dict]:
                         explicit_orig=cumulative_orig,
                     )
                 else:
-                    cumulative_local, _ = _order_delivery_local(
+                    cumulative_local, _ = _order_amount_local(
                         cumulative_orig, p, rates, order,
                         explicit_local=(
                             (p.get("cumulative_writeoffs_local") or {}).get(so)
@@ -572,7 +564,7 @@ def expand_payment(p: dict, rates: Dict[str, float]) -> List[dict]:
                     and abs(float(default_cumulative_local) - float(so_receipt_sources[so]["amount_local"])) <= TOL):
                 cumulative_local = current_local
             out.append({
-                "so_all_lines": lines,  # 整段对齐消歧要用（见 LedgerIndex.positional_row）
+                "so_all_lines": lines,  # 保留来源明细，行序不构成定位证据
                 "ar": p["ar"], "so": so, "sod": line["sod"],
                 "customer": p.get("customer") or "",
                 "amount_orig": current_orig,

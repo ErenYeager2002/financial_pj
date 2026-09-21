@@ -12,7 +12,8 @@ from sqlalchemy import create_engine, event, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.database import Base, SessionLocal, init_db
+from app.database import Base, SessionLocal
+from db_setup import migrate_test_database
 from app.fetched_bundle_service import (
     FetchedBundleError,
     FetchedBundleReplayAdapter,
@@ -124,7 +125,7 @@ def test_materialize_bundle_atomically_publishes_validated_members(
     from app import fetched_bundle_service
 
     monkeypatch.setattr(fetched_bundle_service, "settings", _settings(tmp_path))
-    init_db()
+    migrate_test_database()
     owner_id = f"bundle-owner-{uuid.uuid4().hex[:8]}"
     with SessionLocal() as db:
         workflow = _workflow(owner_id)
@@ -165,7 +166,7 @@ def test_materialized_bundle_survives_a_later_caller_rollback(
     from app import fetched_bundle_service
 
     monkeypatch.setattr(fetched_bundle_service, "settings", _settings(tmp_path))
-    init_db()
+    migrate_test_database()
     owner_id = f"bundle-durable-{uuid.uuid4().hex[:8]}"
     with SessionLocal() as db:
         workflow = _workflow(owner_id)
@@ -200,7 +201,7 @@ def test_publication_failure_leaves_a_recoverable_database_record(
         "replace",
         lambda *_args: (_ for _ in ()).throw(OSError("synthetic publish failure")),
     )
-    init_db()
+    migrate_test_database()
     owner_id = f"bundle-publish-failure-{uuid.uuid4().hex[:8]}"
     with SessionLocal() as db:
         workflow = _workflow(owner_id)
@@ -247,7 +248,7 @@ def test_failed_export_temp_cleanup_is_retried_by_bundle_purge(
         real_remove_tree(target)
 
     monkeypatch.setattr(fetched_bundle_service, "_remove_tree", fail_temporary_cleanup)
-    init_db()
+    migrate_test_database()
     owner_id = f"bundle-temp-failure-{uuid.uuid4().hex[:8]}"
     with SessionLocal() as db:
         workflow = _workflow(owner_id)
@@ -293,7 +294,7 @@ def test_bundle_rejects_unknown_file_added_after_publication(
     from app import fetched_bundle_service
 
     monkeypatch.setattr(fetched_bundle_service, "settings", _settings(tmp_path))
-    init_db()
+    migrate_test_database()
     owner_id = f"bundle-injected-{uuid.uuid4().hex[:8]}"
     with SessionLocal() as db:
         workflow = _workflow(owner_id)
@@ -333,7 +334,7 @@ def test_bundle_rejects_invalid_export_summary_before_publication(
             return manifest
 
     monkeypatch.setattr(fetched_bundle_service, "settings", _settings(tmp_path))
-    init_db()
+    migrate_test_database()
     owner_id = f"bundle-summary-{uuid.uuid4().hex[:8]}"
     with SessionLocal() as db:
         workflow = _workflow(owner_id)
@@ -355,7 +356,7 @@ def test_failed_workflow_invalidates_and_purges_its_bundle(
     from app import fetched_bundle_service, workflow_service
 
     monkeypatch.setattr(fetched_bundle_service, "settings", _settings(tmp_path))
-    init_db()
+    migrate_test_database()
     owner_id = f"bundle-failed-{uuid.uuid4().hex[:8]}"
     with SessionLocal() as db:
         workflow = _workflow(owner_id)
@@ -394,7 +395,7 @@ def test_retryable_preview_failure_preserves_reviewable_bundle_for_retry(
     from app import fetched_bundle_service, workflow_service
 
     monkeypatch.setattr(fetched_bundle_service, "settings", _settings(tmp_path))
-    init_db()
+    migrate_test_database()
     owner_id = f"bundle-preview-retry-{uuid.uuid4().hex[:8]}"
     with SessionLocal() as db:
         workflow = _workflow(owner_id)
@@ -448,7 +449,7 @@ def test_retryable_failure_keeps_raw_bundle_but_removes_replay_listing(
             fetch_bundle_retention_days=retention_days,
         ),
     )
-    init_db()
+    migrate_test_database()
     owner_id = f"bundle-retry-only-{uuid.uuid4().hex[:8]}"
     with SessionLocal() as db:
         workflow = _workflow(owner_id)
@@ -492,7 +493,7 @@ def test_stale_creating_bundle_is_recovered_by_cleanup(
     from app import fetched_bundle_service
 
     monkeypatch.setattr(fetched_bundle_service, "settings", _settings(tmp_path))
-    init_db()
+    migrate_test_database()
     now = datetime(2026, 9, 1, 12, tzinfo=UTC)
     owner_id = f"bundle-creating-{uuid.uuid4().hex[:8]}"
     bundle_id = str(uuid.uuid4())
@@ -598,7 +599,7 @@ def test_materialize_bundle_rejects_unknown_files_without_publishing(
     from app import fetched_bundle_service
 
     monkeypatch.setattr(fetched_bundle_service, "settings", _settings(tmp_path))
-    init_db()
+    migrate_test_database()
     owner_id = f"bundle-invalid-{uuid.uuid4().hex[:8]}"
     with SessionLocal() as db:
         workflow = _workflow(owner_id)
@@ -631,7 +632,7 @@ def test_snapshot_replay_revalidates_hashes_and_stays_with_original_owner(
     from app import fetched_bundle_service
 
     monkeypatch.setattr(fetched_bundle_service, "settings", _settings(tmp_path))
-    init_db()
+    migrate_test_database()
     owner_id = f"bundle-replay-{uuid.uuid4().hex[:8]}"
     with SessionLocal() as db:
         source_workflow = _workflow(owner_id)
@@ -709,7 +710,7 @@ def test_manifest_requires_every_dataset_once_per_date(
     from app import fetched_bundle_service
 
     monkeypatch.setattr(fetched_bundle_service, "settings", _settings(tmp_path))
-    init_db()
+    migrate_test_database()
     with SessionLocal() as db:
         workflow = _workflow(f"bundle-missing-{uuid.uuid4().hex[:8]}")
         db.add(workflow)
@@ -732,7 +733,7 @@ def test_materialize_bundle_rejects_unsafe_member_paths(
     from app import fetched_bundle_service
 
     monkeypatch.setattr(fetched_bundle_service, "settings", _settings(tmp_path))
-    init_db()
+    migrate_test_database()
     with SessionLocal() as db:
         workflow = _workflow(f"bundle-path-{uuid.uuid4().hex[:8]}")
         db.add(workflow)
@@ -753,7 +754,7 @@ def test_materialize_bundle_rejects_declared_but_missing_file(
     from app import fetched_bundle_service
 
     monkeypatch.setattr(fetched_bundle_service, "settings", _settings(tmp_path))
-    init_db()
+    migrate_test_database()
     with SessionLocal() as db:
         workflow = _workflow(f"bundle-file-{uuid.uuid4().hex[:8]}")
         db.add(workflow)
@@ -780,7 +781,7 @@ def test_materialize_bundle_rejects_symlink_members(
         return path.name.startswith("payments_") or original_is_symlink(path)
 
     monkeypatch.setattr(Path, "is_symlink", looks_like_symlink)
-    init_db()
+    migrate_test_database()
     with SessionLocal() as db:
         workflow = _workflow(f"bundle-link-{uuid.uuid4().hex[:8]}")
         db.add(workflow)
@@ -801,7 +802,7 @@ def test_repeated_materialization_is_idempotent_only_for_identical_files(
     from app import fetched_bundle_service
 
     monkeypatch.setattr(fetched_bundle_service, "settings", _settings(tmp_path))
-    init_db()
+    migrate_test_database()
     owner_id = f"bundle-repeat-{uuid.uuid4().hex[:8]}"
     with SessionLocal() as db:
         workflow = _workflow(owner_id)
@@ -843,7 +844,7 @@ def test_database_failure_removes_published_directory(
     from app import fetched_bundle_service
 
     monkeypatch.setattr(fetched_bundle_service, "settings", _settings(tmp_path))
-    init_db()
+    migrate_test_database()
     owner_id = f"bundle-db-failure-{uuid.uuid4().hex[:8]}"
     with SessionLocal() as db:
         workflow = _workflow(owner_id)
@@ -873,7 +874,7 @@ def test_confirm_and_finalize_are_owner_scoped_and_idempotent(
     from app import fetched_bundle_service
 
     monkeypatch.setattr(fetched_bundle_service, "settings", _settings(tmp_path))
-    init_db()
+    migrate_test_database()
     owner_id = f"bundle-state-{uuid.uuid4().hex[:8]}"
     with SessionLocal() as db:
         workflow = _workflow(owner_id)
@@ -919,7 +920,7 @@ def test_preview_mirror_must_match_the_published_bundle(
     from app import fetched_bundle_service
 
     monkeypatch.setattr(fetched_bundle_service, "settings", _settings(tmp_path))
-    init_db()
+    migrate_test_database()
     owner_id = f"bundle-preview-{uuid.uuid4().hex[:8]}"
     with SessionLocal() as db:
         workflow = _workflow(owner_id)
@@ -965,7 +966,7 @@ def test_stage_bundle_files_copies_only_the_requested_date_atomically(
     from app import fetched_bundle_service
 
     monkeypatch.setattr(fetched_bundle_service, "settings", _settings(tmp_path))
-    init_db()
+    migrate_test_database()
     owner_id = f"bundle-stage-{uuid.uuid4().hex[:8]}"
     with SessionLocal() as db:
         workflow = _workflow(owner_id)
@@ -1029,7 +1030,7 @@ def test_stage_bundle_preview_files_allows_reviewable_but_unconfirmed_bundle(
     from app import fetched_bundle_service
 
     monkeypatch.setattr(fetched_bundle_service, "settings", _settings(tmp_path))
-    init_db()
+    migrate_test_database()
     owner_id = f"bundle-review-stage-{uuid.uuid4().hex[:8]}"
     with SessionLocal() as db:
         workflow = _workflow(owner_id)
@@ -1072,7 +1073,7 @@ def test_expired_bundle_purge_is_terminal_and_idempotent(
     from app import fetched_bundle_service
 
     monkeypatch.setattr(fetched_bundle_service, "settings", _settings(tmp_path))
-    init_db()
+    migrate_test_database()
     now = datetime(2026, 9, 1, 12, tzinfo=UTC)
     owner_id = f"bundle-purge-{uuid.uuid4().hex[:8]}"
     with SessionLocal() as db:
@@ -1123,7 +1124,7 @@ def test_active_workflow_reference_blocks_expired_bundle_purge(
     from app import fetched_bundle_service
 
     monkeypatch.setattr(fetched_bundle_service, "settings", _settings(tmp_path))
-    init_db()
+    migrate_test_database()
     now = datetime(2026, 9, 1, 12, tzinfo=UTC)
     owner_id = f"bundle-active-{uuid.uuid4().hex[:8]}"
     with SessionLocal() as db:
@@ -1163,7 +1164,7 @@ def test_bundle_purge_failure_is_sanitized_and_retryable(
     from app import fetched_bundle_service
 
     monkeypatch.setattr(fetched_bundle_service, "settings", _settings(tmp_path))
-    init_db()
+    migrate_test_database()
     now = datetime(2026, 9, 1, 12, tzinfo=UTC)
     owner_id = f"bundle-retry-purge-{uuid.uuid4().hex[:8]}"
     with SessionLocal() as db:
@@ -1222,7 +1223,7 @@ def test_replay_bundle_resolution_prefers_bundle_id_and_scopes_legacy_id(
     from app import fetched_bundle_service
 
     monkeypatch.setattr(fetched_bundle_service, "settings", _settings(tmp_path))
-    init_db()
+    migrate_test_database()
     owner_id = f"bundle-resolve-{uuid.uuid4().hex[:8]}"
     with SessionLocal() as db:
         workflow = _workflow(owner_id)
@@ -1289,7 +1290,7 @@ def test_expired_bundle_cannot_be_selected_for_replay(
     from app import fetched_bundle_service
 
     monkeypatch.setattr(fetched_bundle_service, "settings", _settings(tmp_path))
-    init_db()
+    migrate_test_database()
     owner_id = f"bundle-expired-replay-{uuid.uuid4().hex[:8]}"
     with SessionLocal() as db:
         workflow = _workflow(owner_id)
@@ -1335,7 +1336,7 @@ def test_replay_adapter_rechecks_retention_at_export(
     from app import fetched_bundle_service
 
     monkeypatch.setattr(fetched_bundle_service, "settings", _settings(tmp_path))
-    init_db()
+    migrate_test_database()
     owner_id = f"bundle-export-expired-{uuid.uuid4().hex[:8]}"
     with SessionLocal() as db:
         workflow = _workflow(owner_id)
@@ -1372,7 +1373,7 @@ def test_expired_unconfirmed_bundle_is_purged_after_task_finishes(
     from app import fetched_bundle_service
 
     monkeypatch.setattr(fetched_bundle_service, "settings", _settings(tmp_path))
-    init_db()
+    migrate_test_database()
     now = datetime(2026, 9, 1, 12, tzinfo=UTC)
     owner_id = f"bundle-unconfirmed-purge-{uuid.uuid4().hex[:8]}"
     with SessionLocal() as db:
@@ -1405,7 +1406,7 @@ def test_purge_pending_lease_blocks_a_second_worker(
     from app import fetched_bundle_service
 
     monkeypatch.setattr(fetched_bundle_service, "settings", _settings(tmp_path))
-    init_db()
+    migrate_test_database()
     now = datetime(2026, 9, 1, 12, tzinfo=UTC)
     owner_id = f"bundle-purge-lease-{uuid.uuid4().hex[:8]}"
     with SessionLocal() as db:
@@ -1441,7 +1442,7 @@ def test_expired_purge_worker_cannot_overwrite_newer_attempt(
     from app import fetched_bundle_service
 
     monkeypatch.setattr(fetched_bundle_service, "settings", _settings(tmp_path))
-    init_db()
+    migrate_test_database()
     now = datetime(2026, 9, 1, 12, tzinfo=UTC)
     owner_id = f"bundle-purge-fence-{uuid.uuid4().hex[:8]}"
     with SessionLocal() as db:

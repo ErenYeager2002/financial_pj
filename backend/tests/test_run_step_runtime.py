@@ -172,7 +172,8 @@ def test_cancel_and_expired_lease_keep_execution_step_in_sync() -> None:
             initialize_run_steps(db, cancelled)
             initialize_run_steps(db, expired)
 
-            cancel_run(db, cancelled)
+            from app.auth import UserContext
+            cancel_run(db, cancelled, UserContext(user.id,user.display_name,user.role,user.department_id))
             start_run_execution_step(db, expired, "expired-worker")
             expired.state = "running"
             expired.attempt_count = 1

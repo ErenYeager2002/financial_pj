@@ -320,3 +320,7 @@ Every decorator route is listed below, including test fixtures. This is not a co
 | web/src/app/dashboard/workflows/batches/[batchId]/page.tsx | True | False |
 | web/src/app/dashboard/workflows/page.tsx | True | False |
 | web/src/app/page.tsx | True | False |
+
+## 关键分发链补充
+
+普通任务、Native、Pi、前端 BFF 及文件传输逐路径见 platform-dispatch-chains.md；核销 14 阶段见 ar-execution-chain.md。上述人工定位补充本页自动索引，运行证据和未验证范围分别说明。

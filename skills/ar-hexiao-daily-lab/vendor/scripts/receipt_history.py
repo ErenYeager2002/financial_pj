@@ -1,6 +1,7 @@
 """Identify existing receipt events, preserving AR and avoiding duplicate money."""
 import copy
 import common
+import amount_policy
 import baseline_receipts as BR
 
 MODE = 'unchanged-delivery-history-v1'
@@ -15,6 +16,9 @@ def plan(rec, result, rows, journal):
     baseline = sum(BR.cents(r['应收金额']) or 0 for r in rows.values())
     if baseline <= 0:return None
     if journal and not journal.get('scope_only'):return None
+    import ordinary_receipt_identity as OI
+    ownership = OI.assess(rec, rows, journal)
+    if ownership['state'] in {'new', 'ambiguous', 'conflict'}:return None
     if journal and BR.cents(journal.get('baseline_receivable'))!=baseline:return None
     if any((BR.cents(r[k]) or 0)<0 for r in rows.values() for k in ('应收金额','回款明细')):return None
     paid={ref:r for ref,r in rows.items() if (BR.cents(r['回款明细']) or 0)>0}
@@ -71,6 +75,12 @@ def plan(rec, result, rows, journal):
         if any(BR.cents(r['回款明细'])==amount for r in paid.values()):return None
         earlier=sum(BR.cents(r['回款明细']) for r in paid.values() if common.norm_date(r['收款时间'])<=posting)
         if earlier != cumulative-amount:return None
+        # At the chronological endpoint, ordinary classification already owns
+        # cumulative settlement and accrual. Do not manufacture a sub-yuan
+        # unpaid row through this history-only reconstruction shortcut.
+        if cumulative == received + amount and amount_policy.within_business_tolerance(
+                delivery / 100, cumulative / 100):
+            return None
         # Only a fully conserved ordinary split can absorb a missing earlier receipt.
         anchors=[ref for ref,r in rows.items() if r['回款明细'] is None and r['是否结账']=='否' and BR.cents(r['应收金额'])==delivery-received]
         if len(anchors)!=1 or received+amount>=delivery:return None

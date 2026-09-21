@@ -1,0 +1,35 @@
+{
+  "paths": {
+    "added": [
+      "/api/assistant/turns/{session_id}",
+      "/api/pi-runtime/sessions",
+      "/api/pi-runtime/sessions/{session_id}/download",
+      "/api/pi-runtime/sessions/{session_id}/files",
+      "/api/pi-runtime/sessions/{session_id}/operate",
+      "/api/pi-runtime/skill-proposals",
+      "/api/pi-runtime/skill-proposals/{candidate_id}/publish"
+    ],
+    "removed": [],
+    "changed": [
+      "/api/workflows/reusable-files"
+    ]
+  },
+  "schemas": {
+    "added": [
+      "CreateSession",
+      "FileOperation",
+      "Operation",
+      "PublishCandidate",
+      "TurnMutation"
+    ],
+    "removed": [],
+    "changed": [
+      "NativeSkillCommand",
+      "WorkflowBatchStart",
+      "WorkflowReusableFilesRead",
+      "WorkflowStart"
+    ]
+  },
+  "old_version": "0.4.0",
+  "new_version": "0.4.0"
+}

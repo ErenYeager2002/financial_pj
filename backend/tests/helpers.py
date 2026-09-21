@@ -7,7 +7,8 @@ from fastapi.testclient import TestClient
 
 from app.auth_service import create_user, get_user_by_username
 from app.authorization import replace_user_permissions
-from app.database import SessionLocal, init_db
+from app.database import SessionLocal
+from db_setup import migrate_test_database
 from app.main import app
 from app.registry import registry
 
@@ -27,7 +28,7 @@ def auth_client(
     测试默认使用 finance_user；管理员测试传 role="skill_admin"。
     所有身份都来自服务端会话 Cookie，伪造 X-User-* 请求头无效。
     """
-    init_db()
+    migrate_test_database()
     username = username or f"tester-{role}"
     with SessionLocal() as db:
         existing = get_user_by_username(db, username)

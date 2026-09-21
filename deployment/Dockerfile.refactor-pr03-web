@@ -1,0 +1,22 @@
+ARG BUILDER_IMAGE
+ARG RUNTIME_IMAGE
+FROM ${BUILDER_IMAGE} AS builder
+WORKDIR /app/web
+COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml web/.npmrc ./
+RUN pnpm install --offline --frozen-lockfile --ignore-scripts
+COPY web/src ./src
+COPY web/public ./public
+COPY web/tests ./tests
+COPY web/next.config.ts web/tsconfig.json web/postcss.config.js ./
+ENV BUILD_STANDALONE=true NEXT_TELEMETRY_DISABLED=1 NEXT_PUBLIC_SENTRY_DISABLED=true
+RUN pnpm build
+FROM ${RUNTIME_IMAGE} AS runner
+WORKDIR /app
+ENV NODE_ENV=production PORT=3000 HOSTNAME=0.0.0.0 NEXT_TELEMETRY_DISABLED=1
+COPY --from=builder --chown=node:node /app/web/public ./public
+COPY --from=builder --chown=node:node /app/web/.next/standalone ./
+COPY --from=builder --chown=node:node /app/web/.next/static ./.next/static
+COPY refactor-build.json ./financial-build.json
+USER node
+EXPOSE 3000
+CMD ["node", "server.js"]

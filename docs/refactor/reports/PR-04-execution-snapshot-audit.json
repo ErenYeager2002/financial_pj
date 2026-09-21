@@ -1,0 +1,21 @@
+{
+  "source_hashes": {
+    "backend/app/modules/execution/input_snapshot.py": "d2f539fb3e154b8404799af5e0853e569ea41298348ef49d516d7461326e2cbc",
+    "backend/app/modules/execution/preconditions.py": "36932d3cbf0bbe5a3d664fc270cd63c78dc1ac5a6947c39d4233adab8ab45327",
+    "backend/app/modules/execution/run_submission.py": "c5cd0d02630d348130b9df610eccdcde7449335b30b18024bc26b273e4f80e27",
+    "backend/app/modules/execution/prepared_payload.py": "eaa4fcbfebaa45c394351a0fe5eedc9d1f6931b03b8829ef943351af7545a07d",
+    "backend/app/run_service.py": "806bc72a3f25faf87d222ae84577c18aec67982a2cf756b697f47bbdffee1728",
+    "backend/app/adapters.py": "34e34618e45e99cbef19f6ba4b3ab5770e4f5eac7714b05e935eb13d50f2caec",
+    "backend/app/models.py": "7909f400dac49f64a4bbd1568dd0f3e9b60138728e1fcf645e938e3c9a52b3ae"
+  },
+  "confirmed_gap": "Run input_hash binds parameters/files/skill_hash but adapter consumes Run.message too",
+  "existing_preserved_sources": [
+    "idempotency pinned_revision.request.message",
+    "PreparedPayload.version=1.run.message"
+  ],
+  "compatibility_constraints": [
+    "input_hash column is String(64)",
+    "PreparedPayload.version is Literal[1] with extra forbidden",
+    "assert_skill_snapshot compares manifest semantics; do not hide a protocol marker in manifest extras"
+  ]
+}

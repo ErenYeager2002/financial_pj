@@ -29,6 +29,7 @@ from .skill_install_service import _check_tree_sizes, _package_files, _read_blob
 from .storage import sha256_file, run_root, register_output
 from .events import emit_event
 from .native_skill_policy import require_native_skill
+from .modules.execution.native_identity import command_id, session_key, session_runs_query
 
 NAME = re.compile(r"^[a-z][a-z0-9-]{0,71}$")
 
@@ -91,9 +92,19 @@ def installation_catalog() -> SkillInstallCatalog:
 
 
 def install_native_skill(db: Session, actor: UserContext, body: SkillInstallRequest) -> NativeSkillRead:
+    from .auth import require_admin
+    from .authorization import refresh_active_user
+    from .scheduler import acquire_claim_lock
+
+    actor = refresh_active_user(db, actor)
+    require_admin(actor)
     path = source._validated_source_path(body.source_path)
     name = checked_name(PurePosixPath(path).name)
+    index = native_root() / "installed" / (name + ".json")
     with source._source_guard():
+        actor = refresh_active_user(db, actor)
+        require_admin(actor)
+        previous_index = index.read_bytes() if index.exists() else None
         repo, commit = source._cache_repository(source.FINANCE_SKILLS_REPOSITORY, "main")
         if body.expected_commit != commit: raise HTTPException(409, "仓库已有新提交，请刷新目录后安装。")
         try:
@@ -120,7 +131,14 @@ def install_native_skill(db: Session, actor: UserContext, body: SkillInstallRequ
             finally:
                 if staging.exists(): shutil.rmtree(staging)
         result = NativeSkillRead(id=name, name=title, description=description, commit=commit, source_path=path, installed_at=datetime.now(UTC).isoformat())
-        index = native_root() / "installed" / (name + ".json")
+    # Fetch and package preparation never hold the global scheduler lock.
+    # Recheck live authorization and the exact installed revision before activation.
+    acquire_claim_lock(db)
+    with source._source_guard(blocking=False):
+        actor = refresh_active_user(db, actor)
+        require_admin(actor)
+        if (index.read_bytes() if index.exists() else None) != previous_index:
+            raise HTTPException(409, "Skill 已被其他请求更新，请刷新目录后安装。")
         index.parent.mkdir(parents=True, exist_ok=True)
         temp = index.with_suffix(".tmp")
         temp.write_text(result.model_dump_json())
@@ -220,13 +238,14 @@ def execute_command(db: Session, user: UserContext, name: str, body):
         require_turn_command(db, user, body.session_id, body.turn_id)
         before = {p.relative_to(workspace / "outputs").as_posix(): sha256_file(p) for p in (workspace / "outputs").rglob("*") if p.is_file() and not p.is_symlink()}
         now = datetime.now(UTC)
-        run = RunRecord(id=str(uuid4()), owner_id=user.user_id, owner_name=user.display_name, department_id=user.department_id,
+        run_id = str(uuid4())
+        run = RunRecord(id=run_id, owner_id=user.user_id, owner_name=user.display_name, department_id=user.department_id,
             skill_id="native--" + name, skill_name=pinned.name, skill_version=pinned.commit[:12], skill_commit=pinned.commit,
             skill_hash=hashlib.sha256((pinned.id + pinned.commit).encode()).hexdigest(), manifest_path=str(package / "SKILL.md"),
             manifest_snapshot=json.dumps({"risk": {"level": "read_only", "modifies_uploaded_files": False}}),
             adapter="native", worker_pool="native", state="running", progress=10, progress_message="正在隔离环境执行 Skill 命令",
             files_json=json.dumps({"materials": [{"file_id": item["file_id"], "name": item["name"], "sha256": item["sha256"]} for item in context.inputs]}),
-            message=body.command, idempotency_key=workspace.parent.name, started_at=now, heartbeat_at=now, attempt_count=1)
+            message=body.command, source_session_key=workspace.parent.name, source_command_id=command_id(run_id), started_at=now, heartbeat_at=now, attempt_count=1)
         db.add(run); db.commit()
         emit_event(db, run, event_type="state", state="running", progress=10, message="原生 Skill 命令已开始")
         artifacts = []
@@ -267,8 +286,8 @@ def reap_abandoned_runs(db: Session):
     cutoff = datetime.now(UTC) - timedelta(minutes=5)
     rows = db.scalars(select(RunRecord).where(RunRecord.adapter == "native", RunRecord.state == "running", RunRecord.started_at < cutoff)).all()
     for run in rows:
-        key = run.idempotency_key or ""
-        if not re.fullmatch(r"[a-f0-9]{64}", key): continue
+        key = session_key(run)
+        if key is None: continue
         workspace = native_root() / "sessions" / key / "workspace"
         if not workspace.is_dir(): continue
         try:
@@ -285,6 +304,5 @@ def reap_abandoned_runs(db: Session):
 def session_runs(db: Session, user: UserContext, name: str, session_id: str):
     from .run_service import serialize_run
     _, _, workspace = session_snapshot(name, user, session_id)
-    rows = db.scalars(select(RunRecord).where(RunRecord.owner_id == user.user_id, RunRecord.department_id == user.department_id,
-        RunRecord.adapter == "native", RunRecord.idempotency_key == workspace.parent.name).order_by(RunRecord.created_at.desc()).limit(50)).all()
+    rows = db.scalars(session_runs_query(owner_id=user.user_id, department_id=user.department_id, key=workspace.parent.name).limit(50)).all()
     return [serialize_run(row) for row in rows]

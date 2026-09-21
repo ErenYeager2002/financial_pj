@@ -1,0 +1,36 @@
+{
+  "anomalies": 0,
+  "complete": true,
+  "dry_run": true,
+  "original_fields_sha256": "649f4c6a7a6c7947403b85bb743cee9c9d607a0a05e21f0a58a267f87a23ae26",
+  "original_fields_unchanged": true,
+  "original_rows": 295,
+  "page_size": 100,
+  "pages": [
+    {
+      "anomalies": [],
+      "next_cursor": "59955790-ca1b-419a-a814-6ac31e3645fd",
+      "processed": 0,
+      "scanned": 100,
+      "skipped": 100
+    },
+    {
+      "anomalies": [],
+      "next_cursor": "a54f5616-7e8a-4dff-9103-96e47dda5ae4",
+      "processed": 0,
+      "scanned": 100,
+      "skipped": 100
+    },
+    {
+      "anomalies": [],
+      "next_cursor": "ffeafd67-b04f-4896-8a97-6871280870d4",
+      "processed": 0,
+      "scanned": 95,
+      "skipped": 95
+    }
+  ],
+  "processed": 0,
+  "revision": "f3a4b5c6d7e8",
+  "scanned": 295,
+  "skipped": 295
+}

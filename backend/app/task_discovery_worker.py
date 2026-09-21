@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .database import SessionLocal, init_db
+from .database import SessionLocal, check_runtime_database
 from .feature_control_service import task_discovery_enabled
 from .models import TaskDiscoveryCheck, TaskReminderSubscription
 from .registry import registry
@@ -206,7 +206,7 @@ def run_discovery_tick(
 def main() -> int:
     signal.signal(signal.SIGINT, _stop)
     signal.signal(signal.SIGTERM, _stop)
-    init_db()
+    check_runtime_database()
     registry.refresh()
     while not STOP:
         with SessionLocal() as db:

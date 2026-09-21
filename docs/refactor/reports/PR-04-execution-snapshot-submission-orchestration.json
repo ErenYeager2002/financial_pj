@@ -1,0 +1,5 @@
+{
+  "returncode": 0,
+  "stdout": "{\"schema_version\": \"isolated-check-v1\", \"results\": [{\"suite\": \"submission-orchestration\", \"command\": [\"/usr/local/bin/python\", \"-B\", \"-m\", \"pytest\", \"backend/tests/test_submission_orchestration.py\", \"--basetemp\", \"/tmp/financial-refactor-t502dgw3/submission-pytest\", \"-p\", \"no:cacheprovider\", \"-q\"], \"exit_code\": 0, \"status\": \"passed\", \"seconds\": 6.85, \"output\": \"..........                                                               [100%]\\n\"}]}\n\n",
+  "stderr": ""
+}
