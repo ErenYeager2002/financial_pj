@@ -457,7 +457,13 @@ class ArExecution:
                                                        self.workspace, stage, Path(self.context["flow_file"]))),
                                                    *self.service._annual_ledger_arguments(
                                                        annual_ledgers_in_copy(self.workspace, stage, self.ledgers))])
-        arguments = ["--workspace", str(review), "--hexiao-date", self.date]
+        current_plan_evidence = review / "03_台账" / "本次核销计划证据.json"
+        current_plan_evidence.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(checked, current_plan_evidence)
+        if self.service.sha256_file(current_plan_evidence) != self.service.sha256_file(checked):
+            raise ValueError("复制本次核销计划证据后指纹不一致")
+        arguments = ["--workspace", str(review), "--hexiao-date", self.date,
+                     "--current-run-plan", str(current_plan_evidence)]
         ledgers = annual_ledgers_in_copy(self.workspace, stage if optimized else review, self.ledgers)
         if optimized:
             self.context["ar_read_cache"] = build_cache(self, stage, ledgers)

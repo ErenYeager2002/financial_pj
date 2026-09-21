@@ -30,6 +30,7 @@ import settlement_status  # noqa: E402
 import baseline_receipts as BR  # noqa: E402
 import fallback_sequence as FS
 import fallback_allocation_ledger as FAL  # noqa: E402
+import current_run_basis  # noqa: E402
 import writeoff_duplicate_audit as WDA  # noqa: E402
 
 try:
@@ -1483,6 +1484,10 @@ def main(argv=None) -> int:
         help="其它年度盈亏工作副本，可重复，例如 2025=...xlsx",
     )
     ap.add_argument("--out", default="", help="校验后计划 json")
+    ap.add_argument(
+        "--current-run-plan", default="",
+        help="写后复核专用：本工作区内、由本次已校验写入计划生成的证据",
+    )
     # 防呆：同上。--workspace 还用于在没给 --out 时把结果落进正确的 04_产出/
     ap.add_argument("--workspace", default="", help="工作区根（没给 --out 时用它定产出位置）")
     ap.add_argument("--hexiao-date", default="", help="（校验日期以判定结果为准，收下防止链路中断）")
@@ -1504,6 +1509,30 @@ def main(argv=None) -> int:
         )
         return 2
     plan = json.loads(plan_p.read_text(encoding="utf-8"))
+    current_evidence = None
+    if args.current_run_plan:
+        try:
+            evidence_path = Path(args.current_run_plan)
+            if evidence_path.is_symlink():
+                raise ValueError("本次核销计划证据不能是符号链接")
+            evidence_path = evidence_path.resolve(strict=True)
+            if not evidence_path.is_relative_to(ws):
+                raise ValueError("本次核销计划证据必须位于当前工作区")
+            evidence_plan = json.loads(evidence_path.read_text(encoding="utf-8"))
+            if not current_run_basis.enabled(evidence_plan):
+                raise ValueError("本次核销计划证据缺少当前材料决策标记")
+            expected_date = common.norm_date(args.hexiao_date or plan.get("hexiao_date"))
+            evidence_date = common.norm_date(evidence_plan.get("hexiao_date"))
+            if expected_date is None or evidence_date != expected_date:
+                raise ValueError("本次核销计划证据的核销日期与复核日期不一致")
+            if evidence_plan.get("conflict"):
+                raise ValueError("本次核销计划仍有冲突，不能作为写后复核证据")
+            current_evidence, _ = FAL.prepare_commit(
+                current_run_basis.empty_state(), evidence_plan
+            )
+        except (OSError, ValueError, TypeError, json.JSONDecodeError) as error:
+            print(f"ERROR: 无法读取本次核销计划证据：{error}", file=sys.stderr)
+            return 2
     try:
         ledger_paths = {
             int(year): Path(path).resolve()
@@ -1541,7 +1570,7 @@ def main(argv=None) -> int:
 
     result = validate_by_year(plan, rows_by_year, ledger_paths)
     try:
-        FAL.preflight(ws, result)
+        FAL.preflight(ws, result, current_evidence=current_evidence)
     except ValueError as error:
         print(f"ERROR: 分配台账写前校验未通过：{error}", file=sys.stderr)
         return 2

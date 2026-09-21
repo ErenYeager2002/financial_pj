@@ -65,6 +65,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     )
     ap.add_argument("--rate", action="append", default=[], help="外币汇率 美元USD=7.0")
     ap.add_argument("--out", default="", help="判定结果 json 路径")
+    ap.add_argument(
+        "--current-run-plan", default="",
+        help="写后复核专用：本工作区内、由本次已校验写入计划生成的证据",
+    )
     ap.add_argument("--flow", default="", help="到账流转表副本（只读）；不给则扫 02_我的表副本/")
     ap.add_argument("--flow-source-workspace", default="", help="优化测试的只读流转材料目录")
     ap.add_argument(
@@ -112,7 +116,30 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         else:
             payments = load_exports(ws, target_date=requested_date)
         import current_run_basis
-        allocation_state = current_run_basis.initialize(ledgers.values())
+        current_evidence = None
+        if args.current_run_plan:
+            evidence_path = Path(args.current_run_plan)
+            if evidence_path.is_symlink():
+                raise InputError("本次核销计划证据不能是符号链接")
+            try:
+                evidence_path = evidence_path.resolve(strict=True)
+            except OSError as exc:
+                raise InputError("找不到本次核销计划证据") from exc
+            if not evidence_path.is_relative_to(ws):
+                raise InputError("本次核销计划证据必须位于当前工作区")
+            try:
+                evidence_plan = json.loads(evidence_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError, TypeError) as exc:
+                raise InputError("本次核销计划证据无法读取") from exc
+            if not current_run_basis.enabled(evidence_plan):
+                raise InputError("本次核销计划证据缺少当前材料决策标记")
+            evidence_date = common.norm_date(evidence_plan.get("hexiao_date"))
+            if requested_date is not None and evidence_date != requested_date:
+                raise InputError("本次核销计划证据的核销日期与复核日期不一致")
+            if evidence_plan.get("conflict"):
+                raise InputError("本次核销计划仍有冲突，不能作为写后复核证据")
+            current_evidence, _ = FAL.prepare_commit(current_run_basis.empty_state(), evidence_plan)
+        allocation_state = current_run_basis.initialize(ledgers.values(), current_evidence)
         import current_parent_allocation
         for payment in payments:
             current_parent_allocation.attach(payment, ledgers, payments=payments)
