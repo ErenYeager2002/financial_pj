@@ -11,6 +11,7 @@ from .settings import settings
 from .task_discovery import TaskDiscoveryDayResult
 
 SKILL_ID = "ar-hexiao-daily"
+DEFAULT_ZHIYUN_BASE = "http://192.168.10.167:18880"
 
 
 def _parse_results(stdout: str, business_dates: tuple[str, ...]) -> list[TaskDiscoveryDayResult]:
@@ -59,9 +60,11 @@ def probe_zhiyun_tasks(
     environment["FINANCIAL_SKILL_DIR"] = str(
         (registered.directory / "vendor" / "scripts").resolve()
     )
-    if settings.zhiyun_base_url:
-        assert_url_allowed(settings.zhiyun_base_url, runtime)
-        environment["ZHIYUN_BASE"] = settings.zhiyun_base_url
+    # Resolve and validate the same default used by the read-only probe before
+    # spawning a child process. A rejected target must not start a browser.
+    base_url = settings.zhiyun_base_url or DEFAULT_ZHIYUN_BASE
+    assert_url_allowed(base_url, runtime)
+    environment["ZHIYUN_BASE"] = base_url
 
     request_json = json.dumps(
         {

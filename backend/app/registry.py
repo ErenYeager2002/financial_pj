@@ -289,9 +289,9 @@ class SkillManifest(BaseModel):
                 raise ValueError("workflow 执行模式必须保留 workflow handler")
         if (
             self.operational_profile.execution_kind == "browser_rpa"
-            and self.handler.adapter != "rpa"
+            and self.handler.adapter not in {"rpa", "python"}
         ):
-            raise ValueError("browser_rpa 必须使用 rpa handler")
+            raise ValueError("browser_rpa 必须使用 python 或历史 rpa handler")
         if (
             self.handler.adapter == "rpa"
             and self.operational_profile.execution_kind != "browser_rpa"

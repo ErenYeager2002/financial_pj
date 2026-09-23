@@ -19,6 +19,21 @@ def _probe_module():
     return module
 
 
+def test_readonly_client_exposes_only_the_query_operation() -> None:
+    module = _probe_module()
+
+    class SyntheticClient:
+        def filter_rows_by_date(self, worksheet_id, control_id, business_date):
+            return [], 0
+
+        def post(self, *_args, **_kwargs):
+            raise AssertionError("task discovery must not call generic client writes")
+
+    client = module.ReadonlyZhiyunClient(SyntheticClient())
+    assert client.filter_rows_by_date("sheet", "date", "2026-09-01") == ([], 0)
+    assert not hasattr(client, "post")
+
+
 def test_probe_returns_only_date_count_and_fingerprint() -> None:
     module = _probe_module()
 

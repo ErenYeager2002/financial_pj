@@ -140,6 +140,10 @@ from .service_credential_service import (
 )
 from .settings import settings
 from .skill_execution_experiences import SUPPORTING_SKILL_IDS
+
+# The ordinary tool center exposes only the two retained AR workflow entries.
+# Other installed capabilities are available to Pi only through explicit mounts.
+TOOL_CATALOG_SKILL_IDS = frozenset({"ar-hexiao-daily", "ar-hexiao-daily-lab"})
 from .storage import delete_upload, save_upload
 from .task_center_service import query_task_center
 from .workbench_service import get_workbench
@@ -384,19 +388,14 @@ def get_skill(
 
 def _catalog_skills_for_user(db: Session, user: UserContext) -> list[RegisteredSkill]:
     """返回目录可见的已发布和辅助 Skill，复用统一的权限规则。"""
-    skills = registry.list(include_disabled=False)
+    skills = [
+        item
+        for item in registry.list(include_disabled=False)
+        if item.manifest.id in TOOL_CATALOG_SKILL_IDS
+    ]
     if not user.is_admin:
         allowed = allowed_skill_ids(db, user)
         skills = [item for item in skills if item.manifest.id in allowed]
-    visible_ids = {item.manifest.id for item in skills}
-    for skill_id in sorted(SUPPORTING_SKILL_IDS):
-        supporting = registry.get(skill_id, include_unpublished=True)
-        if (
-            supporting
-            and supporting.manifest.ui is not None
-            and supporting.manifest.id not in visible_ids
-        ):
-            skills.append(supporting)
     skills.sort(key=lambda item: (item.manifest.category, item.manifest.name))
     return skills
 
@@ -431,6 +430,8 @@ def get_catalog_skill(
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ) -> SkillDetail:
+    if skill_id not in TOOL_CATALOG_SKILL_IDS:
+        raise HTTPException(status_code=404, detail="Skill 不存在。")
     supporting_entry = skill_id in SUPPORTING_SKILL_IDS
     skill = registry.get(skill_id, include_unpublished=supporting_entry)
     if not skill:

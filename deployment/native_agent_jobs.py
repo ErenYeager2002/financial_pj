@@ -194,7 +194,7 @@ class AgentJobs:
                     "--mount", f"type=bind,src={inputs},dst=/workspace/inputs,readonly",
                     "--mount", f"type=bind,src={home},dst=/home/agent",
                     "--env", "HOME=/home/agent", "--env", "PYTHONUTF8=1",
-                    "--env", "PYTHONDONTWRITEBYTECODE=1", "--env", "PIP_USER=1",
+                    "--env", "PYTHONDONTWRITEBYTECODE=1",
                     "--env", "NPM_CONFIG_PREFIX=/home/agent/.npm-global",
                     "--env", "PATH=/home/agent/.local/bin:/home/agent/.npm-global/bin:/usr/local/bin:/usr/bin:/bin"]
             proxy = os.environ.get("FINANCIAL_AGENT_PROXY", "")

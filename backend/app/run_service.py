@@ -321,6 +321,13 @@ def _resolve_preparation_context(db: Session, request: RunCreate, user: UserCont
             status_code=422,
             detail="该 Skill 需要通过对话式工作流创建任务。",
         )
+    if skill.manifest.handler.adapter == "rpa" or skill.manifest.handler.worker_pool == "rpa":
+        # Keep legacy RunRecord rows readable, but never create a new task that
+        # would wait forever for the retired rpa pool.
+        raise HTTPException(
+            status_code=409,
+            detail="该 Skill 的旧 RPA 路线已停用，请使用 Pi 或已发布的工作流入口。",
+        )
     if request.idempotency_key:
         existing = db.scalar(
             select(RunRecord).where(

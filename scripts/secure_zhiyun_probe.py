@@ -26,8 +26,30 @@ def _stable_row_identifier(row: dict[str, Any]) -> str:
     return f"content:{hashlib.sha256(canonical.encode('utf-8')).hexdigest()}"
 
 
+class ReadonlyZhiyunClient:
+    """Expose the single query operation allowed to task discovery.
+
+    The full Zhiyun client also contains write-capable helpers for the normal
+    reconciliation workflow. Task discovery receives this narrow wrapper so a
+    future refactor cannot accidentally call a write path from the reminder
+    probe.
+    """
+
+    __slots__ = ("_client",)
+
+    def __init__(self, client: Any) -> None:
+        self._client = client
+
+    def filter_rows_by_date(
+        self, worksheet_id: str, date_control_id: str, business_date: str
+    ) -> tuple[list[dict[str, Any]], int]:
+        return self._client.filter_rows_by_date(
+            worksheet_id, date_control_id, business_date
+        )
+
+
 def summarize_dates(
-    client: Any,
+    client: ReadonlyZhiyunClient,
     business_dates: Iterable[str],
     *,
     worksheet_id: str,
@@ -79,6 +101,7 @@ def main() -> int:
     payload: dict[str, object] = {}
     password = ""
     client = None
+    raw_client = None
     try:
         import fetch_zhiyun
         from secure_zhiyun_fetch import _edge_login
@@ -97,11 +120,12 @@ def main() -> int:
             os.environ.get("ZHIYUN_BASE") or fetch_zhiyun.BASE_DEFAULT
         ).strip()
         cookie, account_id = _edge_login(base_url, account, password)
-        client = fetch_zhiyun.ZhiyunClient(
+        raw_client = fetch_zhiyun.ZhiyunClient(
             base_url,
             cookie,
             account_id=account_id or "",
         )
+        client = ReadonlyZhiyunClient(raw_client)
         results = summarize_dates(
             client,
             business_dates,
@@ -125,9 +149,9 @@ def main() -> int:
     finally:
         password = ""
         payload.clear()
-        if client is not None:
+        if raw_client is not None:
             try:
-                client.session.close()
+                raw_client.session.close()
             except Exception:  # cleanup must not overwrite the probe outcome
                 print("WARNING: 任务检查连接清理失败。", file=sys.stderr)
 

@@ -17,6 +17,7 @@ import stat
 import socketserver
 import struct
 import subprocess
+import threading
 import time
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler
@@ -59,6 +60,9 @@ class RuntimeManager:
         for directory in (self.root, self.control):
             directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         (self.root / 'locks').mkdir(exist_ok=True, mode=0o700)
+        self.activity = self.root / 'activity'
+        self.activity.mkdir(exist_ok=True, mode=0o700)
+        self.idle_seconds = max(300, int(os.environ.get('PI_IDLE_SECONDS', str(8 * 60 * 60))))
 
     def identity(self, owner, session):
         if not isinstance(owner, str) or not re.fullmatch(r'[a-f0-9]{64}', owner):
@@ -116,6 +120,71 @@ class RuntimeManager:
             if name not in proxy_info['NetworkSettings']['Networks']:
                 self.docker('network', 'connect', '--alias', 'pi-egress', name, proxy)
         return name
+
+    def _activity_path(self, key):
+        if not re.fullmatch(r'[a-f0-9]{64}', key):
+            raise RuntimeErrorWithStatus(422, 'Invalid runtime key')
+        return self.activity / (key + '.stamp')
+
+    def touch_activity(self, key):
+        path = self._activity_path(key)
+        temporary = path.with_name(path.name + '.tmp')
+        temporary.write_text(str(time.time()))
+        os.replace(temporary, path)
+        path.chmod(0o600)
+
+    def _last_activity(self, key, info):
+        try:
+            return float(self._activity_path(key).read_text())
+        except (OSError, ValueError):
+            value = str(info.get('Created') or info.get('State', {}).get('StartedAt') or '')
+            try:
+                from datetime import datetime
+                return datetime.fromisoformat(value.replace('Z', '+00:00')).timestamp()
+            except (ValueError, TypeError):
+                return time.time()
+
+    def prune_idle(self):
+        """Stop idle RPC environments after the configured 8-hour window.
+
+        A terminal bridge or a live Pi process with an active dialog is left
+        alone because its activity cannot be inferred safely from a poll.
+        User HOME/workspaces remain on the host when the container is removed.
+        """
+        try:
+            names = self.docker('ps', '-a', '--filter', 'label=financial.pi.runtime=1', '--format', '{{.Names}}').decode().splitlines()
+        except Exception:
+            return
+        now = time.time()
+        for name in names:
+            try:
+                info = self.inspect(name)
+                if not info or not info.get('State', {}).get('Running'):
+                    continue
+                labels = info.get('Config', {}).get('Labels') or {}
+                key = labels.get('financial.pi.key', '')
+                if not re.fullmatch(r'[a-f0-9]{64}', key) or now - self._last_activity(key, info) < self.idle_seconds:
+                    continue
+                sock = self.control / key[:32] / 'pi.sock'
+                poll = self.call(sock, '/poll', {'after': 0})
+                activity = poll.get('activity')
+                if activity is None or activity.get('busy') or poll.get('pending_dialogs'):
+                    continue
+                jobs = self.call(sock, '/jobs', {'operation': 'list'}).get('jobs') or []
+                if any(item.get('state') in {'starting', 'running'} for item in jobs if isinstance(item, dict)):
+                    continue
+                self.docker('stop', '--time', '10', name)
+                observed = self.inspect(name)
+                if observed and not observed.get('State', {}).get('Running'):
+                    self.docker('rm', name)
+                    self._activity_path(key).unlink(missing_ok=True)
+            except Exception:
+                continue
+
+    def reaper_loop(self):
+        while True:
+            time.sleep(300)
+            self.prune_idle()
 
     def check_capacity(self, owner, current_name):
         rows = self.docker('ps', '--filter', 'label=financial.pi.runtime=1', '--format', '{{.Names}} {{.Label "financial.pi.owner"}}').decode().splitlines()
@@ -187,7 +256,10 @@ class RuntimeManager:
             # Never fall back to the platform database network or host networking.
             args = ['create', '--name', name, '--init', '--network', network,
                     '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
-                    '--pids-limit', '512', '--cgroup-parent', 'financial-pi.slice', '--cpu-shares', '256', '--user', '10001:10001',
+                    '--pids-limit', '512', '--cgroup-parent', 'financial-pi.slice', '--cpu-shares', '256',
+                    '--memory', os.environ.get('PI_RUNTIME_MEMORY', '1536m'),
+                    '--memory-swap', os.environ.get('PI_RUNTIME_MEMORY_SWAP', '1536m'),
+                    '--user', '10001:10001',
                     '--log-driver', 'json-file', '--log-opt', 'max-size=10m', '--log-opt', 'max-file=2',
                     '--tmpfs', '/tmp:rw,nosuid,nodev,size=512m,mode=1777',
                     '--label', 'financial.pi.runtime=1', '--label', 'financial.pi.key=' + key,
@@ -205,7 +277,7 @@ class RuntimeManager:
                     '-e', 'http_proxy=http://pi-egress:8080', '-e', 'https_proxy=http://pi-egress:8080',
                     '-e', 'NO_PROXY=localhost,127.0.0.1,::1',
                     '-e', 'NODE_OPTIONS=--use-env-proxy',
-                    '-e', 'PIP_USER=1', '-e', 'NPM_CONFIG_PREFIX=/home/agent/.local',
+                    '-e', 'NPM_CONFIG_PREFIX=/home/agent/.local',
                     '-e', 'PATH=/home/agent/.local/bin:/usr/local/bin:/usr/bin:/bin',
                     self.image, 'python', '/opt/platform/pi_runtime_server.py']
             mounts = [value for skill_name, _, package in skills for value in ['--mount', f'type=bind,src={package},dst=/skills/{skill_name},readonly']]
@@ -236,6 +308,7 @@ class RuntimeManager:
 
     def dispatch(self, body):
         owner, session, key = self.identity(body.get('owner'), body.get('session_id'))
+        self.touch_activity(key)
         operation = body.get('operation')
         if operation not in {'start', 'send', 'resize', 'poll', 'stop', 'files', 'jobs'}:
             raise RuntimeErrorWithStatus(422, 'Invalid operation')
@@ -297,6 +370,7 @@ class RuntimeManager:
 def serve():
     manager = RuntimeManager(os.environ['PI_RUNTIME_ROOT'], os.environ.get('PI_CONTROL_ROOT', '/run/financial-pi'),
                              os.environ['PI_RUNTIME_IMAGE'])
+    threading.Thread(target=manager.reaper_loop, daemon=True, name='pi-idle-reaper').start()
     allowed_uid = int(os.environ.get('PI_API_UID', '10001'))
 
     class Handler(BaseHTTPRequestHandler):
