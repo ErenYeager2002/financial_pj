@@ -3,12 +3,38 @@
 from __future__ import annotations
 
 import argparse
+import copy
+import re
 import json
 from pathlib import Path
 
 import apply_flow
 import build_flow_plan
 import common
+
+
+def remap_manual_rows(items: list[dict], changes: list[dict]) -> list[dict]:
+    """Keep plan coordinates fixed; report coordinates refer to delivered rows."""
+    result=copy.deepcopy(items)
+    for manual in result:
+        row=manual.get("row_no")
+        if not isinstance(row,int) or row<=0:
+            continue
+        def shift(value):
+            return value+sum(
+                change.get("文件")==manual.get("file")
+                and change.get("sheet")==manual.get("sheet")
+                and isinstance(change.get("inserted_after_row"),int)
+                and change["inserted_after_row"]<value
+                for change in changes)
+        manual["row_no"]=shift(row)
+        # This exact internal diagnostic embeds a list of workbook coordinates.
+        # Do not replace arbitrary digits: reasons also contain financial amounts.
+        reason=manual.get("reason")
+        if isinstance(reason,str):
+            manual["reason"]=re.sub(r"流转行([0-9]+(?:,[0-9]+)*)已出现",
+                lambda m:"流转行"+",".join(str(shift(int(v))) for v in m[1].split(","))+"已出现",reason)
+    return result
 
 
 def run(workspace: Path, checked: Path) -> dict:
@@ -56,6 +82,9 @@ def run(workspace: Path, checked: Path) -> dict:
                 "problems": problems,
                 "changes": changes,
             }
+            if phase == "status" and not problems:
+                result["manual_items"] = remap_manual_rows(result["manual_items"], changes)
+                result["manual_row_basis"] = "final_workbook_v1"
             if problems:
                 break
         except Exception as exc:

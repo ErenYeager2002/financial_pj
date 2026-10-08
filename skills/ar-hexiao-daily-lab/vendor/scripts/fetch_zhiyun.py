@@ -618,6 +618,22 @@ def settlement_related_orders(
     return list(by_so.values())
 
 
+def lookup_order_details(client, worksheet_id, controls, so):
+    """Read the exact order behind a writeoff-only relation; never infer fields."""
+    if not worksheet_id:
+        return None
+    hits = client.search_rows(worksheet_id, so)
+    orders = [order for order in extract_related_orders(hits, controls, "核销明细订单详情")
+              if order["so"] == so]
+    unique = []
+    for order in orders:
+        if order not in unique:
+            unique.append(order)
+    if len(unique) > 1:
+        raise FetchError(f"核销明细关联订单 {so} 的详情存在冲突，不能任选记录")
+    return unique[0] if unique else None
+
+
 def lookup_order_delivery_date(
     client: ZhiyunClient,
     worksheet_id: str,
@@ -1037,6 +1053,18 @@ def fetch_day(
                     )
                 if so and so not in all_so:
                     all_so.append(so)
+                if so and not any(order["so"] == so for order in related):
+                    detail = lookup_order_details(client, ws_xiadan, xiadan_ctrls, so)
+                    if detail is not None:
+                        related.append(detail)
+                        xd_out.append([
+                            rec["ar"], so, detail.get("written_off"), detail.get("written_off_local"),
+                            detail.get("deliver"), detail.get("deliver_local"), detail.get("rate"),
+                            detail.get("currency"), detail.get("name"), detail.get("delivery_date"),
+                            detail.get("delivery_date_status"), detail.get("source"),
+                        ])
+                        if rec["ar"] in ars_without_orders:
+                            ars_without_orders.remove(rec["ar"])
                 out_row = [
                     v.get("核销记录NUM"),
                     r.get("rowid") or "",

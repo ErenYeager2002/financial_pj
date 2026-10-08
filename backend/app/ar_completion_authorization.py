@@ -54,4 +54,24 @@ def require_finished_completion(action, workflow, result: dict) -> str:
             or fact.get("direct_process_exit_confirmed") is not True
             or type(fact.get("returncode")) is not int or fact["returncode"] != 0):
         raise ValueError("收尾进程没有可验证的成功退出，未登记完成。")
+    if fact.get("execution_domain_schema") is not None:
+        from .ar_process_supervisor import DOMAIN_VERSION, validate_receipt
+
+        if fact["execution_domain_schema"] != DOMAIN_VERSION:
+            raise ValueError("收尾执行域证据版本无法确认。")
+        domain_path = path.with_name("domain-exited.json")
+        if domain_path.is_symlink() or not domain_path.resolve().is_relative_to(root):
+            raise ValueError("收尾后代进程证据路径无效。")
+        try:
+            with domain_path.open("rb") as handle:
+                domain_raw = handle.read(16385)
+        except OSError as error:
+            raise ValueError("收尾后代进程退出凭据缺失。") from error
+        if (len(domain_raw) > 16384
+                or hashlib.sha256(domain_raw).hexdigest() != reference.get("domain_exit_sha256")):
+            raise ValueError("收尾后代进程退出凭据指纹不一致。")
+        domain = validate_receipt(json.loads(domain_raw), token=fact.get("domain_token"),
+                                  supervisor_pid=fact.get("pid"))
+        if domain["script_returncode"] != 0:
+            raise ValueError("收尾脚本未成功退出，不能登记完成。")
     return digest

@@ -7,6 +7,7 @@ from typing import List
 from typing import Optional
 import baseline_receipts as BR
 import common
+import fx_accrual as FX
 import fallback_sequence as FS
 import settlement_status
 import current_receipt_cohort
@@ -18,7 +19,7 @@ from classification_splitting import _expand_ambiguous_sod_waterfall, _make_same
 from classification_summary import _dist, build_ar_summary
 
 
-def classify_records(
+def _classify_records_planning(
     records: List[dict],
     ledger: Optional[LedgerIndex] = None,
     rates: Optional[Dict[str, float]] = None,
@@ -70,12 +71,27 @@ def classify_records(
         if value is not None:
             batch_cumulative[key] = max(batch_cumulative.get(key, 0.0), float(value))
             batch_first_cumulative[key] = min(batch_first_cumulative.get(key, float(value)), float(value))
+    import current_workbook_receipts as CWR
+    workbook_proofs = CWR.prepare(resolved_records, ledger)
     results = []
     for rec in resolved_records:
         key = (rec.get("so"), rec.get("sod"))
         rec = {**rec, "_baseline_batch_cumulative": batch_cumulative.get(key),
                "_baseline_batch_first_cumulative": batch_first_cumulative.get(key)}
-        result = classify_one(rec, ledger, rates, thr, year_now)
+        rec = {**rec, "_current_workbook_receipts": workbook_proofs.get(BR.event_key(rec))}
+        try:
+            result = classify_one(rec, ledger, rates, thr, year_now)
+        except FX.FxAccrualError as exc:
+            result = {"ar":rec.get("ar") or "", "so":rec.get("so") or "", "sod":rec.get("sod") or "",
+                      "case_id":"|".join(str(rec.get(k) or "-") for k in ("ar","so","sod")),
+                      "bucket":"hold", "code":"E_FX_ACCRUAL", "reason":str(exc),
+                      "five_cols":{}, "warning_codes":[], "candidates":[], "current_values":{},
+                      "fx_accrual_source":FX.source_for(rec), "sales_name":rec.get("sales_name") or "",
+                      "write_currency_audit":{k:rec.get(k) for k in ("currency","amount_orig","amount_local","deliver_local")},
+                      "split_payment_source":{k:rec.get(k) for k in ("all_sods","sod_delivery_local","fx_accrual_source")}}
+
+        if rec.get('_current_parent_receipt_group'):
+            result['current_parent_receipt_group']=rec['_current_parent_receipt_group']
         if rec.get("_execution_source_lineage"):
             result["source_lineage"] = rec["_execution_source_lineage"]
         audit = rec.get("ambiguous_sod_waterfall") or {}
@@ -102,7 +118,9 @@ def classify_records(
             r["bucket"] == "auto"
             and ref is not None
             and not r.get("baseline_receipt_audit")
+            and not r.get("current_workbook_receipts")
             and r.get("code") not in {
+                "OK_CURRENT_WORKBOOK_RECEIPT_PRESENT",
                 "OK_ALREADY_SETTLED",
                 "OK_REGISTERED_RECEIPT_ALREADY_APPLIED",
                 settlement_status.SO_ALREADY_SETTLED,
@@ -125,7 +143,7 @@ def classify_records(
                 case_id = str(r.get("case_id") or "")
                 if case_id == target_case_id:
                     r["five_cols"] = dict(aggregate["target_five_cols"])
-                    r["derived_cols"] = {}
+                    r["derived_cols"] = dict(aggregate.get("target_derived_cols") or {})
                     r["row_operation"] = aggregate
                     r["same_so_multi_sod_group_id"] = group_id
                     warnings = list(r.get("warning_codes") or [])
@@ -151,7 +169,13 @@ def classify_records(
                         "不重复写金额"
                     )
             continue
-        operation, chain_error = _make_split_payment_chain(ref, group, ledger, max(thr, TOL))
+        try:
+            operation, chain_error = _make_split_payment_chain(ref, group, ledger, max(thr, TOL))
+        except FX.FxAccrualError as exc:
+            for r in group:
+                r.update(bucket="hold",code="E_FX_ACCRUAL",reason=str(exc),five_cols={})
+                r.pop("row_operation",None)
+            continue
         if operation is not None:
             tail_audit = operation.get("tail_tolerance_audit") or {}
             absorbed_by_case = {
@@ -301,6 +325,37 @@ def classify_records(
         "e_code_dist": _dist(results),
         "ar_summary": build_ar_summary(results),
     }
+
+def classify_records(records, ledger=None, rates=None, *, defer_sequence_guard=False):
+    with FX.provisional_planning():
+        result=_classify_records_planning(records,ledger,rates,defer_sequence_guard=defer_sequence_guard)
+    rejected={}
+    for item in result["auto"]:
+        if not FX.source_for(item): continue
+        op=item.get("row_operation") or {}
+        values=[item.get("five_cols") or {},op.get("target_five_cols") or {}]
+        values.extend(step.get("five_cols") or {} for step in op.get("steps") or [])
+        new_accrual=item.get("fx_accrual_applied") and any(v.get("计提") is not None for v in values)
+        if not new_accrual and not item.get("so_accrual_backfills"): continue
+        try:
+            FX.quote_rate(FX.source_for(item))
+            for entry in item.get("so_accrual_backfills") or []:
+                FX.accrual_amount(entry,(item.get("split_payment_source") or {}).get("sod_delivery_local",{}).get(entry["sod"]),sod=entry["sod"])
+        except FX.FxAccrualError as exc:
+            rejected[item.get("so")]=str(exc)
+    if rejected:
+        for item in list(result["auto"]):
+            if item.get("so") not in rejected: continue
+            item.update(bucket="hold",code="E_FX_ACCRUAL",reason=rejected[item["so"]],five_cols={},derived_cols={})
+            for key in ("row_operation","so_accrual_backfills","fx_accrual_applied"):
+                item.pop(key,None)
+            result["auto"].remove(item);result["hold"].append(item)
+        all_items=result["auto"]+result["hold"]+result["exception"]
+        result["counts"]={k:len(result[k]) for k in ("auto","hold","exception")}
+        result["counts"]["total"]=len(all_items)
+        result["e_code_dist"]=_dist(all_items)
+        result["ar_summary"]=build_ar_summary(all_items)
+    return result
 
 def classify_records_by_year(
     records: List[dict],

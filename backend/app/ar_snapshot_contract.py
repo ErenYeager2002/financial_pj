@@ -43,6 +43,18 @@ def snapshot_execution_version(root: Path) -> str:
     return CONTRACT_VERSION
 
 
+def snapshot_reconciliation_policy(root: Path) -> str:
+    """Select business evidence policy from the task snapshot, never live code."""
+    if not snapshot_execution_version(root):
+        return "legacy"
+    path = snapshot_file(root, "config/execution-pipeline.json", limit=64 * 1024, label="执行契约清单")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    policy = payload.get("reconciliation_policy", "legacy")
+    if policy not in ("legacy", "current-workbook-v1"):
+        raise SnapshotCompatibilityError("任务固定核销依据策略不受支持")
+    return policy
+
+
 def declared_tools(payload: Any, contract: str) -> list[dict[str, Any]]:
     """One tool/argument contract for creation and Agent claims; no execution."""
     if not isinstance(payload, dict) or not isinstance(payload.get("tools"), list):
@@ -78,6 +90,7 @@ def declared_tools(payload: Any, contract: str) -> list[dict[str, Any]]:
 
 def validate_snapshot(root: Path) -> str:
     contract = snapshot_execution_version(root)
+    policy = snapshot_reconciliation_policy(root)
     if not contract:
         return ""
     from .registry import SkillManifest
@@ -108,6 +121,16 @@ def validate_snapshot(root: Path) -> str:
         "workbook_finalize.py", "formula_compare.py", "xlsx_patch.py", "audit_shifted_details.py",
     ):
         snapshot_file(root, f"vendor/scripts/{name}", limit=4 * 1024 * 1024, label=f"必要脚本 {name}")
+    if policy == "current-workbook-v1":
+        for name in (
+            "current_workbook_receipts.py", "current_workbook_accrual.py",
+            "current_baseline_receipts.py", "current_workbook_existing.py",
+            "current_date_correction.py", "current_aggregate_receipts.py",
+            "current_fragment_matching.py", "current_source_matching.py",
+            "current_source_history.py", "current_parent_allocation.py",
+            "current_parent_source_allocation.py",
+        ):
+            snapshot_file(root, f"vendor/scripts/{name}", limit=4 * 1024 * 1024, label=f"当前表核验脚本 {name}")
     from .ar_skill_identity import AR_LAB_SKILL_ID
     if manifest.id == AR_LAB_SKILL_ID:
         for name in ("workbook_read_cache.py", "run_read_cached.py"):

@@ -90,6 +90,67 @@ class ReceiptOwnershipTest(unittest.TestCase):
         self.assertFalse(checked['write']);self.assertFalse(checked['skip'])
         self.assertEqual(result['hold'][0]['code'],'E_RECEIPT_OWNERSHIP_UNRESOLVED')
 
+    def test_reuploaded_material_restores_one_missing_registered_receipt(self):
+        # Two older installments remain visible; only this event disappeared
+        # from the uploaded workbook, leaving one uniquely matching blank row.
+        wb=openpyxl.load_workbook(self.path);ws=wb['明细']
+        ws.cell(2,3,9101.59)
+        for amount in (405.41,752.10):
+            ws.append(['SO_TEST','SOD_TEST',amount,None,amount,'是','2026-07-10','冲预收',None])
+        wb.save(self.path);wb.close()
+        rec=self.rec('AR_FIRST',10259.10)
+        rec.update(amount_orig=9101.59,amount_local=9101.59,deliver_local=10259.10)
+        _,first=self.plan(rec);self.assertEqual(len(first['write']),1);self.apply(first)
+        wb=openpyxl.load_workbook(self.path);ws=wb['明细']
+        for col in (4,5,7,8,9):ws.cell(2,col).value=None
+        ws.cell(2,6).value='否'
+        wb.save(self.path);wb.close()
+        result,restored=self.plan(rec)
+        self.assertEqual(len(restored['write']),1,
+                         {k:[(r.get('code'),r.get('reason')) for r in result.get(k,[])]
+                          for k in ('auto','hold','exception')})
+        self.assertEqual(restored['write'][0]['ledger_row_ref'],2)
+        self.apply(restored)
+        rows=W.read_ledger_rows(self.path)
+        self.assertEqual(rows[2]['回款明细'],9101.59)
+        _,repeat=self.plan(rec)
+        self.assertFalse(repeat['write']);self.assertEqual(len(repeat['skip']),1)
+
+    def test_reuploaded_material_restores_registered_partial_receipt_by_split(self):
+        # The verified receipt disappeared with an uploaded workbook. Its
+        # uncollected row is larger than this installment and must be split.
+        prior = [40500, 22800, 38774.30, 42322.50, 52650, 24300, 21600, 20250]
+        wb = openpyxl.load_workbook(self.path)
+        ws = wb['明细']
+        ws.cell(2, 3, 17603.20)
+        for amount in prior:
+            ws.append(['SO_TEST', 'SOD_TEST', amount, None, amount, '是',
+                       '2026-06-30', '汇', None])
+        wb.save(self.path)
+        wb.close()
+        uploaded = self.path.read_bytes()
+        rec = self.rec('AR_FIRST', 273321.80)
+        rec.update(amount_orig=10125, amount_local=10125, deliver_local=280800,
+                   shoukuan_date='2026-09-15', hexiao_date='2026-09-21')
+        _, first = self.plan(rec)
+        self.assertEqual(len(first['write']), 1)
+        self.apply(first)
+        self.path.write_bytes(uploaded)
+        result, restored = self.plan(rec)
+        self.assertEqual(len(restored['write']), 1,
+                         {k: [(r.get('code'), r.get('reason')) for r in result.get(k, [])]
+                          for k in ('auto', 'hold', 'exception')})
+        self.assertEqual(restored['write'][0]['ledger_row_ref'], 2)
+        self.apply(restored)
+        rows = W.read_ledger_rows(self.path)
+        self.assertAlmostEqual(sum(float(row['回款明细'] or 0) for row in rows.values()),
+                               273321.80, places=2)
+        self.assertEqual([round(float(row['应收金额']), 2) for row in rows.values()
+                          if row['是否结账'] != '是'], [7478.20])
+        _, repeat = self.plan(rec)
+        self.assertFalse(repeat['write'])
+        self.assertEqual(len(repeat['skip']), 1)
+
     def test_missing_identical_receipt_occurrence_is_not_skipped(self):
         for rec in (self.rec('AR_FIRST',500),self.rec('AR_SECOND',1000)):
             _,checked=self.plan(rec);self.apply(checked)

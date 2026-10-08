@@ -187,6 +187,23 @@ def _allocate_parent_by_delivery(
             error = FAL.unexplained_receipts(str(p.get("ar") or ""), so, received, known)
             if error:
                 p["_parent_allocation_error_code"] = "E_PARENT_ALLOCATION_HISTORY_MISSING"
+                current_reason = p.get("_current_parent_reconstruction_reason")
+                if not current_reason and "_current_parent_rows" in p:
+                    rows = (p.get("_current_parent_rows") or {}).get(so) or {}
+                    paid_rows = [(ref,row) for ref,row in rows.items()
+                                 if (common.to_number(row.get("回款明细")) or 0) > 0]
+                    details = "；".join(
+                        f"行{ref}/SOD={row.get('SOD')}/日期={row.get('收款时间')}/已收={row.get('回款明细')}"
+                        for ref,row in paid_rows[:20]) or "无可列出的已收候选行"
+                    history = (p.get("_current_source_history_by_so") or {}).get(so) or {}
+                    current_reason = (
+                        f"SO={so} 当前表已收{received:.2f}，本次来源累计及已核分配{known:.2f}，"
+                        f"尚未对应金额{received-known:.2f}；候选已收行共{len(paid_rows)}条：{details}；"
+                        f"本次取得逐笔来源{len(history.get('events') or [])}条。"
+                        "现有逐笔金额、日期与表内行尚未通过归属重建；需核对上述行的具体回款明细，不能凭累计补写")
+                if current_reason:
+                    error = (f"父回款 {p.get('ar')} 的当前表归属尚未核实：{current_reason}。"
+                             "本父回款暂不重新分配，请核对上述当前表行与本次智云明细。")
                 return {}, {}, {}, error
     detail_hist_orig = dict(detail_hist_orig)
     detail_hist_local = dict(detail_hist_local)

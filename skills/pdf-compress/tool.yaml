@@ -2,7 +2,7 @@ schema_version: 1
 id: pdf-compress
 name: PDF 压缩至 8MB
 version: 1.0.0
-status: published
+status: disabled
 category: 文件整理
 description: 上传 PDF，自动生成小于 8MB 的压缩副本，保留全部页面和上传原件。
 ui:

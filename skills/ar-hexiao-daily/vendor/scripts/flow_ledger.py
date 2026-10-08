@@ -14,7 +14,7 @@
   2. 再以智云销售名称/客户名称匹配流转表公司名称/汇款人，四种组合任一成立即名称命中；
      PayPal/美元户的英文付款方名称可通过「到账名称→系统客户名称」对照表转换后，
      与智云客户名称比较；对照缺失或一对多不自动猜；
-  3. 微信/支付宝另允许到账日期 +（净额 + 手续费）按同样名称规则匹配；
+  3. 流转表只用到账净额（外币用原币净额）定位；手续费不加回；
   4. 日期金额命中但四种名称组合都不成立 → **弱命中**，唯一候选可自动处理，多候选列入人工处理。
 - 命中 0 → E0；命中 >1 → E12；命中 1 → 给出行号与建议单号。
 - 匹配只读；**写入**见 `apply_flow.py`（日清和写前校验通过后、仅强三键或日期金额弱匹配唯一命中）。
@@ -317,6 +317,58 @@ class FlowLedger:
 
     # ---------- 匹配 ----------
 
+    def match_existing_posting(self, rec: dict) -> dict:
+        """Find a dated, already deducted SO posting before searching old carries."""
+        from flow_monthly import SO, money, parsed_balance, legacy_period_opening
+        day = common.norm_date(rec.get("hexiao_date"))
+        so = str(rec.get("so") or "").strip().upper()
+        source = rec.get("so_receipt_source") or {}
+        if not day or not so or (source.get("currency") and not common.is_cny(source["currency"])):
+            return {"hits": 0, "rows": [], "matched_by": "已登记核销行"}
+        try:
+            paid = money(source.get("amount_local") if source.get("amount_local") not in (None, "") else rec.get("amount_orig"))
+            if paid <= 0:
+                raise ValueError("invalid payment")
+        except (ValueError, TypeError):
+            return {"hits": 0, "rows": [], "matched_by": "已登记核销行"}
+        names = [rec.get("customer"), rec.get("sales_name")]
+        matches = []
+        invalid_balance = []
+        for row in self.rows:
+            if row.get("date") != day or row.get("form") != "冲预收":
+                continue
+            if not any(name_similar(row.get("payer"), name) for name in names if name):
+                continue
+            shown = [value.upper() for value in SO.findall(row.get("order_cell") or "")]
+            if shown.count(so) != 1:
+                continue
+            amount = None
+            try:
+                amount = money(row.get("amount"))
+                parsed = parsed_balance(row.get("prepayment"))
+                if "remaining" not in parsed:
+                    continue
+                opening = legacy_period_opening(row.get("form"), amount, parsed) or amount
+                deductions = list(parsed.get("deductions", [opening - parsed["remaining"]]))
+                if deductions.count(paid) != 1:
+                    continue
+                # A single visible SO identifies the deduction; multiple SOs
+                # require the amount written beside this SO in the order cell.
+                if len(shown) > 1:
+                    tail = (row.get("order_cell") or "").upper().split(so, 1)[1]
+                    fragment = tail.split("SO", 1)[0]
+                    if str(paid) not in fragment.replace(",", ""):
+                        continue
+            except (ValueError, TypeError):
+                if amount == paid and shown == [so] and str(row.get("prepayment") or "").strip():
+                    invalid_balance.append(row)
+                continue
+            matches.append(row)
+        if invalid_balance:
+            rows = matches + invalid_balance
+            return {"hits": len(rows), "rows": rows, "matched_by": "已登记SO但预收未通过算术校验"}
+        return {"hits": len(matches), "rows": matches, "matched_by": "已登记核销行"}
+
     def match_carry(self, rec: dict) -> dict:
         """Bind a carried row using current source identity and workbook evidence."""
         from flow_monthly import SO, parsed_balance, legacy_period_opening, money
@@ -361,15 +413,10 @@ class FlowLedger:
     ) -> dict:
         """
         返回 {"hits": n, "rows": [...], "matched_by": str}
-        matched_by ∈ 三键 / 三键(含手续费) / 三键(原币公式) /
-        三键(原币公式含手续费) 及其「中英文对照」变体 /
+        matched_by ∈ 三键 / 三键(原币公式) 及其「中英文对照」变体 /
         日期+金额(名字不符) / ""
         """
         date = common.norm_date(arrival_date)
-        gross = None
-        if amount_net is not None and fee:
-            gross = round(float(amount_net) + float(fee), 2)
-
         def by_date(r):
             return date is not None and r["date"] == date
 
@@ -388,26 +435,6 @@ class FlowLedger:
             and uses_formula_original(r)
             and amounts_equal(r.get("formula_orig_amount"), amount_net)
         ]
-        cand_gross = (
-            [
-                r for r in self.rows
-                if by_date(r)
-                and not uses_formula_original(r)
-                and amounts_equal(r.get("amount"), gross)
-            ]
-            if gross is not None
-            else []
-        )
-        cand_orig_gross = (
-            [
-                r for r in self.rows
-                if by_date(r)
-                and uses_formula_original(r)
-                and amounts_equal(r.get("formula_orig_amount"), gross)
-            ]
-            if gross is not None
-            else []
-        )
 
         def name_match_kind(row: dict) -> str:
             """返回直接匹配/中英文对照/空；对照一对多时不自动命中。"""
@@ -455,11 +482,7 @@ class FlowLedger:
             return "三键(混合金额口径)"
 
         direct = cand_net + [r for r in cand_orig if r not in cand_net]
-        with_fee = cand_gross + [r for r in cand_orig_gross if r not in cand_gross]
-        for pool, normal_tag, formula_tag in (
-            (direct, "三键", "三键(原币公式)"),
-            (with_fee, "三键(含手续费)", "三键(原币公式含手续费)"),
-        ):
+        for pool, normal_tag, formula_tag in ((direct, "三键", "三键(原币公式)"),):
             named: List[dict] = []
             kinds: List[str] = []
             for row in pool:
@@ -477,7 +500,7 @@ class FlowLedger:
                     "matched_by": tag,
                 }
 
-        weak = direct + [r for r in with_fee if r not in direct]
+        weak = direct
         if weak:
             return {
                 "hits": len(weak),
@@ -662,9 +685,13 @@ def annotate_records(
             )
         hit = cache[key]
         if hit["hits"] == 0:
-            carry = flow.match_carry(rec)
-            if carry["hits"]:
-                hit = carry
+            posted = flow.match_existing_posting(rec)
+            if posted["hits"]:
+                hit = posted
+            else:
+                carry = flow.match_carry(rec)
+                if carry["hits"]:
+                    hit = carry
         d = common.norm_date(rec.get("shoukuan_date"))
         covered = dmin is not None and d is not None and dmin <= d <= dmax
         if not covered and hit["hits"] == 0:
@@ -700,6 +727,11 @@ def annotate_records(
                 "payer": r0.get("payer") or "",
                 "amount": r0.get("amount"),
             }
+            if r0.get("formula_orig_amount") is not None:
+                rec["flow_identity"].update(
+                    formula_orig_amount=r0["formula_orig_amount"],
+                    formula_rate=r0["formula_rate"],
+                )
             so = str(rec.get("so") or "").strip()
             if so:
                 rec["flow_order_suggest"] = FlowLedger.suggest_order_cell(

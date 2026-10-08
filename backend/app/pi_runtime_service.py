@@ -13,6 +13,8 @@ from fastapi import HTTPException
 
 from .auth import UserContext
 from .settings import settings
+from .pi_delivery_receipts import (request_identity, receipt_path, read_receipt,
+                                   write_receipt, public_receipt, new_receipt, change_state)
 
 
 def owner_scope(user: UserContext) -> str:
@@ -103,6 +105,8 @@ def store_mounted_skills(user, session_id, names):
 
 def operate(user: UserContext, session_id: str, operation: str, payload: dict, *, model_config: dict | None = None, skill_bindings: list[dict] | None = None, business_config: dict | None = None) -> dict:
     session_id = require_session(user, session_id, check_skill=False)
+    from .pi_operation_contract import validate_operation
+    validate_operation(operation, payload)
     # Serialize lifecycle, authorization and its conservative mount record across
     # API processes. A lost start reply must never leave unrecorded capabilities.
     with (catalog(user) / (session_id + '.lock')).open('a+b') as lock:
@@ -110,9 +114,27 @@ def operate(user: UserContext, session_id: str, operation: str, payload: dict, *
         return _operate_locked(user, session_id, operation, payload, model_config=model_config, skill_bindings=skill_bindings, business_config=business_config)
 
 
+def session_history(user: UserContext, session_id: str) -> dict:
+    session_id = require_session(user, session_id, check_skill=False)
+    return _request_runtime({'owner': owner_scope(user), 'session_id': session_id,
+                             'operation': 'history', 'payload': {}})
+
+
+def delivery_receipt(user: UserContext, session_id: str, request_id: str) -> dict:
+    # A revoked Skill grant stops new commands, but the owner must retain
+    # read-only access to an already dispatched request's evidence.
+    session_id = require_session(user, session_id, check_skill=False)
+    with (catalog(user) / (session_id + '.lock')).open('a+b') as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        value = read_receipt(receipt_path(catalog(user), session_id, request_id))
+    if value is None:
+        raise HTTPException(404, '消息回执不存在。')
+    return public_receipt(value)
+
+
 def _operate_locked(user: UserContext, session_id: str, operation: str, payload: dict, *, model_config: dict | None = None, skill_bindings: list[dict] | None = None, business_config: dict | None = None) -> dict:
-    cancelling_job = operation == 'jobs' and payload.get('operation') == 'cancel'
-    session_id = require_session(user, session_id, check_skill=operation not in {'start', 'stop'} and not cancelling_job)
+    from .pi_operation_contract import requires_skill_grant
+    session_id = require_session(user, session_id, check_skill=requires_skill_grant(operation, payload))
     body = {'owner': owner_scope(user), 'session_id': session_id,
             'operation': operation, 'payload': payload}
     if operation == 'start' and skill_bindings is not None:
@@ -130,6 +152,31 @@ def _operate_locked(user: UserContext, session_id: str, operation: str, payload:
                 raise HTTPException(403, 'Skill 权限已变化，请重新启动。')
         record = json.loads((catalog(user) / (session_id + '.json')).read_text())
         store_mounted_skills(user, session_id, [*record.get('mounted_skill_ids', []), *[item['id'] for item in skill_bindings]])
+    identity = request_identity(payload) if operation == 'send' else None
+    if identity is not None:
+        request_id, digest, command_type = identity
+        path = receipt_path(catalog(user), session_id, request_id)
+        prior = read_receipt(path)
+        if prior is not None:
+            if (prior.get('client_request_id') != request_id or
+                    prior.get('command_digest') != digest or
+                    prior.get('command_type') != command_type):
+                raise HTTPException(409, '消息请求编号已用于其他内容。')
+            return public_receipt(prior)
+        receipt = new_receipt(request_id, digest, command_type)
+        write_receipt(path, receipt)
+        body['payload'] = {key: value for key, value in payload.items()
+                           if key != 'client_request_id'}
+        receipt = change_state(receipt, 'dispatching')
+        write_receipt(path, receipt)
+        try:
+            result = _request_runtime(body)
+        except Exception:
+            write_receipt(path, change_state(receipt, 'unknown'))
+            raise
+        receipt = change_state(receipt, 'pi_accepted' if result.get('accepted') is True else 'unknown')
+        write_receipt(path, receipt)
+        return {**result, **public_receipt(receipt)}
     result = _request_runtime(body)
     if operation == 'start' and skill_bindings is not None:
         store_mounted_skills(user, session_id, [item['id'] for item in skill_bindings])

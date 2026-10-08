@@ -15,7 +15,6 @@ import fallback_sequence as FS
 import amount_policy
 from allocation_contract import readback_payload, stable_payload as _stable_payload
 import baseline_receipts
-import current_run_basis
 
 
 LEDGER_NAME = "父回款顺序分配台账.json"
@@ -171,14 +170,9 @@ def eligible_entries(checked: dict) -> Dict[str, dict]:
     return out
 
 
-def prepare_commit(
-    state: dict, checked: dict, *, preserve_current_evidence: bool = False
-) -> tuple[dict, int]:
+def prepare_commit(state: dict, checked: dict) -> tuple[dict, int]:
     """Build the same prospective journal for preflight and post-write commit."""
-    if current_run_basis.enabled(checked) and not preserve_current_evidence:
-        data = current_run_basis.empty_state()
-    else:
-        data = copy.deepcopy(state)
+    data = copy.deepcopy(state)
     parents = data.setdefault("parents", {})
     now = dt.datetime.now().isoformat(timespec="seconds")
     changed = 0
@@ -230,28 +224,16 @@ def prepare_commit(
     return data, changed
 
 
-def preflight(workspace: Path, checked: dict, *, current_evidence: dict | None = None) -> None:
-    """Validate the prospective journal without changing files.
-
-    Current-policy plans ignore saved journals.  Write-after review may pass the
-    checked plan from this same run explicitly so its own readback is not
-    mistaken for history.
-    """
-    state = (
-        current_run_basis.prior_state(workspace, checked)
-        if current_evidence is None
-        else current_evidence
-    )
-    prepare_commit(
-        state,
-        checked,
-        preserve_current_evidence=current_evidence is not None,
-    )
+def preflight(workspace: Path, checked: dict) -> None:
+    """Validate the complete prospective journal without changing files."""
+    policy=(checked.get("business_rules") or {}).get("reconciliation_policy")
+    state={"version":VERSION,"parents":{}} if policy=="current-workbook-v1" else load(workspace)
+    prepare_commit(state, checked)
 
 
 def commit(workspace: Path, checked: dict) -> Tuple[Path, int]:
     """Persist only after all financial and provenance checks have passed."""
-    data, changed = prepare_commit(current_run_basis.prior_state(workspace, checked), checked)
+    data, changed = prepare_commit(load(workspace), checked)
     path = ledger_path(workspace)
     temporary = None
     try:

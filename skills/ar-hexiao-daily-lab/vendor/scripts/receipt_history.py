@@ -2,6 +2,7 @@
 import copy
 import common
 import amount_policy
+from fx_accrual import accrual_amount
 import baseline_receipts as BR
 
 MODE = 'unchanged-delivery-history-v1'
@@ -67,7 +68,9 @@ def plan(rec, result, rows, journal):
         five.update(回款明细=amount/100,收款时间=day,收款方式=way,是否结账='是')
         remaining=delivery-(received-BR.cents(target['回款明细'])+amount)
         if len(rows)==1 and not dirty and abs(remaining)<=BR.SETTLEMENT_CENTS:
-            five['计提']=delivery/100
+            # Preserve a verified closed event's existing accrual.
+            if target['计提'] is None or not rec.get('fx_accrual_source'):
+                five['计提']=accrual_amount(rec,delivery/100)
     else:
         if baseline!=delivery or dirty or received>delivery:return None
         if owned:return None
@@ -97,8 +100,11 @@ def plan(rec, result, rows, journal):
         # Ordinary first-time settlement leaves an absent zero difference blank.
         # Preserve that representation when reviewing the same receipt; real
         # differences and existing explicit values still require verification.
-        if baseline != delivery or target['差异'] is not None:
-            answer['derived_cols']={'差异':(baseline-delivery)/100}
+        accrued = BR.cents(five.get('计提'))
+        if accrued is not None and (baseline != accrued or target['差异'] is not None):
+            answer['derived_cols']={'差异':(baseline-accrued)/100}
+        if target['计提'] is None and five.get('计提') is not None and rec.get('fx_accrual_source'):
+            answer['fx_accrual_applied'] = True
     if dirty:
         answer.setdefault('warning_codes',[]).append('W_UNRELATED_RECEIPT_INCOMPLETE')
     answer.pop('row_operation',None)
@@ -172,6 +178,7 @@ def check(item,rows):
         if BR.event_key(rec)!=audit['event_key'] or source.get('writeoff_sequence_key')!=rec.get('writeoff_sequence_key'):return bad('历史回款事件标识发生变化')
         for field,key in [('amount_local','amount_local'),('delivery_local','deliver_local'),('cumulative_local','cumulative_received_local')]:
             if BR.cents(source.get(field))!=BR.cents(rec.get(key)):return bad('历史回款来源金额发生变化')
+        if 'fx_accrual_source' in rec and (source.get('fx_accrual_source') != rec['fx_accrual_source'] or item.get('fx_accrual_source') != rec['fx_accrual_source']):return bad('已有回款复核中的计提汇率来源发生变化')
         expected=plan(rec,item,audit['before_rows'],audit['journal'])
         if expected is not None and (item.get('so_accrual_audit') or {}).get('all_settled') is False:
             # Reconstruct the final SO-wide policy from actual rows, rather

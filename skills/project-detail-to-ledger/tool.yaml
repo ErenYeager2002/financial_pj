@@ -2,7 +2,7 @@ schema_version: 1
 id: project-detail-to-ledger
 name: 项目明细补录
 version: 1.1.0
-status: published
+status: disabled
 category: 经营报表
 description: 自动识别项目明细表和盈亏核算表，按固定字段映射追加到轻量副本；数量、单价和应收金额转为数字，按 SO+SOD 跳过重复记录，并移除历史外链和打开时强制完整重算。
 ui:

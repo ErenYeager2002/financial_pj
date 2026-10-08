@@ -65,6 +65,8 @@ def recovery_status(workflow: WorkflowSession, *, include_write_inspection: bool
     result = {"allowed": False, "reason": "当前任务没有可恢复的执行阶段。",
               "failed_action_id": "", "checkpoint_fingerprint": hashlib.sha256(encoded).hexdigest(),
               "recovery_kind": "phase"}
+    if "ar_abandonment" in context:
+        return {**result, "reason": "未发布结果已封存，请使用保留材料创建新任务。"}
     if state.get("schema_version") != CONTRACT_VERSION or workflow.state != "failed":
         return result
     if any(action.state == "running" for action in workflow.actions):

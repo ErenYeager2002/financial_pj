@@ -9,7 +9,6 @@ import amount_policy
 import argparse
 import common
 import datetime as dt
-import fallback_allocation_ledger as FAL
 import json
 import sys
 import writeoff_duplicate_audit as WDA
@@ -65,10 +64,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     )
     ap.add_argument("--rate", action="append", default=[], help="外币汇率 美元USD=7.0")
     ap.add_argument("--out", default="", help="判定结果 json 路径")
-    ap.add_argument(
-        "--current-run-plan", default="",
-        help="写后复核专用：本工作区内、由本次已校验写入计划生成的证据",
-    )
     ap.add_argument("--flow", default="", help="到账流转表副本（只读）；不给则扫 02_我的表副本/")
     ap.add_argument("--flow-source-workspace", default="", help="优化测试的只读流转材料目录")
     ap.add_argument(
@@ -115,35 +110,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             payments = payments_from_fixture(json.loads(Path(args.fixture).read_text(encoding="utf-8")))
         else:
             payments = load_exports(ws, target_date=requested_date)
-        import current_run_basis
-        current_evidence = None
-        if args.current_run_plan:
-            evidence_path = Path(args.current_run_plan)
-            if evidence_path.is_symlink():
-                raise InputError("本次核销计划证据不能是符号链接")
-            try:
-                evidence_path = evidence_path.resolve(strict=True)
-            except OSError as exc:
-                raise InputError("找不到本次核销计划证据") from exc
-            if not evidence_path.is_relative_to(ws):
-                raise InputError("本次核销计划证据必须位于当前工作区")
-            try:
-                evidence_plan = json.loads(evidence_path.read_text(encoding="utf-8"))
-            except (OSError, ValueError, TypeError) as exc:
-                raise InputError("本次核销计划证据无法读取") from exc
-            if not current_run_basis.enabled(evidence_plan):
-                raise InputError("本次核销计划证据缺少当前材料决策标记")
-            evidence_date = common.norm_date(evidence_plan.get("hexiao_date"))
-            if requested_date is not None and evidence_date != requested_date:
-                raise InputError("本次核销计划证据的核销日期与复核日期不一致")
-            if evidence_plan.get("conflict"):
-                raise InputError("本次核销计划仍有冲突，不能作为写后复核证据")
-            current_evidence, _ = FAL.prepare_commit(current_run_basis.empty_state(), evidence_plan)
-        allocation_state = current_run_basis.initialize(ledgers.values(), current_evidence)
+        # Prior execution journals remain audit artifacts. Decisions start
+        # from this fetch and the selected workbooks, including on readback.
+        allocation_state = {"parents": {}}
+        for ledger in ledgers.values():
+            ledger.baseline_receipt_state = {}
         import current_parent_allocation
         for payment in payments:
             current_parent_allocation.attach(payment, ledgers, payments=payments)
-            payment.setdefault("_fallback_allocation_state", allocation_state)
+            payment["_fallback_allocation_state"] = allocation_state
             if ledgers:
                 payment["_ledger_received_local_by_so"] = {
                     str(order["so"]).strip(): ledgers[delivery_date.year].so_totals(order["so"])[1]
@@ -159,6 +134,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     and delivery_date.year in ledgers
                     and ledgers[delivery_date.year].so_settlement(order["so"])["all_settled"]
                 })
+        import fx_accrual_sources
+        fx_accrual_sources.prepare_quotes(payments, ledger_paths, ws)
         records = expand_payments(payments, rates)
     except (InputError, ValueError) as e:
         print(f"ERROR: {e}", file=sys.stderr)
@@ -234,13 +211,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     result["duplicate_writeoff_audit_sha256"] = WDA.audit_fingerprint(duplicate_audits)
     result["flow_sources"] = flow.sources
     result["business_rules"] = {
+        "reconciliation_policy": "current-workbook-v1",
         "parent_receipt_basis": "zhiyun_total_received_without_fee_tax_deduction",
         "whole_parent_conservation_gate": "actual_details_or_verified_parent_allocation",
         "itemized_fee_policy": "whole_parent_conservation_then_no_double_allocation",
         "writeoff_basis": "zhiyun_current_writeoff_direct",
         "parent_fallback_allocation": "missing_itemized_amount_delivery_ascending_outstanding_waterfall",
-        "parent_fallback_state": "current_plan_audit_only",
-        "decision_basis": current_run_basis.POLICY,
+        "parent_fallback_state": "current_sources_and_selected_workbooks",
+        "historical_allocation_journal_role": "audit_only",
         "ledger_settled_precheck": (
             "all_so_business_rows_settled_skip_without_financial_write_else_current_event_signature"
         ),
@@ -250,6 +228,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         ),
         "ledger_year_routing": "zhiyun_project_delivery_date_to_matching_annual_ledger_no_number_inference",
         "missing_rate_policy": "use_writeoff_amount_directly",
+        "foreign_accrual_policy": "whole_order_original_times_boc_final_reconciliation_date_spot_buying",
+        "foreign_accrual_missing_quote": "hold_accrual_no_zhiyun_rate_substitution",
         "technical_amount_tolerance": TOL,
         "cent_tolerance": float(amount_policy.CENT_TOLERANCE),
         "business_settlement_tolerance": BUSINESS_SETTLEMENT_TOL,

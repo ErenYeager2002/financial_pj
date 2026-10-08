@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from typing import List
+from copy import deepcopy
+from fx_accrual import accrual_amount
 from typing import Optional
 from typing import Tuple
 import baseline_receipts as BR
@@ -81,8 +83,12 @@ def _make_same_so_multi_sod_aggregate(
         (x for x in group if str(x.get("sod") or "").strip() == existing_sod),
         sorted(group, key=lambda x: (str(x.get("sod") or ""), str(x.get("case_id") or "")))[0],
     )
+    accrual = accrual_amount(target, so_delivery, whole_order=True)
+    baseline = common.to_number(snap.get("yingshou"))
+    target_derived = ({"差异": round(float(baseline) - accrual, 2)}
+                      if target.get("fx_accrual_source") and baseline is not None and abs(float(baseline) - accrual) > max(tolerance, TOL) else {})
     target_five = {
-        "计提": so_delivery,
+        "计提": accrual,
         "回款明细": total_amount,
         "是否结账": "是",
         "收款时间": next(iter(dates)) or None,
@@ -91,6 +97,8 @@ def _make_same_so_multi_sod_aggregate(
     }
     return {
         "type": "same_so_multi_sod_aggregate",
+        "fx_accrual_source": deepcopy(target.get("fx_accrual_source") or {}),
+        "accrual_baseline": baseline,
         "source_receivable": common.to_number(snap.get("yingshou")),
         "source_five_cols": {
             "计提": snap.get("jiti"), "回款明细": snap.get("huikuan"),
@@ -111,7 +119,7 @@ def _make_same_so_multi_sod_aggregate(
         "writeoff_sequence_key": list(sequence_keys[0]),
         "target_case_id": str(target.get("case_id") or ""),
         "target_five_cols": target_five,
-        "target_derived_cols": {},
+        "target_derived_cols": target_derived,
     }, ""
 
 def _make_split_payment_chain(
@@ -289,11 +297,19 @@ def _make_split_payment_chain(
         five["回款明细"] = amount
         if settled:
             # 复跑时多笔可能都先命中链首的未计提行；最后结清步骤的计提
-            # 必须由智云最新交付额确定，不能沿用该比较行的空值。
-            five["计提"] = latest
+            # 必须按本次估值依据计算，不能沿用该比较行的空值。
+            five["计提"] = accrual_amount(result, latest)
         else:
             five["计提"] = None
+        baseline, _, _ = ledger.business_totals(str(result.get("so") or ""), str(result.get("sod") or ""), ref)
+        step_derived = dict(result.get("derived_cols") or {}) if settled else {}
+        if result.get("fx_accrual_source"):
+            step_derived = ({"差异": round(float(baseline) - float(five["计提"]), 2)}
+                            if settled and baseline is not None and abs(float(baseline) - float(five["计提"])) > max(tolerance, TOL) else {})
         steps.append({
+            "fx_accrual_source": deepcopy(result.get("fx_accrual_source") or {}),
+            "receivable_group_scope": deepcopy((result.get("split_payment_source") or {}).get("receivable_group_scope") or {}),
+            "accrual_baseline": baseline,
             "index": index,
             "case_id": result.get("case_id") or "",
             "ar": result.get("ar") or "",
@@ -307,7 +323,7 @@ def _make_split_payment_chain(
             "remaining_after": remaining,
             "settled": settled,
             "five_cols": five,
-            "derived_cols": dict(result.get("derived_cols") or {}) if settled else {},
+            "derived_cols": step_derived,
         })
         previous_remaining = remaining
 
@@ -323,6 +339,10 @@ def _make_split_payment_chain(
         target = steps[0]
         return {
             "type": "settlement_tail_aggregate",
+            "fx_accrual_source": deepcopy(target.get("fx_accrual_source") or {}),
+            "sod": target.get("sod") or "",
+            "receivable_group_scope": deepcopy(target.get("receivable_group_scope") or {}),
+            "accrual_baseline": target.get("accrual_baseline"),
             "source_receivable": source_receivable,
             "initial_cumulative": initial_cumulative,
             "latest_delivery": latest,

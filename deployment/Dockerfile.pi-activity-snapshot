@@ -1,0 +1,2 @@
+FROM financial-platform-isolated-pi-runtime:0.85.1-session-v16-20260917
+COPY deployment/pi_jobs.py deployment/pi_runtime_server.py deployment/pi_browser.py /opt/platform/

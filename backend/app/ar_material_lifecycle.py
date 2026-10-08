@@ -41,12 +41,26 @@ def visible_material_set(db, owner_id, department_id, skill_id):
     seen = set()
     while current and current.id not in seen:
         seen.add(current.id)
-        if _finished(db, current):
+        if _finished(db, current) or retained_after_abandonment(db, current):
             return current
         current = db.get(WorkflowMaterialSet, current.parent_set_id) if current.parent_set_id else None
         if current and _scope(current) != (owner_id, department_id, skill_id):
             raise ValueError("材料检查点的业务归属不一致")
     return None
+
+
+def retained_after_abandonment(db, material):
+    # Visibility only: do not treat a partially completed batch as a successful
+    # run for destructive retirement of historical workbooks.
+    from .ar_abandon import is_abandoned
+    candidates = db.scalars(select(WorkflowSession).where(
+        WorkflowSession.material_set_id == material.id,
+        WorkflowSession.owner_id == material.owner_id,
+        WorkflowSession.department_id == material.department_id,
+        WorkflowSession.skill_id == material.skill_id,
+        WorkflowSession.state.in_(("failed", "cancelled")),
+    ))
+    return any(is_abandoned(workflow) for workflow in candidates)
 
 
 def retired_file_ids():

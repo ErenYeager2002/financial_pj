@@ -11,6 +11,8 @@ import fcntl
 import json
 import os
 import pty
+import re
+import socket
 import signal
 import socketserver
 import struct
@@ -18,6 +20,7 @@ import subprocess
 import sys
 import termios
 import threading
+import time
 import pi_jobs
 import pi_browser
 from pi_extension_ui import PendingDialogs
@@ -31,18 +34,151 @@ SESSION = str(UUID(os.environ["PI_PLATFORM_SESSION_ID"]))
 HOME = Path(os.environ.get("HOME", "/home/agent"))
 
 
+class BridgeLifecycleError(Exception):
+    def __init__(self, status: int, reason: str):
+        super().__init__(reason)
+        self.status = status
+
+
+class Admission:
+    # Durable gate for every platform-controlled work entry.
+
+    def __init__(self, process):
+        self.process = process
+        self.lock = threading.RLock()
+        self.path = SOCKET.parent / "lifecycle.json"
+        self.state = "open"
+        self.revision = 0
+        self.token = None
+        self.binding = None
+        try:
+            saved = json.loads(self.path.read_text())
+        except FileNotFoundError:
+            return
+        except (OSError, ValueError, TypeError):
+            self.state = "stop_unknown"
+            return
+        if not isinstance(saved, dict) or type(saved.get("revision")) is not int:
+            self.state = "stop_unknown"
+            return
+        self.revision = max(0, saved["revision"])
+        # A bridge restart invalidates the old instance's token. It must not
+        # silently reopen a gate while the host may still be stopping Docker.
+        if saved.get("state") != "open":
+            self.state = "stop_unknown"
+
+    def _persist(self, state, token, binding):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = self.path.with_name("lifecycle." + uuid4().hex + ".tmp")
+        next_revision = self.revision + 1
+        value = {"schema_version": "pi-lifecycle-v1", "state": state,
+                 "revision": next_revision, "token": token, "binding": binding}
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        try:
+            with os.fdopen(descriptor, "w") as stream:
+                json.dump(value, stream)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, self.path)
+            parent = os.open(self.path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            try:
+                os.fsync(parent)
+            finally:
+                os.close(parent)
+        finally:
+            temporary.unlink(missing_ok=True)
+        self.state, self.token, self.binding, self.revision = state, token, binding, next_revision
+
+    def require_open(self):
+        if self.state != "open":
+            raise BridgeLifecycleError(409, "Pi admission is closed")
+
+    def _verify_ticket(self, body):
+        if (self.state != "quiescing" or not self.token or
+                body.get("token") != self.token or
+                body.get("container_id") != (self.binding or {}).get("container_id") or
+                (self.binding or {}).get("instance_id") != self.process.instance_id):
+            raise BridgeLifecycleError(409, "Pi quiesce ticket changed")
+
+    def begin(self, body):
+        with self.lock:
+            self.require_open()
+            with self.process.lock:
+                revision = self.revision + self.process.sequence
+                generation = self.process.generation
+            container_id = body.get("container_id")
+            if (body.get("session_id") != SESSION or
+                    body.get("instance_id") != self.process.instance_id or
+                    body.get("generation") != generation or
+                    body.get("activity_revision") != revision or
+                    not isinstance(container_id, str) or
+                    not re.fullmatch(r"[a-f0-9]{64}", container_id) or
+                    body.get("requester") != "pi-manager"):
+                raise BridgeLifecycleError(409, "Pi activity identity changed")
+            token = uuid4().hex
+            binding = {"session_id": SESSION, "instance_id": self.process.instance_id,
+                       "generation": generation, "container_id": container_id,
+                       "requester": "pi-manager", "expected_revision": revision}
+            self._persist("quiescing", token, binding)
+            return {"token": token, "state": self.state,
+                    "snapshot": self.process.activity_snapshot()}
+
+    def inspect(self, body):
+        with self.lock:
+            self._verify_ticket(body)
+            return {"token": self.token, "state": self.state,
+                    "snapshot": self.process.activity_snapshot()}
+
+    @staticmethod
+    def _stop_eligible(snapshot):
+        jobs = snapshot.get("jobs")
+        return (snapshot.get("schema_version") == "pi-activity-snapshot-v1" and
+                snapshot.get("admission") == "quiescing" and
+                snapshot.get("inventory_complete") is True and
+                snapshot.get("stop_eligible") is True and
+                snapshot.get("agent_busy") is False and
+                snapshot.get("pending_messages") == 0 and
+                snapshot.get("pending_dialogs") == 0 and
+                snapshot.get("browser_busy") is False and
+                snapshot.get("untracked_execution") is False and
+                snapshot.get("unpersisted_outputs") is False and
+                isinstance(jobs, dict) and jobs.get("scan_complete") is True and
+                jobs.get("active_count") == 0 and jobs.get("unknown_count") == 0)
+
+    def commit(self, body):
+        with self.lock:
+            self._verify_ticket(body)
+            snapshot = self.process.activity_snapshot()
+            if (body.get("activity_revision") != snapshot.get("activity_revision") or
+                    snapshot.get("instance_id") != self.process.instance_id or
+                    snapshot.get("generation") != self.process.generation or
+                    not self._stop_eligible(snapshot)):
+                raise BridgeLifecycleError(409, "Pi is not proven idle")
+            self._persist("stopping", self.token, self.binding)
+            return {"state": self.state, "activity_revision": self.revision + self.process.sequence}
+
+    def release(self, body):
+        with self.lock:
+            self._verify_ticket(body)
+            self._persist("open", None, None)
+            return {"state": self.state, "activity_revision": self.revision + self.process.sequence}
+
+
 class PiProcess:
     def __init__(self):
         self.lock = threading.RLock()
         self.process = None
+        self.process_identity = None
         self.mode = None
         self.master = None
         self.events = collections.deque(maxlen=4000)
         self.sequence = 0
         self.generation = 0
         self.instance_id = uuid4().hex
+        self.admission = Admission(self)
         self.dialogs = PendingDialogs()
         self.activity = Activity()
+        self.state_probes = {}
 
     def append(self, event):
         with self.lock:
@@ -123,6 +259,7 @@ class PiProcess:
                     os.close(slave)
                 self.master = master
                 threading.Thread(target=self._terminal_reader, args=(self.process, master), daemon=True).start()
+            self.process_identity = pi_jobs.identity(self.process.pid)
             self.append({"kind": "started", "mode": mode, "generation": self.generation})
             return {"mode": mode, "running": True, "generation": self.generation}
 
@@ -226,9 +363,19 @@ class PiProcess:
                         raise ValueError("Expected RPC event object")
                     with self.lock:
                         if self.process is process:
-                            self.dialogs.observe(event)
-                            self.activity.observe(event)
-                            self.append({"kind": "rpc", "event": event})
+                            request_id = event.get('id')
+                            internal = (event.get('type') == 'response' and
+                                        isinstance(request_id, str) and
+                                        request_id.startswith('__platform_activity__:'))
+                            if internal:
+                                probe = self.state_probes.get(request_id)
+                                if probe and probe['process'] is process:
+                                    probe['response'] = event
+                                    probe['ready'].set()
+                            else:
+                                self.dialogs.observe(event)
+                                self.activity.observe(event)
+                                self.append({"kind": "rpc", "event": event})
                 except (ValueError, UnicodeError):
                     self.append_for(process, {"kind": "protocol_error", "message": "Pi emitted a non-JSON event"})
             if len(buffer) > 16 * 1024 * 1024:
@@ -238,6 +385,10 @@ class PiProcess:
                         self.stop()
                 break
         process.wait()
+        with self.lock:
+            for probe in self.state_probes.values():
+                if probe["process"] is process:
+                    probe["ready"].set()
         self.append_for(process, {"kind": "exit", "exit_code": process.returncode})
 
     def _error_reader(self, process):
@@ -290,6 +441,141 @@ class PiProcess:
                     "activity": self.activity.snapshot(self.live()) if self.mode == "rpc" else None,
                     "pending_dialogs": self.dialogs.snapshot() if self.live() else []}
 
+    def query_rpc_state(self):
+        """Request current queue state without exposing the response as a user event."""
+        with self.lock:
+            if self.mode != 'rpc' or not self.live():
+                return None
+            process = self.process
+            generation = self.generation
+            request_id = '__platform_activity__:' + uuid4().hex
+            probe = {'process': process, 'ready': threading.Event(), 'response': None}
+            self.state_probes[request_id] = probe
+            packet = json.dumps({'type': 'get_state', 'id': request_id}).encode() + b'\n'
+            descriptor = process.stdin.fileno()
+            try:
+                os.set_blocking(descriptor, False)
+                if os.write(descriptor, packet) != len(packet):
+                    raise BlockingIOError('Incomplete activity query')
+            except (OSError, ValueError):
+                self.state_probes.pop(request_id, None)
+                return None
+            finally:
+                try: os.set_blocking(descriptor, True)
+                except OSError: pass
+        probe['ready'].wait(timeout=2)
+        with self.lock:
+            self.state_probes.pop(request_id, None)
+            if self.process is not process or self.generation != generation:
+                return None
+        response = probe['response']
+        if not isinstance(response, dict) or response.get('success') is not True or response.get('command') != 'get_state':
+            return None
+        data = response.get('data')
+        if not isinstance(data, dict):
+            return None
+        pending = data.get('pendingMessageCount')
+        streaming = data.get('isStreaming')
+        compacting = data.get('isCompacting')
+        if type(pending) is not int or pending < 0 or not isinstance(streaming, bool) or not isinstance(compacting, bool):
+            return None
+        return {'generation': generation, 'pending': pending,
+                'streaming': streaming, 'compacting': compacting}
+
+    def _process_inventory(self, process, generation, expected_identity):
+        """Observe every PID in the container namespace; ambiguity blocks reap."""
+        expected = {1, os.getpid()}
+        if process is not None:
+            expected.add(process.pid)
+        try:
+            namespace = os.stat('/proc/self/ns/pid').st_ino
+            deadline = time.monotonic() + 0.5
+            with os.scandir('/proc') as entries:
+                pids = [int(entry.name) for entry in entries if entry.name.isdecimal()]
+            if len(pids) > 1024 or time.monotonic() > deadline:
+                return None
+            rows = {}
+            for pid in pids:
+                if time.monotonic() > deadline:
+                    return None
+                path = Path('/proc') / str(pid)
+                raw = (path / 'stat').read_text()
+                fields = raw[raw.rindex(')') + 2:].split()
+                if len(fields) < 20 or os.stat(path / 'ns/pid').st_ino != namespace:
+                    return None
+                rows[pid] = (fields[0], int(fields[1]), int(fields[19]))
+        except (OSError, ValueError, IndexError):
+            return None
+        with self.lock:
+            if (self.generation != generation or
+                    (process is None and self.live()) or
+                    (process is not None and
+                     (self.process is not process or process.poll() is not None or
+                      expected_identity is None or self.process_identity != expected_identity or
+                      pi_jobs.identity(process.pid) != expected_identity))):
+                return None
+        if set(rows) != expected or any(state == 'Z' for state, _, _ in rows.values()):
+            return True
+        if rows[1][1] != 0 or rows[os.getpid()][1] != 1:
+            return None
+        if process is not None and rows[process.pid][1] != os.getpid():
+            return None
+        return False
+
+    def activity_snapshot(self):
+        """Expose observed facts; missing sources still prevent automatic reap."""
+        rpc_state = self.query_rpc_state()
+        with self.lock:
+            live = self.live()
+            mode = self.mode
+            if rpc_state and rpc_state['generation'] != self.generation:
+                rpc_state = None
+            activity = self.activity.snapshot(live) if mode == 'rpc' else None
+            dialogs = self.dialogs.snapshot() if live else []
+            process = self.process if live else None
+            generation = self.generation
+            process_identity = self.process_identity if live else None
+            if not live:
+                agent_busy, pending = False, 0
+            elif mode == 'rpc':
+                agent_busy = True if activity and activity.get('busy') else (
+                    bool(rpc_state['streaming'] or rpc_state['compacting']) if rpc_state else None)
+                pending = rpc_state['pending'] if rpc_state else None
+            else:
+                agent_busy, pending = None, None
+            base = {'schema_version': 'pi-activity-snapshot-v1',
+                    'session_id': SESSION, 'instance_id': self.instance_id,
+                    'generation': self.generation,
+                    'activity_revision': self.sequence + self.admission.revision,
+                    'admission': self.admission.state, 'agent_busy': agent_busy,
+                    'pending_messages': pending, 'pending_dialogs': len(dialogs)}
+        untracked = self._process_inventory(process, generation, process_identity)
+        jobs = pi_jobs.activity_snapshot()
+        browser = pi_browser.activity_snapshot()
+        reasons = ['unpersisted_outputs_unobserved']
+        if untracked is None:
+            reasons.append('untracked_execution_unobserved')
+        elif untracked:
+            reasons.append('untracked_execution_present')
+        if self.admission.state != 'open':
+            reasons.append('admission_closed')
+        if pending is None:
+            reasons.append('pending_messages_unobserved')
+        if mode == 'terminal' and live:
+            reasons.append('terminal_activity_unobserved')
+        if browser['busy'] is None:
+            reasons.append('browser_cleanup_unknown')
+        elif browser['busy']:
+            reasons.append('browser_open_or_active')
+        if not jobs['scan_complete']:
+            reasons.append('job_inventory_incomplete')
+        elif jobs['unknown_count']:
+            reasons.append('job_execution_unknown')
+        return {**base, 'browser_busy': browser['busy'],
+                'untracked_execution': untracked, 'unpersisted_outputs': None,
+                'inventory_complete': False, 'jobs': jobs,
+                'stop_eligible': False, 'reasons': reasons}
+
     def stop(self):
         with self.lock:
             process = self.process
@@ -318,24 +604,48 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(size))
             if not isinstance(body, dict):
                 raise ValueError("Expected object")
-            if self.path == "/configure-business": result = PI.configure_business(body)
-            elif self.path == "/configure-model": result = PI.configure_model(body)
-            elif self.path == "/start": result = PI.start(body.get("mode", "terminal"))
-            elif self.path == "/send": result = PI.send(body)
-            elif self.path == "/resize": result = PI.resize(body)
-            elif self.path == "/poll": result = PI.poll(body)
-            elif self.path == "/jobs": result = pi_jobs.operate(body)
-            elif self.path == "/browser": result = pi_browser.operate(body)
-            elif self.path == "/stop": result = PI.stop()
-            else:
-                self.send_error(404)
-                return
+            with PI.admission.lock:
+                if self.path.startswith("/lifecycle/"):
+                    peer = self.connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12)
+                    _, uid, _ = struct.unpack("3i", peer)
+                    if uid != 0:
+                        raise BridgeLifecycleError(403, "Host lifecycle access required")
+                    if self.path == "/lifecycle/begin": result = PI.admission.begin(body)
+                    elif self.path == "/lifecycle/inspect": result = PI.admission.inspect(body)
+                    elif self.path == "/lifecycle/commit": result = PI.admission.commit(body)
+                    elif self.path == "/lifecycle/release": result = PI.admission.release(body)
+                    else: raise BridgeLifecycleError(404, "Unknown lifecycle operation")
+                else:
+                    command = body.get("command")
+                    kind = command.get("type") if isinstance(command, dict) else None
+                    new_work = (self.path in {"/configure-business", "/configure-model", "/start"} or
+                                (self.path == "/send" and kind not in {
+                                    "get_state", "get_messages", "get_available_models", "get_commands", "abort"}) or
+                                (self.path == "/jobs" and body.get("operation") == "start") or
+                                (self.path == "/browser" and body.get("action") != "close"))
+                    if new_work:
+                        PI.admission.require_open()
+                    if self.path == "/configure-business": result = PI.configure_business(body)
+                    elif self.path == "/configure-model": result = PI.configure_model(body)
+                    elif self.path == "/start": result = PI.start(body.get("mode", "terminal"))
+                    elif self.path == "/send": result = PI.send(body)
+                    elif self.path == "/resize": result = PI.resize(body)
+                    elif self.path == "/poll": result = PI.poll(body)
+                    elif self.path == "/jobs": result = pi_jobs.operate(body)
+                    elif self.path == "/activity-snapshot": result = PI.activity_snapshot()
+                    elif self.path == "/browser": result = pi_browser.operate(body)
+                    elif self.path == "/stop": result = PI.stop()
+                    else:
+                        self.send_error(404)
+                        return
             data = json.dumps(result, ensure_ascii=False).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
+        except BridgeLifecycleError as exc:
+            self.send_error(exc.status, "Pi lifecycle conflict")
         except (ValueError, OSError, subprocess.SubprocessError):
             self.send_error(422, "Pi operation failed")
 

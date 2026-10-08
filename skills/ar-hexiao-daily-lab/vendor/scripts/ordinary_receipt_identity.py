@@ -20,7 +20,7 @@ def bind(items, ledger):
         return
     for item in items:
         operation = item.get('row_operation') or {}
-        if (item.get('bucket') != 'auto' or item.get('baseline_receipt_audit')
+        if ((item.get('current_workbook_receipts') and item.get('code') == 'OK_CURRENT_WORKBOOK_RECEIPT_PRESENT') or item.get('bucket') != 'auto' or item.get('baseline_receipt_audit')
                 or operation.get('type') not in SUPPORTED):
             continue
         event = identity(item)
@@ -113,6 +113,37 @@ def assess(rec, rows, journal):
                 return {'state': 'correction'}
             if len(paid) == 1 and cumulative == amount:
                 return {'state': 'correction'}
+        # A later uploaded workbook can omit a receipt that was written and
+        # verified in an earlier material version. Restore only a single,
+        # uniquely located missing occurrence whose remaining visible receipts
+        # exactly account for the source cumulative total. A larger single
+        # uncollected row can be split if it exactly covers the unpaid balance.
+        # Equal signatures or
+        # another visible payment of the same amount stay unresolved.
+        if not matches and needed == 1:
+            vacant = [ref for ref, row in rows.items()
+                      if (BR.cents(row.get('应收金额')) or 0) >= amount
+                      and BR.cents(row.get('回款明细')) in (None, 0)
+                      and not row.get('收款时间') and not row.get('收款方式')
+                      and row.get('是否结账') != '是']
+            other_events = Counter(tuple(value['signature']) for key, value in events.items()
+                                   if key != event)
+            prior_paid = sum(BR.cents(row['回款明细']) or 0 for row in paid.values())
+            prior_rows_valid = all(
+                row['是否结账'] == '是' and row.get('收款方式')
+                and common.norm_date(row.get('收款时间'))
+                and common.norm_date(row['收款时间']) <= posting
+                for row in paid.values()
+            )
+            if (cumulative is not None and prior_paid + amount == cumulative
+                    and len(vacant) == 1 and len(rows) == len(paid) + 1
+                    and prior_paid + BR.cents(rows[vacant[0]]['应收金额'])
+                        == BR.cents(journal['baseline_receivable'])
+                    and prior_rows_valid
+                    and not any(BR.cents(row['回款明细']) == amount for row in paid.values())
+                    and all(actual[sig] >= count for sig, count in other_events.items())):
+                return {'state': 'missing', 'row': int(vacant[0]),
+                        'event_key': event, 'signature': expected}
         if len(matches) < needed or any(paid[ref]['是否结账'] != '是' for ref in matches):
             return {'state': 'conflict', 'reason': '已登记回款身份在当前盈亏材料中缺少对应数量的完整记录，请核对材料版本'}
         return {'state': 'owned', 'rows': matches, 'event_key': event, 'signature': expected}

@@ -14,25 +14,45 @@ from test_refactor_event_transactions import database
 from test_publication_current_evidence import seed
 
 
-def prepare(db, root, monkeypatch, *, owner="disabled", failure="", mode="workflow"):
+def prepare(db, root, monkeypatch, *, owner="disabled", failure="", mode="workflow", action_id="completion-action"):
     for module in [runner, publication, policy, service]:
         monkeypatch.setattr(module, "workflow_root", lambda *_: root)
     monkeypatch.setattr(service, "_workflow_storage_root", lambda *_: root)
     seed(db, root)
     flow = db.get(WorkflowSession, "cancel-workflow")
     flow.state, flow.stage, flow.execution_mode = "running", "applying", mode
+    # Match the real execution contract: publication retains an original input
+    # version and completion has a durable intent before the process can start.
+    from app.models import WorkflowMaterialSet
+    from app.ar_execution_safety import register_effect_intent
+    original = WorkflowMaterialSet(id="original-material", owner_id=flow.owner_id,
+        department_id=flow.department_id, skill_id=flow.skill_id, version=1, state="superseded")
+    material = db.get(WorkflowMaterialSet, "published")
+    material.version = 2
+    db.flush()  # Free version 1 before inserting the original material.
+    db.add(original)
+    db.flush()
+    material.parent_set_id = original.id
+    context = json.loads(flow.context_json)
+    context.update(workspace=str(root), plan_fingerprint="synthetic-plan")
+    context["ar_execution"].update(material_set_id=original.id, material_version=1)
+    context["ar_execution"]["steps"]["publish_reconciliation"]["material_version"] = 2
+    flow.context_json = json.dumps(context)
+    db.flush()
     proof = publication.publication_manifest(db, flow)
     raw = json.dumps({"schema_version":"ar-formal-ledgers-v1", "publication":proof,
         "json_ledgers":{"父回款顺序分配台账.json":{"parents":{}},"跑批台账.json":{"runs":{}}},
         "binary_ledgers":{"挂账台账.xlsx":{"base64":base64.b64encode(b"synthetic").decode(),"sha256":hashlib.sha256(b"synthetic").hexdigest()}}}).encode()
     stage = root / "batch-date-stage"
-    candidate = stage / "formal-ledger-build" / "completion-action" / ("核销辅助台账_" + flow.reconciliation_date.replace("-", "") + ".json")
+    candidate = stage / "formal-ledger-build" / action_id / ("核销辅助台账_" + flow.reconciliation_date.replace("-", "") + ".json")
     candidate.parent.mkdir(parents=True)
     candidate.write_bytes(raw)
-    action = WorkflowAction(id="completion-action", workflow_id=flow.id, name="ar_complete_reconciliation",
+    action = WorkflowAction(id=action_id, workflow_id=flow.id, name="ar_complete_reconciliation",
         state="running", worker_id="synthetic-worker", attempt_count=1,
         lease_expires_at=datetime.now(timezone.utc)+timedelta(minutes=10))
     db.add(action)
+    register_effect_intent(context, flow, action, "complete_reconciliation")
+    flow.context_json = json.dumps(context)
     if failure == "wrong_action": action.name = "ar_write_ledger"
     if failure == "expired_lease": action.lease_expires_at = datetime.now(timezone.utc)-timedelta(minutes=1)
     db.commit()
@@ -369,6 +389,11 @@ def test_agent_call_reservation_observes_current_authorization(database, tmp_pat
 @pytest.mark.parametrize("entry", ["model", "tool"])
 @pytest.mark.parametrize("contract", ["current", "legacy"])
 def test_pi_http_rechecks_revocation_before_outward_call(database, tmp_path, monkeypatch, entry, contract):
+    # The request owns the scheduler write lock while this injected second
+    # transaction revokes access. SQLite's database-wide write lock cannot
+    # represent this production row-lock race; run it against isolated Postgres.
+    if database.dialect.name != "postgresql":
+        pytest.skip("concurrent authorization revocation requires PostgreSQL row locks")
     from uuid import uuid4
     from types import SimpleNamespace
     from fastapi import FastAPI
@@ -550,3 +575,65 @@ def test_heartbeat_loop_rechecks_database_after_transient_outage(database, tmp_p
             assert current.lease_expires_at == deadlines[0]
         assert current.attempt_count == (2 if after_outage == "superseded" else 1)
         assert current.state == "running"
+
+
+@pytest.mark.parametrize("change", ["unchanged", "missing", "hash", "token", "returncode"])
+def test_completion_revalidates_descendant_exit_receipt(database, tmp_path, monkeypatch, change):
+    from app import ar_process_evidence as evidence
+    with Session(database) as db:
+        action, flow, result = prepare(db, tmp_path, monkeypatch, owner="active")
+        monkeypatch.setattr(evidence, "workflow_root", lambda *_: tmp_path)
+        scripts = tmp_path / "skill" / "scripts"
+        scripts.mkdir(parents=True)
+        (scripts / "complete_execution.py").write_text("print('synthetic completion')")
+        action._ar_process_records = []
+        evidence.run_recorded_script(scripts, "complete_execution.py", [], action=action, workflow=flow)
+        result["process_records"] = list(action._ar_process_records)
+        reference = result["process_records"][0]
+        domain = tmp_path / "execution-processes" / action.id / reference["record_id"] / "domain-exited.json"
+        if change == "missing":
+            domain.unlink()
+        elif change in {"hash", "token", "returncode"}:
+            fact = json.loads(domain.read_text())
+            if change == "returncode": fact["script_returncode"] = 7
+            else: fact["token"] = "0" * 32
+            raw = json.dumps(fact).encode()
+            domain.write_bytes(raw)
+            if change != "hash": reference["domain_exit_sha256"] = hashlib.sha256(raw).hexdigest()
+        assert action._ar_process_exit_confirmed is True
+        if change == "unchanged":
+            assert policy.require_finished_completion(action, flow, result)
+        else:
+            with pytest.raises((ValueError, OSError)):
+                policy.require_finished_completion(action, flow, result)
+
+
+@pytest.mark.parametrize("owner", ["active", "disabled"])
+@pytest.mark.parametrize("missing", [False, True])
+def test_actual_registration_checks_domain_for_active_and_revoked_owner(database, tmp_path, monkeypatch, owner, missing):
+    from app import ar_process_evidence as evidence
+    with Session(database) as db:
+        action, flow, result = prepare(db, tmp_path, monkeypatch, owner="active")
+        monkeypatch.setattr(evidence, "workflow_root", lambda *_: tmp_path)
+        scripts = tmp_path / "skill" / "scripts"
+        scripts.mkdir(parents=True)
+        (scripts / "complete_execution.py").write_text("print('synthetic completion')")
+        action._ar_process_records = []
+        evidence.run_recorded_script(scripts, "complete_execution.py", [], action=action, workflow=flow)
+        result["process_records"] = list(action._ar_process_records)
+        if owner == "disabled":
+            db.get(User, flow.owner_id).status = "disabled"
+            db.commit()
+        if missing:
+            reference = result["process_records"][0]
+            (tmp_path / "execution-processes" / action.id / reference["record_id"] / "domain-exited.json").unlink()
+            with pytest.raises(ValueError, match="凭据缺失"):
+                runner.transition_phase(db, action, flow, result)
+            db.rollback()
+            assert {row.id for row in db.scalars(select(FileRecord))} == {"annual", "receipt"}
+            assert "formal_ledgers" not in json.loads(flow.context_json)
+        else:
+            runner.transition_phase(db, action, flow, result)
+            db.commit()
+            assert json.loads(flow.context_json)["formal_ledgers"]["file_id"]
+            assert flow.state == ("succeeded" if owner == "active" else "cancelled")

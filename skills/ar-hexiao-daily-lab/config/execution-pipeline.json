@@ -15,5 +15,6 @@
     "publish_reconciliation",
     "complete_reconciliation"
   ],
-  "schema_version": "ar-execution-v2"
+  "schema_version": "ar-execution-v2",
+  "reconciliation_policy": "current-workbook-v1"
 }

@@ -172,7 +172,7 @@ class ToolDeployment:
 
     def preflight(self):
         self.normal()
-        if not SOURCE.is_relative_to(ROOT/'releases'):
+        if not any(SOURCE.is_relative_to(item) for item in (ROOT/'releases', ROOT/'refactor-worktrees')):
             raise ScopeError('发布脚本不在持久化源码目录内')
         if (ROOT / 'DEPLOYMENT_ID').read_text().strip() != 'financial-platform-isolated-20260907-01a0799a':
             raise ScopeError('部署目录身份不匹配')
@@ -203,12 +203,15 @@ class ToolDeployment:
             raise ScopeError('工具编号与 manifest 不一致')
         self.version = new_manifest['version']
         old_version = old_manifest.pop('version'); new_manifest.pop('version')
+        status_only_change = old_manifest.get('status') != new_manifest.get('status')
+        if status_only_change:
+            old_manifest.pop('status', None); new_manifest.pop('status', None)
         if old_manifest != new_manifest:
             raise ScopeError('工具执行契约发生变化，需单独评估公共服务更新，不适用本入口')
         changed = {p for p in self.old_tree.keys() | self.new_tree.keys() if self.old_tree.get(p)!=self.new_tree.get(p)}
         if any(Path(p).name in DEPENDENCIES or Path(p).name.startswith('requirements') and Path(p).suffix=='.txt' for p in changed):
             raise ScopeError('依赖发生变化，不能按脚本更新发布')
-        if changed and self.version == old_version:
+        if changed and self.version == old_version and not (status_only_change and changed == {'tool.yaml'}):
             raise ScopeError('工具内容已变化，请先在持久化源码中更新工具版本号')
         for file in self.content.rglob('*.py'):
             if not any(x in IGNORE for x in file.relative_to(self.content).parts):

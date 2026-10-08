@@ -134,6 +134,7 @@ def classify_one(
         "ar": rec.get("ar") or "",
         "so": rec.get("so") or "",
         "sod": rec.get("sod") or "",
+        "sales_name": rec.get("sales_name") or "",
         # case_id = AR × SO × SOD：她表里一行一个 SOD，粒度必须到 SOD 否则台账互相覆盖
         "case_id": "|".join(
             x for x in (rec.get("ar") or "-", rec.get("so") or "-", rec.get("sod") or "") if x
@@ -249,6 +250,16 @@ def classify_one(
         else:
             result.update(bucket="auto", code=FS.ZERO, reason=rec.get("forced_reason") or "本笔分配0")
         result["_year_route_order"] = rec.get("_year_route_order", 0)
+        return result
+
+    import current_workbook_receipts as CWR
+    current = CWR.apply(rec, result)
+    if current is not None:
+        return current
+    rejected = CWR.rejection(rec, ledger)
+    if rejected is not None:
+        result.update(bucket='hold', code='E_CURRENT_SOURCE_ROW_BINDING',
+                      reason=rejected['reason'], current_workbook_conflict=rejected)
         return result
 
     import receipt_history

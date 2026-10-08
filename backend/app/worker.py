@@ -6,10 +6,11 @@ import os
 import signal
 import socket
 import time
+from contextlib import contextmanager
 from datetime import UTC, datetime
 
 from jsonschema import Draft202012Validator
-from sqlalchemy import select
+from sqlalchemy import case, func, or_, select, text
 from sqlalchemy.orm import Session
 
 from .adapters import ExecutionContext, get_adapter
@@ -39,91 +40,168 @@ def _stop(*_: object) -> None:
     STOP = True
 
 
+@contextmanager
+def _candidate_query_timeout(db: Session):
+    """Bound candidate reads only; an aborted transaction is rolled back by the caller."""
+    if db.get_bind().dialect.name != "postgresql":
+        yield
+        return
+    previous = db.scalar(text("SHOW statement_timeout"))
+    configured_ms = int(db.scalar(text(
+        "SELECT setting FROM pg_settings WHERE name = 'statement_timeout'")))
+    limit_ms = min(configured_ms, 2000) if configured_ms > 0 else 2000
+    db.execute(text("SELECT set_config('statement_timeout', :value, true)"),
+               {"value": str(limit_ms)})
+    # Restore only on a successful read. A failed PostgreSQL transaction cannot
+    # run SET; propagating the original error preserves the rollback contract.
+    yield
+    db.execute(text("SELECT set_config('statement_timeout', :value, true)"),
+               {"value": previous})
+
+
 def claim_next_run(
     db: Session,
     pools: tuple[str, ...],
     worker_id: str = "worker",
 ) -> RunRecord | None:
-    acquire_claim_lock(db)
-    now = datetime.now(UTC)
-    recover_expired_jobs(db, now)
-    candidates = list(
-        db.scalars(
-            select(RunRecord.id)
-            .where(RunRecord.state == "queued", RunRecord.worker_pool.in_(pools))
-            .order_by(RunRecord.queued_at.asc(), RunRecord.created_at.asc())
-            .limit(100)
-        ).all()
-    )
-    selected: RunRecord | None = None
-    for run_id in candidates:
-        run = db.get(RunRecord, run_id, populate_existing=True)
-        if not run:
-            continue
-        try:
-            manifest = SkillManifest.model_validate(json.loads(run.manifest_snapshot))
-        except (TypeError, ValueError, json.JSONDecodeError):
-            detail = build_task_error(
-                employee=run.owner_name or run.owner_id,
-                skill_id=run.skill_id,
-                skill_name=run.skill_name,
-                step_key="validate-snapshot",
-                step="校验 Skill 执行快照",
-                reason="任务中的 Skill 执行快照无效。",
+    started = time.monotonic()
+    scan = {"event": "run_claim_scan", "candidate_filter": "skill_capacity",
+            "checked_count": 0, "invalid_snapshot_count": 0, "claim_denied_count": 0,
+            "capacity_recheck_skip_count": 0, "query_elapsed_ms": 0,
+            "outcome": "claim_error"}
+    try:
+        acquire_claim_lock(db)
+        now = datetime.now(UTC)
+        recover_expired_jobs(db, now)
+        db.flush()
+        # Unknown/expired execution still occupies capacity after recovery. Count
+        # every pool and owner, matching active_run_count's existing Skill scope.
+        active = (
+            select(RunRecord.skill_id, func.count(RunRecord.id).label("count"))
+            .where(RunRecord.state == "running",
+                   or_(RunRecord.lease_expires_at.is_(None), RunRecord.lease_expires_at >= now))
+            .group_by(RunRecord.skill_id)
+            .subquery()
+        )
+        scan["outcome"] = "candidate_query"
+        query_started = time.monotonic()
+        with _candidate_query_timeout(db):
+            candidates = list(
+                db.scalars(
+                    select(RunRecord.id)
+                    .outerjoin(active, RunRecord.skill_id == active.c.skill_id)
+                    .where(RunRecord.state == "queued", RunRecord.worker_pool.in_(pools),
+                           func.coalesce(active.c.count, 0) < case(
+                               (RunRecord.concurrency_limit < 1, 1), else_=RunRecord.concurrency_limit))
+                    .order_by(RunRecord.queued_at.asc().nulls_last(), RunRecord.created_at.asc(), RunRecord.id.asc())
+                    .limit(100)
+                ).all()
             )
-            run.error_message = detail.message()
-            run.finished_at = now
-            finish_run_execution_step(
-                db,
-                run,
-                state="failed",
-                error_code="invalid_skill_snapshot",
-                error_message=run.error_message,
-            )
-            append_run_event(
-                db,
-                run,
-                event_type="state",
-                state="failed",
-                message=run.error_message,
-                data={"error": detail.as_dict()},
-            )
-            continue
-        if active_run_count(db, run.skill_id, now) >= max(1, run.concurrency_limit):
-            continue
-        try:
-            execution_owner(db, run, ExecutionPhase.CLAIM, observe=True)
-            assert_run_confirmation(run, manifest, ExecutionPhase.CLAIM)
-            from .modules.execution.run_snapshot import assert_execution_snapshot
-            assert_execution_snapshot(db, run, ExecutionPhase.CLAIM)
-        except (ExecutionAuthorizationRevoked, ExecutionPreconditionFailed) as error:
-            _deny_execution(db, run, error)
-            continue
-        run.state = "running"
-        run.started_at = now
-        run.progress = 1
-        run.progress_message = "Worker 已领取任务"
-        run.worker_id = worker_id
-        run.attempt_count += 1
-        run.heartbeat_at = now
-        run.lease_expires_at = lease_deadline(now)
-        selected = run
-        break
-    if not selected:
+        scan["query_elapsed_ms"] = round((time.monotonic() - query_started) * 1000, 3)
+        scan["outcome"] = "claim_error"
+
+        selected: RunRecord | None = None
+        for run_id in candidates:
+            run = db.get(RunRecord, run_id, populate_existing=True)
+            if not run or run.state != "queued" or run.worker_pool not in pools:
+                continue
+            scan["checked_count"] += 1
+            try:
+                manifest = SkillManifest.model_validate(json.loads(run.manifest_snapshot))
+            except (TypeError, ValueError, json.JSONDecodeError):
+                scan["invalid_snapshot_count"] += 1
+                detail = build_task_error(
+                    employee=run.owner_name or run.owner_id,
+                    skill_id=run.skill_id,
+                    skill_name=run.skill_name,
+                    step_key="validate-snapshot",
+                    step="校验 Skill 执行快照",
+                    reason="任务中的 Skill 执行快照无效。",
+                )
+                run.error_message = detail.message()
+                run.finished_at = now
+                finish_run_execution_step(
+                    db,
+                    run,
+                    state="failed",
+                    error_code="invalid_skill_snapshot",
+                    error_message=run.error_message,
+                )
+                append_run_event(
+                    db,
+                    run,
+                    event_type="state",
+                    state="failed",
+                    message=run.error_message,
+                    data={"error": detail.as_dict()},
+                )
+                continue
+            if active_run_count(db, run.skill_id, now) >= max(1, run.concurrency_limit):
+                scan["capacity_recheck_skip_count"] += 1
+                continue
+            try:
+                execution_owner(db, run, ExecutionPhase.CLAIM, observe=True)
+                assert_run_confirmation(run, manifest, ExecutionPhase.CLAIM)
+                from .modules.execution.run_snapshot import assert_execution_snapshot
+                assert_execution_snapshot(db, run, ExecutionPhase.CLAIM)
+            except (ExecutionAuthorizationRevoked, ExecutionPreconditionFailed) as error:
+                scan["claim_denied_count"] += 1
+                _deny_execution(db, run, error)
+                continue
+            run.state = "running"
+            run.started_at = now
+            run.progress = 1
+            run.progress_message = "Worker 已领取任务"
+            run.worker_id = worker_id
+            run.attempt_count += 1
+            run.heartbeat_at = now
+            run.lease_expires_at = lease_deadline(now)
+            selected = run
+            break
+        if not selected:
+            db.commit()
+            scan["outcome"] = ("candidate_budget_reached" if len(candidates) == 100 else
+                               "candidates_rejected" if candidates else "no_capacity_eligible_candidate")
+            return None
+        append_run_event(
+            db,
+            selected,
+            event_type="state",
+            state="running",
+            progress=1,
+            message="Worker 已领取任务",
+            data={"worker_id": worker_id, "attempt": selected.attempt_count},
+        )
+        start_run_execution_step(db, selected, worker_id)
+        if selected.queued_at:
+            queued_at = selected.queued_at
+            if queued_at.tzinfo is None:
+                queued_at = queued_at.replace(tzinfo=UTC)
+            scan["queued_wait_ms"] = round(max(0, (now - queued_at).total_seconds() * 1000), 3)
         db.commit()
-        return None
-    append_run_event(
-        db,
-        selected,
-        event_type="state",
-        state="running",
-        progress=1,
-        message="Worker 已领取任务",
-        data={"worker_id": worker_id, "attempt": selected.attempt_count},
-    )
-    start_run_execution_step(db, selected, worker_id)
-    db.commit()
-    return selected
+        scan["outcome"] = "selected"
+        return selected
+    except Exception as error:
+        if scan["outcome"] == "candidate_query":
+            scan["query_elapsed_ms"] = round((time.monotonic() - query_started) * 1000, 3)
+            code = getattr(getattr(error, "orig", None), "sqlstate", None)
+            scan["outcome"] = ("candidate_query_timeout" if code == "57014" else
+                               "candidate_query_error")
+        else:
+            scan["outcome"] = "claim_error"
+        raise
+    finally:
+        # Idle/capacity-full polls stay quiet. Emit counts and timings only,
+        # never task/owner/Skill identifiers, exception text, or SQL parameters.
+        if scan["checked_count"] or scan["outcome"] in {
+            "candidate_query_timeout", "candidate_query_error", "claim_error"
+        }:
+            scan["elapsed_ms"] = round((time.monotonic() - started) * 1000, 3)
+            try:
+                print(json.dumps(scan, sort_keys=True), flush=True)
+            except OSError:
+                # An unavailable log sink must not strand a committed claim.
+                pass
 
 
 def _deny_execution(db, run, error):

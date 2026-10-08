@@ -20,7 +20,7 @@ def bind(items, ledger):
         return
     for item in items:
         operation = item.get('row_operation') or {}
-        if (item.get('bucket') != 'auto' or item.get('baseline_receipt_audit')
+        if ((item.get('current_workbook_receipts') and item.get('code') == 'OK_CURRENT_WORKBOOK_RECEIPT_PRESENT') or item.get('bucket') != 'auto' or item.get('baseline_receipt_audit')
                 or operation.get('type') not in SUPPORTED):
             continue
         event = identity(item)

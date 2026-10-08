@@ -400,9 +400,8 @@ def main(argv=None) -> int:
         if cands:
             result = json.loads(cands[-1].read_text(encoding="utf-8"))
 
-    import current_run_basis
     try:
-        rows = [] if result and current_run_basis.enabled(result) else load_ledger(path)
+        rows = load_ledger(path)
     except ValueError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 2

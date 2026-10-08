@@ -15,6 +15,37 @@ export function WorkflowRecoveryActions({ workflow, onRecovered }: { workflow: W
   const [error, setError] = React.useState('');
   const [busy, setBusy] = React.useState(false);
   const [revision, setRevision] = React.useState(0);
+  const [abandonment, setAbandonment] = React.useState<{ allowed: boolean; abandoned: boolean; reason: string; checkpoint_fingerprint: string } | null>(null);
+  const [confirmAbandon, setConfirmAbandon] = React.useState(false);
+  React.useEffect(() => {
+    const controller = new AbortController();
+    setAbandonment(null); setConfirmAbandon(false);
+    void fetch(`/api/platform/workflows/${workflow.id}/execution/abandon`, { cache: 'no-store', signal: controller.signal })
+      .then(async response => {
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.detail || payload.message || '读取放弃条件失败。');
+        if (!controller.signal.aborted) setAbandonment(payload);
+      }).catch((cause: unknown) => {
+        if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : '读取放弃条件失败。');
+      });
+    return () => controller.abort();
+  }, [workflow.id, workflow.state, revision]);
+
+  async function abandonResult(): Promise<void> {
+    if (!abandonment?.allowed) return;
+    setBusy(true); setError('');
+    try {
+      const response = await fetch(`/api/platform/workflows/${workflow.id}/execution/abandon`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ checkpoint_fingerprint: abandonment.checkpoint_fingerprint })
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail || payload.message || '放弃未发布结果失败。');
+      setAbandonment(payload); setConfirmAbandon(false); setRevision(value => value + 1);
+      await onRecovered();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : '放弃未发布结果失败。'); }
+    finally { setBusy(false); }
+  }
   React.useEffect(() => {
     const controller = new AbortController();
     setError('');
@@ -85,7 +116,13 @@ export function WorkflowRecoveryActions({ workflow, onRecovered }: { workflow: W
       <div className='mt-3 space-y-3 text-sm'>
         {error && <p role='alert' className='text-destructive'>{error}</p>}
         {!result && !error && <p role='status'>正在读取恢复条件…</p>}
-        {result?.recovery_reason && <p>{result.recovery_reason}</p>}
+        {abandonment?.abandoned ? <p role='status'>{abandonment.reason}</p> : result?.recovery_reason && <p>{result.recovery_reason}</p>}
+        {!abandonment?.abandoned && abandonment && <p className='text-muted-foreground'>{abandonment.reason}</p>}
+        {abandonment?.allowed && (confirmAbandon ? <div className='space-y-2 rounded border p-3'>
+          <p>确认放弃失败当天的未发布改动？此前成功日期的材料会保留，暂存和失败记录会封存，后续未执行日期会取消。旧任务不能再恢复，可换表或新建任务。</p>
+          <Button variant='destructive' disabled={busy} onClick={() => void abandonResult()}>{busy ? '正在处置…' : '确认放弃并解锁材料'}</Button>
+          <Button variant='outline' disabled={busy} onClick={() => setConfirmAbandon(false)}>返回</Button>
+        </div> : <Button variant='outline' disabled={busy} onClick={() => setConfirmAbandon(true)}>放弃未发布结果并解锁材料</Button>)}
         {investigations.map((phase, index) => (
           <Investigation key={text(phase.name) || index} value={phase.investigation}
             busy={busy} onInvestigate={investigate} onCancel={cancelInvestigation} />

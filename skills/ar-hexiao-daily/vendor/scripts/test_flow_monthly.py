@@ -185,13 +185,16 @@ class MonthlySafetyTest(unittest.TestCase):
     def test_unsupported_cross_row_formula_is_rejected_without_change(self):
         self.modify(lambda ws:setattr(ws['H2'],'value','=C2+C3'))
         before=self.path.read_bytes();self.assertTrue(self.run_items('2026-08-01',[self.entry()])[1]);self.assertEqual(self.path.read_bytes(),before)
-    def test_original_currency_formula_uses_local_balance(self):
-        self.modify(lambda ws:(setattr(ws['C2'],'value','=1000*9'),setattr(ws['F2'],'value',9000)))
+    def test_original_currency_formula_uses_flow_rate(self):
+        self.modify(lambda ws:(setattr(ws['C2'],'value','=1000*9'),setattr(ws['D2'],'value','美元户'),setattr(ws['F2'],'value',9000)))
         # Excel cached amount is produced with the project's formula-preserving patcher.
         import xlsx_patch,shutil
         patched=self.root/'cached.xlsx';xlsx_patch.patch_cells(self.path,patched,'流水',[(2,3,xlsx_patch.FormulaValue('=1000*9',9000))]);shutil.copy2(patched,self.path)
-        e=self.entry();e['flow_matched_by']='三键(原币公式)';e['write_currency_audit']['currency']='USD'
-        self.assertEqual(self.run_items('2026-08-01',[e])[1],[]);self.assertEqual(self.read('F3'),'9000-1000=8000')
+        e=self.entry();e['flow_matched_by']='三键(原币公式)'
+        e['flow_identity'].update(formula_orig_amount=1000,formula_rate=9)
+        e['write_currency_audit'].update(currency='USD',amount_orig=100,amount_local=1000)
+        self.assertEqual(self.run_items('2026-08-01',[e])[1],[])
+        self.assertEqual(self.read('F3'),'9000-900=8100')
     def test_sorting_managed_receipts_relocates_all_chains(self):
         self.modify(lambda ws:ws.append([dt.date(2026,7,27),'测试乙',9000,'汇款','WX',9000,None]))
         self.assertEqual(self.run_items('2026-08-01',[self.entry(),self.entry('SO2',1000,'AR2',3,'测试乙')])[1],[])
@@ -206,6 +209,120 @@ class MonthlySafetyTest(unittest.TestCase):
         self.assertEqual(self.run_items('2026-08-02',[self.entry('SO3',500,'AR1',4,'测试甲')])[1],[])
         self.assertEqual(self.read('B3'),'测试乙');self.assertEqual(self.read('F3'),'9000-1000=8000')
         self.assertEqual(self.read('F5'),'9000-1000-500=7500')
+
+    def test_incomplete_so_is_marked_red(self):
+        first = self.entry('SO1', 1000)
+        second = self.entry('SO2', 2000)
+        second.update(bucket='hold', code='E2')
+        second['flow_source_receipt'] = {
+            'ar': 'AR1', 'so': 'SO2', 'date': '2026-07-28',
+            'amount': 2000, 'currency': 'CNY',
+            'event': ['2026-07-28', 'HX2', 'ROW2', 'AR1', 'SO2'],
+            'basis': 'current_source_so_receipt',
+        }
+        flow = build_flow_plan.build_plan({'auto': [first], 'hold': [second],
+                                           'hexiao_date': '2026-07-28'})
+        checked = {'hexiao_date': '2026-07-28', 'write': [first],
+                   'skip': [], 'conflict': []}
+        final = build_flow_plan.finalize_plan_after_ledger(flow, checked)
+        changes, errors = apply_flow.write_flow_items(
+            self.root, final['items'], in_place=True, phase='status'
+        )
+        self.assertEqual(errors, [])
+        self.assertEqual(len(changes), 1)
+        wb = openpyxl.load_workbook(self.path, rich_text=True)
+        try:
+            colors = apply_flow._line_colors(wb.active['E2'].value)
+        finally:
+            wb.close()
+        self.assertEqual(colors.get('SO2'), 'FFFF0000')
+        self.assertNotEqual(colors.get('SO1'), 'FFFF0000')
+
+    def test_two_order_status_combines_prior_completed_and_later_held(self):
+        import flow_monthly
+        status, red, visible = flow_monthly._rollup_so_status(
+            {'SO1', 'SO2'}, {}, {}, '', [{'so': 'SO1', 'completed': True}])
+        self.assertEqual((status, red, visible),
+                         ('部分', {'SO2'}, {'SO1', 'SO2'}))
+        first = self.entry('SO1', 1000)
+        self.assertEqual(self.run_items('2026-07-28', [first])[1], [])
+        self.assertEqual(self.read('G2'), '是')
+        held = self.entry('SO2', 2000)
+        held.update(bucket='hold', code='E2')
+        held['flow_source_receipt'] = {
+            'ar': 'AR1', 'so': 'SO2', 'date': '2026-07-29',
+            'amount': 2000, 'currency': 'CNY',
+            'event': ['2026-07-29', 'HX2', 'ROW2', 'AR1', 'SO2'],
+            'basis': 'current_source_so_receipt',
+        }
+        flow = build_flow_plan.build_plan({'hold': [held], 'hexiao_date': '2026-07-29'})
+        checked = {'hexiao_date': '2026-07-29', 'write': [], 'skip': [], 'conflict': []}
+        item = build_flow_plan.finalize_plan_after_ledger(flow, checked)['items'][0]
+        self.assertEqual(item['updated_suggest'], '')
+        self.assertEqual(apply_flow.write_flow_items(
+            self.root, [item], in_place=True, phase='status')[1], [])
+        self.assertEqual(self.read('G2'), '部分')
+        self.assertEqual(self.read('F2'), '9000-1000-2000=6000')
+        wb = openpyxl.load_workbook(self.path, rich_text=True)
+        try:
+            colors = apply_flow._line_colors(wb['流水']['E2'].value)
+            self.assertEqual(colors['SO2'], 'FFFF0000')
+            self.assertNotEqual(colors['SO1'], 'FFFF0000')
+        finally:
+            wb.close()
+        before = self.path.read_bytes()
+        self.assertEqual(apply_flow.write_flow_items(
+            self.root, [item], in_place=True, phase='status'), ([], []))
+        self.assertEqual(self.path.read_bytes(), before)
+
+    def test_all_held_order_is_red_with_blank_status_and_no_second_deduction(self):
+        held = self.entry()
+        held.update(bucket='hold', code='E_RECEIPT_OWNERSHIP_UNRESOLVED')
+        held['flow_source_receipt'] = {
+            'ar': 'AR1', 'so': 'SO1', 'date': '2026-07-28',
+            'amount': 1000, 'currency': 'CNY',
+            'event': ['2026-07-28', 'HX1', 'ROW1', 'AR1', 'SO1'],
+            'basis': 'current_source_so_receipt',
+        }
+        flow = build_flow_plan.build_plan({'hold': [held], 'hexiao_date': '2026-07-28'})
+        checked = {'hexiao_date': '2026-07-28', 'write': [], 'skip': [], 'conflict': []}
+        final = build_flow_plan.finalize_plan_after_ledger(flow, checked)
+        item = final['items'][0]
+        self.assertEqual(item['updated_suggest'], '')
+        self.assertEqual(item['red_sos'], ['SO1'])
+        # Emulate the already-published uncolored registration, then repeat
+        # the same source event: recoloring must not deduct the money twice.
+        old = {**item, 'red_sos': []}
+        self.assertEqual(apply_flow.write_flow_items(
+            self.root, [old], in_place=True, phase='status')[1], [])
+        self.assertEqual(self.read('F2'), '9000-1000=8000')
+        self.assertEqual(apply_flow.write_flow_items(
+            self.root, [item], in_place=True, phase='status')[1], [])
+        self.assertEqual(self.read('F2'), '9000-1000=8000')
+        self.assertFalse(self.read('G2'))
+        wb = openpyxl.load_workbook(self.path, rich_text=True)
+        try:
+            self.assertEqual(apply_flow._line_colors(wb['流水']['E2'].value)['SO1'],
+                             'FFFF0000')
+        finally:
+            wb.close()
+        settled = {**held, 'bucket': 'auto', 'code': 'E5'}
+        flow = build_flow_plan.build_plan({'auto': [settled], 'hexiao_date': '2026-07-28'})
+        checked = {'hexiao_date': '2026-07-28', 'write': [settled],
+                   'skip': [], 'conflict': []}
+        completed = build_flow_plan.finalize_plan_after_ledger(flow, checked)
+        self.assertEqual(completed['items'][0]['red_sos'], [])
+        self.assertEqual(apply_flow.write_flow_items(
+            self.root, completed['items'], in_place=True, phase='status')[1], [])
+        self.assertEqual(self.read('F2'), '9000-1000=8000')
+        self.assertEqual(self.read('G2'), '是')
+        wb = openpyxl.load_workbook(self.path, rich_text=True)
+        try:
+            self.assertNotEqual(apply_flow._line_colors(wb['流水']['E2'].value)['SO1'],
+                                'FFFF0000')
+        finally:
+            wb.close()
+
     def test_existing_red_text_preserved(self):
         from openpyxl.cell.rich_text import CellRichText,TextBlock
         from openpyxl.cell.text import InlineFont

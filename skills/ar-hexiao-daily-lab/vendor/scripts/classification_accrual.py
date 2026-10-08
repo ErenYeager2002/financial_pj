@@ -9,6 +9,7 @@ from typing import Tuple
 import amount_policy
 import baseline_receipts as BR
 import common
+import fx_accrual as FX
 import datetime as dt
 import json
 from classification_contract import TOL
@@ -17,6 +18,8 @@ from classification_ledger import LedgerIndex
 
 def _clear_new_accrual(result: dict) -> None:
     """SO 尚未全部结清时，只撤销本批将要新增的计提，不改历史已填值。"""
+    if result.get("current_workbook_receipts") and result.get("current_workbook_event") not in result["current_workbook_receipts"]["missing_events"]:
+        return  # Current-workbook skips preserve every historical value.
     if (result.get("baseline_receipt_audit") or {}).get("disposition") in {"skip", "conflict"}:
         return
     if result.get("code") != "OK_ALREADY_SETTLED":
@@ -39,6 +42,20 @@ def _planned_settled_sods(result: dict) -> set[str]:
     """返回该计划写完后能被证明已结清的 SOD；拆分后仍有承接行则不算。"""
     if result.get("bucket") != "auto":
         return set()
+    # A verified repeat describes an unchanged paid row, not a new settlement.
+    # Inspect the whole current SOD below, including any unpaid sibling rows.
+    if result.get("ordinary_receipt_proof"):
+        return set()
+    if result.get("current_workbook_receipts"):
+        proof=result['current_workbook_receipts']
+        event=result.get('current_workbook_event')
+        if event not in proof['missing_events']:
+            return set()
+        if proof.get('baseline_layout'):
+            return {result['sod']} if (result.get('row_operation') or {}).get('settled') else set()
+        pending=sum(BR.cents(r['amount_local']) for r in proof['records'] if BR.event_key(r) in proof['missing_events'])
+        capacity=sum(BR.cents(proof['before_rows'][ref]['应收金额']) for ref in proof['unpaid_rows'])
+        return {result['sod']} if abs(pending-capacity)<=BR.SETTLEMENT_CENTS and not proof['protected_future_rows'] else set()
     op = result.get("row_operation") or {}
     op_type = op.get("type")
     scope = (result.get("split_payment_source") or {}).get("receivable_group_scope") or {}
@@ -230,7 +247,8 @@ def _apply_so_accrual_gate(
                 continue
             target_row = max(settled_rows)
             snap = ledger.row_snapshot.get(target_row) or {}
-            target_accrual = round(float(delivery_by_sod[sod]), 2)
+            final_source = max(group,key=lambda r:str(FX.source_for(r).get("reconciliation_date") or ""))
+            target_accrual = FX.accrual_amount(final_source,delivery_by_sod[sod],sod=sod)
             existing_accrual = common.to_number(snap.get("jiti"))
             if (
                 existing_accrual is not None
@@ -257,6 +275,7 @@ def _apply_so_accrual_gate(
                 "ledger_row_ref": int(target_row),
                 "business_rows": [int(row_no) for row_no in business_rows],
                 "accrual": target_accrual,
+                "fx_accrual_source": FX.source_for(final_source),
                 "difference": difference,
                 "current_accrual": snap.get("jiti"),
                 "current_difference": snap.get("chayi"),

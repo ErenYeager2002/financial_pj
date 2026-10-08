@@ -2,7 +2,7 @@ schema_version: 1
 id: order-daily-summary
 name: 九点下单统计（离线）
 version: 1.0.0
-status: published
+status: disabled
 category: 经营报表
 description: 使用九点导出的下单明细生成部门汇总和明细表；平台版不登录业务系统。
 ui:

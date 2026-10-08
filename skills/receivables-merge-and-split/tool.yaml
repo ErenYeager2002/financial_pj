@@ -7,7 +7,7 @@ conversation:
   capabilities:
   - prepare_task_draft
   - query_task_status
-status: published
+status: disabled
 category: 应收管理
 description: 一次上传应收材料，按选择的模式完成应收台账合并、销售归属和按销售人员拆分。
 ui:

@@ -188,17 +188,9 @@ def main(argv=None) -> int:
     (workspace / "04_产出" / "写后业务核对.json").write_text(
         json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8",
     )
-    # Classification may use the allocation ledger; prepare only the isolated
-    # review copy with the already verified execution, never the published ledger.
-    review = workspace / "execution-review"
-    if review.is_dir():
-        import fallback_allocation_ledger
-        try:
-            fallback_allocation_ledger.commit(review, plan)
-        except (ValueError, OSError) as exc:
-            raise ValueError(
-                "AR_REVIEW_ALLOCATION_FAILED: 工作簿回读已通过，复核副本分配记录登记失败；本日尚未发布"
-            ) from exc
+    # Current-workbook reclassification reads source and workbook facts only.
+    # The verified execution_rows above provide this run's physical evidence;
+    # do not turn old review journals into a prerequisite for that verification.
     print(json.dumps({"verified": True, "written_count": len(verified_cases)}))
     return 0
 

@@ -74,3 +74,25 @@ def test_validate_package_before_registering(database, tmp_path, monkeypatch, ca
             assert {item.id for item in db.scalars(select(FileRecord))} == {"annual", "receipt"}
             assert "formal_ledgers" not in result
         db.rollback()
+
+
+@pytest.mark.parametrize("case", ["valid", "hash", "base64", "extra"])
+def test_historical_audit_bytes_are_verified_but_not_reinstalled(case):
+    from app.ar_formal_ledger_service import decode_formal_ledger_payload
+    old=b"unparseable legacy journal";held=b"hold workbook"
+    archive={"base64":base64.b64encode(old).decode(),"sha256":hashlib.sha256(old).hexdigest()}
+    name="父回款顺序分配台账.json"
+    payload={"schema_version":"ar-formal-ledgers-v1","publication":{},
+        "json_ledgers":{name:{"parents":{}},"跑批台账.json":{"runs":{}}},
+        "binary_ledgers":{"挂账台账.xlsx":{"base64":base64.b64encode(held).decode(),"sha256":hashlib.sha256(held).hexdigest()}},
+        "historical_audit_files":{name:archive}}
+    if case=="hash":archive["sha256"]="bad"
+    if case=="base64":archive["base64"]="!"
+    if case=="extra":payload["historical_audit_files"]["other.json"]=archive
+    if case=="valid":
+        decoded,contents=decode_formal_ledger_payload(json.dumps(payload).encode(),{})
+        assert decoded["historical_audit_files"][name]==archive
+        assert json.loads(contents[name])=={"parents":{}}
+        assert len(contents)==3
+    else:
+        with pytest.raises(ValueError):decode_formal_ledger_payload(json.dumps(payload).encode(),{})

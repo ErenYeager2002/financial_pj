@@ -12,6 +12,30 @@ from .models import FileRecord, WorkflowMaterialSet, WorkflowSession
 from .resource_policy import workflow_root
 
 
+CURRENT_BATCH_PRIOR_NAME = "current-batch-prior.json"
+CURRENT_BATCH_PRIOR_SCHEMA = "ar-current-batch-prior-v1"
+
+
+def _canonical_json_sha256(raw: bytes) -> str:
+    value = json.loads(raw)
+    canonical = json.dumps(
+        value, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
+def _same_batch_prior(source: WorkflowSession, workflow: WorkflowSession) -> bool:
+    source_batch = str(getattr(source, "batch_id", "") or "")
+    target_batch = str(getattr(workflow, "batch_id", "") or "")
+    source_sequence = getattr(source, "batch_sequence", None)
+    target_sequence = getattr(workflow, "batch_sequence", None)
+    return bool(
+        source_batch and source_batch == target_batch
+        and type(source_sequence) is int and type(target_sequence) is int
+        and 0 < source_sequence < target_sequence
+    )
+
+
 def read_formal_ledger_bundle(db: Session, source: WorkflowSession) -> tuple[dict, FileRecord, dict[str, bytes]]:
     """Read the registered bundle and reconcile it with the actual publication."""
     from .ar_execution_contract import PHASES
@@ -60,6 +84,19 @@ def decode_formal_ledger_payload(raw: bytes, publication: dict) -> tuple[dict, d
     for name, collection in (("父回款顺序分配台账.json", "parents"), ("跑批台账.json", "runs")):
         if not isinstance(json_ledgers[name], dict) or not isinstance(json_ledgers[name].get(collection), dict):
             raise ValueError("正式辅助台账的历史记录集合无效。")
+    archived = payload.get("historical_audit_files", {})
+    if not isinstance(archived, dict) or set(archived) - set(json_ledgers):
+        raise ValueError("历史审计归档包含未许可文件")
+    for name, data in archived.items():
+        if not isinstance(data, dict) or not isinstance(data.get("base64"), str):
+            raise ValueError("历史审计归档格式无效")
+        try:
+            original = base64.b64decode(data["base64"], validate=True)
+        except ValueError as exc:
+            raise ValueError("历史审计归档无法解码") from exc
+        if hashlib.sha256(original).hexdigest() != data.get("sha256"):
+            raise ValueError("历史审计归档指纹不一致")
+    # Archives stay inside the immutable bundle, never in decision input files.
     contents = {name: json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
                 for name, data in json_ledgers.items()}
     for name, data in binary_ledgers.items():
@@ -141,7 +178,31 @@ def _only_adds_annual_materials(parent: WorkflowMaterialSet, child: WorkflowMate
                for role, year in after.keys() - before.keys())
 
 
-def inherit_formal_ledgers(db: Session, workflow: WorkflowSession, workspace: Path) -> dict:
+def inherit_formal_ledgers(db: Session, workflow: WorkflowSession, workspace: Path, *, policy: str = "legacy") -> dict:
+    if policy == "current-workbook-v1":
+        material = workflow.material_set
+        scope = (workflow.owner_id, workflow.department_id, workflow.skill_id)
+        if material is None or (material.owner_id, material.department_id, material.skill_id) != scope or not material.files:
+            raise ValueError("当前业务材料缺失或归属不一致")
+        verified = []
+        for member in material.files:
+            record = db.get(FileRecord, member.file_id)
+            if record is None or (record.owner_id, record.department_id, record.skill_id) != scope:
+                raise ValueError("当前核销材料的文件归属不一致")
+            path = Path(record.stored_path)
+            if path.is_symlink() or not path.is_file() or record.sha256 != member.sha256:
+                raise ValueError("当前核销材料文件缺失或登记指纹不一致")
+            with path.open("rb") as stream:
+                actual = hashlib.file_digest(stream, "sha256").hexdigest()
+            if actual != member.sha256:
+                raise ValueError("当前核销材料实际指纹变化")
+            verified.append({"role": member.role, "year": member.year, "sha256": actual})
+        # Previous bundles remain in their original immutable task records.
+        # A replaced workbook does not inherit their allocation decisions.
+        return {"mode": "current_workbook", "policy": policy,
+                "selected_material_set_id": material.id, "verified_files": verified}
+    if policy != "legacy":
+        raise ValueError("不支持的核销材料依据策略")
     from .ar_material_history import verify_updated_annual_materials
 
     material = workflow.material_set
@@ -249,9 +310,32 @@ def inherit_formal_ledgers(db: Session, workflow: WorkflowSession, workspace: Pa
             raise ValueError("当前任务已有不同的辅助台账，禁止覆盖")
     for name, content in contents.items():
         (folder / name).write_bytes(content)
+    prior_marker = folder / CURRENT_BATCH_PRIOR_NAME
+    prior_marker.unlink(missing_ok=True)
+    current_batch_prior = None
+    if _same_batch_prior(source, workflow):
+        current_batch_prior = {
+            "schema_version": CURRENT_BATCH_PRIOR_SCHEMA,
+            "batch_id": workflow.batch_id,
+            "source_workflow_id": source.id,
+            "source_batch_sequence": source.batch_sequence,
+            "source_reconciliation_date": source.reconciliation_date,
+            "target_workflow_id": workflow.id,
+            "target_batch_sequence": workflow.batch_sequence,
+            "target_reconciliation_date": workflow.reconciliation_date,
+            "ledger_json_sha256": {
+                name: _canonical_json_sha256(contents[name])
+                for name in ("父回款顺序分配台账.json", "跑批台账.json")
+            },
+        }
+        prior_marker.write_text(
+            json.dumps(current_batch_prior, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
     (folder / "业务材料历史差异.json").write_text(json.dumps({"schema_version": 1, "differences": material_differences}, ensure_ascii=False, indent=2), encoding="utf-8")
     return {"mode": "published_bundle", "source_workflow_id": source.id,
             "file_id": record.id, "sha256": record.sha256,
             "bound_material_set_id": material.id, "selected_material_set_id": selected_material_id,
             "verified_updated_years": verified_updated_years, "material_history_differences": material_differences,
-            "history_rebindings": history_rebindings}
+            "history_rebindings": history_rebindings,
+            "current_batch_prior": current_batch_prior}

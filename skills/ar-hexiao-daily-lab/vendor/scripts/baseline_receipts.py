@@ -11,6 +11,7 @@ from decimal import Decimal, InvalidOperation
 
 import common
 import amount_policy
+from fx_accrual import accrual_amount
 
 OPERATION = "preserve_baseline_receipts"
 SETTLEMENT_CENTS = int(amount_policy.BUSINESS_SETTLEMENT_TOLERANCE * 100)
@@ -132,7 +133,16 @@ def candidate(rec: dict, result: dict, ledger) -> dict | None:
     if delivery is None or amount is None or amount <= 0 or baseline <= 0:
         return conflict("交付额、原始应收或本次回款缺少有效正金额，不能生成保留应收方案")
     if len(nonblank) != 1 or any((cents(row[k]) or 0) < 0 for row in values for k in NUMERIC - {"差异"}):
-        return conflict("原始应收行不能唯一识别或存在负金额，不能改写已有拆行结构")
+        refs = ','.join(str(ref) for ref, _ in nonblank)
+        negative = [f"行{ref} {key}={row[key]}" for ref, row in before.items()
+                    for key in sorted(NUMERIC - {"差异"}) if (cents(row[key]) or 0) < 0]
+        detail = ('；负金额：' + '、'.join(negative)) if negative else ''
+        return conflict(
+            f"SO={rec['so']}、SOD={rec['sod']}：当前应收合计{baseline/100:.2f}元，"
+            f"智云交付额{delivery/100:.2f}元，差额{(delivery-baseline)/100:.2f}元；"
+            f"非空应收共有{len(nonblank)}行（{refs}），表内已收{received/100:.2f}元{detail}。"
+            "当前结构不能唯一识别保留应收的原始行，不能据此补写或改写已有拆行；"
+            "上述差额不代表可以直接新增的回款。")
     if not identity or not day or not posting_day or not receipt["收款方式"]:
         return conflict("本次回款缺少父 AR、核销记录标识、SOD 或收款信息，无法证明写入身份")
     if journal and cents(journal.get("baseline_receivable")) != baseline:
@@ -191,9 +201,12 @@ def candidate(rec: dict, result: dict, ledger) -> dict | None:
     if before_amount < 0 or remaining < -SETTLEMENT_CENTS:
         return conflict("累计回款口径不成立或超过最新交付额，禁止写入")
     settled = abs(remaining) <= SETTLEMENT_CENTS
-    five = {**receipt, "计提": delivery / 100 if settled else None,
+    accrual = accrual_amount(rec, delivery / 100) if settled else None
+    five = {**receipt, "计提": accrual,
             "是否结账": "是", "实收SOD": rec["sod"]}
-    derived = {"差异": (baseline - delivery) / 100} if settled else {}
+    derived = {"差异": round(baseline / 100 - accrual, 2)} if settled else {}
+    if accrual is not None and rec.get('fx_accrual_source'):
+        result['fx_accrual_applied'] = True
     step = {"event_key": identity, "case_id": result["case_id"], "ar": rec["ar"],
             "so": rec["so"], "sod": rec["sod"], "order": list(rec.get("writeoff_sequence_key") or [str(posting_day), rec["ar"]]),
             "historical_received": before_amount / 100, "current_received": amount / 100,
@@ -215,6 +228,8 @@ def candidate(rec: dict, result: dict, ledger) -> dict | None:
 def combine(results: list[dict]) -> None:
     groups = {}
     for item in results:
+        if item.get("current_workbook_receipts"):
+            continue  # This group already has a reconstructed complete action chain.
         if (item.get("row_operation") or {}).get("type") == OPERATION:
             groups.setdefault(item["row_operation"]["group_key"], []).append(item)
     for members in groups.values():
@@ -345,11 +360,12 @@ def check(item: dict, rows: dict) -> dict:
                     raise ValueError("已结清且未触发整 SO 延后计提，必须按交付额计提")
                 if deferred and accrual is not None:
                     raise ValueError("同 SO 尚有 SOD 未结清，当前不得提前计提")
-                if accrual is not None and (not settled or accrual != delivery):
+                expected_accrual = cents(accrual_amount(item, delivery / 100)) if accrual is not None else None
+                if accrual is not None and (not settled or accrual != expected_accrual):
                     raise ValueError("计提必须在结清后按交付额填写一次")
                 if accrual is not None and not rows[op["anchor_row"]].get("_差异列存在"):
                     raise ValueError("最终计提缺少差异列，不能生成完整结清方案")
-                if step.get("derived_cols") != ({"差异": (baseline - delivery) / 100} if accrual is not None else {}):
+                if step.get("derived_cols") != ({"差异": (baseline - accrual) / 100} if accrual is not None else {}):
                     raise ValueError("计提与差异计划不一致")
             selected = op["steps"][int(item.get("split_chain_index") or 0)]
             source = item.get("split_payment_source") or {}

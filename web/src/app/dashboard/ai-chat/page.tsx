@@ -16,11 +16,12 @@ export default async function Page({searchParams}: {searchParams: Promise<{sessi
     getAssistantStatus()
   ]);
   const isAdmin = session.role === 'skill_admin';
+  const storageScope = `${session.user_id}:${session.department_id}`;
   const [profile, connections] = isAdmin
     ? await Promise.all([getAdminAssistantProfile(), listAdminModelConnections()])
     : [undefined, []];
   return <PageContainer compact>
-    <PiChat initialSessions={sessions.filter(item => !item.skill_id)}
+    <PiChat key={storageScope} storageScope={storageScope} initialSessions={sessions.filter(item => !item.skill_id)}
       initialSessionId={query.session}
       modelSettings={<AssistantDefaultModel isAdmin={isAdmin} status={status} profile={profile} connections={connections}/>}/>
   </PageContainer>;

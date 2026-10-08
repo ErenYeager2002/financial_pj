@@ -2,7 +2,7 @@ schema_version: 1
 id: dreame-ar-progress-diff
 name: 追觅应收进度对比
 version: 1.0.0
-status: published
+status: disabled
 category: 应收管理
 description: 对两份及以上追觅应收进度表做期间并集、人名对齐和变化对比。
 ui:

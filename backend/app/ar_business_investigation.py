@@ -20,6 +20,8 @@ def investigation_status(workflow, *, ignore_action_id: str = "") -> dict:
               "checkpoint_fingerprint": "", "action_id": "", "state": "not_started", "summary": {}, "cancel_allowed": False}
     context = json.loads(workflow.context_json or "{}")
     state, failure = context.get("ar_execution") or {}, context.get("ar_failure") or {}
+    if "ar_abandonment" in context:
+        return {**result, "reason": "未发布结果已封存，原任务不再执行调查。"}
     if state.get("schema_version") != CONTRACT_VERSION or workflow.state != "failed":
         return result
     try:

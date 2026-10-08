@@ -55,7 +55,7 @@ def lock_execution(db: Session, action: WorkflowAction, workflow: WorkflowSessio
 
 
 def execution_version(workflow: WorkflowSession) -> str:
-    from .ar_snapshot_contract import snapshot_execution_version
+    from .ar_snapshot_contract import snapshot_execution_version, snapshot_reconciliation_policy
 
     root = workflow_root(workflow.owner_id, workflow.id) / "skill"
     if workflow.batch_id:
@@ -69,16 +69,23 @@ def execution_version(workflow: WorkflowSession) -> str:
             raise ValueError("批次日期与首日固定 Skill 身份不一致")
         source = workflow_root(primary.owner_id, primary.id) / "skill"
         version = snapshot_execution_version(source)
+        policy = snapshot_reconciliation_policy(source)
         # Later dates get their own copy only when execution starts. Claims must
         # already use the batch's immutable contract, including Agent claims.
         if root.exists() and snapshot_execution_version(root) != version:
             raise ValueError("本日 Skill 执行契约与批次固定快照不一致")
+        if root.exists() and snapshot_reconciliation_policy(root) != policy:
+            raise ValueError("本日核销依据策略与批次固定快照不一致")
     else:
         version = snapshot_execution_version(root)
+        policy = snapshot_reconciliation_policy(root)
     context = json.loads(workflow.context_json or "{}")
     recorded = (context.get("ar_execution") or {}).get("schema_version")
     if recorded and recorded != version:
         raise ValueError("任务固定执行清单与已记录的执行契约不一致")
+    recorded_policy = (context.get("ar_execution") or {}).get("reconciliation_policy")
+    if recorded_policy is not None and recorded_policy != policy:
+        raise ValueError("任务核销依据策略与已记录检查点不一致")
     return version
 
 
@@ -103,7 +110,9 @@ def initialize_execution(
     from .ar_agent_budget import initial_budget
 
     ledgers = fixed_annual_ledgers(business, ledgers)
-    inherited = inherit_formal_ledgers(db, workflow, business)
+    from .ar_snapshot_contract import snapshot_reconciliation_policy
+    policy = snapshot_reconciliation_policy(workflow_root(workflow.owner_id, workflow.id) / "skill")
+    inherited = inherit_formal_ledgers(db, workflow, business, policy=policy)
     return {
         "workspace": str(business),
         "ledger_years": {str(year): str(path) for year, path in ledgers.items()},
@@ -111,7 +120,7 @@ def initialize_execution(
         "inherited_formal_ledgers": inherited,
         "ar_agent_budget": initial_budget(),
         "ar_execution": {
-            "schema_version": CONTRACT_VERSION, "completed": [], "steps": {},
+            "schema_version": CONTRACT_VERSION, "reconciliation_policy": policy, "completed": [], "steps": {},
             "reconciliation_date": workflow.reconciliation_date,
             "material_set_id": material.id, "material_version": material.version,
             "ledger_years": {str(year): str(path) for year, path in ledgers.items()},
@@ -130,6 +139,8 @@ class ArExecution:
         self.action = action
         self.action._ar_claim_worker_id = action.worker_id
         self.workflow = workflow
+        from .ar_abandon import require_not_abandoned
+        require_not_abandoned(workflow)
         self.context = json.loads(workflow.context_json or "{}")
         self.execution = self.context.get("ar_execution") or {}
         if self.execution.get("schema_version") != CONTRACT_VERSION or execution_version(workflow) != CONTRACT_VERSION:
@@ -180,6 +191,7 @@ class ArExecution:
 
     def _verify_material_binding(self) -> None:
         from .workflow_material_service import current_material_set
+        from .ar_execution_safety import assert_operation_allowed
 
         current = current_material_set(
             self.db, self.workflow.owner_id, self.workflow.department_id, self.workflow.skill_id,
@@ -199,6 +211,18 @@ class ArExecution:
 
             publication_manifest(self.db, self.workflow)
             return
+        if current is not None and current.id == expected.get("material_set_id"):
+            # Recheck inside the caller's execution/publication transaction.
+            # The common guard never commits or releases that transaction.
+            operation = {
+                "ar_publish_reconciliation": "publish",
+                "ar_complete_reconciliation": "complete_registration",
+            }.get(self.action.name, "resume_phase")
+            assert_operation_allowed(
+                self.db, self.workflow.owner_id, self.workflow.department_id,
+                self.workflow.skill_id, operation=operation,
+                exclude_workflow_id=self.workflow.id,
+            )
         if (
             self.execution.get("reconciliation_date") != self.date
             or self.execution.get("skill_hash") != self.workflow.skill_hash
@@ -300,7 +324,11 @@ class ArExecution:
             raise ValueError("首次校验后计划已变化，拒绝创建写入暂存")
         self.script("verify_sources.py", ["verify", "--workspace", str(self.workspace)])
         stage = self.service._create_write_staging(self.workspace, self.action.id)
-        for folder in ("04_产出", "03_台账"):
+        # Under the current-workbook contract, old journals are immutable audit
+        # bytes, not plans. Do not parse or rewrite them while creating a stage.
+        folders = (("04_产出",) if self.execution.get("reconciliation_policy") == "current-workbook-v1"
+                   else ("04_产出", "03_台账"))
+        for folder in folders:
             for path in (stage / folder).glob("*.json"):
                 if not path.name.startswith("逐单证据_"):
                     self.service._rewrite_staged_checked_plan(path, self.workspace, stage)
@@ -457,13 +485,15 @@ class ArExecution:
                                                        self.workspace, stage, Path(self.context["flow_file"]))),
                                                    *self.service._annual_ledger_arguments(
                                                        annual_ledgers_in_copy(self.workspace, stage, self.ledgers))])
-        current_plan_evidence = review / "03_台账" / "本次核销计划证据.json"
-        current_plan_evidence.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(checked, current_plan_evidence)
-        if self.service.sha256_file(current_plan_evidence) != self.service.sha256_file(checked):
-            raise ValueError("复制本次核销计划证据后指纹不一致")
-        arguments = ["--workspace", str(review), "--hexiao-date", self.date,
-                     "--current-run-plan", str(current_plan_evidence)]
+        arguments = ["--workspace", str(review), "--hexiao-date", self.date]
+        checked_plan = json.loads(checked.read_text(encoding="utf-8"))
+        if (checked_plan.get("business_rules") or {}).get("decision_basis") == "current_material_and_source_v1":
+            current_plan_evidence = review / "03_台账" / "本次核销计划证据.json"
+            current_plan_evidence.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(checked, current_plan_evidence)
+            if self.service.sha256_file(current_plan_evidence) != self.service.sha256_file(checked):
+                raise ValueError("复制本次核销计划证据后指纹不一致")
+            arguments.extend(["--current-run-plan", str(current_plan_evidence)])
         ledgers = annual_ledgers_in_copy(self.workspace, stage if optimized else review, self.ledgers)
         if optimized:
             self.context["ar_read_cache"] = build_cache(self, stage, ledgers)
@@ -642,6 +672,9 @@ def execute_phase(db: Session, action: WorkflowAction, workflow: WorkflowSession
                                      "phase": phase.name, "attempt": action.attempt_count}
     context.pop("step_error", None)
     context.pop("error_detail", None)
+    from .ar_execution_safety import register_effect_intent
+
+    register_effect_intent(context, workflow, action, phase.name)
     workflow.context_json = execution.service._json(context)
     workflow.progress = max(workflow.progress, phase.progress)
     workflow.progress_message = phase.label
@@ -679,6 +712,15 @@ def queue_execution_phase(
     if workflow.state in {"failed", "succeeded", "cancelled", "cancelling"}:
         raise HTTPException(status_code=409, detail="当前任务已停止，不能派发执行阶段。")
     service.workflow_owner_context(db, workflow)
+    from .ar_execution_safety import assert_operation_allowed, MaterialOccupancyConflict
+
+    try:
+        assert_operation_allowed(
+            db, workflow.owner_id, workflow.department_id, workflow.skill_id,
+            operation="resume_phase", exclude_workflow_id=workflow.id,
+        )
+    except MaterialOccupancyConflict as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
     context = json.loads(workflow.context_json or "{}")
     state = context.get("ar_execution") or {}
     if state.get("schema_version") != CONTRACT_VERSION or execution_version(workflow) != CONTRACT_VERSION:
@@ -759,15 +801,18 @@ def transition_phase(db: Session, action: WorkflowAction, workflow: WorkflowSess
         # A pending bundle becomes authoritative atomically with the completed
         # phase. A lost response therefore cannot require another workbook write.
         execution = ArExecution(db, action, workflow)
+        from .ar_completion_authorization import require_finished_completion
+
+        # Re-read process receipts for every registration, even when the owner
+        # remains authorized. A cached exit flag cannot authenticate changed files.
+        completion_process_fingerprint = require_finished_completion(action, workflow, result)
         completion_after_revocation = ""
         try:
             execution.verify_input_binding()
         except HTTPException as error:
             if error.status_code != 403:
                 raise
-            from .ar_completion_authorization import require_finished_completion
-
-            completion_after_revocation = require_finished_completion(action, workflow, result)
+            completion_after_revocation = completion_process_fingerprint
             execution._verify_material_binding()
         candidate_path = Path(formal["path"])
         bundle = candidate_path.resolve()
@@ -813,6 +858,9 @@ def transition_phase(db: Session, action: WorkflowAction, workflow: WorkflowSess
     action.finished_at = service.datetime.now(service.UTC)
     context = json.loads(workflow.context_json or "{}")
     context.update(result)
+    from .ar_execution_safety import record_effect_completion
+
+    record_effect_completion(context, action, action.name.removeprefix("ar_"), result)
     workflow.context_json = service._json(context)
     state = result["ar_execution"]
     phase = next_phase(state.get("completed") or [])

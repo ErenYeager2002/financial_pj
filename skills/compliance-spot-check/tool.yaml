@@ -2,7 +2,7 @@ schema_version: 1
 id: compliance-spot-check
 name: 合规文件抽查建议
 version: 1.0.0
-status: published
+status: disabled
 category: 合规检查
 description: 依据应收 all 和可选历史记录生成本周合规抽查建议清单。
 ui:

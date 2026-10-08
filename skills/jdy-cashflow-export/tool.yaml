@@ -2,7 +2,7 @@ schema_version: 1
 id: jdy-cashflow-export
 name: 金蝶云现金流量调整导出
 version: 1.0.0
-status: draft
+status: disabled
 category: RPA
 description: 登录金蝶云并逐项导出现金流量调整明细。
 tags:

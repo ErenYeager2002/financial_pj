@@ -1,4 +1,5 @@
 'use client';
+import {useRouter} from 'next/navigation';
 
 import { useEffect, useRef, useState } from 'react';
 import type { Terminal } from '@xterm/xterm';
@@ -153,6 +154,7 @@ function PiTerminal({ sessionId }: { sessionId: string }) {
 }
 
 export function PiWorkspace({ initialSessions, initialSessionId, skillId }: { initialSessions: PiSession[]; initialSessionId?: string; skillId?: string }) {
+  const router = useRouter();
   const [sessions, setSessions] = useState(initialSessions);
   const [selected, setSelected] = useState(initialSessions.some((item) => item.id === initialSessionId) ? initialSessionId! : initialSessions[0]?.id ?? '');
   const [title, setTitle] = useState('');
@@ -161,8 +163,8 @@ export function PiWorkspace({ initialSessions, initialSessionId, skillId }: { in
   useEffect(() => {
     const url = new URL(window.location.href);
     if (selected) url.searchParams.set('session', selected); else url.searchParams.delete('session');
-    window.history.replaceState(null, '', url.toString());
-  }, [selected]);
+    if (url.href !== window.location.href) router.replace(url.pathname + url.search + url.hash, {scroll: false});
+  }, [selected, router]);
   async function create() {
     setCreating(true); setError('');
     try {

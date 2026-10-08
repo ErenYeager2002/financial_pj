@@ -219,7 +219,8 @@ def _audit_whole_payment_orders(
         return [], audit
 
     if (source == "delivery_fallback" and len(orders) == 1 and parent_currency == "CNY"
-            and parent_cents is not None and 0 < parent_cents <= sum(chosen)
+            and parent_cents is not None and sum(chosen) > 0
+            and 0 < parent_cents <= sum(chosen) + min(100, max(0, tolerance_cents))
             and all(value in (None, parent_cents) for value in (parent_local,parent_orig))):
         # A single CNY order owns the entire actual parent receipt, including
         # sub-yuan differences. Do not manufacture the missing cents from D.

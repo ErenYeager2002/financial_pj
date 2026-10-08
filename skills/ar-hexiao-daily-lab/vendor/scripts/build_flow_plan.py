@@ -28,15 +28,14 @@ except Exception:
 
 STRONG = frozenset({
     "三键",
-    "三键(含手续费)",
+    "微信支付宝到账日+含手续费金额+销售或已有SO",
+    "微信支付宝到账日+总到账金额+销售或已有SO",
     "三键(原币公式)",
-    "三键(原币公式含手续费)",
     "三键(中英文对照)",
-    "三键(含手续费,中英文对照)",
     "三键(原币公式,中英文对照)",
-    "三键(原币公式含手续费,中英文对照)",
 })
-AUTO_MATCH_BASES = STRONG | {"日期+金额(名字不符)", "同回款历史单号及预收承接"}
+from flow_date_identity import BASIS as DATE_IDENTITY_BASIS
+AUTO_MATCH_BASES = STRONG | {DATE_IDENTITY_BASIS, "日期+金额(名字不符)", "同回款历史单号及预收承接", "已登记核销行"}
 
 _LOC_RE = re.compile(
     r"^(?P<file>.+)#(?P<sheet>.+) 第(?P<row>\d+)行（(?P<by>[^）]*)）\s*$"
@@ -80,7 +79,7 @@ def _delivery_amount(item: dict) -> Optional[float]:
 
 
 def _rich_runs(text: str, red_sos: List[str]) -> List[dict]:
-    """按整行生成富文本段；原规则是“部分”时仅未核销 SO 行标红。"""
+    """按整行生成富文本段；未完成盈亏写入的 SO 行标红。"""
     red = {str(x).strip().upper() for x in red_sos if str(x).strip()}
     lines = str(text or "").replace("\r", "").split("\n")
     runs: List[dict] = []
@@ -163,8 +162,18 @@ def plan_item_for_ar(ar: str, items: List[dict], summary_row: Optional[dict]) ->
         updated = ""
 
     import flow_source_receipts
+    import flow_parent_net
+    import flow_sales_initials
+    sales = flow_sales_initials.from_records(items)
+    order_suggest = flow_sales_initials.ensure(order_suggest, sales)
     base = {
+        **sales,
         'source_receipts': flow_source_receipts.collect(items),
+        'parent_net_audit': flow_parent_net.collect(items),
+        'source_receipt_history': flow_source_receipts.collect_history(items),
+        'receipt_net_orig': best.get('arrival_total'),
+        'receipt_total_orig': best.get('business_arrival_total'),
+        'receipt_fee_orig': best.get('fee'),
         "ar": ar,
         "file": file_,
         "sheet": sheet,
@@ -198,6 +207,9 @@ def plan_item_for_ar(ar: str, items: List[dict], summary_row: Optional[dict]) ->
     if hits and int(hits) > 1:
         return {**base, "verdict": "hand", "reason": f"按{matched_by or '当前匹配条件'}多命中 hits={hits}，须人工指定行"}
 
+    if matched_by == "已登记SO但预收未通过算术校验":
+        return {**base, "verdict": "hand", "reason": "已定位到登记行，但预收算式未通过校验；保留原余额待核"}
+
     # 名称不符但日期金额唯一命中也可自动处理；保留原匹配依据供审计。
     if hits != 1 or matched_by not in AUTO_MATCH_BASES:
         return {**base, "verdict": "hand", "reason": f"不支持的匹配方式（{matched_by or '未知'}）"}
@@ -213,14 +225,16 @@ def plan_item_for_ar(ar: str, items: List[dict], summary_row: Optional[dict]) ->
 
 
 def finalize_plan_after_ledger(flow_plan: dict, checked_plan: dict, *, workspace: Optional[Path] = None) -> dict:
-    """根据盈亏表实际可写/已写结果回填“是/部分/空白”和未核销红字。"""
+    """根据盈亏表实际结果回填状态，并标红仍未完成的 SO。"""
     finalized = json.loads(json.dumps(flow_plan, ensure_ascii=False))
     import flow_monthly
+    if workspace is not None:
+        import flow_parent_receipt_group
+        checked_plan=flow_parent_receipt_group.bind(workspace,finalized.get("items") or [],checked_plan)
     flow_monthly.finalize(finalized.get("items") or [], checked_plan)
     for item in finalized.get("items") or []:
-        status = item.get("updated_suggest") or ""
         item["red_sos"] = [o["so"] for o in item.get("so_outcomes", [])
-                           if not o.get("completed")] if status == "部分" else []
+                           if not o.get("completed")]
         item["order_rich_runs"] = _rich_runs(item.get("order_suggest") or "", item["red_sos"])
     if workspace is not None:
         flow_monthly.prepare(workspace, finalized.get("items") or [])

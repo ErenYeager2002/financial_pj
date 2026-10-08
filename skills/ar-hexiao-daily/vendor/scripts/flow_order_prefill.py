@@ -67,6 +67,10 @@ def record(item, ws, cols, state):
         raise ValueError('待处理订单登记后流转行已改变，需重新核对')
     current=value(ws,row,cols,'单号')
     desired,changed=merge(current,amounts)
+    import flow_sales_initials
+    desired=flow_sales_initials.rich(desired,item)
+    from apply_flow import _rich_signature
+    changed=changed or _rich_signature(desired)!=_rich_signature(current)
     if old is None:
         old={'sheet':ws.title,'row':row,'signature':sig,
              'original_text':str(current or ''),'pending':{}}

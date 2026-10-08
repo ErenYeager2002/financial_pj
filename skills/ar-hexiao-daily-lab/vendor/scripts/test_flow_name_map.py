@@ -9,7 +9,7 @@ class ExplicitNameMapTest(unittest.TestCase):
         flow.name_map[normalize_name('付款别名')]={'系统客户甲'}
         return flow
     def match(self,flow,customer='系统客户甲',sales_name=''):
-        return flow.match(dt.date(2026,8,1),100,customer=customer,sales_name=sales_name)
+        return flow.match(dt.date(2026,8,1),100,customer=customer,sales_name=sales_name,amount_total=100)
     def test_explicit_alias_applies_to_receipt_channels(self):
         for channel in ['星展','汇款','甲骨易支付宝','PayPal','美元户']:
             with self.subTest(channel=channel):

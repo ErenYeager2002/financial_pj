@@ -27,9 +27,60 @@ class Browser:
         self.pages = {}
         self.references = {}
         self.lock = None
+        self.activity_guard = threading.Lock()
+        self.active_calls = 0
+        self.context_state = 'closed'
 
-    def call(self, body):
-        future = asyncio.run_coroutine_threadsafe(self.dispatch(body), self.loop)
+    def reserve(self):
+        with self.activity_guard:
+            self.active_calls += 1
+            return {'started': False, 'released': False}
+
+    def release(self, token):
+        with self.activity_guard:
+            if not token['released']:
+                token['released'] = True
+                self.active_calls -= 1
+
+    def activity_snapshot(self):
+        with self.activity_guard:
+            if self.active_calls or self.context_state == 'open':
+                return {'busy': True, 'reason': 'browser_call_or_open_context'}
+            if self.context_state == 'unknown':
+                return {'busy': None, 'reason': 'browser_cleanup_unknown'}
+            return {'busy': False, 'reason': 'browser_closed'}
+
+    def mark_disconnected(self):
+        self.disconnected = True
+        with self.activity_guard:
+            self.context_state = 'unknown'
+
+    async def tracked_dispatch(self, body, token):
+        with self.activity_guard:
+            if token['released']:
+                raise asyncio.CancelledError()
+            token['started'] = True
+        try:
+            return await self.dispatch(body)
+        finally:
+            self.release(token)
+
+    def call(self, body, *, reservation=None):
+        token = reservation if reservation is not None else self.reserve()
+        coroutine = self.tracked_dispatch(body, token)
+        try:
+            future = asyncio.run_coroutine_threadsafe(coroutine, self.loop)
+        except Exception:
+            coroutine.close()
+            self.release(token)
+            raise
+        def on_done(done):
+            if done.cancelled():
+                with self.activity_guard:
+                    if not token['started'] and not token['released']:
+                        token['released'] = True
+                        self.active_calls -= 1
+        future.add_done_callback(on_done)
         try:
             return future.result(timeout=40)
         except concurrent.futures.TimeoutError:
@@ -67,7 +118,9 @@ class Browser:
             await self.close(save=False)
             raise
         self.disconnected = False
-        self.context.on('close', lambda *_: setattr(self, 'disconnected', True))
+        with self.activity_guard:
+            self.context_state = 'open'
+        self.context.on('close', lambda *_: self.mark_disconnected())
         stored = ROOT / 'storage-state.json'
         if stored.exists():
             saved = json.loads(stored.read_text())
@@ -112,20 +165,23 @@ class Browser:
 
     async def close(self, save=True):
         saved = False
+        cleanup_unknown = bool(self.context and not save)
         context, driver = self.context, self.playwright
         try:
             if context and save:
                 try: await self.save(); saved = True
-                except Exception: pass
+                except Exception: cleanup_unknown = True
             if context:
                 try: await context.close()
-                except Exception: pass
+                except Exception: cleanup_unknown = True
         finally:
             self.context = None; self.playwright = None
             self.pages.clear(); self.references.clear()
             if driver:
                 try: await driver.stop()
-                except Exception: pass
+                except Exception: cleanup_unknown = True
+            with self.activity_guard:
+                self.context_state = 'unknown' if cleanup_unknown else 'closed'
         return saved
 
     async def dispatch(self, body):
@@ -193,7 +249,16 @@ def operate(body):
     global BROWSER
     with GUARD:
         if BROWSER is None: BROWSER = Browser()
-    return BROWSER.call(body)
+        browser = BROWSER
+        reservation = browser.reserve()  # Reserve before the activity reader can inspect it.
+    return browser.call(body, reservation=reservation)
+
+
+def activity_snapshot():
+    with GUARD:
+        if BROWSER is None:
+            return {'busy': False, 'reason': 'browser_not_started'}
+        return BROWSER.activity_snapshot()
 
 
 if __name__ == '__main__':

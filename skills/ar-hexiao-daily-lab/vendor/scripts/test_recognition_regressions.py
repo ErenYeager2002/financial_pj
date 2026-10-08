@@ -61,10 +61,22 @@ class RecognitionTests(unittest.TestCase):
         self.assertEqual(len(checked[verdict['verdict']]),1,checked)
         return item
 
+    def checked_present(self,rec,ledger):
+        before=copy.deepcopy(ledger_rows(ledger))
+        plan=C.classify_records([rec],ledger,{})
+        self.assertEqual(len(plan['auto']),1,plan)
+        item=plan['auto'][0]
+        self.assertTrue(item.get('current_workbook_receipts'),item)
+        self.assertFalse(item.get('receipt_correction') or item.get('row_operation'))
+        self.assertFalse(item.get('so_accrual_backfills') or item['five_cols'].get('计提'))
+        self.assertEqual(V.validate(plan,before)['counts'],{'write':0,'skip':1,'conflict':0})
+        self.assertEqual(ledger_rows(ledger),before)
+        return item
+
     def test_existing_receipt_with_changed_delivery_is_not_resplit(self):
         rec,ledger=self.existing()
         rec.update(deliver_local=120,so_delivery_local=120,sod_delivery_local={'SOD_TEST':120})
-        item=self.checked(rec,ledger)
+        item=self.checked_present(rec,ledger)
         self.assertEqual(item['ledger_row_ref'],3)
         self.assertEqual(item['five_cols']['回款明细'],20)
 
@@ -78,7 +90,7 @@ class RecognitionTests(unittest.TestCase):
         ledger.row_snapshot[2]['yingshou']=79
         ledger.row_snapshot[4]={'so':'SO_TEST','sod':'SOD_TEST','yingshou':1,'huikuan':1,'jiezhang':'否'}
         ledger.so_index['SO_TEST'].append(4);ledger.sod_index['SOD_TEST'].append(4)
-        item=self.checked(rec,ledger)
+        item=self.checked_present(rec,ledger)
         self.assertIsNone(item['five_cols']['计提'])
         self.assertEqual(item['five_cols']['回款明细'],20)
 
@@ -104,7 +116,8 @@ class RecognitionTests(unittest.TestCase):
         self.assertEqual(len(plan['auto']),1,plan)
         item=plan['auto'][0]
         self.assertEqual(item['ledger_row_ref'],3)
-        self.assertTrue(item['receipt_correction']['rec'].get('existing_sod_receipt_audit'))
+        self.assertTrue(item.get('current_workbook_receipts'),item)
+        self.assertFalse(item.get('receipt_correction') or item.get('row_operation'))
         self.assertEqual(V.check_one(item,ledger_rows(ledger))['verdict'],'skip')
         changed=ledger_rows(ledger);changed[4]['应收金额']=19
         self.assertEqual(V.check_one(item,changed)['verdict'],'conflict')
@@ -186,9 +199,16 @@ class RecognitionTests(unittest.TestCase):
                 rec['so_receipt_source']={'amount_orig':rec['amount_orig'],'amount_local':rec['amount_local'],'delivery_local':rec['deliver_local'],'cumulative_local':rec['cumulative_received_local'],'all_sods':rec['all_sods'],'sod_delivery_local':rec['sod_delivery_local'],'currency':'CNY','writeoff_sequence_key':rec['writeoff_sequence_key']}
                 plan=C.classify_records([rec],ledger,{})
                 checked=V.validate(plan,writer.read_ledger_rows(src))
-                self.assertEqual(len(checked['write']),1,checked)
-                item=checked['write'][0]
-                writer.write_plan(src,out,[item]);self.assertEqual(writer.verify_written(out,[item]),[])
+                if kind=='changed_delivery':
+                    import shutil
+                    self.assertEqual(checked['counts'],{'write':0,'skip':1,'conflict':0},checked)
+                    self.assertTrue(checked['skip'][0].get('current_workbook_receipts'))
+                    shutil.copy2(src,out)
+                    self.assertEqual(out.read_bytes(),original)
+                else:
+                    self.assertEqual(checked['counts'],{'write':1,'skip':0,'conflict':0},checked)
+                    item=checked['write'][0]
+                    writer.write_plan(src,out,[item]);self.assertEqual(writer.verify_written(out,[item]),[])
                 rows=writer.read_ledger_rows(out)
                 self.assertEqual(sum(r['应收金额'] or 0 for r in rows.values()),50 if kind=='amount_correction' else 100)
                 self.assertAlmostEqual(sum(r['回款明细'] or 0 for r in rows.values()),19.7 if kind=='amount_correction' else 20)
@@ -219,9 +239,11 @@ class RecognitionTests(unittest.TestCase):
         plan=C.classify_records([rec],ledger,{})
         self.assertEqual(len(plan['auto']),2,plan)
         self.assertFalse(any(r.get('so_accrual_backfills') or r['five_cols'].get('计提') for r in plan['auto']))
-        checked=V.validate(plan,ledger_rows(ledger));self.assertEqual(checked['counts'],{'write':2,'skip':0,'conflict':0},checked)
+        before=copy.deepcopy(ledger_rows(ledger))
+        checked=V.validate(plan,before);self.assertEqual(checked['counts'],{'write':0,'skip':2,'conflict':0},checked)
+        self.assertTrue(all(item.get('current_workbook_receipts') for item in plan['auto']))
         after=ledger_rows(ledger)
-        for item in plan['auto']:after[item['ledger_row_ref']].update(item['five_cols'])
+        self.assertEqual(after,before)
         self.assertEqual(V.validate(plan,after)['counts'],{'write':0,'skip':2,'conflict':0})
 
     def test_missing_detail_parent_gate_rejects_tampered_capacity(self):

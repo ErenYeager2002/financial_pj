@@ -9,6 +9,7 @@ import json
 import os
 import signal
 import socket
+import stat
 import subprocess
 import sys
 import threading
@@ -19,6 +20,10 @@ from uuid import UUID, uuid4
 ROOT = Path('/workspace/.pi/jobs')
 GUARD = threading.Lock()
 MAX_OUTPUT = 64 * 1024 * 1024
+MAX_STATE_BYTES = 256 * 1024
+SNAPSHOT_SECONDS = 2.0
+ACTIVE_STATUSES = {'starting', 'running', 'cancelling'}
+TERMINAL_STATUSES = {'succeeded', 'failed', 'cancelled', 'interrupted'}
 
 
 def _atomic(path, value):
@@ -40,7 +45,9 @@ def identity(pid):
         fields = raw[raw.rindex(')') + 2:].split()
         if fields[0] == 'Z':
             return None
-        return Path('/proc/sys/kernel/random/boot_id').read_text().strip() + ':' + fields[19]
+        boot = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
+        pid_namespace = os.stat('/proc/' + str(int(pid)) + '/ns/pid').st_ino
+        return f'{boot}:{pid_namespace}:{fields[19]}'
     except (OSError, ValueError, IndexError):
         return None
 
@@ -49,17 +56,106 @@ def directory(job_id):
     return ROOT / str(UUID(job_id))
 
 
+def execution_observation(value):
+    """Observe execution separately from the job's business outcome."""
+    status = value.get('status')
+    pid = value.get('supervisor_pid')
+    expected = value.get('supervisor_identity')
+    if status in ACTIVE_STATUSES:
+        if pid and expected:
+            return 'active' if identity(pid) == expected else 'unknown'
+        created = value.get('created_at')
+        if status == 'starting' and isinstance(created, (int, float)) and 0 <= time.time() - created < 15:
+            return 'active'  # Admission reservation, not proof the child started.
+        return 'unknown'
+    if status in TERMINAL_STATUSES:
+        if value.get('cleanup_verified') is True and value.get('execution_observation') == 'stopped':
+            if pid and expected:
+                try:
+                    pid = int(pid)
+                except (TypeError, ValueError):
+                    return 'unknown'
+                observed = identity(pid)
+                if observed == expected or not Path('/proc').is_dir():
+                    return 'unknown'
+                if observed is None and Path('/proc/' + str(int(pid))).exists():
+                    return 'unknown'  # The process may be unreadable, not gone.
+            return 'stopped'
+    return 'unknown'
+
+
 def _state(path):
-    value = json.loads((path / 'state.json').read_text())
-    if value['status'] in {'starting', 'running', 'cancelling'}:
+    value = json.loads((path / 'state.json').read_text(encoding='utf-8'))
+    if value['status'] in ACTIVE_STATUSES:
         live = value.get('supervisor_pid') and identity(value['supervisor_pid']) == value.get('supervisor_identity')
-        # A launch can be observed before the child supervisor stores its PID.
         pending_launch = value['status'] == 'starting' and time.time() - value['created_at'] < 15
         if not live and not pending_launch:
             value = {**value, 'status': 'interrupted', 'finished_at': time.time(),
+                     'execution_observation': 'unknown',
                      'error': 'Execution environment stopped; this job was not restarted.'}
             _atomic(path / 'state.json', value)
-    return value
+    return {**value, 'execution_observation': execution_observation(value)}
+
+
+def activity_snapshot():
+    """Inspect every registered job; never infer safety from the UI list."""
+    deadline = time.monotonic() + SNAPSHOT_SECONDS
+    active = unknown = total = 0
+    complete = True
+    reasons = []
+    if ROOT.is_symlink() or ROOT.parent.is_symlink() or not ROOT.resolve().is_relative_to('/workspace'):
+        return {'schema_version': 'pi-jobs-activity-v1', 'active_count': None,
+                'unknown_count': None, 'scan_complete': False,
+                'total_registered': None, 'reasons': ['job_root_symlink']}
+    try:
+        with os.scandir(ROOT) as entries:
+            for entry in entries:
+                if time.monotonic() >= deadline:
+                    complete = False
+                    reasons.append('job_scan_timeout')
+                    break
+                if entry.is_symlink() or not entry.is_dir(follow_symlinks=False):
+                    complete = False
+                    unknown += 1
+                    reasons.append('invalid_job_entry')
+                    continue
+                try:
+                    if str(UUID(entry.name)) != entry.name:
+                        raise ValueError('Noncanonical job ID')
+                    path = Path(entry.path) / 'state.json'
+                    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+                    try:
+                        info = os.fstat(descriptor)
+                        if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_STATE_BYTES:
+                            raise ValueError('Invalid job state file')
+                        raw = os.read(descriptor, MAX_STATE_BYTES + 1)
+                    finally:
+                        os.close(descriptor)
+                    if len(raw) > MAX_STATE_BYTES:
+                        raise ValueError('Job state file too large')
+                    value = json.loads(raw)
+                    if not isinstance(value, dict) or value.get('job_id') != entry.name:
+                        raise ValueError('Invalid job state identity')
+                except (OSError, ValueError, TypeError, KeyError):
+                    complete = False
+                    unknown += 1
+                    reasons.append('unreadable_job_state')
+                    continue
+                total += 1
+                observation = execution_observation(value)
+                if observation == 'active':
+                    active += 1
+                elif observation == 'unknown':
+                    unknown += 1
+    except OSError:
+        complete = False
+        reasons.append('job_inventory_unavailable')
+    return {'schema_version': 'pi-jobs-activity-v1',
+            'active_count': active if complete else None,
+            'unknown_count': unknown if complete else None,
+            'scan_complete': complete,
+            'total_registered': total if complete else None,
+            'reasons': sorted(set(reasons))}
 
 
 def state(path):
@@ -105,6 +201,8 @@ def stop_descendants():
 def operate(body):
     operation = body.get('operation')
     ROOT.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if operation == 'activity_snapshot':
+        return activity_snapshot()
     if operation == 'start':
         command = body.get('command')
         if not isinstance(command, str) or not command.strip() or len(command) > 65536:
@@ -113,12 +211,19 @@ def operate(body):
         if not cwd.is_dir() or not (cwd.is_relative_to('/workspace') or cwd.is_relative_to('/home/agent')):
             raise ValueError('Working directory must be in your workspace or home')
         with GUARD:
-            active = sum(state(p)['status'] in {'starting', 'running', 'cancelling'} for p in ROOT.iterdir() if p.is_dir() and (p / 'state.json').is_file())
+            active = sum(
+                item['status'] in ACTIVE_STATUSES or
+                (item.get('schema_version') == 'pi-job-v2' and item['execution_observation'] == 'unknown')
+                for p in ROOT.iterdir() if p.is_dir() and (p / 'state.json').is_file()
+                for item in [state(p)]
+            )
             if active >= 16:
                 raise ValueError('Stop an unused job before starting another')
             job_id = str(uuid4()); path = ROOT / job_id; path.mkdir(mode=0o700)
-            value = {'job_id': job_id, 'status': 'starting', 'created_at': time.time(),
-                     'command': command, 'cwd': str(cwd), 'output_truncated': False}
+            value = {'schema_version': 'pi-job-v2', 'job_id': job_id, 'status': 'starting',
+                     'execution_observation': 'active', 'cleanup_verified': False,
+                     'created_at': time.time(), 'command': command, 'cwd': str(cwd),
+                     'output_truncated': False}
             atomic(path / 'state.json', value)
             process = subprocess.Popen([sys.executable, '-B', __file__, 'run', job_id],
                                        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
@@ -129,7 +234,8 @@ def operate(body):
             return {'job_id': job_id, 'status': 'starting', 'next': 0}
     if operation == 'list':
         paths = sorted(ROOT.glob('*/state.json'), key=lambda p: p.stat().st_mtime, reverse=True)[:200]
-        return {'jobs': [state(p.parent) for p in paths]}
+        return {'jobs': [state(p.parent) for p in paths], 'limit': 200,
+                'truncated': len(list(ROOT.glob('*/state.json'))) > 200}
     if operation not in {'poll', 'cancel'} or not isinstance(body.get('job_id'), str):
         raise ValueError('A valid job operation and job_id are required')
     path = directory(body['job_id'])
@@ -181,7 +287,9 @@ def run(job_id):
     cancelled = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: cancelled.set())
     if (path / 'cancel').exists():
-        atomic(path / 'state.json', {**value, 'status': 'cancelled', 'finished_at': time.time()})
+        atomic(path / 'state.json', {**value, 'status': 'cancelled',
+                                    'execution_observation': 'stopped',
+                                    'cleanup_verified': True, 'finished_at': time.time()})
         return
     value.update(status='running', supervisor_pid=os.getpid(),
                  supervisor_identity=identity(os.getpid()), started_at=time.time())
@@ -220,10 +328,13 @@ def run(job_id):
             if os.waitpid(-1, os.WNOHANG)[0] == 0: break
         except ChildProcessError: break
     reader.join(timeout=5)
+    cleaned = cleaned and not reader.is_alive()
     value.update(status='cancelled' if cancelled.is_set() else ('succeeded' if process.returncode == 0 else 'failed'),
-                 exit_code=process.returncode, finished_at=time.time(), output_truncated=truncated.is_set())
+                 exit_code=process.returncode, finished_at=time.time(),
+                 output_truncated=truncated.is_set(), cleanup_verified=cleaned,
+                 execution_observation='stopped' if cleaned else 'unknown')
     if not cleaned:
-        value.update(status='failed', error='A descendant did not stop; stop the execution environment.')
+        value.update(status='failed', error='Execution cleanup could not be verified; stop the environment.')
     atomic(path / 'state.json', value)
 
 
@@ -240,8 +351,14 @@ if __name__ == '__main__':
             run(sys.argv[2])
         except Exception as exc:
             path = directory(sys.argv[2]); value = json.loads((path / 'state.json').read_text())
-            stop_descendants()
-            atomic(path / 'state.json', {**value, 'status': 'failed', 'finished_at': time.time(), 'error': type(exc).__name__})
+            try:
+                cleaned = stop_descendants()
+            except Exception:
+                cleaned = False
+            atomic(path / 'state.json', {**value, 'status': 'failed', 'finished_at': time.time(),
+                                        'cleanup_verified': cleaned,
+                                        'execution_observation': 'stopped' if cleaned else 'unknown',
+                                        'error': type(exc).__name__})
     else:
         connection = Connection('pi')
         body = sys.stdin.buffer.read(1024 * 1024 + 1)

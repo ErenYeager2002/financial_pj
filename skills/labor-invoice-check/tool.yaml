@@ -2,7 +2,7 @@ schema_version: 1
 id: labor-invoice-check
 name: 劳务发票核对
 version: 1.0.0
-status: published
+status: disabled
 category: 发票核对
 description: 按业务规则核对劳务清单与发票台账，输出支付前核对结果。
 ui:

@@ -3,11 +3,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
+import stat
 from pathlib import Path
 
 from .ar_process_evidence import SCHEMA_VERSION
 from .ar_process_identity import observe_identity
+from .ar_process_supervisor import DOMAIN_VERSION, validate_receipt
 from .resource_policy import workflow_root
 
 MAX_RECORDS = 128
@@ -18,11 +21,92 @@ BINDING_FIELDS = (
     "schema_version", "record_id", "workflow_id", "action_id", "action_name", "attempt",
     "worker_id", "reconciliation_date", "skill_hash", "material_set_id", "material_version",
     "plan_fingerprint", "host", "worker_pid", "script", "script_sha256", "arguments_sha256",
+    "execution_domain_schema", "domain_token",
 )
 
 
 class ProcessEvidenceError(ValueError):
     """A fixed, non-sensitive validation reason."""
+
+
+def _read_process_fact(path: Path) -> dict:
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_FACT_BYTES:
+            raise ValueError("Invalid process fact")
+        raw = os.read(descriptor, MAX_FACT_BYTES + 1)
+    finally:
+        os.close(descriptor)
+    if len(raw) > MAX_FACT_BYTES:
+        raise ValueError("Process fact exceeds limit")
+    value = json.loads(raw)
+    if not isinstance(value, dict):
+        raise ValueError("Invalid process fact")
+    return value
+
+
+def action_process_exit_confirmed(workflow, action) -> bool:
+    """Require every task-bound direct child receipt; absence is unknown."""
+    try:
+        root = workflow_root(workflow.owner_id, workflow.id).resolve()
+        journal = root / "execution-processes" / action.id
+        if (journal.is_symlink() or not journal.resolve().is_relative_to(root)
+                or not journal.is_dir()):
+            return False
+        context = json.loads(workflow.context_json or "{}")
+        if not isinstance(context, dict):
+            return False
+        execution = context.get("ar_execution") or {}
+        if not isinstance(execution, dict):
+            return False
+        seen = 0
+        for record in journal.iterdir():
+            seen += 1
+            if (seen > MAX_RECORDS or record.is_symlink() or not record.is_dir()
+                    or not RECORD.fullmatch(record.name)):
+                return False
+            prepared = _read_process_fact(record / "prepared.json")
+            started = _read_process_fact(record / "started.json")
+            exited = _read_process_fact(record / "exited.json")
+            expected = {
+                "schema_version": SCHEMA_VERSION, "record_id": record.name,
+                "workflow_id": workflow.id, "action_id": action.id,
+                "action_name": action.name, "attempt": action.attempt_count,
+                "worker_id": action.worker_id,
+                "reconciliation_date": workflow.reconciliation_date,
+                "skill_hash": workflow.skill_hash,
+                "material_set_id": execution.get("material_set_id"),
+                "material_version": execution.get("material_version"),
+                "plan_fingerprint": context.get("plan_fingerprint"),
+            }
+            if any(prepared.get(key) != value for key, value in expected.items()):
+                return False
+            if any(started.get(key) != prepared.get(key) or exited.get(key) != prepared.get(key)
+                   for key in BINDING_FIELDS):
+                return False
+            pid = started.get("pid")
+            if (type(pid) is not int or pid <= 0 or exited.get("pid") != pid
+                    or type(exited.get("returncode")) is not int
+                    or exited.get("direct_process_exit_confirmed") is not True):
+                return False
+            if prepared.get("execution_domain_schema") is not None:
+                if prepared["execution_domain_schema"] != DOMAIN_VERSION:
+                    return False
+                validate_receipt(_read_process_fact(record / "domain-exited.json"),
+                                 token=prepared.get("domain_token"), supervisor_pid=pid)
+            identity = started.get("identity")
+            if (not isinstance(identity, dict)
+                    or (identity.get("available") is True and identity.get("pid") != pid)
+                    or observe_identity(identity) == "running"):
+                return False
+            # A parent-owned subreaper receipt remains valid if the optional
+            # live identity probe was unavailable; a bare legacy receipt does not.
+            if prepared.get("execution_domain_schema") is None and identity.get("pid") != pid:
+                return False
+        return seen > 0
+    except (OSError, ValueError, TypeError, KeyError, AttributeError, json.JSONDecodeError):
+        return False
 
 
 def _read_fact(path: Path, root: Path, fingerprint: str) -> dict:
@@ -42,7 +126,8 @@ def _read_fact(path: Path, root: Path, fingerprint: str) -> dict:
 def inspect_process_evidence(workflow, action, failure: dict) -> dict:
     """Only a complete set of registered facts can substantiate a stop claim."""
     summary = {"state": "not_recorded", "message": "未记录可核验的脚本进程证据。",
-               "verified": False, "total": 0, "exited": 0, "unconfirmed": 0}
+               "verified": False, "total": 0, "exited": 0, "unconfirmed": 0,
+               "descendant_domains_verified": 0, "process_evidence_scope": "direct_children_only"}
     liveness = {}
     observed = []
     root = workflow_root(workflow.owner_id, workflow.id).resolve()
@@ -119,6 +204,15 @@ def inspect_process_evidence(workflow, action, failure: dict) -> dict:
                 if live == "running":
                     raise ProcessEvidenceError("退出记录与当前仍存活的原进程身份冲突。")
                 observed.append(ref["exit_sha256"])
+                if prepared.get("execution_domain_schema") is not None:
+                    if prepared["execution_domain_schema"] != DOMAIN_VERSION:
+                        raise ProcessEvidenceError("脚本执行域证据版本不支持。")
+                    domain_fact = _read_fact(directory / "domain-exited.json", root,
+                                             ref.get("domain_exit_sha256"))
+                    validate_receipt(domain_fact, token=prepared.get("domain_token"),
+                                     supervisor_pid=started["pid"])
+                    observed.append(ref["domain_exit_sha256"])
+                    summary["descendant_domains_verified"] += 1
                 summary["exited"] += 1
                 if exited.get("communication_completed") is not True:
                     summary["unconfirmed"] += 1
@@ -138,6 +232,11 @@ def inspect_process_evidence(workflow, action, failure: dict) -> dict:
         # Do not expose raw filesystem paths, host/PID metadata or file content.
         summary.update(state="invalid", verified=False,
                        message="进程证据缺失、内容无效或与登记指纹及任务绑定不一致；禁止据此恢复。")
+    if summary["verified"] and summary["total"] and summary["descendant_domains_verified"] == summary["total"]:
+        summary["process_evidence_scope"] = "linux_descendant_tree"
+        summary["message"] += " 所有调用的 Linux 后代进程也已由监督进程等待回收；不包含外部服务。"
+    elif summary["descendant_domains_verified"]:
+        summary["process_evidence_scope"] = "partial_descendant_tree"
     if liveness:
         labels = {"running": "原进程当前仍存活", "not_running": "当前查询未发现原进程存活",
                   "exited_unreaped": "原进程已退出但尚未回收", "identity_changed": "PID 当前身份与原记录不同",

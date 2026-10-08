@@ -38,9 +38,8 @@ function skill(overrides: Partial<SkillSummary> = {}): SkillSummary {
       requires_approval: false,
       modifies_uploaded_files: false
     },
-    ...overrides
   };
-  return base;
+  return { ...base, ...overrides };
 }
 
 test('Skill 目录搜索覆盖名称、描述、标签和 operation_labels', () => {

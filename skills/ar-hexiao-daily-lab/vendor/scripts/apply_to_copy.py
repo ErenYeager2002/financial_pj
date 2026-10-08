@@ -219,6 +219,27 @@ def write_plan(
         derived = it.get("derived_cols") or {}
         before = before_rows.get(r, {})
         op = it.get("row_operation") or {}
+        correction = ((it.get("current_workbook_receipts") or {}).get("date_corrections") or {}).get(it.get("current_workbook_event"))
+        if correction:
+            # A date-only repair must not flatten existing financial formulas.
+            import current_workbook_receipts as CWR
+            checked = CWR.check(it, before_rows)
+            corrected = correction.get("after") or {}
+            if (checked["verdict"] != "write" or op or derived
+                    or it.get("so_accrual_backfills")
+                    or not corrected or set(corrected) - {"收款时间", "收款方式"}):
+                raise ValueError("日期纠正包含非日期写入或证明已失效：" + checked["reason"])
+            for key, value in corrected.items():
+                if key == "收款时间":
+                    value = common.norm_date(value) or value
+                edits.append((r, cols[key], value))
+            changes.append({
+                "案例ID": it["case_id"], "行号": applied_r, "SO": it["so"], "SOD": it["sod"],
+                "改前": {key: _norm(before.get(key)) for key in FIVE},
+                "改后": {key: _norm(five.get(key)) for key in FIVE},
+                "操作": "仅纠正收款日期或方式，保留其他单元格及公式", "新增行号": "",
+            })
+            continue
         if op.get("type") == CG.OPERATION:
             proof = it["current_receipt_group"]
             it['_current_group_expected_rows'] = {str(final_original_row(int(ref))): row for ref,row in proof['after_rows'].items()}

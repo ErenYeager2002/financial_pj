@@ -11,7 +11,7 @@ class Plan:
 PLANS = {
     'frontend': Plan(('next',), 'full', False, 'NEXT_IMAGE'),
     'backend-schema': Plan(('api', 'worker-standard', 'worker-task-discovery'), 'full', True, 'BACKEND_IMAGE'),
-    'backend': Plan(('api', 'egress-proxy', 'worker-standard', 'worker-task-discovery', 'worker-agent'), 'full', True, 'BACKEND_IMAGE'),
+    'backend': Plan(('api', 'egress-proxy', 'worker-standard', 'worker-task-discovery'), 'full', True, 'BACKEND_IMAGE'),
     'workers': Plan(('worker-standard', 'worker-task-discovery', 'worker-agent'), 'worker', True),
     'agent': Plan(('worker-agent',), 'worker', True, 'AGENT_IMAGE'),
 }
@@ -55,10 +55,12 @@ def deploy(adapter, name, image=None):
                 try:
                     if name == 'frontend':
                         restored = adapter.rollback_frontend()
-                    else:
+                    elif name == 'backend-schema':
                         restored = adapter.restore_before_schema_migration()
                         if not restored:
                             restored = adapter.rollback_after_schema_migration()
+                    else:
+                        restored = adapter.rollback_runtime(plan)
                     if restored:
                         adapter.wait_healthy(plan)
                         adapter.set_mode('normal')

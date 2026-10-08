@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from typing import Dict
+from copy import deepcopy
+from fx_accrual import accrual_amount
 from typing import Optional
 import baseline_receipts as BR
 import common
@@ -123,6 +125,40 @@ def _missing_ledger_result(result, rec, ledger, year_now):
     return result
 
 
+def _whole_order_settled_result(rec, result, ledger):
+    """Preserve whole-order closure without claiming current-event ownership."""
+    # 整 SO 业务状态与本批事件幂等分开；父 AR 硬闸已在前面检查。
+    if ledger is not None and rec.get("so"):
+        settlement = ledger.so_settlement(rec["so"])
+        if settlement["all_settled"]:
+            source_notes = []
+            if rec.get("forced_code") and rec.get("forced_code") != "E_SETTLED_SO_RECHECK":
+                source_notes.append(f"来源检查 {rec['forced_code']}：{rec.get('forced_reason') or '未提供具体原因'}")
+            source_sods = set((result.get("split_payment_source") or {}).get("all_sods") or [])
+            missing_sods = sorted(source_sods - set(settlement["sods"]))
+            if missing_sods:
+                source_notes.append(f"当前来源另含表内未登记 SOD：{','.join(missing_sods)}；保留为来源差异，未新增行")
+            for source_sod, delivery in (result["split_payment_source"].get("sod_delivery_local") or {}).items():
+                initial, _, _ = ledger.business_totals(rec["so"], source_sod)
+                if initial is not None and abs(float(delivery) - initial) > TOL:
+                    source_notes.append(f"SOD={source_sod} 当前来源交付 {float(delivery):.2f}，表内原始应收合计 {initial:.2f}，差额 {float(delivery) - initial:.2f}；已结账历史值保留")
+            result.update({
+                "bucket": "auto", "code": settlement_status.SO_ALREADY_SETTLED,
+                "reason": settlement["reason"] + (" 来源提示：" + "；".join(source_notes) if source_notes else ""),
+                "so_settlement_audit": settlement,
+                "ledger_row_ref": settlement["rows"][0]["row"],
+                "five_cols": {},
+                "locate_hint": f"在对应年度盈亏明细按 SO={rec['so']} 查看全部业务行（含拆分行）",
+            })
+            if rec.get("forced_code") == "E_SETTLED_SO_RECHECK":
+                result["reason"] += " 本父回款分配金额为 0，未占用父回款金额。"
+            if source_notes:
+                result["warning_codes"].append("W_SETTLED_SO_SOURCE_DIFFERENCE")
+            return result
+
+    return None
+
+
 def classify_one(
     rec: dict,
     ledger: Optional[LedgerIndex],
@@ -131,9 +167,11 @@ def classify_one(
     year_now: int,
 ) -> dict:
     result = {
+        "fx_accrual_source": deepcopy(rec.get("fx_accrual_source") or {}),
         "ar": rec.get("ar") or "",
         "so": rec.get("so") or "",
         "sod": rec.get("sod") or "",
+        "sales_name": rec.get("sales_name") or "",
         # case_id = AR × SO × SOD：她表里一行一个 SOD，粒度必须到 SOD 否则台账互相覆盖
         "case_id": "|".join(
             x for x in (rec.get("ar") or "-", rec.get("so") or "-", rec.get("sod") or "") if x
@@ -183,6 +221,7 @@ def classify_one(
         "delivery_date_issue": rec.get("delivery_date_issue") or "",
         # 仅供同一 SO/SOD 的跨父 AR 分笔链复核；不得用这些字段跨 SO 或跨 SOD 合并。
         "split_payment_source": {
+            "fx_accrual_source": deepcopy(rec.get("fx_accrual_source") or {}),
             "receivable_group_scope": rec.get("receivable_group_scope") or {},
             "amount_local": common.to_number(rec.get("amount_local")),
             "cumulative_local": common.to_number(rec.get("cumulative_received_local")),
@@ -251,6 +290,24 @@ def classify_one(
         result["_year_route_order"] = rec.get("_year_route_order", 0)
         return result
 
+    import current_workbook_receipts as CWR
+    current = CWR.apply(rec, result)
+    if current is not None:
+        return current
+    rejected = CWR.rejection(rec, ledger)
+    if rejected is not None:
+        # Current-event ownership and whole-SO closure are independent. Do not
+        # send a closed SO through legacy date/amount repair after proof fails.
+        settled = _whole_order_settled_result(rec, result, ledger)
+        if settled is not None:
+            settled['current_workbook_conflict'] = rejected
+            settled['warning_codes'].append('W_SETTLED_SO_SOURCE_DIFFERENCE')
+            settled['reason'] += ' 本次回款逐笔对应未确认，仅按整单已结账保留盈亏原值；' + rejected['reason']
+            return settled
+        result.update(bucket='hold', code='E_CURRENT_SOURCE_ROW_BINDING',
+                      reason=rejected['reason'], current_workbook_conflict=rejected)
+        return result
+
     import receipt_history
     zero = receipt_history.zero_candidate(rec, result, ledger)
     if zero is not None:
@@ -287,34 +344,9 @@ def classify_one(
     if baseline_candidate is not None and (baseline_candidate.get('baseline_receipt_audit') or {}).get('disposition') == 'skip':
         return baseline_candidate
 
-    # 整 SO 业务状态与本批事件幂等分开；父 AR 硬闸已在前面检查。
-    if ledger is not None and rec.get("so"):
-        settlement = ledger.so_settlement(rec["so"])
-        if settlement["all_settled"]:
-            source_notes = []
-            if rec.get("forced_code") and rec.get("forced_code") != "E_SETTLED_SO_RECHECK":
-                source_notes.append(f"来源检查 {rec['forced_code']}：{rec.get('forced_reason') or '未提供具体原因'}")
-            source_sods = set((result.get("split_payment_source") or {}).get("all_sods") or [])
-            missing_sods = sorted(source_sods - set(settlement["sods"]))
-            if missing_sods:
-                source_notes.append(f"当前来源另含表内未登记 SOD：{','.join(missing_sods)}；保留为来源差异，未新增行")
-            for source_sod, delivery in (result["split_payment_source"].get("sod_delivery_local") or {}).items():
-                initial, _, _ = ledger.business_totals(rec["so"], source_sod)
-                if initial is not None and abs(float(delivery) - initial) > TOL:
-                    source_notes.append(f"SOD={source_sod} 当前来源交付 {float(delivery):.2f}，表内原始应收合计 {initial:.2f}，差额 {float(delivery) - initial:.2f}；已结账历史值保留")
-            result.update({
-                "bucket": "auto", "code": settlement_status.SO_ALREADY_SETTLED,
-                "reason": settlement["reason"] + (" 来源提示：" + "；".join(source_notes) if source_notes else ""),
-                "so_settlement_audit": settlement,
-                "ledger_row_ref": settlement["rows"][0]["row"],
-                "five_cols": {},
-                "locate_hint": f"在对应年度盈亏明细按 SO={rec['so']} 查看全部业务行（含拆分行）",
-            })
-            if rec.get("forced_code") == "E_SETTLED_SO_RECHECK":
-                result["reason"] += " 本父回款分配金额为 0，未占用父回款金额。"
-            if source_notes:
-                result["warning_codes"].append("W_SETTLED_SO_SOURCE_DIFFERENCE")
-            return result
+    settled = _whole_order_settled_result(rec, result, ledger)
+    if settled is not None:
+        return settled
 
     # Apply baseline preservation only to unfinished orders.
     if baseline_candidate is not None:
@@ -804,7 +836,9 @@ def classify_one(
         result["ledger_row_ref"] = row
         return result
 
-    jiti_target = round(float(deliver), 2) if deliver is not None else local_f
+    jiti_target = accrual_amount(rec, float(deliver) if deliver is not None else local_f)
+    if rec.get("fx_accrual_source"):
+        result["fx_accrual_applied"] = True
 
     result["five_cols"] = {
         "计提": jiti_target,
@@ -814,12 +848,13 @@ def classify_one(
         "收款方式": way,
         "实收SOD": sod or snap.get("sod") or None,
     }
-    # 业务值差异只在最终结清时产生：原始应收是历史基线，计提按最新实际交付额。
+    # 业务值差异只在最终结清时产生：原始应收保留，计提使用已确认的估值口径。
     # 两者不一致时保留原始应收不动，并在“差异”列写公式 = 应收金额 - 计提金额。
     # 部分回款阶段计提留空，因此不提前写差异。
     baseline_for_difference = (
         initial_receivable if initial_receivable is not None else yingshou
     )
+    result["accrual_baseline"] = baseline_for_difference
     if (
         baseline_for_difference is not None
         and abs(float(baseline_for_difference) - jiti_target) > max(thr, TOL)
@@ -836,8 +871,8 @@ def classify_one(
     if baseline_for_difference is not None:
         if abs(jiti_target - float(baseline_for_difference)) > max(thr, TOL):
             disc_note = (
-                f"⚠ 智云最新实际交付额 {jiti_target} 与表里原始应收 "
-                f"{round(float(baseline_for_difference), 2)} 不一致：计提按最新交付额，原始应收不改，"
+                f"⚠ 本次计提 {jiti_target} 与表里原始应收 "
+                f"{round(float(baseline_for_difference), 2)} 不一致：原始应收不改，"
                 f"差异列写应收减计提"
             )
 

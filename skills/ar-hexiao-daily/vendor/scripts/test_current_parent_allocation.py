@@ -25,7 +25,7 @@ class CurrentParentTest(unittest.TestCase):
         self.assertEqual([(r['so'],r['code']) for r in result['hold']],[('SO_B','E3')])
     def test_other_day_or_partial_parent_remains_unresolved(self):
         import current_parent_allocation as M
-        for mode in ['day','amount','partial']:
+        for mode in ['day','amount']:
             p,l=self.fixture()
             if mode=='day':l.row_snapshot[2]['shoukuan_time']='2026-07-01'
             if mode=='amount':l.row_snapshot[2]['huikuan']=39

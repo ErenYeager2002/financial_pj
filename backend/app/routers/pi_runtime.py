@@ -45,10 +45,8 @@ def create_session(body: CreateSession, user: UserContext = Depends(get_current_
 @router.post('/sessions/{session_id}/operate')
 def operate(session_id: str, body: Operation, user: UserContext = Depends(get_current_user),
             db: Session = Depends(get_db)):
-    if body.operation == 'jobs':
-        from fastapi import HTTPException
-        if body.payload.get('operation') not in {'list', 'poll', 'cancel'}:
-            raise HTTPException(422, '无效的后台任务操作。')
+    from ..pi_operation_contract import validate_operation
+    validate_operation(body.operation, body.payload)
     model_config = None
     business_config = None
     skill_bindings = None
@@ -69,6 +67,24 @@ def operate(session_id: str, body: Operation, user: UserContext = Depends(get_cu
         record_audit(db, actor=user, action='pi.job.cancel', resource_type='pi_session', resource_id=session_id)
         db.commit()
     return result
+
+
+@router.get('/sessions/{session_id}/capabilities')
+def session_capabilities(session_id: str, user: UserContext = Depends(get_current_user),
+                         db: Session = Depends(get_db)):
+    from ..pi_session_capabilities import session_capabilities as project
+    return project(db, user, session_id)
+
+
+@router.get('/sessions/{session_id}/history')
+def session_history(session_id: str, user: UserContext = Depends(get_current_user)):
+    return runtime.session_history(user, session_id)
+
+
+@router.get('/sessions/{session_id}/deliveries/{request_id}')
+def delivery_receipt(session_id: str, request_id: str,
+                     user: UserContext = Depends(get_current_user)):
+    return runtime.delivery_receipt(user, session_id, request_id)
 
 
 class FileOperation(BaseModel):

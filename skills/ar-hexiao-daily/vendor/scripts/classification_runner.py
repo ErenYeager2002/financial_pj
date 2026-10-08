@@ -70,11 +70,14 @@ def classify_records(
         if value is not None:
             batch_cumulative[key] = max(batch_cumulative.get(key, 0.0), float(value))
             batch_first_cumulative[key] = min(batch_first_cumulative.get(key, float(value)), float(value))
+    import current_workbook_receipts as CWR
+    workbook_proofs = CWR.prepare(resolved_records, ledger)
     results = []
     for rec in resolved_records:
         key = (rec.get("so"), rec.get("sod"))
         rec = {**rec, "_baseline_batch_cumulative": batch_cumulative.get(key),
                "_baseline_batch_first_cumulative": batch_first_cumulative.get(key)}
+        rec = {**rec, "_current_workbook_receipts": workbook_proofs.get(BR.event_key(rec))}
         result = classify_one(rec, ledger, rates, thr, year_now)
         if rec.get("_execution_source_lineage"):
             result["source_lineage"] = rec["_execution_source_lineage"]
@@ -102,7 +105,9 @@ def classify_records(
             r["bucket"] == "auto"
             and ref is not None
             and not r.get("baseline_receipt_audit")
+            and not r.get("current_workbook_receipts")
             and r.get("code") not in {
+                "OK_CURRENT_WORKBOOK_RECEIPT_PRESENT",
                 "OK_ALREADY_SETTLED",
                 "OK_REGISTERED_RECEIPT_ALREADY_APPLIED",
                 settlement_status.SO_ALREADY_SETTLED,

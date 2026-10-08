@@ -4,9 +4,10 @@ import {IconCheck,IconChevronRight,IconCopy,IconFileText} from '@tabler/icons-re
 import {AssistantResponse} from '@/features/ai-chat/assistant-response';
 import {PiMessageImages,type PiImageBlock} from './pi-message-images';
 import {resolveAgentFile} from './pi-file-transfer';
+import {isVisiblePiCustomMessage} from './pi-message-visibility';
 import styles from './pi-chat-design.module.css';
 export type ChatBlock=PiImageBlock & {text?:string;thinking?:string;name?:string;id?:string;arguments?:unknown};
-export type ChatMessage={role:string;content?:string|ChatBlock[];timestamp?:number;toolCallId?:string;toolName?:string;isError?:boolean;stopReason?:string;errorMessage?:string};
+export type ChatMessage={role:string;display?:boolean;customType?:string;content?:string|ChatBlock[];timestamp?:number;toolCallId?:string;toolName?:string;isError?:boolean;stopReason?:string;errorMessage?:string};
 export function messageText(message:ChatMessage){return typeof message.content==='string'?message.content:(message.content??[]).filter(item=>item.type==='text').map(item=>item.text??'').join('')}
 export function messageKey(message:ChatMessage){return message.toolCallId??`${message.role}:${message.timestamp??0}`}
 function UserMessage({text,sessionId}:{text:string;sessionId:string}){
@@ -24,6 +25,7 @@ export function PiChatMessages({messages,sessionId}:{messages:ChatMessage[];sess
  const completed=new Set(messages.filter(m=>m.role==='toolResult').map(m=>m.toolCallId));
  return <>{messages.map((message,index)=>{const text=messageText(message);const blocks=Array.isArray(message.content)?message.content:[];
  if(message.role==='toolResult')return <details key={messageKey(message)+index} className={styles.tool}><summary><IconChevronRight size={13}/>{message.isError?'执行出错':'已完成'} · {toolNames[message.toolName??'']??message.toolName??'工具'}</summary><pre>{text}</pre><PiMessageImages blocks={blocks}/></details>;
+ if(isVisiblePiCustomMessage(message))return <article key={messageKey(message)+index} className={styles.assistant} aria-label='扩展消息'><p className='text-muted-foreground mb-1 text-xs'>{message.customType||'扩展消息'}</p>{text&&<AssistantResponse content={text} resolveFileLink={href=>resolveAgentFile(sessionId,href)}/>}<PiMessageImages blocks={blocks}/></article>;
  if(message.role!=='user'&&message.role!=='assistant')return null;
  const calls=blocks.filter(block=>block.type==='toolCall'&&!completed.has(block.id));
  if(!text&&!message.errorMessage&&message.stopReason!=='aborted'&&calls.length===0&&!blocks.some(block=>block.type==='image'))return null;

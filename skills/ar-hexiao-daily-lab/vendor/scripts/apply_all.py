@@ -52,6 +52,16 @@ def _record_done(args, *, ledger_written: bool, flow_written: bool) -> None:
                 file=sys.stderr,
             )
             return
+        if (plan.get("business_rules") or {}).get("reconciliation_policy") == "current-workbook-v1":
+            import current_execution_registration
+            receipt, _ = current_execution_registration.record(
+                Path(args.workspace), plan,
+                {"盈亏": bool(ledger_written), "流转": bool(flow_written)})
+            # Scheduling history records which day finished, never allocations.
+            batch_ledger.record(Path(args.workspace), d, "applied",
+                                written={"盈亏": bool(ledger_written), "流转": bool(flow_written)})
+            print(f"本次执行登记：{receipt.name}；历史台账仅保留审计")
+            return
         allocation_path, allocation_added = fallback_allocation_ledger.commit(
             Path(args.workspace), plan
         )

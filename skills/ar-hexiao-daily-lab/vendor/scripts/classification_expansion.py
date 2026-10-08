@@ -7,7 +7,7 @@ from typing import List
 from typing import Optional
 from typing import Tuple
 import common
-import fallback_allocation_ledger as FAL
+import copy
 import fallback_sequence as FS
 from classification_amounts import _currency_key, _hold, _hold_each_source_order, _order_delivery_local, _order_amount_local, _prepare_parent_totals, _writeoff_business_amount, subset_sum_unique
 from classification_contract import CoverageError, TOL
@@ -39,7 +39,7 @@ def expand_payment(p: dict, rates: Dict[str, float]) -> List[dict]:
         present_sos = {str(item.get("so") or "").strip() for item in items}
         for allocation in (p.get("_parent_fallback_allocation") or {}).get("allocations") or []:
             so = str(allocation.get("so") or "").strip()
-            if allocation.get("status") == "ledger_already_settled" and so and so not in present_sos:
+            if allocation.get("status") in {"ledger_already_settled", "already_settled"} and so and so not in present_sos:
                 # A zero receipt allocation does not erase the order's delivery.
                 # Preserve the same order-owned currency conversion used above;
                 # missing source amounts/rates stay missing for the flow guard.
@@ -52,8 +52,13 @@ def expand_payment(p: dict, rates: Dict[str, float]) -> List[dict]:
                     if deliveries and all(value is not None for value in deliveries)
                     else None
                 )
+                # A prior receipt in this batch can fill capacity before the
+                # workbook is written. Preserve its zero source now as well as
+                # after closure; FS.ZERO validates received + reserved capacity.
+                pending_closure = allocation.get("status") == "already_settled"
                 items.append(_hold(
-                    p, "E_SETTLED_SO_RECHECK", "顺序分配时盈亏表显示整 SO 已结账，本父回款分配 0；需复核当前全部业务行。",
+                    p, FS.ZERO if pending_closure else "E_SETTLED_SO_RECHECK",
+                    "前序回款已占满最新交付额，本笔分配0；核对当前表已收及本批前序分配。" if pending_closure else "顺序分配时盈亏表显示整 SO 已结账，本父回款分配 0；需复核当前全部业务行。",
                     so=so, amount_orig=0.0, amount_local=0.0,
                     deliver_local=delivery_local, so_delivery_local=delivery_local,
                     all_sods=[str(line.get("sod") or "").strip() for line in (sod_lines.get(so) or []) if line.get("sod")],
@@ -70,6 +75,11 @@ def expand_payment(p: dict, rates: Dict[str, float]) -> List[dict]:
             if not item.get("writeoff_sequence_key") and order.get("arrival_date"):
                 item["fallback_sequence_key"] = [order["arrival_date"], order["ar"]]
             item["_execution_source_lineage"] = source_lineages.get(str(item.get("so") or "").strip())
+            if p.get('_current_parent_receipt_group'):
+                item['_current_parent_receipt_group']=copy.deepcopy(p['_current_parent_receipt_group'])
+            history = (p.get("_current_source_history_by_so") or {}).get(str(item.get("so") or "").strip())
+            if history is not None:
+                item["current_source_history"] = copy.deepcopy(history)
             if item.get("so") in so_receipt_sources:
                 item["so_receipt_source"] = so_receipt_sources[item["so"]]
             allocation = p.get("_parent_fallback_allocation") or {}
@@ -104,7 +114,9 @@ def expand_payment(p: dict, rates: Dict[str, float]) -> List[dict]:
                 item["delivery_amount_basis"] = "zhiyun_delivery_local"
                 if original is not None and rate is not None and rate > 0 and abs(round(original * rate, 2) - local) > TOL:
                     item.setdefault("warning_codes", []).append("W_DELIVERY_LOCAL_RATE_DIFFERENCE")
+        import fx_accrual_sources
         for item in items:
+            fx_accrual_sources.attach_source(p, item)
             item["flow_carry_evidence"] = p.get("flow_carry_evidence") or {}
         if duplicate_audit:
             for item in items:
@@ -180,23 +192,10 @@ def expand_payment(p: dict, rates: Dict[str, float]) -> List[dict]:
     effective_cumulative_orig = dict(detail_cumulative_orig)
     effective_cumulative_local = dict(detail_cumulative_local)
     if has_itemized_writeoff:
-        # 逐 SO 明细只覆盖它所在的父 AR，不能抹掉此前已经成功写表的无明细父回款。
-        # 两类来源统一进入截至当前核销日的 R；有逐 SO 明细的父 AR 从兜底台账排除，
-        # 避免同一父回款既按父金额、又按逐单明细重复累计。
-        fallback_history_orig, fallback_history_local = FAL.history_totals(
-            p.get("_fallback_allocation_state") or {"parents": {}},
-            current_ar=str(p.get("ar") or ""),
-            excluded_parent_ars=p.get("_detailed_parent_ars") or [],
-            as_of_date=p.get("hexiao_date"),
-        )
-        for so, amount in fallback_history_orig.items():
-            effective_cumulative_orig[so] = round(
-                float(effective_cumulative_orig.get(so) or 0.0) + float(amount), 2
-            )
-        for so, amount in fallback_history_local.items():
-            effective_cumulative_local[so] = round(
-                float(effective_cumulative_local.get(so) or 0.0) + float(amount), 2
-            )
+        # Cumulative amounts belong to this fetch's reconciled source prefix.
+        # A prior run's successful allocation is audit evidence, not another
+        # receipt to add to the current facts. Missing source stays unresolved;
+        # current workbook matching determines whether recorded rows suffice.
         p["_itemized_cumulative_detail_orig_by_so"] = detail_cumulative_orig
         p["_itemized_cumulative_detail_local_by_so"] = detail_cumulative_local
         p["_itemized_cumulative_fallback_orig_by_so"] = fallback_history_orig

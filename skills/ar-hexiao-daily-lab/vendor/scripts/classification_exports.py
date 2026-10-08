@@ -376,6 +376,9 @@ def reconcile_writeoff_details(
                 p["cumulative_writeoffs_local"][so] = cumulative_local_after_parent_so[key]
             if key in sequence_after_parent_so:
                 p["_writeoff_sequence_key_by_so"][so] = list(sequence_after_parent_so[key])
+    # Preserve the audited source events before reducing them to cumulative totals.
+    import current_source_history
+    current_source_history.attach(payments, parent_references, dated_logical_rows, unresolved_sos, target_date)
     return current_rows, audits
 
 def load_exports(workspace: Path, target_date: Optional[dt.date] = None) -> List[dict]:

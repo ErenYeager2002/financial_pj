@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, or_, select, text
 from sqlalchemy.orm import Session
@@ -19,7 +19,6 @@ from .models import (
 from .reconciliation_runner import PI_HARNESS_ACTION
 from .ar_execution_contract import publication_needs_completion
 from .settings import settings
-from .step_runtime_service import finish_run_execution_step, queue_run_execution_step
 from .task_reminder_workflow_service import sync_reminder_from_workflow
 
 
@@ -37,19 +36,6 @@ def acquire_claim_lock(db: Session) -> None:
     db.scalar(select(SchedulerLock).where(SchedulerLock.name == "global").with_for_update())
 
 
-def _run_is_retryable(run: RunRecord) -> bool:
-    try:
-        manifest = json.loads(run.manifest_snapshot)
-    except (TypeError, json.JSONDecodeError):
-        return False
-    risk = manifest.get("risk", {})
-    return (
-        run.adapter != "rpa"
-        and risk.get("level", "read_only") == "read_only"
-        and run.attempt_count < settings.worker_max_attempts
-    )
-
-
 def recover_expired_jobs(db: Session, now: datetime | None = None) -> None:
     current = now or datetime.now(UTC)
     expired_runs = list(
@@ -62,39 +48,21 @@ def recover_expired_jobs(db: Session, now: datetime | None = None) -> None:
         ).all()
     )
     for run in expired_runs:
-        if _run_is_retryable(run):
-            run.state = "queued"
-            run.progress = 0
-            run.progress_message = "上一个 Worker 租约过期，任务已重新排队"
-            run.started_at = None
-            event_state = "queued"
-            event_message = run.progress_message
-            queue_run_execution_step(db, run)
-        else:
-            run.state = "failed"
-            run.error_message = "Worker 中断且执行租约已过期，请人工检查后重新提交。"
-            run.progress_message = "Worker 中断，任务未自动重试"
-            run.finished_at = current
-            event_state = "failed"
-            event_message = run.error_message
-            finish_run_execution_step(
-                db,
-                run,
-                state="failed",
-                error_code="worker_lease_expired",
-                error_message=run.error_message,
-            )
-        run.worker_id = ""
-        run.heartbeat_at = None
+        # A lease timeout proves neither process exit nor absence of side effects.
+        # Hold the original attempt until its process and outcome are investigated.
+        # A null lease remains counted as active and cannot be claimed again.
+        run.progress_message = "Worker 租约已过期，原执行结果未知；未重新入队，保留占用等待调查。"
         run.lease_expires_at = None
         db.add(
             RunEvent(
                 run_id=run.id,
                 event_type="state",
-                state=event_state,
+                state="running",
                 progress=run.progress,
-                message=event_message,
-                data_json="{}",
+                message=run.progress_message,
+                data_json=json.dumps({"code": "worker_lease_expired_unknown",
+                                      "worker_id": run.worker_id,
+                                      "attempt": run.attempt_count}),
             )
         )
 
@@ -108,16 +76,35 @@ def recover_expired_jobs(db: Session, now: datetime | None = None) -> None:
         ).all()
     )
     for action in expired_actions:
+        workflow = db.get(WorkflowSession, action.workflow_id)
+        process_exit_confirmed = True
+        if workflow and action.name.startswith("ar_"):
+            from .ar_process_inspection import action_process_exit_confirmed
+
+            process_exit_confirmed = action_process_exit_confirmed(workflow, action)
+            if not process_exit_confirmed:
+                # Missing exit evidence is unknown, even if the lease expired.
+                # Keep this action unclaimable until process facts are audited.
+                action.error_message = "Worker 租约已过期；原进程是否退出尚未证实，继续保留占用并等待调查。"
+                action.heartbeat_at = current
+                action.lease_expires_at = current + timedelta(
+                    seconds=max(5, settings.worker_heartbeat_seconds * 2)
+                )
+                continue
         action.state = "failed"
-        action.error_message = "Worker 中断且执行租约已过期，请人工检查后重试。"
+        action.error_message = ("Worker 租约已过期，原脚本退出已核实；业务结果仍待核查，本动作未自动重试。"
+                                if action.name.startswith("ar_") else
+                                "Worker lease expired; the action was stopped without an automatic retry.")
         action.finished_at = current
-        action.worker_id = ""
+        from .ar_execution_contract import INVESTIGATION_ACTION
+
+        # A failed AR action is never auto-requeued. Retain the original worker
+        # and attempt as immutable attribution for process/result investigation.
+        if not (action.name.startswith("ar_") or action.name == INVESTIGATION_ACTION):
+            action.worker_id = ""
         action.heartbeat_at = None
         action.lease_expires_at = None
-        workflow = db.get(WorkflowSession, action.workflow_id)
         if workflow:
-            from .ar_execution_contract import INVESTIGATION_ACTION
-
             if action.name == INVESTIGATION_ACTION:
                 action.error_message = "独立调查 Worker 租约已过期，调查结果未确认；原核销失败记录保留，未自动重试。"
                 action.result_json = json.dumps({"error_type": "WorkerLeaseExpired", "process_exit_confirmed": False})
@@ -126,7 +113,8 @@ def recover_expired_jobs(db: Session, now: datetime | None = None) -> None:
             if action.name.startswith("ar_"):
                 context["ar_failure"] = {
                     "action_id": action.id, "phase": action.name.removeprefix("ar_"),
-                    "process_exit_confirmed": False, "error_type": "WorkerLeaseExpired",
+                    "process_exit_confirmed": process_exit_confirmed, "error_type": "WorkerLeaseExpired",
+                    "worker_id": action.worker_id, "attempt": action.attempt_count,
                     "failed_at": current.isoformat(),
                 }
                 workflow.context_json = json.dumps(context, ensure_ascii=False)
@@ -165,7 +153,7 @@ def recover_expired_jobs(db: Session, now: datetime | None = None) -> None:
                     role="assistant",
                     content=(
                         "执行 Worker 意外中断。为避免重复写入，本动作没有自动重试；"
-                        "请先检查结果，再重新发起。"
+                        "请先检查原执行和材料结果，再按允许的恢复入口处理。"
                     ),
                     data_json='{"kind":"worker_lease_expired"}',
                 )

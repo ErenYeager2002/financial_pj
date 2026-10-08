@@ -25,12 +25,12 @@ from typing import Dict, List, Optional
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import common  # noqa: E402
+from fx_accrual import FxAccrualError, accrual_amount
 import amount_policy  # noqa: E402
 import settlement_status  # noqa: E402
 import baseline_receipts as BR  # noqa: E402
 import fallback_sequence as FS
 import fallback_allocation_ledger as FAL  # noqa: E402
-import current_run_basis  # noqa: E402
 import writeoff_duplicate_audit as WDA  # noqa: E402
 
 try:
@@ -417,6 +417,19 @@ def _check_split_payment_chain(item: dict, rows: Dict[int, dict], ref: int) -> O
             return {"verdict": "conflict", "reason": "未累计结清的分笔不得计提"}
         if settled and common.to_number(five.get("计提")) is None:
             return {"verdict": "conflict", "reason": "累计结清的最后一笔必须计提"}
+        if settled:
+            try:
+                expected_accrual = accrual_amount(step, latest)
+            except FxAccrualError as exc:
+                return {"verdict": "conflict", "reason": str(exc)}
+            if abs(float(five["计提"]) - expected_accrual) > 0.011:
+                return {"verdict": "conflict", "reason": "分笔链最后计提与核销日估值依据不一致"}
+            baseline = common.to_number(step.get("accrual_baseline"))
+            difference = common.to_number((step.get("derived_cols") or {}).get("差异"))
+            if baseline is not None and abs(float(baseline) - expected_accrual) > 0.011 and (
+                difference is None or abs(float(difference) - (float(baseline) - expected_accrual)) > 0.011
+            ):
+                return {"verdict": "conflict", "reason": "分笔链业务差异不是原始应收减本次计提"}
         if abs(float(five.get("回款明细") or 0) - current) > 0.011:
             return {"verdict": "conflict", "reason": "分笔链业务行回款额与父回款步骤不一致"}
         previous_remaining = remaining
@@ -520,12 +533,16 @@ def _check_settlement_tail_aggregate(item: dict, rows: Dict[int, dict], ref: int
     if tail_error:
         return {"verdict": "conflict", "reason": tail_error}
     target = op.get("target_five_cols") or {}
+    try:
+        expected_accrual = accrual_amount(op, latest)
+    except FxAccrualError as exc:
+        return {"verdict": "conflict", "reason": str(exc)}
     if (
         source <= 0
         or abs((latest - initial) - source) > 0.011
         or abs(final - latest) > 0.011
         or abs(float(target.get("回款明细") or 0) - source) > 0.011
-        or abs(float(target.get("计提") or 0) - latest) > 0.011
+        or abs(float(target.get("计提") or 0) - expected_accrual) > 0.011
         or str(target.get("是否结账") or "").strip() != "是"
     ):
         return {"verdict": "conflict", "reason": "结清尾差合并后的业务行金额不守恒"}
@@ -570,13 +587,24 @@ def _same_so_multi_sod_error(op: dict) -> str:
     ):
         return "同 SO 多 SOD 合并计划不完整或金额不守恒"
     target = op.get("target_five_cols") or {}
+    try:
+        expected_accrual = accrual_amount(op, so_delivery, whole_order=True)
+    except FxAccrualError as exc:
+        return str(exc)
     if (
-        common.to_number(target.get("计提")) != so_delivery
+        common.to_number(target.get("计提")) != expected_accrual
         or common.to_number(target.get("回款明细")) != current
         or target.get("是否结账") != "是"
         or str(target.get("实收SOD") or "") != str(op.get("combined_sod") or "")
     ):
         return "同 SO 多 SOD 合并目标值与审计参数不一致"
+    if op.get("fx_accrual_source"):
+        baseline = common.to_number(op.get("accrual_baseline"))
+        difference = common.to_number((op.get("target_derived_cols") or {}).get("差异"))
+        if baseline is not None and abs(float(baseline) - expected_accrual) > 0.011 and (
+            difference is None or abs(float(difference) - (float(baseline) - expected_accrual)) > 0.011
+        ):
+            return "同 SO 多 SOD 合并差异不是原始应收减核销日计提"
     return ""
 
 
@@ -774,6 +802,24 @@ def _check_so_accrual_backfills(item: dict, rows: Dict[int, dict]) -> dict:
         so = str(entry.get("so") or "").strip()
         sod = str(entry.get("sod") or "").strip()
         accrual = common.to_number(entry.get("accrual"))
+        fx_error = ""
+        if entry.get("fx_accrual_source"):
+            try:
+                delivery = ((item.get("split_payment_source") or {}).get("sod_delivery_local") or {}).get(sod)
+                expected_accrual = accrual_amount(entry, delivery, sod=sod)
+                if accrual is None or abs(float(accrual) - expected_accrual) > 0.011:
+                    fx_error = "历史计提与整单原币及最后核销日中行牌价不一致"
+                baseline_values = [common.to_number(current.get("应收金额")) for current in rows.values()
+                                   if current.get("SO") == so and current.get("SOD") == sod]
+                difference = common.to_number(entry.get("difference"))
+                if baseline_values and all(value is not None for value in baseline_values):
+                    expected_difference = round(sum(float(value) for value in baseline_values) - expected_accrual, 2)
+                    if abs(expected_difference) > 0.011 and (
+                        difference is None or abs(float(difference) - expected_difference) > 0.011
+                    ):
+                        fx_error = "历史业务差异不是原始应收减核销日计提"
+            except FxAccrualError as exc:
+                fx_error = str(exc)
         reason = ""
         verdict = "skip"
         row = rows.get(int(ref)) if ref is not None else None
@@ -786,6 +832,8 @@ def _check_so_accrual_backfills(item: dict, rows: Dict[int, dict]) -> dict:
             )
         elif accrual is None:
             verdict, reason = "conflict", f"历史计提补填第 {ref} 行缺少有效交付金额"
+        elif fx_error:
+            verdict, reason = "conflict", fx_error
         else:
             same_business_rows = [
                 row_no for row_no, current in rows.items()
@@ -809,7 +857,7 @@ def _check_so_accrual_backfills(item: dict, rows: Dict[int, dict]) -> dict:
                 if current_accrual is not None and abs(float(current_accrual) - float(accrual)) > 0.011:
                     verdict, reason = (
                         "conflict",
-                        f"第 {ref} 行计提已有值 {current_accrual}，与智云交付额 {float(accrual):.2f} 不一致，禁止覆盖",
+                        f"第 {ref} 行计提已有值 {current_accrual}，与本次计提 {float(accrual):.2f} 不一致，禁止覆盖",
                     )
                 else:
                     needs_write = current_accrual is None
@@ -835,7 +883,7 @@ def _check_so_accrual_backfills(item: dict, rows: Dict[int, dict]) -> dict:
                         verdict = "write" if needs_write else "skip"
                         reason = (
                             "SO 下全部 SOD 已结清，补填历史计提"
-                            if needs_write else "历史计提已与智云交付额一致"
+                            if needs_write else "历史计提已与本次估值一致"
                         )
         entry["_check"] = {"verdict": verdict, "reason": reason}
         checked.append(entry)
@@ -863,6 +911,27 @@ def check_one(item: dict, rows: Dict[int, dict]) -> dict:
     - skip     ：已经填过且与计划一致 → 幂等跳过（重复跑不重复写）
     - conflict ：行号对不上 / 已填但不一致 / 值不合法 → 不写，交给人看
     """
+    if item.get("fx_accrual_applied") and not item.get("row_operation"):
+        five = item.get("five_cols") or {}
+        if five.get("计提") is not None:
+            source = item.get("split_payment_source") or {}
+            try:
+                expected_accrual = accrual_amount(item, source.get("delivery_local"))
+            except FxAccrualError as exc:
+                return {"verdict": "conflict", "reason": str(exc)}
+            actual = common.to_number(five.get("计提"))
+            if actual is None or abs(float(actual) - expected_accrual) > 0.011:
+                return {"verdict": "conflict", "reason": "计提与整单原币及核销日中行现汇买入价不一致"}
+            baseline = common.to_number(item.get("accrual_baseline"))
+            difference = common.to_number((item.get("derived_cols") or {}).get("差异"))
+            if baseline is not None and abs(float(baseline) - expected_accrual) > 0.011 and (
+                difference is None or abs(float(difference) - (float(baseline) - expected_accrual)) > 0.011
+            ):
+                return {"verdict": "conflict", "reason": "业务差异不是原始应收减本次计提"}
+    import current_workbook_receipts as CWR
+    current = CWR.check(item, rows)
+    if current is not None:
+        return current
     import current_receipt_group
     group = current_receipt_group.check(item, rows)
     if group is not None:
@@ -1169,7 +1238,12 @@ def _history_chain_source_error(item: dict, by_case_id: dict) -> str:
             return "历史补写分笔链的交付额与取数依据不一致"
         five = dict(member.get("five_cols") or {})
         five["回款明细"] = source.get("amount_local")
-        five["计提"] = op.get("latest_delivery") if step.get("settled") else None
+        try:
+            five["计提"] = accrual_amount(member, op.get("latest_delivery")) if step.get("settled") else None
+        except FxAccrualError as exc:
+            return str(exc)
+        if (step.get("fx_accrual_source") or {}) != (member.get("fx_accrual_source") or {}):
+            return "历史补写分笔链的计提来源与成员原始记录不一致"
         derived = (member.get("derived_cols") or {}) if step.get("settled") else {}
         if step.get("five_cols") != five or step.get("derived_cols") != derived:
             return "历史补写分笔链的日期、方式或核销字段与原始记录不一致"
@@ -1195,8 +1269,9 @@ def validate(
         allocation_errors = parent_allocation_history_errors(plan, rows)
     import current_receipt_group
     import source_history_gap
+    import current_workbook_receipts as CWR
     for it in items:
-        audit_error = (source_history_gap.unsafe_write(it, items, rows) or duplicate_audit_error(plan, it) or allocation_errors.get(it.get("ar"))
+        audit_error = (CWR.source_error(it, items) or source_history_gap.unsafe_write(it, items, rows) or duplicate_audit_error(plan, it) or allocation_errors.get(it.get("ar"))
                        or _history_chain_source_error(it, by_case_id)
                        or current_receipt_group.source_error(it, by_case_id))
         scope_error = BR.check_scope(it, rows)
@@ -1232,7 +1307,7 @@ def validate(
             res = {"verdict": "conflict", "reason": audit_error}
         elif scope_error:
             res = scope_error
-        elif it.get("ordinary_receipt_proof") or it.get("current_receipt_group") or it.get("receipt_correction") or it.get("zero_delivery_audit") or it.get("baseline_receipt_audit"):
+        elif it.get("current_workbook_receipts") or it.get("ordinary_receipt_proof") or it.get("current_receipt_group") or it.get("receipt_correction") or it.get("zero_delivery_audit") or it.get("baseline_receipt_audit"):
             res = check_one(it, rows)
         elif it.get("code") == settlement_status.SO_ALREADY_SETTLED:
             settlement = settlement_status.inspect_so(it.get("so"), (
@@ -1326,6 +1401,10 @@ def validate(
         import flow_monthly
         item['flow_receipt_proof'] = flow_monthly.checked_receipt_proof(
             item, rows, plan.get('hexiao_date'), plan.get('parent_fallback_allocations') or {})
+        import current_parent_receipt_group as CPG
+        item.pop('flow_parent_group_proof',None)
+        group_proof=CPG.check(item.get('current_parent_receipt_group'),rows,item,plan.get('hexiao_date'))
+        if group_proof:item['flow_parent_group_proof']=group_proof
         checked.append(item)
     if not defer_sequence_guard:
         FS.guard(checked, checked=True)
@@ -1478,10 +1557,6 @@ def main(argv=None) -> int:
         help="其它年度盈亏工作副本，可重复，例如 2025=...xlsx",
     )
     ap.add_argument("--out", default="", help="校验后计划 json")
-    ap.add_argument(
-        "--current-run-plan", default="",
-        help="写后复核专用：本工作区内、由本次已校验写入计划生成的证据",
-    )
     # 防呆：同上。--workspace 还用于在没给 --out 时把结果落进正确的 04_产出/
     ap.add_argument("--workspace", default="", help="工作区根（没给 --out 时用它定产出位置）")
     ap.add_argument("--hexiao-date", default="", help="（校验日期以判定结果为准，收下防止链路中断）")
@@ -1503,30 +1578,6 @@ def main(argv=None) -> int:
         )
         return 2
     plan = json.loads(plan_p.read_text(encoding="utf-8"))
-    current_evidence = None
-    if args.current_run_plan:
-        try:
-            evidence_path = Path(args.current_run_plan)
-            if evidence_path.is_symlink():
-                raise ValueError("本次核销计划证据不能是符号链接")
-            evidence_path = evidence_path.resolve(strict=True)
-            if not evidence_path.is_relative_to(ws):
-                raise ValueError("本次核销计划证据必须位于当前工作区")
-            evidence_plan = json.loads(evidence_path.read_text(encoding="utf-8"))
-            if not current_run_basis.enabled(evidence_plan):
-                raise ValueError("本次核销计划证据缺少当前材料决策标记")
-            expected_date = common.norm_date(args.hexiao_date or plan.get("hexiao_date"))
-            evidence_date = common.norm_date(evidence_plan.get("hexiao_date"))
-            if expected_date is None or evidence_date != expected_date:
-                raise ValueError("本次核销计划证据的核销日期与复核日期不一致")
-            if evidence_plan.get("conflict"):
-                raise ValueError("本次核销计划仍有冲突，不能作为写后复核证据")
-            current_evidence, _ = FAL.prepare_commit(
-                current_run_basis.empty_state(), evidence_plan
-            )
-        except (OSError, ValueError, TypeError, json.JSONDecodeError) as error:
-            print(f"ERROR: 无法读取本次核销计划证据：{error}", file=sys.stderr)
-            return 2
     try:
         ledger_paths = {
             int(year): Path(path).resolve()
@@ -1564,7 +1615,7 @@ def main(argv=None) -> int:
 
     result = validate_by_year(plan, rows_by_year, ledger_paths)
     try:
-        FAL.preflight(ws, result, current_evidence=current_evidence)
+        FAL.preflight(ws, result)
     except ValueError as error:
         print(f"ERROR: 分配台账写前校验未通过：{error}", file=sys.stderr)
         return 2

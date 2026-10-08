@@ -19,7 +19,8 @@ def main():
     mode.add_argument('--install-guard', action='store_true', help='Install the online PostgreSQL reference guard')
     parser.add_argument('--details', action='store_true', help='Include file identities for a private review record')
     args = parser.parse_args()
-    if not SOURCE.is_relative_to(ROOT / 'releases'):
+    allowed_roots = (ROOT / 'releases', ROOT / 'refactor-worktrees')
+    if not any(SOURCE.is_relative_to(item) for item in allowed_roots):
         raise RuntimeError('Unexpected persistent source location')
     if (ROOT / 'DEPLOYMENT_ID').read_text().strip() != 'financial-platform-isolated-20260907-01a0799a':
         raise RuntimeError('Unexpected deployment identity')

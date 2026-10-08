@@ -22,7 +22,7 @@ from .modules.execution.prepared_payload import ModelAuditSelection
 from .modules.execution.authorization import execution_actor, execution_owner, ExecutionPhase, ExecutionAuthorizationRevoked
 from .modules.execution.input_snapshot import input_snapshot_hash
 from .modules.execution.preconditions import assert_run_input_snapshot, ExecutionInputChanged
-from .models import FileRecord, ModelTraceRecord, RunModelAudit, RunRecord
+from .models import FileRecord, ModelTraceRecord, RunEvent, RunModelAudit, RunRecord
 from .orchestrator import LlmConfig, interpret_parameters
 from .redaction import sanitize_text
 from .registry import RegisteredSkill, hash_skill_directory, registry
@@ -136,6 +136,21 @@ def retry_status(
 ) -> tuple[bool, str]:
     if run.state not in {"failed", "timed_out"}:
         return False, "只有失败或超时的任务可以重试。"
+    # An attempted Run has no durable proof that its child and side effects
+    # have ended. A terminal UI state alone cannot authorize a replay.
+    if (run.attempt_count != 0 or run.started_at is not None
+            or run.worker_id or run.heartbeat_at is not None):
+        return False, "原任务已启动执行，但缺少可信的退出与结果证据；不能直接重试，请先调查原结果。"
+    # Missing claim/started fields alone do not prove that execution never
+    # began. Only a persisted server-side rejection at CLAIM is pre-start.
+    latest = db.scalar(select(RunEvent).where(RunEvent.run_id == run.id)
+                       .order_by(RunEvent.id.desc()).limit(1))
+    evidence = _load(latest.data_json) if latest is not None else {}
+    if (run.state != "failed" or latest is None or latest.event_type != "state"
+            or latest.state != "failed" or not isinstance(evidence, dict)
+            or evidence.get("phase") != ExecutionPhase.CLAIM.value
+            or not isinstance(evidence.get("code"), str) or not evidence["code"]):
+        return False, "缺少服务端记录的执行前拒绝证据，不能把未登记启动当作未执行。"
     skill = registry.get(run.skill_id)
     if not skill:
         return False, "该 Skill 当前不可用。"

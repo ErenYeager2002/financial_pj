@@ -14,7 +14,8 @@
   2. 再以智云销售名称/客户名称匹配流转表公司名称/汇款人，四种组合任一成立即名称命中；
      PayPal/美元户的英文付款方名称可通过「到账名称→系统客户名称」对照表转换后，
      与智云客户名称比较；对照缺失或一对多不自动猜；
-  3. 微信/支付宝另允许到账日期 +（净额 + 手续费）按同样名称规则匹配；
+  3. 微信/支付宝用智云明确总到账金额、同到账日及销售/已有SO定位；
+     其他渠道用净到账（外币用原币净到账），不推算税率或手续费比例；
   4. 日期金额命中但四种名称组合都不成立 → **弱命中**，唯一候选可自动处理，多候选列入人工处理。
 - 命中 0 → E0；命中 >1 → E12；命中 1 → 给出行号与建议单号。
 - 匹配只读；**写入**见 `apply_flow.py`（日清和写前校验通过后、仅强三键或日期金额弱匹配唯一命中）。
@@ -318,6 +319,58 @@ class FlowLedger:
 
     # ---------- 匹配 ----------
 
+    def match_existing_posting(self, rec: dict) -> dict:
+        """Find a dated, already deducted SO posting before searching old carries."""
+        from flow_monthly import SO, money, parsed_balance, legacy_period_opening
+        day = common.norm_date(rec.get("hexiao_date"))
+        so = str(rec.get("so") or "").strip().upper()
+        source = rec.get("so_receipt_source") or {}
+        if not day or not so or (source.get("currency") and not common.is_cny(source["currency"])):
+            return {"hits": 0, "rows": [], "matched_by": "已登记核销行"}
+        try:
+            paid = money(source.get("amount_local") if source.get("amount_local") not in (None, "") else rec.get("amount_orig"))
+            if paid <= 0:
+                raise ValueError("invalid payment")
+        except (ValueError, TypeError):
+            return {"hits": 0, "rows": [], "matched_by": "已登记核销行"}
+        names = [rec.get("customer"), rec.get("sales_name")]
+        matches = []
+        invalid_balance = []
+        for row in self.rows:
+            if row.get("date") != day or row.get("form") != "冲预收":
+                continue
+            if not any(name_similar(row.get("payer"), name) for name in names if name):
+                continue
+            shown = [value.upper() for value in SO.findall(row.get("order_cell") or "")]
+            if shown.count(so) != 1:
+                continue
+            amount = None
+            try:
+                amount = money(row.get("amount"))
+                parsed = parsed_balance(row.get("prepayment"))
+                if "remaining" not in parsed:
+                    continue
+                opening = legacy_period_opening(row.get("form"), amount, parsed) or amount
+                deductions = list(parsed.get("deductions", [opening - parsed["remaining"]]))
+                if deductions.count(paid) != 1:
+                    continue
+                # A single visible SO identifies the deduction; multiple SOs
+                # require the amount written beside this SO in the order cell.
+                if len(shown) > 1:
+                    tail = (row.get("order_cell") or "").upper().split(so, 1)[1]
+                    fragment = tail.split("SO", 1)[0]
+                    if str(paid) not in fragment.replace(",", ""):
+                        continue
+            except (ValueError, TypeError):
+                if amount == paid and shown == [so] and str(row.get("prepayment") or "").strip():
+                    invalid_balance.append(row)
+                continue
+            matches.append(row)
+        if invalid_balance:
+            rows = matches + invalid_balance
+            return {"hits": len(rows), "rows": rows, "matched_by": "已登记SO但预收未通过算术校验"}
+        return {"hits": len(matches), "rows": matches, "matched_by": "已登记核销行"}
+
     def match_carry(self, rec: dict) -> dict:
         """Bind a carried row using current source identity and workbook evidence."""
         from flow_monthly import SO, parsed_balance, legacy_period_opening, money
@@ -359,56 +412,51 @@ class FlowLedger:
         customer: str = "",
         fee: Optional[float] = 0.0,
         sales_name: str = "",
+        amount_total: Optional[float] = None,
+        order_sos: Sequence[str] = (),
     ) -> dict:
         """
         返回 {"hits": n, "rows": [...], "matched_by": str}
-        matched_by ∈ 三键 / 三键(含手续费) / 三键(原币公式) /
-        三键(原币公式含手续费) 及其「中英文对照」变体 /
+        matched_by ∈ 三键 / 三键(原币公式) 及其「中英文对照」变体 /
         日期+金额(名字不符) / ""
         """
         date = common.norm_date(arrival_date)
-        gross = None
-        if amount_net is not None and fee:
-            gross = round(float(amount_net) + float(fee), 2)
-
         def by_date(r):
             return date is not None and r["date"] == date
 
         def uses_formula_original(row: dict) -> bool:
             return row.get("formula_orig_amount") is not None
 
+        def gross_channel(row):
+            return any(channel in str(row.get("form") or "") for channel in ("微信", "支付宝"))
+
+        # Channel determines the amount basis; charges need not explain tax.
+        total, net = common.to_number(amount_total), common.to_number(amount_net)
+        identified = []
+        if total is not None and total > 0 and (net is None or total >= net):
+            from flow_monthly import SO
+            gross = [r for r in self.rows if by_date(r) and gross_channel(r)
+                     and not uses_formula_original(r) and amounts_equal(r.get("amount"), total)]
+            expected_sos = {str(so).strip().upper() for so in order_sos if so}
+            identified = [r for r in gross if expected_sos & set(SO.findall(str(r.get("order_cell") or "").upper()))]
+            if not identified and normalize_name(sales_name):
+                identified = [r for r in gross if any(normalize_name(r.get(key)) == normalize_name(sales_name)
+                              for key in ("company_name", "remitter", "payer"))]
+
         cand_net = [
             r for r in self.rows
             if by_date(r)
             and not uses_formula_original(r)
+            and (not gross_channel(r) or (total is not None and amounts_equal(total, amount_net)))
+            and r not in identified
             and amounts_equal(r.get("amount"), amount_net)
         ]
         cand_orig = [
             r for r in self.rows
             if by_date(r)
-            and uses_formula_original(r)
+            and uses_formula_original(r) and not gross_channel(r)
             and amounts_equal(r.get("formula_orig_amount"), amount_net)
         ]
-        cand_gross = (
-            [
-                r for r in self.rows
-                if by_date(r)
-                and not uses_formula_original(r)
-                and amounts_equal(r.get("amount"), gross)
-            ]
-            if gross is not None
-            else []
-        )
-        cand_orig_gross = (
-            [
-                r for r in self.rows
-                if by_date(r)
-                and uses_formula_original(r)
-                and amounts_equal(r.get("formula_orig_amount"), gross)
-            ]
-            if gross is not None
-            else []
-        )
 
         def name_match_kind(row: dict) -> str:
             """返回直接匹配/中英文对照/空；对照一对多时不自动命中。"""
@@ -456,11 +504,7 @@ class FlowLedger:
             return "三键(混合金额口径)"
 
         direct = cand_net + [r for r in cand_orig if r not in cand_net]
-        with_fee = cand_gross + [r for r in cand_orig_gross if r not in cand_gross]
-        for pool, normal_tag, formula_tag in (
-            (direct, "三键", "三键(原币公式)"),
-            (with_fee, "三键(含手续费)", "三键(原币公式含手续费)"),
-        ):
+        for pool, normal_tag, formula_tag in ((direct, "三键", "三键(原币公式)"),):
             named: List[dict] = []
             kinds: List[str] = []
             for row in pool:
@@ -469,6 +513,9 @@ class FlowLedger:
                     named.append(row)
                     kinds.append(kind)
             if named:
+                if identified:
+                    return {"hits": len(named) + len(identified), "rows": named + identified,
+                            "matched_by": "三键(混合金额口径)"}
                 tag = matched_tag(named, normal_tag, formula_tag)
                 if kinds and all(kind == "中英文对照" for kind in kinds):
                     tag = add_alias_tag(tag)
@@ -478,14 +525,54 @@ class FlowLedger:
                     "matched_by": tag,
                 }
 
-        weak = direct + [r for r in with_fee if r not in direct]
+        if identified:
+            return {"hits": len(identified), "rows": identified,
+                    "matched_by": "微信支付宝到账日+总到账金额+销售或已有SO"}
+        weak = direct
         if weak:
             return {
                 "hits": len(weak),
                 "rows": weak,
                 "matched_by": "日期+金额(名字不符)",
             }
-        return {"hits": 0, "rows": [], "matched_by": ""}
+        # Diagnostic candidates never become matching or writing coordinates.
+        from flow_monthly import SO
+        expected_sos = {str(so).strip().upper() for so in order_sos if so}
+        candidates = []
+        for row in self.rows:
+            same_so = bool(expected_sos & set(SO.findall(str(row.get("order_cell") or "").upper())))
+            channel = gross_channel(row)
+            expected = total if channel else net
+            actual = row.get("formula_orig_amount") if uses_formula_original(row) else row.get("amount")
+            same_amount = expected is not None and amounts_equal(actual, expected)
+            if not ((by_date(row) and (same_so or name_match_kind(row)))
+                    or (same_so and same_amount)):
+                continue
+            basis = "总到账" if channel else ("原币净到账" if uses_formula_original(row) else "净到账")
+            def display(value):
+                number = common.to_number(value)
+                return f"{number:.2f}" if number is not None else "缺失"
+            differences = []
+            if not by_date(row):
+                differences.append(f"日期不同：表内{row.get('date')}，智云{date}")
+            actual_number = common.to_number(actual)
+            if actual_number is not None and expected is not None and not same_amount:
+                differences.append(f"金额差{actual_number - expected:.2f}元（表内减智云）")
+            if not differences:
+                differences.append("日期金额以外的身份或金额口径条件未通过")
+            candidates.append(
+                f"{row.get('file', '')}#{row.get('sheet', '')} 第{row.get('row_no')}行"
+                f"：日期{row.get('date')}，付款方{row.get('payer') or row.get('company_name') or ''}，"
+                f"收款形式{row.get('form') or ''}，表内比较金额{display(actual)}元，"
+                f"智云{basis}{display(expected)}元；" + "；".join(differences))
+        if candidates:
+            diagnostic = (f"未找到满足定位条件的行；以下为本日写入前的待核候选，共{len(candidates)}行"
+                          + ("（仅列前8行）" if len(candidates) > 8 else "")
+                          + "，不能据此确认归属：" + " | ".join(candidates[:8]))
+        else:
+            diagnostic = (f"未找到满足定位条件的行：智云到账日期{date}，净到账{net}，总到账{total}；"
+                          "现有表中未找到同日同名/同SO或同SO同额的待核行，需核对对应到账记录及材料范围")
+        return {"hits": 0, "rows": [], "matched_by": "", "diagnostic": diagnostic}
 
     # ---------- 输出辅助 ----------
 
@@ -639,6 +726,10 @@ def annotate_records(
     dates = [r["date"] for r in flow.rows if r.get("date")]
     dmin, dmax = (min(dates), max(dates)) if dates else (None, None)
     cache: Dict[tuple, dict] = {}
+    receipt_sos = {}
+    for rec in records:
+        receipt_sos.setdefault((rec.get("ar"),str(rec.get("shoukuan_date"))),set()).update(
+            [str(rec["so"])] if rec.get("so") else [])
     for rec in records:
         # 三键里的「金额」必须是**这笔到账的总额**，不是单个 SO/SOD 的金额。
         # 流转表一行 = 银行一笔到账；一笔到账挂 N 个订单时拿分项金额去比，永远对不上。
@@ -652,6 +743,8 @@ def annotate_records(
             rec.get("customer") or "",
             rec.get("sales_name") or "",
             rec.get("fee") or 0.0,
+            rec.get("business_arrival_total"),
+            tuple(sorted(receipt_sos[(rec.get("ar"),str(rec.get("shoukuan_date")))])),
         )
         if key not in cache:
             cache[key] = flow.match(
@@ -660,12 +753,23 @@ def annotate_records(
                 customer=rec.get("customer") or "",
                 fee=rec.get("fee") or 0.0,
                 sales_name=rec.get("sales_name") or "",
+                amount_total=rec.get("business_arrival_total"),
+                order_sos=key[-1],
             )
         hit = cache[key]
         if hit["hits"] == 0:
-            carry = flow.match_carry(rec)
-            if carry["hits"]:
-                hit = carry
+            import flow_date_identity
+            corrected = flow_date_identity.match(flow, rec)
+            if corrected["hits"]:
+                hit = corrected
+        if hit["hits"] == 0:
+            posted = flow.match_existing_posting(rec)
+            if posted["hits"]:
+                hit = posted
+            else:
+                carry = flow.match_carry(rec)
+                if carry["hits"]:
+                    hit = carry
         d = common.norm_date(rec.get("shoukuan_date"))
         covered = dmin is not None and d is not None and dmin <= d <= dmax
         if not covered and hit["hits"] == 0:
@@ -678,14 +782,14 @@ def annotate_records(
             continue
         if hit["hits"] == 0 and not complete:
             rec["flow_hits"] = None  # 不判 E0：可能只是这个渠道的表没给
-            rec["flow_matched_by"] = "未在现有流转表中找到(可能缺该渠道的表)"
+            rec["flow_matched_by"] = hit.get("diagnostic") or "未在现有流转表中找到满足条件的到账记录"
             rec["flow_locate"] = ""
             rec["flow_file"] = ""
             rec["flow_sheet"] = ""
             rec["flow_row_no"] = None
             continue
         rec["flow_hits"] = hit["hits"]
-        rec["flow_matched_by"] = hit["matched_by"]
+        rec["flow_matched_by"] = hit.get("diagnostic") if hit["hits"] == 0 else hit["matched_by"]
         rec["flow_locate"] = FlowLedger.locate_text(hit)
         if hit["hits"] == 1 and hit.get("rows"):
             r0 = hit["rows"][0]
@@ -701,6 +805,11 @@ def annotate_records(
                 "payer": r0.get("payer") or "",
                 "amount": r0.get("amount"),
             }
+            if r0.get("formula_orig_amount") is not None:
+                rec["flow_identity"].update(
+                    formula_orig_amount=r0["formula_orig_amount"],
+                    formula_rate=r0["formula_rate"],
+                )
             so = str(rec.get("so") or "").strip()
             if so:
                 rec["flow_order_suggest"] = FlowLedger.suggest_order_cell(

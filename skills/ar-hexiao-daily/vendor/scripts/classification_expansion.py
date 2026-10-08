@@ -7,7 +7,7 @@ from typing import List
 from typing import Optional
 from typing import Tuple
 import common
-import fallback_allocation_ledger as FAL
+import copy
 import fallback_sequence as FS
 from classification_amounts import _currency_key, _hold, _hold_each_source_order, _order_delivery_local, _order_amount_local, _prepare_parent_totals, _writeoff_business_amount, subset_sum_unique
 from classification_contract import CoverageError, TOL
@@ -70,6 +70,9 @@ def expand_payment(p: dict, rates: Dict[str, float]) -> List[dict]:
             if not item.get("writeoff_sequence_key") and order.get("arrival_date"):
                 item["fallback_sequence_key"] = [order["arrival_date"], order["ar"]]
             item["_execution_source_lineage"] = source_lineages.get(str(item.get("so") or "").strip())
+            history = (p.get("_current_source_history_by_so") or {}).get(str(item.get("so") or "").strip())
+            if history is not None:
+                item["current_source_history"] = copy.deepcopy(history)
             if item.get("so") in so_receipt_sources:
                 item["so_receipt_source"] = so_receipt_sources[item["so"]]
             allocation = p.get("_parent_fallback_allocation") or {}
@@ -180,23 +183,10 @@ def expand_payment(p: dict, rates: Dict[str, float]) -> List[dict]:
     effective_cumulative_orig = dict(detail_cumulative_orig)
     effective_cumulative_local = dict(detail_cumulative_local)
     if has_itemized_writeoff:
-        # 逐 SO 明细只覆盖它所在的父 AR，不能抹掉此前已经成功写表的无明细父回款。
-        # 两类来源统一进入截至当前核销日的 R；有逐 SO 明细的父 AR 从兜底台账排除，
-        # 避免同一父回款既按父金额、又按逐单明细重复累计。
-        fallback_history_orig, fallback_history_local = FAL.history_totals(
-            p.get("_fallback_allocation_state") or {"parents": {}},
-            current_ar=str(p.get("ar") or ""),
-            excluded_parent_ars=p.get("_detailed_parent_ars") or [],
-            as_of_date=p.get("hexiao_date"),
-        )
-        for so, amount in fallback_history_orig.items():
-            effective_cumulative_orig[so] = round(
-                float(effective_cumulative_orig.get(so) or 0.0) + float(amount), 2
-            )
-        for so, amount in fallback_history_local.items():
-            effective_cumulative_local[so] = round(
-                float(effective_cumulative_local.get(so) or 0.0) + float(amount), 2
-            )
+        # Cumulative amounts belong to this fetch's reconciled source prefix.
+        # A prior run's successful allocation is audit evidence, not another
+        # receipt to add to the current facts. Missing source stays unresolved;
+        # current workbook matching determines whether recorded rows suffice.
         p["_itemized_cumulative_detail_orig_by_so"] = detail_cumulative_orig
         p["_itemized_cumulative_detail_local_by_so"] = detail_cumulative_local
         p["_itemized_cumulative_fallback_orig_by_so"] = fallback_history_orig

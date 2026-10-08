@@ -9,6 +9,7 @@ import baseline_receipts as BR
 import common
 
 OPERATION = 'current_receipt_group'
+PARTIAL_EXISTING = 'current_receipt_group_partial_existing'
 FIVE = ('计提','回款明细','是否结账','收款时间','收款方式')
 
 def build(records, rows):
@@ -80,11 +81,114 @@ def build(records, rows):
     if any(BR.cents(row.get('计提')) not in (None,0) and row.get('计提')!=after[ref].get('计提') for ref,row in rows.items()):return None
     return dict(policy=OPERATION,records=copy.deepcopy(ordered),before_rows=copy.deepcopy(rows),after_rows=after,event_rows=bindings,delivery=delivery/100)
 
+
+def build_partial_existing(records, rows, journal):
+    """Prove a complete source prefix already present in a partly unpaid SOD.
+
+    Future receipts need their own registered identities; neither those rows
+    nor the unpaid remainder can be borrowed to prove the current source group.
+    This path only skips existing rows and never changes accounting cells.
+    """
+    if len(records) < 2 or not rows or not journal or not journal.get('scope_only'):
+        return None
+    so, sod = records[0].get('so'), records[0].get('sod')
+    if not so or not sod or any(
+        rec.get('so') != so or rec.get('sod') != sod
+        or not rec.get('currency') or not common.is_cny(rec['currency'])
+        or BR.cents(rec.get('amount_orig')) != BR.cents(rec.get('amount_local'))
+        or set(rec.get('all_sods') or []) != {sod}
+        or rec.get('forced_code') or rec.get('customer_archive_failed')
+        or rec.get('parent_allocation_audit') for rec in records
+    ):
+        return None
+    delivery = BR.cents(records[0].get('deliver_local'))
+    if (not delivery or BR.cents(journal.get('baseline_receivable')) != delivery
+            or journal.get('events') or any(
+                BR.cents(rec.get('deliver_local')) != delivery for rec in records
+            )):
+        return None
+    postings = {common.norm_date(rec.get('hexiao_date')) for rec in records}
+    if len(postings) != 1 or None in postings:
+        return None
+    posting = postings.pop()
+    ordered = sorted(records, key=lambda rec: BR.cents(rec.get('cumulative_received_local')) or -1)
+    cumulative = 0
+    events = {}
+    for rec in ordered:
+        event = BR.event_key(rec)
+        amount = BR.cents(rec.get('amount_local'))
+        arrival = common.norm_date(rec.get('shoukuan_date'))
+        if not event or event in events or not amount or amount <= 0 or not arrival or arrival > posting:
+            return None
+        cumulative += amount
+        if BR.cents(rec.get('cumulative_received_local')) != cumulative:
+            return None
+        events[event] = (amount, arrival)
+    if cumulative >= delivery or any(event in (journal.get('ordinary_events') or {}) for event in events):
+        return None
+    if any(row.get('SO') != so or row.get('SOD') != sod for row in rows.values()):
+        return None
+    if sum(BR.cents(row.get('应收金额')) or 0 for row in rows.values()) != delivery:
+        return None
+    current_paid, future_paid, unpaid = {}, {}, []
+    for ref, row in rows.items():
+        receivable, paid = BR.cents(row.get('应收金额')), BR.cents(row.get('回款明细'))
+        if (receivable is None or receivable <= 0 or paid not in (None, 0, receivable)
+                or row.get('计提') is not None or row.get('差异') is not None):
+            return None
+        if not paid:
+            if (row.get('是否结账') != '否' or row.get('收款时间')
+                    or row.get('收款方式')):
+                return None
+            unpaid.append(ref)
+            continue
+        day = common.norm_date(row.get('收款时间'))
+        if row.get('是否结账') != '是' or not day or row.get('收款方式') not in {'汇', '冲预收'}:
+            return None
+        (current_paid if day <= posting else future_paid)[ref] = row
+    if len(unpaid) != 1 or sum(BR.cents(row['回款明细']) for row in current_paid.values()) != cumulative:
+        return None
+    registered = journal.get('ordinary_events') or {}
+    if not isinstance(registered, dict):
+        return None
+    future_signatures = sorted(BR.signature(row) for row in future_paid.values())
+    try:
+        registered_signatures = sorted(
+            tuple(event['signature']) for event in registered.values()
+        )
+    except (KeyError, TypeError, ValueError, IndexError):
+        return None
+    if (future_signatures != registered_signatures or any(
+        not common.norm_date(signature[1]) or common.norm_date(signature[1]) <= posting
+        for signature in registered_signatures
+    )):
+        return None
+    bindings = {}
+    used = set()
+    for event, (amount, arrival) in events.items():
+        rec = next(rec for rec in ordered if BR.event_key(rec) == event)
+        days = {arrival, posting, common.receipt_time(arrival, posting)}
+        matches = [ref for ref, row in current_paid.items()
+                   if BR.cents(row['回款明细']) == amount
+                   and common.norm_date(row['收款时间']) in days]
+        if len(matches) != 1 or matches[0] in used:
+            return None
+        used.add(matches[0])
+        bindings[event] = [matches[0]]
+    if used != set(current_paid):
+        return None
+    return dict(policy=PARTIAL_EXISTING, records=copy.deepcopy(ordered),
+                before_rows=copy.deepcopy(rows), after_rows=copy.deepcopy(rows),
+                event_rows=bindings, delivery=delivery / 100,
+                journal=copy.deepcopy(journal))
+
+
 def attach(results,records,ledger):
     if ledger is None:return
     grouped=defaultdict(list)
     for rec,result in zip(records,results):grouped[(rec.get('so'),rec.get('sod'))].append((rec,result))
     for (so,sod),pairs in grouped.items():
+        if any(r.get("current_workbook_receipts") for _,r in pairs):continue
         if all(r.get('ordinary_receipt_proof') for _,r in pairs):continue
         if any(r.get('bucket')!='auto' and r.get('code') not in ('E5','E8')
                and not (r.get('code')=='E_RECEIPT_OWNERSHIP_UNRESOLVED'
@@ -92,7 +196,12 @@ def attach(results,records,ledger):
         try:
             rows=BR.ledger_rows(ledger,so,sod)
             if set(map(int,rows))!=set(ledger.so_index.get(so,[])):continue
-            proof=build([rec for rec,_ in pairs],rows)
+            journal = (getattr(ledger, 'baseline_receipt_state', {}) or {}).get(
+                BR.group_key(so, sod)
+            ) or {}
+            proof = build([rec for rec,_ in pairs], rows) or build_partial_existing(
+                [rec for rec,_ in pairs], rows, journal
+            )
         except (KeyError,TypeError,ValueError):continue
         if not proof:continue
         cases=[r['case_id'] for _,r in pairs]
@@ -100,14 +209,19 @@ def attach(results,records,ledger):
             identity=BR.event_key(rec);refs=proof['event_rows'][identity]
             primary=max(refs,key=lambda ref:(BR.cents(rows[ref].get('回款明细')) or 0,-int(ref)))
             for key in ('receipt_correction','baseline_receipt_audit','row_operation','so_accrual_backfills','ordinary_receipt_proof'):result.pop(key,None)
-            result.update(bucket='auto',code='E5',ledger_row_ref=int(primary),five_cols={**{k:proof['after_rows'][primary][k] for k in FIVE},'实收SOD':sod},derived_cols={},current_receipt_group=copy.deepcopy(proof),current_receipt_event=identity,receipt_sequence_cases=cases,row_operation={'type':OPERATION},reason='当前整组来源累计与应收总额一致，按完整回款组纠正日期及拆散记录，不重复计款')
+            reason = ('当前整组来源累计与已有回款行逐笔一致，保留未来回款和未收余额，不重复写入'
+                      if proof['policy'] == PARTIAL_EXISTING else
+                      '当前整组来源累计与应收总额一致，按完整回款组纠正日期及拆散记录，不重复计款')
+            result.update(bucket='auto',code='E5',ledger_row_ref=int(primary),five_cols={**{k:proof['after_rows'][primary][k] for k in FIVE},'实收SOD':sod},derived_cols={},current_receipt_group=copy.deepcopy(proof),current_receipt_event=identity,receipt_sequence_cases=cases,row_operation={'type':OPERATION},reason=reason)
 
 def check(item,rows):
     proof=item.get('current_receipt_group')
     if not proof:return None
     def bad(reason):return {'verdict':'conflict','reason':reason}
     try:
-        expected=build(proof['records'],proof['before_rows'])
+        expected = (build_partial_existing(proof['records'], proof['before_rows'], proof.get('journal'))
+                    if proof.get('policy') == PARTIAL_EXISTING else
+                    build(proof['records'], proof['before_rows']))
         if expected!=proof:return bad('整组回款依据无法由当前原值和完整来源重建')
         identity=item['current_receipt_event'];rec=next(r for r in proof['records'] if BR.event_key(r)==identity)
         source=item.get('split_payment_source') or {}

@@ -1,0 +1,96 @@
+{
+  "commit": "d3a9c123ff7ce37d6f6af3c7b065ef501fe16cb0",
+  "files": [
+    {
+      "path": "LICENSE",
+      "sha256": "b23dff4d4bac8d17b6efaaa7e88c2b730149c4dda45699ce676b719cfdffe7e1",
+      "blob_sha": "9dc98a4a6b9b549447a4fc314e4cf50529c184c7",
+      "bytes": 1134,
+      "status": "verified"
+    },
+    {
+      "path": "frontend/package.json",
+      "sha256": "ee5fc3227cc1430837c397489d8b22b1aa5ba62e14f977d175e7ade321c8ca9d",
+      "blob_sha": "33df909762afd6cfee21c0bc9ae639a5bc677c01",
+      "bytes": 4401,
+      "status": "verified"
+    },
+    {
+      "path": "frontend/src/components/workspace/chats/chat-box.tsx",
+      "sha256": "83c0e8f1a8f8f6fb9cc2c8b7688cb47b4788076ca8b59e7cfbe69f84ef54b109",
+      "blob_sha": "344c89557fa1e3585c5b3f6fd70a8f82d13c6947",
+      "bytes": 14306,
+      "status": "verified"
+    },
+    {
+      "path": "frontend/src/components/workspace/chats/use-thread-chat.ts",
+      "sha256": "d316f0942e885ba99b073b892bf8d390ebf34688244242620213e4242314cf96",
+      "blob_sha": "c65fa001e6c6fa3dbd34362ec5f247d682c98af3",
+      "bytes": 5862,
+      "status": "verified"
+    },
+    {
+      "path": "frontend/src/components/workspace/messages/message-list.tsx",
+      "sha256": "76cc13f7ee0a6d3bd4585b293f07d9b445bcc7f876ec3b9084ec2ddc520bc6c3",
+      "blob_sha": "407a36d1729eeb7c353ddbc22c73e98cffa7e88f",
+      "bytes": 50381,
+      "status": "verified"
+    },
+    {
+      "path": "frontend/src/components/workspace/messages/virtual-message-list.tsx",
+      "sha256": "e3a06d7ff402d191ec7933f73ea289688aef4eff6982b78cbf15bee6212b1d8d",
+      "blob_sha": "386ac6f557c86cd21894ded11d6db978e3025eec",
+      "bytes": 9743,
+      "status": "verified"
+    },
+    {
+      "path": "frontend/src/components/workspace/messages/tool-call-details.tsx",
+      "sha256": "b85c874595f281d5ccc6ef427b3e80aee704ed3cfda5f3486ab5a827c912eafd",
+      "blob_sha": "08962985a2ca07c4a09f24d0feda7ca69b9e97b8",
+      "bytes": 3517,
+      "status": "verified"
+    },
+    {
+      "path": "frontend/src/components/workspace/input-box.tsx",
+      "sha256": "3749275af3456146b0da98510cc66f2c8274056a15d6b7c99f51bbd1d1d88055",
+      "blob_sha": "e1b181b9e95d33035e935faf280ea82c94506860",
+      "bytes": 105781,
+      "status": "verified"
+    },
+    {
+      "path": "frontend/src/components/workspace/artifacts/artifact-file-preview.tsx",
+      "sha256": "029d8891538bef6547dccd5e76f753e704af2688f77630ca560b558cf91201da",
+      "blob_sha": "42d4c4315c8386d70511ba92a9e41da9c902ddfe",
+      "bytes": 7632,
+      "status": "verified"
+    },
+    {
+      "path": "frontend/src/components/ai-elements/conversation.tsx",
+      "sha256": "1ec42333ab8471c5feeedc270bb56c4d848496fa9ccf03ca58853a50d2ee9b0c",
+      "blob_sha": "4842cc3f9a5a87fc9145248b5a86f6550f270d9f",
+      "bytes": 2501,
+      "status": "verified"
+    },
+    {
+      "path": "frontend/src/components/ai-elements/message.tsx",
+      "sha256": "9f52d0103a96ea10fa6c7fa03f68d3632719b12494edee429fb3369d69a16b39",
+      "blob_sha": "c260f1f91341713cec6a591b7a9aa4d1b0641753",
+      "bytes": 10871,
+      "status": "verified"
+    },
+    {
+      "path": "frontend/src/components/ai-elements/prompt-input.tsx",
+      "sha256": "82977cde3adbb443df2d122a709c82ee470e689a6dd38ca30d7047755fa0890b",
+      "blob_sha": "dd9a20a29d82c6664c647aa1c6506bef825c0bc2",
+      "bytes": 40108,
+      "status": "verified"
+    },
+    {
+      "path": "frontend/src/components/ai-elements/code-block.tsx",
+      "sha256": "629ffb166312b164249c7762ec9232d0ad1636ddab31776783ae4bc68634e66f",
+      "blob_sha": "e43f81505988aa8a791ccf4cd0ce42067471e44b",
+      "bytes": 3836,
+      "status": "verified"
+    }
+  ]
+}

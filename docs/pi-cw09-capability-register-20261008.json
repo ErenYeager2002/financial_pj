@@ -1,0 +1,1129 @@
+{
+  "observed_at": "2026-10-07T22:33:40.051678+00:00",
+  "fixed": [
+    {
+      "id": "jdy-cashflow-export",
+      "version": "1.0.0",
+      "content_hash": "1537173fe799ffa4dfdc7bc875c61055423156a7ccf012b72790c9aa628b4a54",
+      "source": "platform",
+      "commit": "",
+      "status": "disabled",
+      "handler": "rpa",
+      "execution_kind": "browser_rpa",
+      "external_systems": [
+        {
+          "system": "金蝶云",
+          "access": "browser_rpa"
+        }
+      ],
+      "risk": {
+        "level": "external_action",
+        "requires_confirmation": true,
+        "requires_change_review": false,
+        "requires_approval": false,
+        "modifies_uploaded_files": false
+      },
+      "conversation_capabilities": [],
+      "input_fields": [],
+      "output_fields": [
+        "status",
+        "summary",
+        "output_files",
+        "warnings"
+      ],
+      "network_target_count": 0,
+      "network_allowlist_count": 0,
+      "execution_modes": [],
+      "permission_key": "jdy-cashflow-export",
+      "permission_source": "current platform user/department grants; authorization.py",
+      "pi_entry": "query_platform: list/query only; no formal-task creation tool",
+      "recovery_rules": {
+        "status": "not_verified_per_skill",
+        "note": "Risk declaration does not itself authorize retry."
+      }
+    },
+    {
+      "id": "labor-invoice-check",
+      "version": "1.0.0",
+      "content_hash": "281ad25f4e28405c93575a19d1348d7a27ab8509b184115caf42ce18e6444678",
+      "source": "platform",
+      "commit": "",
+      "status": "disabled",
+      "handler": "python",
+      "execution_kind": "offline_file",
+      "external_systems": [],
+      "risk": {
+        "level": "read_only",
+        "requires_confirmation": true,
+        "requires_change_review": false,
+        "requires_approval": false,
+        "modifies_uploaded_files": false
+      },
+      "conversation_capabilities": [],
+      "input_fields": [],
+      "output_fields": [
+        "status",
+        "summary",
+        "output_files",
+        "warnings"
+      ],
+      "network_target_count": 0,
+      "network_allowlist_count": 0,
+      "execution_modes": [],
+      "permission_key": "labor-invoice-check",
+      "permission_source": "current platform user/department grants; authorization.py",
+      "pi_entry": "query_platform: list/query only; no formal-task creation tool",
+      "recovery_rules": {
+        "status": "not_verified_per_skill",
+        "note": "Risk declaration does not itself authorize retry."
+      }
+    },
+    {
+      "id": "compliance-spot-check",
+      "version": "1.0.0",
+      "content_hash": "52052da85a8c22d19a705b4ff23dc82c5eef8cec3a0ce8d111fd56f47e63bb11",
+      "source": "platform",
+      "commit": "",
+      "status": "disabled",
+      "handler": "python",
+      "execution_kind": "offline_file",
+      "external_systems": [],
+      "risk": {
+        "level": "read_only",
+        "requires_confirmation": true,
+        "requires_change_review": false,
+        "requires_approval": false,
+        "modifies_uploaded_files": false
+      },
+      "conversation_capabilities": [],
+      "input_fields": [],
+      "output_fields": [
+        "status",
+        "summary",
+        "output_files",
+        "warnings"
+      ],
+      "network_target_count": 0,
+      "network_allowlist_count": 0,
+      "execution_modes": [],
+      "permission_key": "compliance-spot-check",
+      "permission_source": "current platform user/department grants; authorization.py",
+      "pi_entry": "query_platform: list/query only; no formal-task creation tool",
+      "recovery_rules": {
+        "status": "not_verified_per_skill",
+        "note": "Risk declaration does not itself authorize retry."
+      }
+    },
+    {
+      "id": "task-clarifier",
+      "version": "1.0.0",
+      "content_hash": "3bca4fcd54c3f5f77ab96ac3638cc17443e1f6e4196b6cfa071586995d38e184",
+      "source": "platform",
+      "commit": "",
+      "status": "disabled",
+      "handler": "python",
+      "execution_kind": "agent_guidance",
+      "external_systems": [],
+      "risk": {
+        "level": "read_only",
+        "requires_confirmation": false,
+        "requires_change_review": false,
+        "requires_approval": false,
+        "modifies_uploaded_files": false
+      },
+      "conversation_capabilities": [],
+      "input_fields": [],
+      "output_fields": [
+        "status",
+        "summary",
+        "output_files",
+        "warnings"
+      ],
+      "network_target_count": 0,
+      "network_allowlist_count": 0,
+      "execution_modes": [],
+      "permission_key": "task-clarifier",
+      "permission_source": "current platform user/department grants; authorization.py",
+      "pi_entry": "query_platform: list/query only; no formal-task creation tool",
+      "recovery_rules": {
+        "status": "not_verified_per_skill",
+        "note": "Risk declaration does not itself authorize retry."
+      }
+    },
+    {
+      "id": "env-doctor",
+      "version": "1.0.0",
+      "content_hash": "c6901b945fd4c727892f60354f37637b93a26d1a3487e18bec59a12beac7bc07",
+      "source": "platform",
+      "commit": "",
+      "status": "disabled",
+      "handler": "python",
+      "execution_kind": "agent_guidance",
+      "external_systems": [],
+      "risk": {
+        "level": "read_only",
+        "requires_confirmation": false,
+        "requires_change_review": false,
+        "requires_approval": false,
+        "modifies_uploaded_files": false
+      },
+      "conversation_capabilities": [],
+      "input_fields": [],
+      "output_fields": [
+        "status",
+        "summary",
+        "output_files",
+        "warnings"
+      ],
+      "network_target_count": 0,
+      "network_allowlist_count": 0,
+      "execution_modes": [],
+      "permission_key": "env-doctor",
+      "permission_source": "current platform user/department grants; authorization.py",
+      "pi_entry": "query_platform: list/query only; no formal-task creation tool",
+      "recovery_rules": {
+        "status": "not_verified_per_skill",
+        "note": "Risk declaration does not itself authorize retry."
+      }
+    },
+    {
+      "id": "jdy-cashflow-reconcile",
+      "version": "1.0.0",
+      "content_hash": "711324ce8f8584d5b98dc9e73ddd4782146d1f9d91b0e7ac7ef721d2ba56cf8a",
+      "source": "platform",
+      "commit": "",
+      "status": "disabled",
+      "handler": "python",
+      "execution_kind": "offline_file",
+      "external_systems": [],
+      "risk": {
+        "level": "read_only",
+        "requires_confirmation": false,
+        "requires_change_review": false,
+        "requires_approval": false,
+        "modifies_uploaded_files": false
+      },
+      "conversation_capabilities": [],
+      "input_fields": [],
+      "output_fields": [
+        "status",
+        "summary",
+        "output_files",
+        "warnings"
+      ],
+      "network_target_count": 0,
+      "network_allowlist_count": 0,
+      "execution_modes": [],
+      "permission_key": "jdy-cashflow-reconcile",
+      "permission_source": "current platform user/department grants; authorization.py",
+      "pi_entry": "query_platform: list/query only; no formal-task creation tool",
+      "recovery_rules": {
+        "status": "not_verified_per_skill",
+        "note": "Risk declaration does not itself authorize retry."
+      }
+    },
+    {
+      "id": "reconcile-bank",
+      "version": "1.0.0",
+      "content_hash": "ca9163ce51d2025f99d83f6b5a5e3b13bf7858bf6cd9b92cdd9ad15e1f54549d",
+      "source": "platform",
+      "commit": "",
+      "status": "disabled",
+      "handler": "python",
+      "execution_kind": "offline_file",
+      "external_systems": [],
+      "risk": {
+        "level": "read_only",
+        "requires_confirmation": true,
+        "requires_change_review": false,
+        "requires_approval": false,
+        "modifies_uploaded_files": false
+      },
+      "conversation_capabilities": [],
+      "input_fields": [
+        "amount_tolerance",
+        "date_tolerance_days"
+      ],
+      "output_fields": [
+        "status",
+        "summary",
+        "output_files",
+        "warnings"
+      ],
+      "network_target_count": 0,
+      "network_allowlist_count": 0,
+      "execution_modes": [],
+      "permission_key": "reconcile-bank",
+      "permission_source": "current platform user/department grants; authorization.py",
+      "pi_entry": "query_platform: list/query only; no formal-task creation tool",
+      "recovery_rules": {
+        "status": "not_verified_per_skill",
+        "note": "Risk declaration does not itself authorize retry."
+      }
+    },
+    {
+      "id": "ar-hexiao-daily",
+      "version": "1.6.28-local.35.sales.4.balance.5",
+      "content_hash": "9dc06e7827ec58ab47b2bedc457f942784b7ba7aa2d6a3d664b8fd698a571507",
+      "source": "platform",
+      "commit": "",
+      "status": "published",
+      "handler": "workflow",
+      "execution_kind": "guided_workflow",
+      "external_systems": [
+        {
+          "system": "智云",
+          "access": "direct_read"
+        }
+      ],
+      "risk": {
+        "level": "write",
+        "requires_confirmation": true,
+        "requires_change_review": true,
+        "requires_approval": true,
+        "modifies_uploaded_files": false
+      },
+      "conversation_capabilities": [],
+      "input_fields": [],
+      "output_fields": [
+        "status",
+        "summary",
+        "output_files",
+        "warnings"
+      ],
+      "network_target_count": 1,
+      "network_allowlist_count": 0,
+      "execution_modes": [
+        "workflow",
+        "pi_harness"
+      ],
+      "permission_key": "ar-hexiao-daily",
+      "permission_source": "current platform user/department grants; authorization.py",
+      "pi_entry": "query_platform: list/query only; no formal-task creation tool",
+      "recovery_rules": {
+        "status": "not_verified_per_skill",
+        "note": "Risk declaration does not itself authorize retry."
+      }
+    },
+    {
+      "id": "ar-hexiao-daily-lab",
+      "version": "1.6.24-lab.6.local.35.sales.9.balance.36",
+      "content_hash": "ffaa3aafafcfec9251bc001b3db2e0160a140ba30bf6136c7f8266d366a16094",
+      "source": "platform",
+      "commit": "",
+      "status": "published",
+      "handler": "workflow",
+      "execution_kind": "guided_workflow",
+      "external_systems": [
+        {
+          "system": "智云",
+          "access": "direct_read"
+        }
+      ],
+      "risk": {
+        "level": "write",
+        "requires_confirmation": true,
+        "requires_change_review": true,
+        "requires_approval": true,
+        "modifies_uploaded_files": false
+      },
+      "conversation_capabilities": [],
+      "input_fields": [],
+      "output_fields": [
+        "status",
+        "summary",
+        "output_files",
+        "warnings"
+      ],
+      "network_target_count": 1,
+      "network_allowlist_count": 0,
+      "execution_modes": [
+        "workflow",
+        "pi_harness"
+      ],
+      "permission_key": "ar-hexiao-daily-lab",
+      "permission_source": "current platform user/department grants; authorization.py",
+      "pi_entry": "query_platform: list/query only; no formal-task creation tool",
+      "recovery_rules": {
+        "status": "not_verified_per_skill",
+        "note": "Risk declaration does not itself authorize retry."
+      }
+    },
+    {
+      "id": "receivables-merge-and-split",
+      "version": "1.2.1",
+      "content_hash": "6c4921f30c81bc59b05972fad85978188018f050ef667b9a3ba7faedc417111a",
+      "source": "platform",
+      "commit": "",
+      "status": "disabled",
+      "handler": "python",
+      "execution_kind": "offline_file",
+      "external_systems": [],
+      "risk": {
+        "level": "read_only",
+        "requires_confirmation": true,
+        "requires_change_review": false,
+        "requires_approval": false,
+        "modifies_uploaded_files": false
+      },
+      "conversation_capabilities": [
+        "prepare_task_draft",
+        "query_task_status"
+      ],
+      "input_fields": [
+        "mode",
+        "base_month",
+        "date_label"
+      ],
+      "output_fields": [
+        "status",
+        "summary",
+        "output_files",
+        "warnings"
+      ],
+      "network_target_count": 0,
+      "network_allowlist_count": 0,
+      "execution_modes": [],
+      "permission_key": "receivables-merge-and-split",
+      "permission_source": "current platform user/department grants; authorization.py",
+      "pi_entry": "query_platform: list/query only; no formal-task creation tool",
+      "recovery_rules": {
+        "status": "not_verified_per_skill",
+        "note": "Risk declaration does not itself authorize retry."
+      }
+    },
+    {
+      "id": "dreame-ar-progress-diff",
+      "version": "1.0.0",
+      "content_hash": "d5464053fee3916ef87be46a6b10f5bf5497c684abf7b012f95ae12039c03344",
+      "source": "platform",
+      "commit": "",
+      "status": "disabled",
+      "handler": "python",
+      "execution_kind": "offline_file",
+      "external_systems": [],
+      "risk": {
+        "level": "read_only",
+        "requires_confirmation": true,
+        "requires_change_review": false,
+        "requires_approval": false,
+        "modifies_uploaded_files": false
+      },
+      "conversation_capabilities": [],
+      "input_fields": [],
+      "output_fields": [
+        "status",
+        "summary",
+        "output_files",
+        "warnings"
+      ],
+      "network_target_count": 0,
+      "network_allowlist_count": 0,
+      "execution_modes": [],
+      "permission_key": "dreame-ar-progress-diff",
+      "permission_source": "current platform user/department grants; authorization.py",
+      "pi_entry": "query_platform: list/query only; no formal-task creation tool",
+      "recovery_rules": {
+        "status": "not_verified_per_skill",
+        "note": "Risk declaration does not itself authorize retry."
+      }
+    },
+    {
+      "id": "pdf-compress",
+      "version": "1.0.0",
+      "content_hash": "a6db067959ecdf4741f7689946ab96a25d8652d2467c164c413b63689633c037",
+      "source": "platform",
+      "commit": "",
+      "status": "disabled",
+      "handler": "python",
+      "execution_kind": "offline_file",
+      "external_systems": [],
+      "risk": {
+        "level": "read_only",
+        "requires_confirmation": true,
+        "requires_change_review": false,
+        "requires_approval": false,
+        "modifies_uploaded_files": false
+      },
+      "conversation_capabilities": [],
+      "input_fields": [],
+      "output_fields": [
+        "status",
+        "summary",
+        "output_files",
+        "warnings"
+      ],
+      "network_target_count": 0,
+      "network_allowlist_count": 0,
+      "execution_modes": [],
+      "permission_key": "pdf-compress",
+      "permission_source": "current platform user/department grants; authorization.py",
+      "pi_entry": "query_platform: list/query only; no formal-task creation tool",
+      "recovery_rules": {
+        "status": "not_verified_per_skill",
+        "note": "Risk declaration does not itself authorize retry."
+      }
+    },
+    {
+      "id": "withholding-report-rename",
+      "version": "1.0.1",
+      "content_hash": "76de599b164468dba75182525b2f9da6151ae2d8bcb37154cafc1be456e09bd8",
+      "source": "platform",
+      "commit": "",
+      "status": "disabled",
+      "handler": "python",
+      "execution_kind": "offline_file",
+      "external_systems": [
+        {
+          "system": "电子税务局",
+          "access": "uploaded_export"
+        }
+      ],
+      "risk": {
+        "level": "read_only",
+        "requires_confirmation": true,
+        "requires_change_review": false,
+        "requires_approval": false,
+        "modifies_uploaded_files": false
+      },
+      "conversation_capabilities": [],
+      "input_fields": [],
+      "output_fields": [
+        "status",
+        "summary",
+        "output_files",
+        "warnings"
+      ],
+      "network_target_count": 0,
+      "network_allowlist_count": 0,
+      "execution_modes": [],
+      "permission_key": "withholding-report-rename",
+      "permission_source": "current platform user/department grants; authorization.py",
+      "pi_entry": "query_platform: list/query only; no formal-task creation tool",
+      "recovery_rules": {
+        "status": "not_verified_per_skill",
+        "note": "Risk declaration does not itself authorize retry."
+      }
+    },
+    {
+      "id": "xlsx",
+      "version": "1.0.5",
+      "content_hash": "41fef02657cd2976e4856d7b68d68ffcf0317daefb9d11a3c61ccbe6b5b886d8",
+      "source": "platform",
+      "commit": "",
+      "status": "disabled",
+      "handler": "python",
+      "execution_kind": "document_agent",
+      "external_systems": [],
+      "risk": {
+        "level": "read_only",
+        "requires_confirmation": false,
+        "requires_change_review": false,
+        "requires_approval": false,
+        "modifies_uploaded_files": false
+      },
+      "conversation_capabilities": [],
+      "input_fields": [],
+      "output_fields": [
+        "output_files",
+        "status",
+        "summary",
+        "warnings"
+      ],
+      "network_target_count": 0,
+      "network_allowlist_count": 0,
+      "execution_modes": [],
+      "permission_key": "xlsx",
+      "permission_source": "current platform user/department grants; authorization.py",
+      "pi_entry": "query_platform: list/query only; no formal-task creation tool",
+      "recovery_rules": {
+        "status": "not_verified_per_skill",
+        "note": "Risk declaration does not itself authorize retry."
+      }
+    },
+    {
+      "id": "pdf",
+      "version": "1.0.0",
+      "content_hash": "f8151b163290a77c3035fd7c4d96376438077c0517203be0e04fb6c62e178aab",
+      "source": "platform",
+      "commit": "",
+      "status": "disabled",
+      "handler": "python",
+      "execution_kind": "document_agent",
+      "external_systems": [],
+      "risk": {
+        "level": "read_only",
+        "requires_confirmation": false,
+        "requires_change_review": false,
+        "requires_approval": false,
+        "modifies_uploaded_files": false
+      },
+      "conversation_capabilities": [],
+      "input_fields": [],
+      "output_fields": [
+        "status",
+        "summary",
+        "output_files",
+        "warnings"
+      ],
+      "network_target_count": 0,
+      "network_allowlist_count": 0,
+      "execution_modes": [],
+      "permission_key": "pdf",
+      "permission_source": "current platform user/department grants; authorization.py",
+      "pi_entry": "query_platform: list/query only; no formal-task creation tool",
+      "recovery_rules": {
+        "status": "not_verified_per_skill",
+        "note": "Risk declaration does not itself authorize retry."
+      }
+    },
+    {
+      "id": "pptx",
+      "version": "1.0.0",
+      "content_hash": "0f97f69f3cf0cbd0e0ce67ee8480b9817f271b19123b8b75fbfca080bfb3048b",
+      "source": "platform",
+      "commit": "",
+      "status": "disabled",
+      "handler": "python",
+      "execution_kind": "document_agent",
+      "external_systems": [],
+      "risk": {
+        "level": "read_only",
+        "requires_confirmation": false,
+        "requires_change_review": false,
+        "requires_approval": false,
+        "modifies_uploaded_files": false
+      },
+      "conversation_capabilities": [],
+      "input_fields": [],
+      "output_fields": [
+        "status",
+        "summary",
+        "output_files",
+        "warnings"
+      ],
+      "network_target_count": 0,
+      "network_allowlist_count": 0,
+      "execution_modes": [],
+      "permission_key": "pptx",
+      "permission_source": "current platform user/department grants; authorization.py",
+      "pi_entry": "query_platform: list/query only; no formal-task creation tool",
+      "recovery_rules": {
+        "status": "not_verified_per_skill",
+        "note": "Risk declaration does not itself authorize retry."
+      }
+    },
+    {
+      "id": "docx",
+      "version": "1.0.0",
+      "content_hash": "baa3959a35148f6c1f34bd6da00a224a136e384ddceb51565da201a47d06d10c",
+      "source": "platform",
+      "commit": "",
+      "status": "disabled",
+      "handler": "python",
+      "execution_kind": "document_agent",
+      "external_systems": [],
+      "risk": {
+        "level": "read_only",
+        "requires_confirmation": false,
+        "requires_change_review": false,
+        "requires_approval": false,
+        "modifies_uploaded_files": false
+      },
+      "conversation_capabilities": [],
+      "input_fields": [],
+      "output_fields": [
+        "status",
+        "summary",
+        "output_files",
+        "warnings"
+      ],
+      "network_target_count": 0,
+      "network_allowlist_count": 0,
+      "execution_modes": [],
+      "permission_key": "docx",
+      "permission_source": "current platform user/department grants; authorization.py",
+      "pi_entry": "query_platform: list/query only; no formal-task creation tool",
+      "recovery_rules": {
+        "status": "not_verified_per_skill",
+        "note": "Risk declaration does not itself authorize retry."
+      }
+    },
+    {
+      "id": "order-daily-summary",
+      "version": "1.0.0",
+      "content_hash": "070709ff9b3757e7bfd1b7486e5cd7429e5702de0300f2f87036a203be65dda8",
+      "source": "platform",
+      "commit": "",
+      "status": "disabled",
+      "handler": "python",
+      "execution_kind": "offline_file",
+      "external_systems": [
+        {
+          "system": "智云",
+          "access": "uploaded_export"
+        }
+      ],
+      "risk": {
+        "level": "read_only",
+        "requires_confirmation": true,
+        "requires_change_review": false,
+        "requires_approval": false,
+        "modifies_uploaded_files": false
+      },
+      "conversation_capabilities": [],
+      "input_fields": [
+        "today",
+        "include_detail",
+        "no_date_filter"
+      ],
+      "output_fields": [
+        "status",
+        "summary",
+        "output_files",
+        "warnings"
+      ],
+      "network_target_count": 0,
+      "network_allowlist_count": 0,
+      "execution_modes": [],
+      "permission_key": "order-daily-summary",
+      "permission_source": "current platform user/department grants; authorization.py",
+      "pi_entry": "query_platform: list/query only; no formal-task creation tool",
+      "recovery_rules": {
+        "status": "not_verified_per_skill",
+        "note": "Risk declaration does not itself authorize retry."
+      }
+    },
+    {
+      "id": "project-detail-to-ledger",
+      "version": "1.1.0",
+      "content_hash": "2ad4884b75cc65007a9a9b19a09e526b804b99fd44b31e4bdcbebb070e4158ba",
+      "source": "platform",
+      "commit": "",
+      "status": "disabled",
+      "handler": "python",
+      "execution_kind": "offline_file",
+      "external_systems": [],
+      "risk": {
+        "level": "read_only",
+        "requires_confirmation": true,
+        "requires_change_review": false,
+        "requires_approval": false,
+        "modifies_uploaded_files": false
+      },
+      "conversation_capabilities": [],
+      "input_fields": [],
+      "output_fields": [
+        "status",
+        "summary",
+        "output_files",
+        "warnings"
+      ],
+      "network_target_count": 0,
+      "network_allowlist_count": 0,
+      "execution_modes": [],
+      "permission_key": "project-detail-to-ledger",
+      "permission_source": "current platform user/department grants; authorization.py",
+      "pi_entry": "query_platform: list/query only; no formal-task creation tool",
+      "recovery_rules": {
+        "status": "not_verified_per_skill",
+        "note": "Risk declaration does not itself authorize retry."
+      }
+    },
+    {
+      "id": "consolidated-statements",
+      "version": "1.0.11",
+      "content_hash": "5e3764f1bf86ebd901965148cd20d68bf85cf4e51154556534fa1d0b52b90a1f",
+      "source": "platform",
+      "commit": "",
+      "status": "disabled",
+      "handler": "python",
+      "execution_kind": "browser_rpa",
+      "external_systems": [
+        {
+          "system": "金蝶",
+          "access": "browser_rpa"
+        }
+      ],
+      "risk": {
+        "level": "read_only",
+        "requires_confirmation": false,
+        "requires_change_review": false,
+        "requires_approval": false,
+        "modifies_uploaded_files": false
+      },
+      "conversation_capabilities": [],
+      "input_fields": [
+        "period",
+        "fetch_kingdee",
+        "parent_run_id"
+      ],
+      "output_fields": [
+        "status",
+        "summary",
+        "output_files",
+        "warnings"
+      ],
+      "network_target_count": 13,
+      "network_allowlist_count": 0,
+      "execution_modes": [],
+      "permission_key": "consolidated-statements",
+      "permission_source": "current platform user/department grants; authorization.py",
+      "pi_entry": "query_platform: list/query only; no formal-task creation tool",
+      "recovery_rules": {
+        "status": "not_verified_per_skill",
+        "note": "Risk declaration does not itself authorize retry."
+      }
+    },
+    {
+      "id": "dept-expense-alloc",
+      "version": "1.0.0",
+      "content_hash": "703670c215452e7b0e4467535c0edc601fdfea14084ea3313621f96d124bb731",
+      "source": "platform",
+      "commit": "",
+      "status": "disabled",
+      "handler": "python",
+      "execution_kind": "offline_file",
+      "external_systems": [
+        {
+          "system": "用友",
+          "access": "uploaded_export"
+        }
+      ],
+      "risk": {
+        "level": "read_only",
+        "requires_confirmation": true,
+        "requires_change_review": false,
+        "requires_approval": false,
+        "modifies_uploaded_files": false
+      },
+      "conversation_capabilities": [],
+      "input_fields": [],
+      "output_fields": [
+        "status",
+        "summary",
+        "output_files",
+        "warnings"
+      ],
+      "network_target_count": 0,
+      "network_allowlist_count": 0,
+      "execution_modes": [],
+      "permission_key": "dept-expense-alloc",
+      "permission_source": "current platform user/department grants; authorization.py",
+      "pi_entry": "query_platform: list/query only; no formal-task creation tool",
+      "recovery_rules": {
+        "status": "not_verified_per_skill",
+        "note": "Risk declaration does not itself authorize retry."
+      }
+    }
+  ],
+  "native": [
+    {
+      "id": "ar-hexiao-daily",
+      "commit": "23a456aca7f497c72561b2391350e88f67d77f6a",
+      "content_hash": "823989ae1d3b6e5c4d47d4ddda4e615b7afe908c58f50187960c5342e4c136cc",
+      "package_safe": true,
+      "package_bytes": 1187841,
+      "external_systems": "not_structured_in_native_index",
+      "recovery_rules": "not_structured_in_native_index",
+      "execution_source": "pinned_native_package",
+      "permission_key": "native--ar-hexiao-daily",
+      "permission_source": "native_skill_policy.require_native_skill; current can_run/can_upload grants",
+      "pi_entry": "explicit session binding through pi_skill_bindings; pinned read-only package",
+      "input_output_schema": "not_structured_in_native_index",
+      "side_effects": "not_structured_in_native_index"
+    },
+    {
+      "id": "consolidated-statements",
+      "commit": "aab80a85d197e108a0e3a41421c2dc8e0f8e0506",
+      "content_hash": "3d84d1d5d3a48aa2696ea79b62579a15249971eacc9f110ccc51031a0fadb5c1",
+      "package_safe": true,
+      "package_bytes": 168629,
+      "external_systems": "not_structured_in_native_index",
+      "recovery_rules": "not_structured_in_native_index",
+      "execution_source": "pinned_native_package",
+      "permission_key": "native--consolidated-statements",
+      "permission_source": "native_skill_policy.require_native_skill; current can_run/can_upload grants",
+      "pi_entry": "explicit session binding through pi_skill_bindings; pinned read-only package",
+      "input_output_schema": "not_structured_in_native_index",
+      "side_effects": "not_structured_in_native_index"
+    },
+    {
+      "id": "dept-expense-alloc",
+      "commit": "17f7f96b4fd3e1e63220263f778612948c01e7a8",
+      "content_hash": "e3df04387b6f432f8756eec48418137ab04aae8ab05f4e9e6b9411706f91ddbf",
+      "package_safe": true,
+      "package_bytes": 67783,
+      "external_systems": "not_structured_in_native_index",
+      "recovery_rules": "not_structured_in_native_index",
+      "execution_source": "pinned_native_package",
+      "permission_key": "native--dept-expense-alloc",
+      "permission_source": "native_skill_policy.require_native_skill; current can_run/can_upload grants",
+      "pi_entry": "explicit session binding through pi_skill_bindings; pinned read-only package",
+      "input_output_schema": "not_structured_in_native_index",
+      "side_effects": "not_structured_in_native_index"
+    },
+    {
+      "id": "docx",
+      "commit": "17f7f96b4fd3e1e63220263f778612948c01e7a8",
+      "content_hash": "e6495e4eea9c9a4698d98cc839b837162a85ccc1757082d34c4af0743671a06c",
+      "package_safe": true,
+      "package_bytes": 1118770,
+      "external_systems": "not_structured_in_native_index",
+      "recovery_rules": "not_structured_in_native_index",
+      "execution_source": "pinned_native_package",
+      "permission_key": "native--docx",
+      "permission_source": "native_skill_policy.require_native_skill; current can_run/can_upload grants",
+      "pi_entry": "explicit session binding through pi_skill_bindings; pinned read-only package",
+      "input_output_schema": "not_structured_in_native_index",
+      "side_effects": "not_structured_in_native_index"
+    },
+    {
+      "id": "dreame-ar-progress-diff",
+      "commit": "17f7f96b4fd3e1e63220263f778612948c01e7a8",
+      "content_hash": "8221700d42d26fb0f69b4ba5f01368a5fbc716a6c4b6e1854b99951f0e31c4e5",
+      "package_safe": true,
+      "package_bytes": 89339,
+      "external_systems": "not_structured_in_native_index",
+      "recovery_rules": "not_structured_in_native_index",
+      "execution_source": "pinned_native_package",
+      "permission_key": "native--dreame-ar-progress-diff",
+      "permission_source": "native_skill_policy.require_native_skill; current can_run/can_upload grants",
+      "pi_entry": "explicit session binding through pi_skill_bindings; pinned read-only package",
+      "input_output_schema": "not_structured_in_native_index",
+      "side_effects": "not_structured_in_native_index"
+    },
+    {
+      "id": "kingdee-gl-import",
+      "commit": "17f7f96b4fd3e1e63220263f778612948c01e7a8",
+      "content_hash": "d2656a40e3f6d7f68841cc1ca7b588cc5d0749fe3bdf0117d3405d3627da1981",
+      "package_safe": true,
+      "package_bytes": 52222,
+      "external_systems": "not_structured_in_native_index",
+      "recovery_rules": "not_structured_in_native_index",
+      "execution_source": "pinned_native_package",
+      "permission_key": "native--kingdee-gl-import",
+      "permission_source": "native_skill_policy.require_native_skill; current can_run/can_upload grants",
+      "pi_entry": "explicit session binding through pi_skill_bindings; pinned read-only package",
+      "input_output_schema": "not_structured_in_native_index",
+      "side_effects": "not_structured_in_native_index"
+    },
+    {
+      "id": "kingdee-posting",
+      "commit": "17f7f96b4fd3e1e63220263f778612948c01e7a8",
+      "content_hash": "143ada5bb30b14d0f803851253c8b855c520083ec83210b035d52b583caed127",
+      "package_safe": true,
+      "package_bytes": 1195010,
+      "external_systems": "not_structured_in_native_index",
+      "recovery_rules": "not_structured_in_native_index",
+      "execution_source": "pinned_native_package",
+      "permission_key": "native--kingdee-posting",
+      "permission_source": "native_skill_policy.require_native_skill; current can_run/can_upload grants",
+      "pi_entry": "explicit session binding through pi_skill_bindings; pinned read-only package",
+      "input_output_schema": "not_structured_in_native_index",
+      "side_effects": "not_structured_in_native_index"
+    },
+    {
+      "id": "labor-invoice-check",
+      "commit": "17f7f96b4fd3e1e63220263f778612948c01e7a8",
+      "content_hash": "926a44c45f2707448d80d197e27a515c7d7e2a9449685faaacd76c1fc452b70f",
+      "package_safe": true,
+      "package_bytes": 50635,
+      "external_systems": "not_structured_in_native_index",
+      "recovery_rules": "not_structured_in_native_index",
+      "execution_source": "pinned_native_package",
+      "permission_key": "native--labor-invoice-check",
+      "permission_source": "native_skill_policy.require_native_skill; current can_run/can_upload grants",
+      "pi_entry": "explicit session binding through pi_skill_bindings; pinned read-only package",
+      "input_output_schema": "not_structured_in_native_index",
+      "side_effects": "not_structured_in_native_index"
+    },
+    {
+      "id": "pdf",
+      "commit": "17f7f96b4fd3e1e63220263f778612948c01e7a8",
+      "content_hash": "c5191bb2d22a8bfd72e46839d9d83d0fa59ecfd05e947833c46ae27430aa09c3",
+      "package_safe": true,
+      "package_bytes": 58477,
+      "external_systems": "not_structured_in_native_index",
+      "recovery_rules": "not_structured_in_native_index",
+      "execution_source": "pinned_native_package",
+      "permission_key": "native--pdf",
+      "permission_source": "native_skill_policy.require_native_skill; current can_run/can_upload grants",
+      "pi_entry": "explicit session binding through pi_skill_bindings; pinned read-only package",
+      "input_output_schema": "not_structured_in_native_index",
+      "side_effects": "not_structured_in_native_index"
+    },
+    {
+      "id": "pl-dept-report",
+      "commit": "17f7f96b4fd3e1e63220263f778612948c01e7a8",
+      "content_hash": "b13f86c771fb87b01f03e2761300e960324ed866a618255509cdc566fa49d20e",
+      "package_safe": true,
+      "package_bytes": 417521,
+      "external_systems": "not_structured_in_native_index",
+      "recovery_rules": "not_structured_in_native_index",
+      "execution_source": "pinned_native_package",
+      "permission_key": "native--pl-dept-report",
+      "permission_source": "native_skill_policy.require_native_skill; current can_run/can_upload grants",
+      "pi_entry": "explicit session binding through pi_skill_bindings; pinned read-only package",
+      "input_output_schema": "not_structured_in_native_index",
+      "side_effects": "not_structured_in_native_index"
+    },
+    {
+      "id": "pptx",
+      "commit": "17f7f96b4fd3e1e63220263f778612948c01e7a8",
+      "content_hash": "c5419406fc9ce2d5defe0a3167896793fc74e54f2cf4958676b5d64b57bbfae7",
+      "package_safe": true,
+      "package_bytes": 1127385,
+      "external_systems": "not_structured_in_native_index",
+      "recovery_rules": "not_structured_in_native_index",
+      "execution_source": "pinned_native_package",
+      "permission_key": "native--pptx",
+      "permission_source": "native_skill_policy.require_native_skill; current can_run/can_upload grants",
+      "pi_entry": "explicit session binding through pi_skill_bindings; pinned read-only package",
+      "input_output_schema": "not_structured_in_native_index",
+      "side_effects": "not_structured_in_native_index"
+    },
+    {
+      "id": "project-detail-to-ledger",
+      "commit": "17f7f96b4fd3e1e63220263f778612948c01e7a8",
+      "content_hash": "6a884fc8fc03625bb99148fbcddee34a88a99cea37ab5901864ededa0662ce44",
+      "package_safe": true,
+      "package_bytes": 22196,
+      "external_systems": "not_structured_in_native_index",
+      "recovery_rules": "not_structured_in_native_index",
+      "execution_source": "pinned_native_package",
+      "permission_key": "native--project-detail-to-ledger",
+      "permission_source": "native_skill_policy.require_native_skill; current can_run/can_upload grants",
+      "pi_entry": "explicit session binding through pi_skill_bindings; pinned read-only package",
+      "input_output_schema": "not_structured_in_native_index",
+      "side_effects": "not_structured_in_native_index"
+    },
+    {
+      "id": "receivables-merge",
+      "commit": "17f7f96b4fd3e1e63220263f778612948c01e7a8",
+      "content_hash": "be399d488d8b5b5d129ff3be66456cdfadbfc15cbaee088db1a21572273761dd",
+      "package_safe": true,
+      "package_bytes": 141514,
+      "external_systems": "not_structured_in_native_index",
+      "recovery_rules": "not_structured_in_native_index",
+      "execution_source": "pinned_native_package",
+      "permission_key": "native--receivables-merge",
+      "permission_source": "native_skill_policy.require_native_skill; current can_run/can_upload grants",
+      "pi_entry": "explicit session binding through pi_skill_bindings; pinned read-only package",
+      "input_output_schema": "not_structured_in_native_index",
+      "side_effects": "not_structured_in_native_index"
+    },
+    {
+      "id": "split-by-sales",
+      "commit": "17f7f96b4fd3e1e63220263f778612948c01e7a8",
+      "content_hash": "e62cb81a269b12d7af69ccb141b926bee773219d7e14e5bfb1cd73d0d6e07b43",
+      "package_safe": true,
+      "package_bytes": 35166,
+      "external_systems": "not_structured_in_native_index",
+      "recovery_rules": "not_structured_in_native_index",
+      "execution_source": "pinned_native_package",
+      "permission_key": "native--split-by-sales",
+      "permission_source": "native_skill_policy.require_native_skill; current can_run/can_upload grants",
+      "pi_entry": "explicit session binding through pi_skill_bindings; pinned read-only package",
+      "input_output_schema": "not_structured_in_native_index",
+      "side_effects": "not_structured_in_native_index"
+    },
+    {
+      "id": "withholding-report-rename",
+      "commit": "17f7f96b4fd3e1e63220263f778612948c01e7a8",
+      "content_hash": "0675e6ef671931c045e14cc8f1708aa806b01be8efbefb06e1ec2a9f16ef9e60",
+      "package_safe": true,
+      "package_bytes": 34746,
+      "external_systems": "not_structured_in_native_index",
+      "recovery_rules": "not_structured_in_native_index",
+      "execution_source": "pinned_native_package",
+      "permission_key": "native--withholding-report-rename",
+      "permission_source": "native_skill_policy.require_native_skill; current can_run/can_upload grants",
+      "pi_entry": "explicit session binding through pi_skill_bindings; pinned read-only package",
+      "input_output_schema": "not_structured_in_native_index",
+      "side_effects": "not_structured_in_native_index"
+    },
+    {
+      "id": "xlsx",
+      "commit": "17f7f96b4fd3e1e63220263f778612948c01e7a8",
+      "content_hash": "8a464834664a1db92ccf2918bc8fd8ef36bdadb8805fc0be0dc3386f4aabc381",
+      "package_safe": true,
+      "package_bytes": 1090323,
+      "external_systems": "not_structured_in_native_index",
+      "recovery_rules": "not_structured_in_native_index",
+      "execution_source": "pinned_native_package",
+      "permission_key": "native--xlsx",
+      "permission_source": "native_skill_policy.require_native_skill; current can_run/can_upload grants",
+      "pi_entry": "explicit session binding through pi_skill_bindings; pinned read-only package",
+      "input_output_schema": "not_structured_in_native_index",
+      "side_effects": "not_structured_in_native_index"
+    }
+  ],
+  "registry_error_count": 0,
+  "api_image": "sha256:dad9726ba9de91b867b76feb0d5788004838f3d2dba940c798ed0113336b0ee5",
+  "schema_version": "pi-capability-audit-v1",
+  "purpose": "Evidence inventory only; never execution authorization or required installation manifest.",
+  "runtime_boundary": {
+    "observed_at": "2026-10-07T22:34:33.127386+00:00",
+    "services": [
+      {
+        "service": "api",
+        "image": "sha256:dad9726ba9de91b867b76feb0d5788004838f3d2dba940c798ed0113336b0ee5",
+        "running": true,
+        "health": "healthy",
+        "hashes": {
+          "pi_runtime_service.py": "c2553e8867f2c77e8877f71c8fb16e6ecb0568651d4ec84dd99389f31f3dd3e2",
+          "pi_operation_contract.py": "8c5ef4cc220f2fe22929fcc39314310b1969e2ba22d0d627a9450f0a44b8bc7c",
+          "pi_session_capabilities.py": "765f0665956c41b344d1d5b1c3b0735c90a72c1b94586e369664960838c6a65a",
+          "pi_business_access.py": "7e04bf976fa998bb354643c8b8247053a3e41739e56a1e040cb7db5cf97e1a3a",
+          "pi_business_query.py": "08982a8a8b89c3dd1609de13a581beb32f1c502d38405131c38063908a255112",
+          "pi_skill_bindings.py": "156b1180b56da98e0596f2d54437a0dbae31fbde688de621df3e09275777e299",
+          "routers/pi_runtime.py": "f19475d773814ad7ee2b8d4597a84b5274571cc554a0bdcbd9ab778753ebc6bd"
+        },
+        "matches_source": true
+      },
+      {
+        "service": "worker-standard",
+        "image": "sha256:dad9726ba9de91b867b76feb0d5788004838f3d2dba940c798ed0113336b0ee5",
+        "running": true,
+        "health": null,
+        "hashes": {
+          "pi_runtime_service.py": "c2553e8867f2c77e8877f71c8fb16e6ecb0568651d4ec84dd99389f31f3dd3e2",
+          "pi_operation_contract.py": "8c5ef4cc220f2fe22929fcc39314310b1969e2ba22d0d627a9450f0a44b8bc7c",
+          "pi_session_capabilities.py": "765f0665956c41b344d1d5b1c3b0735c90a72c1b94586e369664960838c6a65a",
+          "pi_business_access.py": "7e04bf976fa998bb354643c8b8247053a3e41739e56a1e040cb7db5cf97e1a3a",
+          "pi_business_query.py": "08982a8a8b89c3dd1609de13a581beb32f1c502d38405131c38063908a255112",
+          "pi_skill_bindings.py": "156b1180b56da98e0596f2d54437a0dbae31fbde688de621df3e09275777e299",
+          "routers/pi_runtime.py": "f19475d773814ad7ee2b8d4597a84b5274571cc554a0bdcbd9ab778753ebc6bd"
+        },
+        "matches_source": true
+      },
+      {
+        "service": "worker-task-discovery",
+        "image": "sha256:dad9726ba9de91b867b76feb0d5788004838f3d2dba940c798ed0113336b0ee5",
+        "running": true,
+        "health": null,
+        "hashes": {
+          "pi_runtime_service.py": "c2553e8867f2c77e8877f71c8fb16e6ecb0568651d4ec84dd99389f31f3dd3e2",
+          "pi_operation_contract.py": "8c5ef4cc220f2fe22929fcc39314310b1969e2ba22d0d627a9450f0a44b8bc7c",
+          "pi_session_capabilities.py": "765f0665956c41b344d1d5b1c3b0735c90a72c1b94586e369664960838c6a65a",
+          "pi_business_access.py": "7e04bf976fa998bb354643c8b8247053a3e41739e56a1e040cb7db5cf97e1a3a",
+          "pi_business_query.py": "08982a8a8b89c3dd1609de13a581beb32f1c502d38405131c38063908a255112",
+          "pi_skill_bindings.py": "156b1180b56da98e0596f2d54437a0dbae31fbde688de621df3e09275777e299",
+          "routers/pi_runtime.py": "f19475d773814ad7ee2b8d4597a84b5274571cc554a0bdcbd9ab778753ebc6bd"
+        },
+        "matches_source": true
+      }
+    ],
+    "files": {
+      "pi_runtime_service.py": "c2553e8867f2c77e8877f71c8fb16e6ecb0568651d4ec84dd99389f31f3dd3e2",
+      "pi_operation_contract.py": "8c5ef4cc220f2fe22929fcc39314310b1969e2ba22d0d627a9450f0a44b8bc7c",
+      "pi_session_capabilities.py": "765f0665956c41b344d1d5b1c3b0735c90a72c1b94586e369664960838c6a65a",
+      "pi_business_access.py": "7e04bf976fa998bb354643c8b8247053a3e41739e56a1e040cb7db5cf97e1a3a",
+      "pi_business_query.py": "08982a8a8b89c3dd1609de13a581beb32f1c502d38405131c38063908a255112",
+      "pi_skill_bindings.py": "156b1180b56da98e0596f2d54437a0dbae31fbde688de621df3e09275777e299",
+      "routers/pi_runtime.py": "f19475d773814ad7ee2b8d4597a84b5274571cc554a0bdcbd9ab778753ebc6bd"
+    },
+    "manager_disk_sha256": "63ad2e891429ac1abce3b2e9e64e8d3bc5afc7d631151bcd51c14fb8bfa1f678"
+  }
+}

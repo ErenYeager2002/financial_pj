@@ -10,7 +10,6 @@ import argparse
 import base64
 import hashlib
 import json
-import shutil
 from pathlib import Path
 
 import batch_ledger
@@ -18,7 +17,6 @@ import common
 import fallback_allocation_ledger
 import baseline_receipts
 import rescan_holds
-import current_run_basis
 
 
 def build(workspace: Path, checked: Path, publication: dict, attempt: str) -> Path:
@@ -35,18 +33,22 @@ def build(workspace: Path, checked: Path, publication: dict, attempt: str) -> Pa
     names = (fallback_allocation_ledger.LEDGER_NAME, batch_ledger.LEDGER_NAME)
     ledger_dir = proof / "03_台账"
     ledger_dir.mkdir(exist_ok=True)
+    historical_audit_files = {}
     for name in names:
         source = workspace / "03_台账" / name
-        if source.is_file() and not current_run_basis.enabled(plan):
-            data = json.loads(source.read_text(encoding="utf-8"))
-            if not isinstance(data, dict):
-                raise ValueError("既有辅助台账格式无效，禁止用空台账覆盖历史")
-            required = "parents" if name == fallback_allocation_ledger.LEDGER_NAME else "runs"
-            if not isinstance(data.get(required), dict):
-                raise ValueError("既有辅助台账缺少历史记录集合")
-            shutil.copy2(source, ledger_dir / name)
-    prior_state = fallback_allocation_ledger.load(proof)
-    prior_allocations = prior_state["parents"]
+        if source.is_file():
+            raw = source.read_bytes()
+            historical_audit_files[name] = {
+                "base64": base64.b64encode(raw).decode("ascii"),
+                "sha256": hashlib.sha256(raw).hexdigest(),
+            }
+    # Build this completion from its checked plan only. Old bytes are retained
+    # separately even when they cannot be parsed; they cannot supply allocations.
+    prior_state = {"version": fallback_allocation_ledger.VERSION, "parents": {}}
+    (ledger_dir / fallback_allocation_ledger.LEDGER_NAME).write_text(
+        json.dumps(prior_state), encoding="utf-8")
+    (ledger_dir / batch_ledger.LEDGER_NAME).write_text(
+        json.dumps({"runs": {}}), encoding="utf-8")
     allocation_path, _ = fallback_allocation_ledger.commit(proof, plan)
     expected = fallback_allocation_ledger.eligible_entries(plan)
     saved = json.loads(allocation_path.read_text(encoding="utf-8"))
@@ -54,11 +56,6 @@ def build(workspace: Path, checked: Path, publication: dict, attempt: str) -> Pa
         raise ValueError("正式回款身份及原始应收基线回读不一致")
     for ar, entry in expected.items():
         desired = {**entry, "ar": ar, "hexiao_date": plan.get("hexiao_date") or entry.get("hexiao_date") or ""}
-        prior = prior_allocations.get(ar)
-        # Legacy successful entries already prove the full allocation; commit
-        # preserves them rather than replacing them with a partial replay.
-        if prior is not None and "applied_cases" not in prior:
-            desired = prior
         if fallback_allocation_ledger.readback_payload(saved["parents"].get(ar, {})) != fallback_allocation_ledger.readback_payload(desired):
             raise ValueError("正式父回款分配台账回读不一致")
     written = publication["written"]
@@ -75,6 +72,8 @@ def build(workspace: Path, checked: Path, publication: dict, attempt: str) -> Pa
     rescan_holds.load_ledger(hold_path)
     payload = {
         "schema_version": "ar-formal-ledgers-v1", "publication": publication,
+        "decision_basis": "current_sources_and_selected_workbooks",
+        "historical_audit_files": historical_audit_files,
         "json_ledgers": {name: json.loads((ledger_dir / name).read_text(encoding="utf-8")) for name in names},
         "binary_ledgers": {hold_path.name: {
             "base64": base64.b64encode(hold_bytes).decode("ascii"),

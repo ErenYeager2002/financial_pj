@@ -87,25 +87,32 @@ def test_admin_stop_rechecks_after_session_lock(database,case,monkeypatch,change
     assert not calls
 
 
-def test_admin_stop_matches_real_manager_protocol_without_real_docker(database,case,monkeypatch,tmp_path):
+@pytest.mark.parametrize("identity_changed", [False, True])
+def test_admin_stop_matches_real_manager_protocol_without_real_docker(database,case,monkeypatch,tmp_path,identity_changed):
     import sys
     from pathlib import Path
     from app.pi_admin_session_service import stop_disabled_owner_session
     from app.scheduler import acquire_claim_lock
     from sqlalchemy import text
     sys.path.insert(0,str(Path(__file__).resolve().parents[2]/"deployment"))
-    from pi_runtime_manager import RuntimeManager
+    from pi_runtime_manager import RuntimeManager, RuntimeErrorWithStatus
     actor,owner,session=case
     manager=RuntimeManager(tmp_path/"runtime",tmp_path/"control","synthetic-unused")
     _,_,key=manager.identity(runtime.owner_scope(owner),session)
-    running=[True];commands=[]
+    running=[True];commands=[];container_id="a"*64
     def inspect(name):
         assert name=="financial-pi-"+key[:32]
-        return {"State":{"Running":running[0]},"Config":{"Labels":{"financial.pi.key":key,"financial.pi.owner":runtime.owner_scope(owner)}}}
+        return {"Id":container_id,"Name":"/"+name,"State":{"Running":running[0]},"Config":{"Labels":{"financial.pi.key":key,"financial.pi.owner":runtime.owner_scope(owner)}}}
+    def inspect_id(value):
+        assert value==container_id
+        info=inspect("financial-pi-"+key[:32])
+        if identity_changed:info["Config"]["Labels"]["financial.pi.owner"]="different-owner"
+        return info
     def docker(*args):
-        assert args==("stop","--time","10","financial-pi-"+key[:32])
+        assert args==("stop","--time","10",container_id)
         commands.append(args);running[0]=False
     monkeypatch.setattr(manager,"inspect",inspect)
+    monkeypatch.setattr(manager,"inspect_id",inspect_id)
     monkeypatch.setattr(manager,"docker",docker)
     monkeypatch.setattr(manager,"call",lambda *args:{})
     def dispatch(body):
@@ -116,8 +123,12 @@ def test_admin_stop_matches_real_manager_protocol_without_real_docker(database,c
             acquire_claim_lock(db)
         return manager.dispatch(body)
     monkeypatch.setattr(runtime,"_request_runtime",dispatch)
-    with Session(database) as db:assert stop_disabled_owner_session(db,actor,owner.user_id,session)["environment_running"] is False
-    assert len(commands)==1
+    with Session(database) as db:
+        if identity_changed:
+            with pytest.raises(RuntimeErrorWithStatus) as error:stop_disabled_owner_session(db,actor,owner.user_id,session)
+            assert error.value.status==409
+        else:assert stop_disabled_owner_session(db,actor,owner.user_id,session)["environment_running"] is False
+    assert len(commands)==(0 if identity_changed else 1)
 
 
 def test_admin_stop_http_contract_and_anonymous_rejection(database,case,monkeypatch):

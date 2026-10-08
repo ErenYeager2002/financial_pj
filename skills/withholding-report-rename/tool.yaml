@@ -2,7 +2,7 @@ schema_version: 1
 id: withholding-report-rename
 name: 代扣代缴申报表批量重命名
 version: 1.0.1
-status: published
+status: disabled
 category: 文件整理
 description: 识别申报表 PDF 内容并生成规范命名的副本，平台不会修改上传原件。
 ui:

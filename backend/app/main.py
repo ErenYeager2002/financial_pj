@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 from .audit_service import record_audit
 from .ar_execution_service import ArEvidencePage, ArExecutionRead, read_evidence_page, read_execution
 from .ar_execution_recovery import ArRecoveryRequest, recover_execution
+from .ar_abandon import AbandonRequest, abandon, abandonment_status
 from .ar_result_details import ArResultPage, read_result_page
 from .auth import UserContext, get_current_user, get_sse_user, require_admin
 from .auth_service import bootstrap_admin
@@ -1155,6 +1156,22 @@ def get_workflow_execution(
     user: UserContext = Depends(get_current_user),
 ) -> ArExecutionRead:
     return read_execution(get_workflow_or_404(db, workflow_id, user))
+
+
+@app.get("/api/workflows/{workflow_id}/execution/abandon")
+def read_abandonment_conditions(
+    workflow_id: str, db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> dict:
+    return abandonment_status(db, get_workflow_or_404(db, workflow_id, user))
+
+
+@app.post("/api/workflows/{workflow_id}/execution/abandon")
+def abandon_unpublished_result(
+    workflow_id: str, body: AbandonRequest, db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> dict:
+    return abandon(db, get_workflow_or_404(db, workflow_id, user), body, user)
 
 
 @app.post("/api/workflows/{workflow_id}/execution/recover", response_model=ArExecutionRead)

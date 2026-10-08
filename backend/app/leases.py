@@ -3,7 +3,7 @@ from __future__ import annotations
 import threading
 from contextlib import AbstractContextManager
 from datetime import UTC, datetime, timedelta
-from typing import Literal
+from typing import Callable, Literal
 
 from sqlalchemy import update, select, func
 
@@ -20,13 +20,22 @@ def lease_deadline(now: datetime | None = None) -> datetime:
 
 
 class LeaseHeartbeat(AbstractContextManager["LeaseHeartbeat"]):
-    def __init__(self, kind: LeaseKind, record_id: str, worker_id: str, *, attempt: int | None = None) -> None:
+    def __init__(
+        self,
+        kind: LeaseKind,
+        record_id: str,
+        worker_id: str,
+        *,
+        attempt: int | None = None,
+        on_lease_lost: Callable[[], None] | None = None,
+    ) -> None:
         self.attempt = attempt
         self.kind = kind
         self.record_id = record_id
         self.worker_id = worker_id
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        self._on_lease_lost = on_lease_lost
         self.lease_lost = False
 
     @property
@@ -64,6 +73,14 @@ class LeaseHeartbeat(AbstractContextManager["LeaseHeartbeat"]):
             try:
                 if not self._touch():
                     self.lease_lost = True
+                    callback = self._on_lease_lost
+                    if callback is not None:
+                        try:
+                            callback()
+                        except Exception:
+                            # The scheduler remains authoritative if cleanup
+                            # itself encounters a transient process error.
+                            pass
                     return
             except Exception:
                 # A transient heartbeat failure must not terminate the financial action.

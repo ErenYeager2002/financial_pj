@@ -76,22 +76,49 @@ def verify_flow(workspace: Path, baseline: Path, actual: Path, checked: dict) ->
     expected = proof / relative
     expected.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(before, expected)
+    group_materials = {}
+    for member in checked.get('skip', []):
+        if not member.get('flow_parent_group_proof'):
+            continue
+        name = Path(member.get('ledger_path') or '').name
+        if not name:
+            raise ValueError('父回款整组复核缺少年度材料引用')
+        source = (baseline / '02_我的表副本' / name).resolve(strict=True)
+        if not source.is_relative_to(baseline.resolve()):
+            raise ValueError('父回款整组年度材料超出固定基线')
+        if source not in group_materials:
+            group_materials[source] = digest(source)
+            destination = proof / '02_我的表副本' / name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination)
+            if digest(destination) != group_materials[source]:
+                raise ValueError('父回款整组复核材料复制不一致')
     flow = json.loads((workspace / "04_产出" / "流转写入计划_校验后.json").read_text(encoding="utf-8"))
     for phase in ("prefill", "status"):
         phase_plan = flow if phase == "prefill" else build_flow_plan.finalize_plan_after_ledger(flow, checked, workspace=proof)
         items = phase_plan.get("items") or []
-        if phase == "status" and (result.get("manual_items") != phase_plan.get("manual_items")
-                                  or result.get("manual_count") != len(phase_plan["manual_items"])):
-            raise ValueError("流转人工项目与固定基线的逐笔判定不一致")
         for item in items:
             if item.get("verdict") == "write":
                 resolved = apply_flow._resolve_flow_path(proof, item.get("file") or "")
                 if resolved is None or resolved.resolve() != expected.resolve():
                     raise ValueError("流转计划包含当前固定流转文件之外的目标")
         changes, problems = apply_flow.write_flow_items(proof, items, in_place=True, phase=phase)
+        if phase == "status":
+            expected_manual=phase_plan.get("manual_items") or []
+            basis=result.get("manual_row_basis")
+            if basis == "final_workbook_v1":
+                from execution_flow_stage import remap_manual_rows
+                expected_manual=remap_manual_rows(expected_manual,changes)
+            elif basis is not None:
+                raise ValueError("流转人工项目行号契约不支持")
+            if (result.get("manual_items") != expected_manual
+                    or result.get("manual_count") != len(expected_manual)):
+                raise ValueError("流转人工项目与固定基线的逐笔判定不一致")
         recorded = result.get("phases", {}).get(phase) or {}
         if problems or recorded.get("state") != "verified" or recorded.get("changed_count") != len(changes):
             raise ValueError("流转实际执行记录与固定计划不能相互核实")
+    if any(digest(source) != value for source, value in group_materials.items()):
+        raise ValueError('父回款整组复核期间固定材料发生变化')
     parts_checked = compare_parts(expected, actual)
     if digest(before) != before_hash or digest(actual) != actual_hash:
         raise ValueError("流转完整性核对期间材料发生变化")
@@ -188,17 +215,9 @@ def main(argv=None) -> int:
     (workspace / "04_产出" / "写后业务核对.json").write_text(
         json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8",
     )
-    # Classification may use the allocation ledger; prepare only the isolated
-    # review copy with the already verified execution, never the published ledger.
-    review = workspace / "execution-review"
-    if review.is_dir():
-        import fallback_allocation_ledger
-        try:
-            fallback_allocation_ledger.commit(review, plan)
-        except (ValueError, OSError) as exc:
-            raise ValueError(
-                "AR_REVIEW_ALLOCATION_FAILED: 工作簿回读已通过，复核副本分配记录登记失败；本日尚未发布"
-            ) from exc
+    # Current-workbook reclassification reads source and workbook facts only.
+    # The verified execution_rows above provide this run's physical evidence;
+    # do not turn old review journals into a prerequisite for that verification.
     print(json.dumps({"verified": True, "written_count": len(verified_cases)}))
     return 0
 

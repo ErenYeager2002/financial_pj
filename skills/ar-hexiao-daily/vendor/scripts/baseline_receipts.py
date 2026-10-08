@@ -215,6 +215,8 @@ def candidate(rec: dict, result: dict, ledger) -> dict | None:
 def combine(results: list[dict]) -> None:
     groups = {}
     for item in results:
+        if item.get("current_workbook_receipts"):
+            continue  # This group already has a reconstructed complete action chain.
         if (item.get("row_operation") or {}).get("type") == OPERATION:
             groups.setdefault(item["row_operation"]["group_key"], []).append(item)
     for members in groups.values():

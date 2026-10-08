@@ -569,6 +569,27 @@ class PlatformAdapter:
             temp=ROOT/('.env.deploy-'+uuid.uuid4().hex)
             with open(temp,'x',opener=lambda path,flags:os.open(path,flags,0o600)) as f:f.write(content)
             os.replace(temp,p)
+            # The current compose pins API and workers directly while the
+            # egress proxy reads BACKEND_IMAGE. Keep one immutable backend
+            # image across the whole backend plan instead of silently leaving
+            # API/workers on the previous digest.
+            if plan.image_key == 'BACKEND_IMAGE':
+                compose_path=ROOT/'compose.yaml'
+                compose_text=compose_path.read_text()
+                for service in plan.services:
+                    pattern=r'(?ms)(^  '+re.escape(service)+r':\n.*?^    image: )[^\n]+'
+                    compose_text, count = re.subn(
+                        pattern,
+                        lambda match: match.group(1)+self.image_id,
+                        compose_text,
+                        count=1,
+                    )
+                    if count != 1:
+                        raise DeploymentFailure('Backend service image declaration missing')
+                compose_temp=ROOT/('compose.deploy-'+uuid.uuid4().hex)
+                with open(compose_temp,'x',opener=lambda path,flags:os.open(path,flags,0o600)) as f:
+                    f.write(compose_text); f.flush(); os.fsync(f.fileno())
+                os.replace(compose_temp,compose_path)
         try:
             self.start_selected_services(plan)
         except subprocess.TimeoutExpired:
@@ -603,6 +624,21 @@ class PlatformAdapter:
         self.frontend_release = FrontendRelease.prepare(current,rollback.image_id)
         from maintenance_flow import PLANS
         self.cutover(PLANS['frontend'],rollback.image_id)
+        return True
+
+    def rollback_runtime(self, plan):
+        """Restore the exact pre-release compose/env pair for runtime plans."""
+        if self.release is None:
+            return False
+        compose_before=self.release/'compose.yaml.before'
+        env_before=self.release/'.env.before'
+        if not compose_before.is_file() or not env_before.is_file():
+            raise DeploymentFailure('Runtime rollback files are missing')
+        shutil.copy2(compose_before, ROOT/'compose.yaml')
+        shutil.copy2(env_before, ROOT/'.env')
+        os.chmod(ROOT/'compose.yaml', 0o600)
+        os.chmod(ROOT/'.env', 0o600)
+        self.start_selected_services(plan)
         return True
 
     def start_selected_services(self, plan):
@@ -691,6 +727,11 @@ class PlatformAdapter:
         return True
 
     def verify_recorded_image_pair(self):
+        # A historical schema migration record must not block an ordinary
+        # backend/tool deployment. Pair validation is required only while a
+        # schema-coordinated Agent switch is actually in progress.
+        if self.schema_agent_identity is None and self.expected_schema_image is None:
+            return
         path = self.directory/'schema-migration.json'
         if not path.exists():
             return

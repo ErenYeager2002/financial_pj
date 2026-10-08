@@ -24,6 +24,7 @@ import common
 import xlsx_patch
 import workbook_finalize
 import flow_completion
+import flow_parent_net
 
 SCHEMA = 'receipt-monthly-v2'
 PART = 'customXml/financialReceiptMonthly.xml'
@@ -108,6 +109,13 @@ def checked_receipt_proof(row, ledger_rows, day, parents):
     """Attach receipt-specific evidence without changing the ledger disposition."""
     if (row.get('_check') or {}).get('verdict') != 'skip':
         return {}
+    import current_workbook_receipts as CWR
+    if row.get('current_workbook_receipts') and CWR.check(row, ledger_rows).get('verdict') == 'skip':
+        records = row['current_workbook_receipts']['records']
+        posting = common.norm_date(day)
+        if posting and all(common.norm_date(r.get('hexiao_date')) == posting for r in records):
+            return {'basis':'current_workbook_receipt','ar':row['ar'],'so':row['so'],'sod':row['sod'],
+                    'date':posting.isoformat(),'amount':number(actual_amount(row))}
     import ordinary_receipt_identity as OI
     if row.get('ordinary_receipt_proof') and (OI.check(row, ledger_rows) or {}).get('verdict') == 'skip':
         posting = common.norm_date(day)
@@ -158,7 +166,7 @@ def checked_receipt_proof(row, ledger_rows, day, parents):
 def valid_receipt_proof(row, date):
     proof=row.get('flow_receipt_proof') or {}
     try:
-        return (proof.get('basis') in {'published_parent_case','current_material_parent_case','current_receipt_group_case','registered_source_event'}
+        return (proof.get('basis') in {'current_parent_receipt_group','current_workbook_receipt','published_parent_case','current_material_parent_case','current_receipt_group_case','registered_source_event'}
                 and all(proof.get(k)==row.get(k) for k in ('ar','so','sod'))
                 and proof.get('date')==date.isoformat() and money(proof.get('amount'))==actual_amount(row))
     except ValueError:
@@ -197,10 +205,34 @@ def complete_current_history(item, checked, rows, entries, require_existing):
     ar=item.get('ar')
     if any(r.get('ar')==ar for r in checked.get('conflict',[])):return None
     try:
-        current=[r for kind in ('write','skip') for r in checked.get(kind,[]) if r.get('ar')==ar]
-        positive={r['case_id'] for r in current if actual_amount(r)>0}
-        if positive != {e['case_id'] for e in entries}:return None
+        # Compare verified SOD amounts and SO source amounts at the same scope.
+        # The rows argument has already excluded unproved skip records.
+        current=[r for _,r in rows if r.get('ar')==ar]
+        verified={};seen=set()
+        import flow_source_receipts
+        for row in current:
+            source=row.get('split_payment_source') or {}
+            identity=(row['case_id'],json.dumps(source.get('writeoff_sequence_key'),sort_keys=True))
+            if identity in seen:return None
+            seen.add(identity)
+            audit=row.get('write_currency_audit') or {}
+            amount=flow_source_receipts.flow_amount(item,audit.get('amount_orig'),actual_amount(row),audit.get('currency') or '')
+            if amount<0:return None
+            if amount:
+                so=str(row.get('so') or '').strip().upper()
+                if not so:return None
+                verified[so]=verified.get(so,Decimal(0))+amount
+        planned={};keys=set()
         all_cases={r['case_id'] for r in current}
+        for entry in entries:
+            so=str(entry.get('so') or '').strip().upper()
+            if (not so or entry['key'] in keys or common.norm_date(entry['date'])!=common.norm_date(checked['hexiao_date'])
+                    or entry['case_id'] not in all_cases | {ar+'|'+so}):return None
+            keys.add(entry['key'])
+            amount=money(entry['amount'])
+            if amount<=0:return None
+            planned[so]=planned.get(so,Decimal(0))+amount
+        if verified!=planned:return None
         if any(any(b not in ('auto','ready') for b in outcome.get('buckets',[]))
                or not set(outcome.get('case_ids',[])).issubset(all_cases)
                for outcome in item.get('so_outcomes',[])):return None
@@ -209,6 +241,44 @@ def complete_current_history(item, checked, rows, entries, require_existing):
         return {'date':checked['hexiao_date'],'opening':number(opening),'entries':copy.deepcopy(entries),
                 'known_sos':sorted({str(so).upper() for so in item.get('so_list',[])})}
     except (ValueError,KeyError,TypeError):
+        return None
+
+
+def current_source_balance_candidate(item, entries, date):
+    """Carry this run's source evidence to legacy row/balance reconciliation."""
+    sources = item.get('source_receipts') or []
+    # allocations validates every source (including zero amounts), then returns
+    # positive deductions. Compare that projection, not raw source row counts.
+    import flow_source_receipts
+    try:
+        expected=flow_source_receipts.allocations(item,date)
+        if (not entries or len(entries)!=len(expected)
+                or len({e['key'] for e in entries})!=len(entries)
+                or {e['key']:e for e in entries}!={e['key']:e for e in expected}):
+            return None
+    except (ValueError,KeyError,TypeError):
+        return None
+    sos = [str(e.get('so') or '').strip().upper() for e in entries]
+    if not all(sos) or len(sos) != len(set(sos)):
+        return None
+    foreign = [source for source in sources if not common.is_cny(source.get('currency') or '')]
+    if foreign:
+        if len(foreign) != len(sources):
+            return None
+        import flow_source_receipts
+        try:
+            original, _rate = flow_source_receipts.fx_basis(item)
+            if sum((flow_source_receipts.flow_original(item, source.get('amount_orig')) for source in sources), Decimal(0)) > original:
+                return None
+        except ValueError:
+            return None
+    try:
+        opening = money((item.get('identity') or {}).get('amount'))
+        if opening <= 0 or any(money(e['amount']) <= 0 or e['date'] != date.isoformat() for e in entries):
+            return None
+        return {'basis':'current_source_reconcile', 'date':date.isoformat(),
+                'opening':number(opening), 'entries':copy.deepcopy(entries), 'known_sos':sorted(sos)}
+    except (KeyError, TypeError, ValueError):
         return None
 
 
@@ -243,6 +313,7 @@ def finalize(items, checked):
                 if not proved:
                     continue
             by_ar.setdefault(row.get('ar'), []).append((kind,row))
+    import flow_source_receipts
     for item in items:
         if item.get('monthly_schema') != SCHEMA or item.get('verdict') != 'write':
             continue
@@ -252,14 +323,20 @@ def finalize(items, checked):
         entries = {}
         deliveries = {}
         try:
+            parent_net = flow_parent_net.bind(item, date)
+            if parent_net:
+                item.update(monthly_entries=[parent_net], monthly_deliveries={}, monthly_require_existing=[],
+                            source_allocation=True, monthly_receipt_history=flow_parent_net.history(parent_net))
+                continue
             require_existing=[]
             for kind,row in by_ar.get(item.get('ar'), []):
                 if row.get('bucket') not in ('auto', 'ready'):
                     continue
                 currency = (row.get('write_currency_audit') or {}).get('currency') or ''
-                if currency and not common.is_cny(currency) and '原币公式' not in item.get('matched_by', ''):
-                    raise ValueError('外币流转缺少本币金额依据，不能混用原币余额与本币核销额')
-                amount = actual_amount(row)
+                local_amount = actual_amount(row)
+                amount = flow_source_receipts.flow_amount(
+                    item, (row.get('write_currency_audit') or {}).get('amount_orig'),
+                    local_amount, currency)
                 if amount == 0:
                     continue
                 if amount < 0:
@@ -294,7 +371,9 @@ def finalize(items, checked):
             item['monthly_deliveries'] = deliveries
             item['monthly_require_existing'] = require_existing
             item['monthly_receipt_history'] = (complete_parent_history(item.get('ar'),checked,by_ar.get(item.get('ar'),[]),list(entries.values()))
-                or complete_current_history(item,checked,by_ar.get(item.get('ar'),[]),list(entries.values()),require_existing))
+                or complete_current_history(item,checked,by_ar.get(item.get('ar'),[]),list(entries.values()),require_existing)
+                or flow_source_receipts.balance_history(item,source_entries,date)
+                or current_source_balance_candidate(item,list(entries.values()),date))
             if not entries:
                 outcomes = item.get('so_outcomes') or []
                 pending = (outcomes and all(o.get('codes') and set(o['codes']) <= {'E2','E3'}
@@ -423,10 +502,19 @@ def parsed_balance(raw):
     if raw is None or str(raw).strip()=='':return {'blank':True}
     if not isinstance(raw,str):return {'remaining':money(raw)}
     text=str(raw).strip().replace('－','-').replace('＝','=')
+    # Some hand-entered balances explicitly add a proved credit before the
+    # first deduction. Accept only the fully checked arithmetic form.
+    text=re.sub(r'^.*?算预付还剩\s*[：:]\s*','',text)
     text=re.sub(r'^\s*(?:还剩|剩余|余额|预付)\s*[：:]?\s*','',text)
     text=re.sub(r'[，,;；\s]*转(?:\d+月)?\s*$','',text).strip()
     if re.fullmatch(BALANCE_NUMBER,text):return {'remaining':money(text)}
     excel=text.startswith('=');text=text[1:] if excel else text
+    credit=Decimal(0)
+    addition=re.match(r'^('+BALANCE_NUMBER+r')\+('+BALANCE_NUMBER+r')=('+BALANCE_NUMBER+r')(?=-|=|$)',text)
+    if addition:
+        original,credit,opening=(money(part) for part in addition.groups())
+        if original+credit!=opening:raise ValueError('已有预收加项与中间结果不一致')
+        text=text[addition.start(3):]
     if not re.fullmatch(BALANCE_NUMBER+r'(?:-'+BALANCE_NUMBER+r')*(?:='+BALANCE_NUMBER+r'(?:-'+BALANCE_NUMBER+r')*)*',text):
         if re.fullmatch(r'核销在\s*\d+\s*月',text):return {'remark':str(raw)}
         raise ValueError('预收内容无法解析为数字扣减算式，需核实原始内容')
@@ -438,18 +526,70 @@ def parsed_balance(raw):
         deductions.extend(nums[1:]);remaining-=sum(nums[1:],Decimal(0))
     if not excel and len(segments)==1 and deductions:
         raise ValueError('预收数字减法缺少等式结果')
-    return {'opening':first[0],'deductions':deductions,'remaining':remaining}
+    return {'opening':first[0],'credit':credit,'deductions':deductions,'remaining':remaining}
 
 
 def legacy_period_opening(form, amount, parsed):
-    """Old carry rows display the first period deduction, not the opening."""
+    """Old carry amounts may be a grouped prefix of expanded deductions."""
     deductions = parsed.get('deductions') or []
     opening = parsed.get('opening')
+    prefix_totals=[];running=Decimal(0)
+    for deduction in deductions:
+        running+=deduction;prefix_totals.append(running)
     if (str(form or '').strip() == '冲预收' and opening is not None
-            and deductions and amount == deductions[0]
+            and deductions and all(n>0 for n in deductions) and amount in prefix_totals
             and opening > amount and parsed['remaining'] >= 0):
         return opening
     return None
+
+
+def current_source_balance_matches(text, history):
+    """SO text is only a hint; require complete, one-to-one source coverage."""
+    if not history:
+        return False
+    entries=history.get('entries') or []
+    sources=[so for e in entries for so in flow_parent_net.members(e)]
+    shown=[so.upper() for so in SO.findall(text)]
+    keys=[str(e.get('key') or '') for e in entries]
+    return (bool(sources) and all(sources) and len(keys)==len(set(keys))
+            and all(key.startswith(('source|', flow_parent_net.PREFIX)) for key in keys)
+            and set(sources)==set(shown))
+
+
+def unresolved_existing_receipt_reason(chain, item, new, *, diagnostics=()):
+    """Explain the failed current-table proof without inventing an allocation."""
+    overlaps=sorted({str(e['so']).strip().upper() for e in new} & {
+        str(so).strip().upper() for m in chain['months'] for so in m.get('legacy_sos',[])})
+    rows=','.join(str(m['row']) for m in chain['months'])
+    reason=f"流转行{rows}已出现本次单号{','.join(overlaps)}，当前证据未能确认对应扣款"
+    history=item.get('monthly_receipt_history')
+    if len(chain['months'])==1 and history and history.get('basis')=='current_source_reconcile':
+        month=chain['months'][0]
+        if money(history.get('opening'))==money(month['start']):
+            total=sum((money(e['amount']) for e in history.get('entries',[])),Decimal(0))
+            candidate=money(month['start'])-total
+            remaining=money(month['remaining'])
+            reason+=(f"；到账{money(month['start']):.2f}元，当前来源核销合计{total:.2f}元，"
+                     f"两者相减为{candidate:.2f}元，表内预收{remaining:.2f}元，"
+                     f"差额{candidate-remaining:.2f}元")
+    if diagnostics:
+        reason+='；当前表重新核对失败：'+'；'.join(dict.fromkeys(diagnostics))
+    return reason+'；保留原预收，不重复扣减；需核对已扣明细、跨月承接及差额依据'
+
+
+def whole_single_parent_history(history):
+    """An audited whole receipt with one SO has an explicit parent amount."""
+    try:
+        entries = history.get('entries') or []
+        if len(entries) != 1:return False
+        entry = entries[0]
+        if not entry['key'].startswith('source|'):return False
+        identity = json.loads(entry['key'].split('|', 1)[1])
+        return (identity[1] == entry['so'] and identity[2] == entry['date']
+                and identity[3][0] == 'SINGLE_ORDER_PARENT|' + identity[0] + '|' + identity[1]
+                and money(entry['amount']) > 0)
+    except (ValueError, KeyError, TypeError, IndexError):
+        return False
 
 
 def legacy_month(ws, row, cols, history=None, original_order=None):
@@ -464,21 +604,70 @@ def legacy_month(ws, row, cols, history=None, original_order=None):
     deductions=[]
     recovered=False
     relocate=False
+    source_match=current_source_balance_matches(text,history)
+    if history and history.get('parent_net'):
+        shown={so.upper() for so in SO.findall(text)}
+        unknown=shown-set(history['known_sos'])
+        if unknown:
+            raise ValueError('整笔净到账来源未覆盖表内已有单号：'+','.join(sorted(unknown))+'；保留原记录，需核实单号归属')
+        if raw not in (None,''):
+            parsed=parsed_balance(raw)
+            if parsed.get('remaining') == 0 and not source_match:
+                raise ValueError('预收已扣完但单号未完整对应，不能再次按整笔净到账扣减')
+    balance_note=''
+    tolerance_note={}
+    note_match=re.fullmatch(r'核销在\s*(1[0-2]|[1-9])月',str(raw or '').strip())
+    if (note_match and source_match and (history.get('fetched_history') or whole_single_parent_history(history))
+            and history.get('basis')=='current_source_reconcile'
+            and money(history.get('opening'))==start
+            and all(e['date']>=date.isoformat() for e in history['entries'])
+            and sum((money(e['amount']) for e in history['entries']),Decimal(0))==start):
+        # A month-only note contains no balance. Complete audited events take
+        # precedence for the posting date; retain the note in execution evidence.
+        balance_note=str(raw)
+        raw=None
+    source_complete=bool(history and history.get('basis')=='current_source_reconcile'
+                         and sum((money(e['amount']) for e in history['entries']),Decimal(0))==start)
+    blank_coverage=bool(source_match and history.get('fetched_history')
+        and history.get('basis')=='current_source_reconcile'
+        and all(e['date']>=date.isoformat() for e in history['entries'])
+        and 0<=sum((money(e['amount']) for e in history['entries']),Decimal(0))<=start)
     if raw is None or raw=='':
         if SO.search(text):
+            shown={so.upper() for so in SO.findall(text)}
             if (history and money(history['opening'])==start
                     and common.norm_date(history['date'])>=date
-                    and {so.upper() for so in SO.findall(text)}.issubset(history['known_sos'])):
+                    and (source_complete or blank_coverage or history.get('_complete_row_coverage')
+                         or shown.issubset(history['known_sos']))
+                    and (history.get('basis')!='current_source_reconcile' or source_complete
+                         or blank_coverage or history.get('_complete_row_coverage'))):
                 recovered=common.norm_date(history['date']).strftime('%Y-%m')==date.strftime('%Y-%m')
-                relocate=not recovered
+                # Keep unrelated pre-existing delivery notes on the original row.
+                relocate=not recovered and (not source_complete or source_match)
                 deductions=[money(e['amount']) for e in history['entries']] if recovered else []
             else:
-                raise ValueError('预收为空且已有SO，缺少实际历史核销记录；单号交付额不能推算余额')
+                if history and history.get('basis')=='current_source_reconcile':
+                    confirmed=sum((money(e['amount']) for e in history.get('entries',[])),Decimal(0))
+                    source_sos={str(e.get('so') or '').strip().upper() for e in history.get('entries',[])}
+                    unmatched=sorted(shown-source_sos)
+                    suffix=('；表内已有以下单号，但当前来源未覆盖其可核实的核销金额：'+','.join(unmatched)) if unmatched else ''
+                    raise ValueError(
+                        f'预收为空，当前证据不足以确认原余额：到账{start:.2f}元，'
+                        f'已确认核销{confirmed:.2f}元，差额{start-confirmed:.2f}元'
+                        +suffix+'；保留原预收，不按单号格中的交付额扣减')
+                raise ValueError('预收为空且已有SO，当前来源未提供可核实的逐笔核销金额；单号交付额不能推算余额')
         remaining=start-sum(deductions,Decimal(0))
     else:
         parsed = parsed_balance(raw)
         if 'remaining' not in parsed:
             raise ValueError('预收仅有备注，缺少可核实的余额')
+        import flow_balance_tolerance
+        adjusted=flow_balance_tolerance.opening_adjustment(
+            value(ws,row,cols,'收款形式'),start,parsed,history,text,date)
+        if adjusted is not None:
+            tolerance_note={'kind':'current_source_opening','displayed_amount':number(start),
+                            'verified_opening':number(adjusted),'difference':number(adjusted-start)}
+            start=adjusted
         period_opening = legacy_period_opening(value(ws,row,cols,'收款形式'), start, parsed)
         if period_opening is not None:
             start = period_opening
@@ -486,11 +675,36 @@ def legacy_month(ws, row, cols, history=None, original_order=None):
         deductions = list(parsed.get('deductions', [start - remaining]))
         if 'opening' in parsed:
             if parsed['opening'] > start:
-                raise ValueError('已有预收算式起始金额超过到账金额')
+                if parsed.get('credit') and start+parsed['credit']==parsed['opening']:
+                    start=parsed['opening']
+                else:
+                    raise ValueError('已有预收算式起始金额超过到账金额')
             # A running balance may omit earlier deductions. Its current balance
             # proves the aggregate already used, never any particular SO amount.
             if parsed['opening'] < start:
                 deductions.insert(0, start - parsed['opening'])
+        adjusted=flow_balance_tolerance.balance_adjustment(start,remaining,history,text,date)
+        if adjusted is not None:
+            tolerance_note={'kind':'current_source_balance','previous_balance':number(remaining),
+                            'verified_balance':number(adjusted),'difference':number(adjusted-remaining)}
+            remaining=adjusted
+        source_exact=(source_match and (money(history['opening'])==start or bool(tolerance_note))
+                and sum((money(e['amount']) for e in history['entries']),Decimal(0))==start-remaining)
+        if source_exact:
+            if common.norm_date(history['date']).strftime('%Y-%m')==date.strftime('%Y-%m'):
+                recovered=True
+            elif (history.get('basis')=='current_source_reconcile'
+                    and common.norm_date(history['date']).strftime('%Y-%m')>date.strftime('%Y-%m')
+                    and all(e['date'][:7]==history['date'][:7] for e in history['entries'])
+                    and not re.search(r'转[0-9]{1,2}月',text)):
+                # Move the exact old deduction to the source posting month.
+                relocate=True
+                remaining=start
+                deductions=[]
+    # A legacy period amount is not its opening. Re-evaluate completeness
+    # after restoring the actual opening, or later anonymous SOs disappear.
+    source_complete=bool(history and history.get('basis')=='current_source_reconcile'
+                         and sum((money(e['amount']) for e in history['entries']),Decimal(0))==start)
     if remaining<0 or remaining>start or any(x<0 for x in deductions):
         raise ValueError('预收余额超出该行可用金额')
     # The order cell contains delivery amounts only. Prior deductions come solely
@@ -498,6 +712,54 @@ def legacy_month(ws, row, cols, history=None, original_order=None):
     entries=[{'key':'legacy:'+str(row)+':'+str(i),'date':date.isoformat(),'so':'',
               'amount':number(amount),'basis':'existing_balance'} for i,amount in enumerate(deductions) if amount]
     if recovered:entries=copy.deepcopy(history['entries'])
+    adopted_sos=set()
+    if not recovered and not relocate and history:
+        import flow_current_carry
+        current=flow_current_carry.source_prefix(
+            flow_current_carry.row_facts(ws,cols,row,start),history)
+        if current:
+            entries=current['entries']+[
+                {'key':f'legacy:{row}:tail:{i}','date':date.isoformat(),'so':'',
+                 'amount':number(amount),'basis':'existing_balance'}
+                for i,amount in enumerate(current['tail'])]
+            adopted_sos.update(e['so'].upper() for e in current['entries'])
+    # A shortened running expression explicitly separates its omitted prefix
+    # from later deductions. Bind only that exact source group; leave the later
+    # deductions anonymous and unchanged until their own sources are available.
+    if (not recovered and not relocate and raw not in (None,'') and history
+            and history.get('basis')=='current_source_reconcile'
+            and common.norm_date(history.get('date')).strftime('%Y-%m')==date.strftime('%Y-%m')
+            and money(history['opening'])==start and parsed.get('opening') is not None
+            and parsed['opening']<start and entries):
+        sources=history.get('entries') or []
+        source_sos={str(e.get('so') or '').upper() for e in sources}
+        shown=[so.upper() for so in SO.findall(text)]
+        total=sum((money(e['amount']) for e in sources),Decimal(0))
+        if (source_sos and '' not in source_sos and source_sos<set(shown)
+                and len(shown)==len(set(shown))
+                and current_source_balance_matches(' '.join(sorted(source_sos)),history)
+                and total==start-parsed['opening']
+                and entries[0]['key'].startswith('legacy:') and money(entries[0]['amount'])==total):
+            entries=copy.deepcopy(sources)+entries[1:]
+            adopted_sos.update(source_sos)
+    # A visible deduction can carry its current source identity without a
+    # second subtraction. Require a unique amount and an explicit SO tie.
+    if (not recovered and history and history.get('basis')=='current_source_reconcile'
+            and common.norm_date(history.get('date')).strftime('%Y-%m')==date.strftime('%Y-%m')
+            and len(history.get('entries') or [])==1):
+        source=history['entries'][0]
+        so=str(source.get('so') or '').upper()
+        shown=[value.upper() for value in SO.findall(text)]
+        candidates=[i for i,e in enumerate(entries)
+                    if e['key'].startswith('legacy:') and money(e['amount'])==money(source['amount'])]
+        explicit=bool(so and shown.count(so)==1 and len(candidates)==1)
+        if explicit and len(shown)>1:
+            tail=text.upper().split(so,1)[1].split('SO',1)[0]
+            amounts=re.findall(r'(?<![\d.])\d+(?:\.\d{1,2})?(?![\d.])',tail.replace(',',''))
+            explicit=any(money(token)==money(source['amount']) for token in amounts)
+        if explicit:
+            entries[candidates[0]]=copy.deepcopy(source)
+            adopted_sos.add(so)
     prefix_lines=[line for line in text.splitlines() if not SO.search(line) and not re.search(r'转\d+月',line)]
     prefix='\n'.join(prefix_lines).strip()
     if not prefix:
@@ -505,14 +767,52 @@ def legacy_month(ws, row, cols, history=None, original_order=None):
         if match:prefix=match.group(1)
     return {'month':date.strftime('%Y-%m'),'date':date.isoformat(),'row':row,'start':number(start),
             'remaining':number(remaining),'entries':entries,'prefix':prefix,'signature':signature(ws,row,cols),
-            'legacy_sos':[] if recovered or relocate else sorted({so.upper() for so in SO.findall(text)}),
+            'legacy_sos':[] if recovered or relocate or source_complete else sorted({so.upper() for so in SO.findall(text)}-adopted_sos),
             'display_original':prefix if relocate else display, 'display_amounts':{},
-            '_repair_balance':recovered, '_relocate_display':relocate}
+            'moved_display_sos':history.get('_moved_display_sos',[]) if recovered else [],
+            '_repair_balance':recovered, '_relocate_display':relocate,
+            '_relocate_balance':relocate and (raw not in (None,'') or bool(balance_note)),
+            '_balance_note':balance_note, '_tolerance_note':tolerance_note,
+            '_relocate_entries':copy.deepcopy(history['entries']) if relocate else []}
+
+
+def source_history_for_row(ws, row, cols, item):
+    history=item.get('monthly_receipt_history')
+    date=common.norm_date(value(ws,row,cols,'日期'))
+    if history and 'periods' in history:
+        period=history['periods'].get(date.strftime('%Y-%m')) if date else None
+        # Prove coverage against the complete fetched parent before selecting
+        # this month's deductions. Later deductions must all be this operation's
+        # entries: otherwise rebuilding would silently omit an intermediate day.
+        text=item.get('_order_before_prefill',str(value(ws,row,cols,'单号') or ''))
+        if (period and history.get('fetched_history') and history.get('basis')=='current_source_reconcile'
+                and value(ws,row,cols,'预收') in (None,'')
+                and money(history['opening'])==money(value(ws,row,cols,'金额'))
+                and date.strftime('%Y-%m')==min(history['periods'])
+                and current_source_balance_matches(text,history)):
+            later=[e for e in history['entries'] if e['date'][:7]>date.strftime('%Y-%m')]
+            wanted={e['key']:e for e in item.get('monthly_entries') or []}
+            if (later and all(wanted.get(e['key'])==e for e in later)
+                    and all(e['date']>=date.isoformat() for e in history['entries'])
+                    and money(history['opening'])>=sum((money(e['amount']) for e in history['entries']),Decimal(0))):
+                period=copy.deepcopy(period)
+                period['_complete_row_coverage']=True
+                period['_moved_display_sos']=sorted({e['so'] for e in later}-{e['so'] for e in period['entries']})
+        return period
+    return history
 
 
 def adopt_chain(ws, cols, item):
-    row=int(item['row_no']);first=legacy_month(ws,row,cols,item.get('monthly_receipt_history'),item.get('_order_before_prefill'))
+    row=int(item['row_no']);first=legacy_month(ws,row,cols,source_history_for_row(ws,row,cols,item),item.get('_order_before_prefill'))
     chain={'sheet':ws.title,'months':[first]};payer=first['signature'][1];known={row}
+    history=item.get('monthly_receipt_history') or {}
+    closed_source_sos=set()
+    original=item.get('_order_before_prefill',str(value(ws,row,cols,'单号') or ''))
+    if (history.get('fetched_history') and history.get('basis')=='current_source_reconcile'
+            and money(history.get('opening'))==money(first['start'])
+            and current_source_balance_matches(original,history)
+            and sum((money(e['amount']) for e in history['entries']),Decimal(0))==money(first['start'])):
+        closed_source_sos={e['so'].upper() for e in history['entries']}
     while money(chain['months'][-1]['remaining'])>0:
         previous=chain['months'][-1]
         marker=re.search(r'转([0-9]{1,2})月',str(value(ws,row,cols,'单号') or '')+' '+str(value(ws,row,cols,'预收') or ''))
@@ -525,12 +825,31 @@ def adopt_chain(ws, cols, item):
         candidates=[]
         for r in range(1,ws.max_row+1):
             if r in known or str(value(ws,r,cols,'收款形式') or '').strip()!='冲预收':continue
-            if str(value(ws,r,cols,'公司名称') or '').strip()!=payer:continue
+            candidate_payer=str(value(ws,r,cols,'公司名称') or '').strip()
             day=common.norm_date(value(ws,r,cols,'日期'))
             if not day or day.strftime('%Y-%m')<=previous['month']:continue
             if target_month and day.strftime('%Y-%m')!=target_month:continue
+            shown_sos={so.upper() for so in SO.findall(str(value(ws,r,cols,'单号') or ''))}
+            if closed_source_sos and shown_sos and closed_source_sos.isdisjoint(shown_sos):
+                # Complete current-source deductions exhaust this receipt. A
+                # different order's later balance cannot belong to this chain.
+                continue
             try:amount=money(value(ws,r,cols,'金额'))
             except ValueError:continue
+            if candidate_payer!=payer:
+                # A subsidiary/parent name is allowed only with a unique,
+                # current SO deduction on this exact posting date.
+                from flow_ledger import name_similar
+                source=[e for e in item.get('monthly_entries') or [] if e['key'].startswith('source|')]
+                if not name_similar(candidate_payer,payer) or len(source)!=1 or day.isoformat()!=source[0]['date']:
+                    continue
+                shown=[so.upper() for so in SO.findall(str(value(ws,r,cols,'单号') or ''))]
+                if shown!=[source[0]['so'].upper()]:continue
+                try:
+                    parsed=parsed_balance(value(ws,r,cols,'预收'))
+                    opening=legacy_period_opening(value(ws,r,cols,'收款形式'),amount,parsed) or amount
+                    if opening-parsed['remaining']!=money(source[0]['amount']):continue
+                except (ValueError,KeyError):continue
             if amount==money(previous['remaining']):
                 candidates.append(r)
             elif target_month:
@@ -540,13 +859,74 @@ def adopt_chain(ws, cols, item):
                 except ValueError:
                     continue
                 if opening==money(previous['remaining']):candidates.append(r)
-        if len(candidates)>1:raise ValueError('同名、承接月份与余额存在多个候选，不能唯一确定结转行')
+        carry_alternates=[]
+        if len(candidates)>1:
+            import flow_current_carry
+            chosen=flow_current_carry.choose(ws,cols,candidates,item,previous['remaining'])
+            if chosen:
+                selected,carry_alternates=chosen
+                candidates=[selected]
+        if len(candidates)>1:
+            details=[]
+            for candidate_row in candidates[:8]:
+                candidate_day=common.norm_date(value(ws,candidate_row,cols,'日期'))
+                details.append(
+                    f"第{candidate_row}行：日期{candidate_day.isoformat()}，"
+                    f"金额{value(ws,candidate_row,cols,'金额')}，"
+                    f"单号[{str(value(ws,candidate_row,cols,'单号') or '').strip()}]，"
+                    f"预收[{str(value(ws,candidate_row,cols,'预收') or '').strip()}]")
+            raise ValueError(
+                f"同名、承接月份与余额存在{len(candidates)}个候选，不能唯一确定结转行；"
+                f"本日写入前工作表[{ws.title}]，上期余额{previous['remaining']}；"
+                + '；'.join(details)
+                + ('；其余候选未展开' if len(candidates)>8 else ''))
         if not candidates:
             if marker:raise ValueError('原行标记已转月，但缺少可核实承接行')
             break
-        row=candidates[0];following=legacy_month(ws,row,cols)
+        row=candidates[0]
+        source_history=source_history_for_row(ws,row,cols,item)
+        if (not source_history or common.norm_date(source_history.get('date')).strftime('%Y-%m')
+                !=common.norm_date(value(ws,row,cols,'日期')).strftime('%Y-%m')):
+            source_history=None
+        following=legacy_month(ws,row,cols,source_history)
+        if carry_alternates:following['_current_carry_alternates']=carry_alternates
         chain['months'].append(following);known.add(row)
     return chain
+
+
+def refresh_current_chain(ws, cols, item, chain, *, diagnostics=None):
+    """Enrich anonymous deductions from current evidence without changing money."""
+    if not item.get('monthly_receipt_history') or not any(
+            e['key'].startswith('legacy:') for m in chain['months'] for e in m['entries']):
+        return chain
+    try:
+        candidate=adopt_chain(ws,cols,item)
+    except ValueError as error:
+        # Keep the existing write safety decision, but do not hide why the
+        # visible workbook could not substantiate its stored carry chain.
+        if diagnostics is not None:diagnostics.append(str(error))
+        return chain
+    if len(candidate['months'])!=len(chain['months']):return chain
+    for old,new in zip(chain['months'],candidate['months']):
+        if (old['row'] in new.get('_current_carry_alternates',[])
+                and old['month']==new['month'] and money(old['start'])==money(new['start'])):
+            # Current visible arithmetic and fetched source events proved the
+            # cumulative row; stored event metadata cannot override that proof.
+            # The alternate worksheet row itself is never edited or deleted.
+            continue
+        tolerant=bool(new.get('_tolerance_note'))
+        fields=('row','date','month','start','signature') if tolerant else ('row','date','month','start','remaining','signature')
+        if any(old.get(k)!=new.get(k) for k in fields):
+            return chain
+        newer={e['key']:e for e in new['entries']}
+        # A current proof may identify old anonymous totals; it cannot erase
+        # or revise any already confirmed event from this same workbook.
+        if any(newer.get(e['key'])!=e for e in old['entries'] if not e['key'].startswith('legacy:')):
+            return chain
+        if not tolerant and balance(new['start'],new['entries'])!=money(old['remaining']):return chain
+        if old['entries']==new['entries']:
+            new['_repair_balance']=False
+    return candidate
 
 
 def order_text(month):
@@ -557,15 +937,33 @@ def order_text(month):
         if entry.get('so'):
             key = (entry['date'], entry['so'])
             amounts[key] = amounts.get(key, Decimal(0)) + money(entry['amount'])
-    known = {so for _, so in amounts}
+    groups = [e for e in month['entries'] if e['key'].startswith(flow_parent_net.PREFIX)]
+    known = {so for _, so in amounts} | {so for e in groups for so in e['so_list']} | set(month.get('moved_display_sos',[]))
     existing = month.get('display_original', month.get('prefix', ''))
-    lines = [line for line in existing.splitlines()
-             if not any(so.upper() in known for so in SO.findall(line))]
+    lines = []
+    for line in existing.splitlines():
+        if groups and line.startswith('本次整笔净到账核销合计 '):continue
+        matches=list(SO.finditer(line))
+        if not any(match.group().upper() in known for match in matches):
+            lines.append(line)
+            continue
+        # Mixed lines may contain another SO whose deduction is not owned by
+        # this plan. Replacing known amounts must not erase that SO or its text.
+        leading=line[:matches[0].start()].strip()
+        if leading:lines.append(leading)
+        for i,match in enumerate(matches):
+            if match.group().upper() not in known:
+                end=matches[i+1].start() if i+1<len(matches) else len(line)
+                lines.append(line[match.start():end].strip())
     prefix = month.get('prefix', '').strip()
+    if groups:
+        prefix = '\n'.join(line for line in prefix.splitlines() if not line.startswith('本次整笔净到账核销合计 '))
     if prefix and prefix not in lines:
         lines.insert(0, prefix)
     # Legacy values without event attribution are preserved, never deducted.
     lines += [f"{so}  {amount:,.2f}" for (_, so), amount in amounts.items()]
+    for group in groups:
+        lines += list(group['so_list']) + [f"本次整笔净到账核销合计 {money(group['amount']):,.2f}（未按SO分摊）"]
     return '\n'.join(lines).strip()
 
 
@@ -671,6 +1069,69 @@ def update_filter_names(path, sheet, sources):
         for info in infos:z.writestr(info,payload[info.filename])
 
 
+def _rollup_so_status(visible_sos, recorded, old_colors, previous_status, outcomes, replay=False):
+    """Combine this date's checks with already registered SOs on the same AR."""
+    visible = {str(so).strip().upper() for so in visible_sos if str(so).strip()}
+    current_full = {str(o.get('so')).strip().upper() for o in outcomes if o.get('completed')}
+    current_updated = {str(o.get('so')).strip().upper() for o in outcomes
+                       if o.get('updated', o.get('completed'))}
+    current_pending = {str(o.get('so')).strip().upper() for o in outcomes if not o.get('completed')}
+    visible.update(current_full | current_pending)
+    previous_done = set()
+    if previous_status in ('是', '部分'):
+        previous_done = {
+            so for entry in recorded.values() for so in flow_parent_net.members(entry)
+            if so in visible and not old_colors.get(so, '').endswith('FF0000')
+        }
+    if replay:
+        current_pending -= previous_done
+    updated = previous_done | current_updated
+    fully_done = (previous_done | current_full) - current_pending
+    pending = visible - fully_done
+    status = '是' if visible and not pending and updated else ('部分' if updated else '')
+    if replay and previous_status == '部分' and not status:
+        status = '部分'
+    return status, pending, visible
+
+
+def _order_value_with_colors(text, original, item):
+    # Apply current red SO decisions while retaining unrelated existing colors.
+    from apply_flow import _line_colors, _rich_signature
+
+    target = {str(value).strip().upper() for value in (item.get("so_list") or []) if str(value).strip()}
+    red = {str(value).strip().upper() for value in (item.get("red_sos") or []) if str(value).strip()}
+    original_runs = _rich_signature(original)
+    old_colors = _line_colors(original)
+    original_text = "".join(fragment for fragment, _ in original_runs)
+    lines = str(text or "").replace("\r", "").split("\n") if text else []
+    runs = []
+    for index, line in enumerate(lines):
+        suffix = "\n" if index < len(lines) - 1 else ""
+        ids = [value.upper() for value in SO.findall(line)]
+        if any(value in red for value in ids):
+            color = "FFFF0000"
+        elif any(value in target for value in ids):
+            # A current completed SO must not inherit an old red marker.
+            color = ""
+        else:
+            color = next((old_colors.get(value, "") for value in ids if old_colors.get(value)), "")
+        if not ids and line in original_text:
+            start = original_text.index(line)
+            end = start + len(line)
+            offset = 0
+            for fragment, fragment_color in original_runs:
+                left = max(start, offset)
+                right = min(end, offset + len(fragment))
+                if left < right:
+                    runs.append(xlsx_patch.RichTextRun(fragment[left - offset:right - offset], fragment_color))
+                offset += len(fragment)
+            if suffix:
+                runs.append(xlsx_patch.RichTextRun(suffix))
+        else:
+            runs.append(xlsx_patch.RichTextRun(line + suffix, color))
+    value = xlsx_patch.RichTextValue(tuple(runs))
+    return value if any(run.color for run in runs) else str(text or "")
+
 def write_file(src, out, items, *, validate_only=False, workbook=None):
     state=load_state(src)
     wb=workbook if workbook is not None else openpyxl.load_workbook(src,data_only=False,rich_text=True)
@@ -686,7 +1147,9 @@ def write_file(src, out, items, *, validate_only=False, workbook=None):
             resolve_months(wb[chain['sheet']], sheet_columns(chain['sheet']), chain)
         for item in items:
             sheet=item['sheet'];ws=wb[sheet];cols=sheet_columns(sheet)
-            ar=item['ar'];chain=state['receipts'].get(ar)
+            import flow_source_receipts
+            flow_source_receipts.verify_formula(item, ws, cols)
+            ar=item['ar'];chain=state['receipts'].get(ar);chain_diagnostics=[]
             if item.get('order_only'):
                 import flow_order_prefill
                 root=int(item['row_no'])
@@ -720,7 +1183,9 @@ def write_file(src, out, items, *, validate_only=False, workbook=None):
                 if chain['sheet']!=sheet: raise ValueError('到账关联工作表发生变化')
                 resolve_months(ws,cols,chain)
                 root=chain['months'][0]['row']
-                if root!=int(item['row_no']): raise ValueError('三键定位与已有到账关联不一致')
+                if int(item['row_no']) not in {m['row'] for m in chain['months']}: raise ValueError('三键定位与已有到账关联不一致')
+                chain=refresh_current_chain(ws,cols,item,chain,diagnostics=chain_diagnostics)
+                state['receipts'][ar]=chain
             else:
                 chain=adopt_chain(ws,cols,item)
                 chain_rows={m['row'] for m in chain['months']}
@@ -728,13 +1193,22 @@ def write_file(src, out, items, *, validate_only=False, workbook=None):
                        for other,known in state['receipts'].items() if other!=ar):
                     raise ValueError('结转行已归属另一笔到账，不能重复认领')
                 state['receipts'][ar]=chain
+            chain_rows={m['row'] for m in chain['months'] if '_insert_after' not in m}
+            if any(other!=ar and known['sheet']==sheet
+                   and chain_rows & {m['row'] for m in known['months'] if '_insert_after' not in m}
+                   for other,known in state['receipts'].items()):
+                raise ValueError('结转行已归属另一笔到账，不能重复认领')
             root=chain['months'][0]['row']
             if any(other!=ar and known['sheet']==sheet and known['months'][0]['row']==root for other,known in state['receipts'].items()):
                 raise ValueError('原始行已关联另一笔到账')
             if (sheet,root) in targets: raise ValueError('多笔到账计划引用同一原始行')
             targets.add((sheet,root))
             day=common.norm_date(item['monthly_date']);month_key=day.strftime('%Y-%m')
+            import flow_current_deductions
+            chain=flow_current_deductions.bind(chain,item)
+            state['receipts'][ar]=chain
             recorded={e['key']:e for m in chain['months'] for e in m['entries']}
+            flow_parent_net.validate_existing(chain,item)
             if any(key not in recorded for key in item.get('monthly_require_existing', [])):
                 raise ValueError('盈亏已跳过但缺少流转事件记录，不能推定本笔已登记')
             import flow_source_receipts
@@ -745,26 +1219,56 @@ def write_file(src, out, items, *, validate_only=False, workbook=None):
                 if entry['key'] in recorded:
                     if recorded[entry['key']]!=entry: raise ValueError('已登记核销事项金额发生变化')
                 else: new.append(entry)
-            repair=any([m.pop('_repair_balance',False) for m in chain['months']])
+            repaired_rows={m['row'] for m in chain['months'] if m.pop('_repair_balance',False)}
+            repair=bool(repaired_rows)
             last=chain['months'][-1]
             monetary_new=any(money(e['amount'])>0 for e in new)
-            if source_entries and not monetary_new:
+            if item.get('source_allocation') and not monetary_new:
                 last=next((m for m in chain['months'] if m['month']==month_key),last)
-            desired_status=flow_completion.status(item)
+            relocating=last.get('_relocate_entries') or []
+            if relocating:
+                # Move already-proven deductions together, rather than restoring
+                # the opening and charging only the latest day's subset.
+                if any(e['date'][:7]!=month_key or e['date']>day.isoformat() for e in relocating):
+                    raise ValueError('已确认迁移扣款不在当前核销月份或包含后续日期')
+                moved={e['key']:e for e in relocating}
+                for e in new:
+                    if e['key'] in moved and moved[e['key']]!=e:
+                        raise ValueError('迁移来源与本次核销事项不一致')
+                    moved[e['key']]=e
+                new=list(moved.values())
             previous_status=str(value(ws,last['row'],cols,'是否更新应收款') or '')
-            status_change=bool(source_entries and desired_status and desired_status!=previous_status)
-            if not new and not repair and not status_change: continue
+            from apply_flow import _line_colors
+            old_colors = _line_colors(value(ws,last['row'],cols,'单号'))
+            preview = {**last, 'entries': [*last['entries'], *new]}
+            visible_sos = {so.upper() for so in SO.findall(order_text(preview))}
+            desired_status, red_sos, target_sos = _rollup_so_status(
+                visible_sos, recorded, old_colors, previous_status,
+                item.get('so_outcomes') or [], replay=not monetary_new)
+            status_change=bool(item.get('source_allocation') and desired_status!=previous_status)
+            color_change = month_key == last['month'] and any(
+                so in old_colors and old_colors[so].endswith('FF0000') != (so in red_sos)
+                for so in target_sos)
+            if not new and not repair and not status_change and not color_change: continue
+            color_only = color_change and not new and not repair and not status_change
             legacy_sos={str(so).strip().upper() for m in chain['months'] for so in m.get('legacy_sos',[])}
-            if any(str(e['so']).strip().upper() in legacy_sos for e in new):
-                raise ValueError('本次SO已有人工核销记录，缺少事项身份，不能重复扣减')
+            if any(so in legacy_sos for e in new for so in flow_parent_net.members(e)):
+                raise ValueError(unresolved_existing_receipt_reason(chain,item,new,diagnostics=chain_diagnostics))
             if monetary_new and day.isoformat()<max([m['date'] for m in chain['months']]+[e['date'] for e in recorded.values()]):
                 raise ValueError('倒序补录会影响已有结转余额，需人工核对')
-            cross=month_key!=last['month']
-            if month_key<last['month']: raise ValueError('不能倒序修改历史结转月份')
+            cross=month_key!=last['month'] and bool(new or repair)
+            if month_key<last['month'] and (new or repair): raise ValueError('不能倒序修改历史结转月份')
             edits=edits_by.setdefault(sheet,[]);insertions=insert_by.setdefault(sheet,[])
             if cross:
                 insertion_guard(src,sheet,last['row'])
-                month={'month':month_key,'date':day.isoformat(),'row':last['row']+1,
+                if last.pop('_relocate_balance',False) or last['row'] in repaired_rows:
+                    restored=formula(last['start'],last['entries'])
+                    edits.append((last['row'],cols['预收'],restored))
+                    last['signature'][5]=restored
+                    expected_cells.append((sheet,last,{cols['预收']:restored}))
+                posting_day=min(e['date'] for e in relocating) if relocating else day.isoformat()
+                last.pop('_relocate_entries',None)
+                month={'month':month_key,'date':posting_day,'row':ws.max_row+1+len(insertions),
                     'start':last['remaining'],'remaining':last['remaining'],'entries':[],
                     'prefix':chain['months'][0].get('prefix',''),
                     'display_original':chain['months'][0].get('prefix',''), 'display_amounts':{}, 'legacy_sos':[]}
@@ -773,43 +1277,38 @@ def write_file(src, out, items, *, validate_only=False, workbook=None):
             remaining=balance(month['start'],month['entries'])
             if remaining<0: raise ValueError('本次核销超过可用预收余额')
             month['remaining']=number(remaining)
+            import flow_sales_initials
+            if not flow_sales_initials.has_initials(order_text(month)):
+                month['prefix']=flow_sales_initials.ensure(month.get('prefix',''),item)
             text=order_text(month)
-            if not cross:
-                from apply_flow import _line_colors, _rich_signature
-                original=value(ws,month['row'],cols,'单号')
-                colors=_line_colors(original)
-                original_runs=_rich_signature(original)
-                original_text=''.join(text for text,_ in original_runs)
-                lines=text.splitlines();runs=[]
-                for index,line in enumerate(lines):
-                    ids=SO.findall(line);color=colors.get(ids[0].upper(),'') if ids else ''
-                    if not ids and line in original_text:
-                        start=original_text.index(line);end=start+len(line);offset=0
-                        for fragment,fragment_color in original_runs:
-                            left=max(start,offset);right=min(end,offset+len(fragment))
-                            if left<right:runs.append(xlsx_patch.RichTextRun(fragment[left-offset:right-offset],fragment_color))
-                            offset+=len(fragment)
-                        if index<len(lines)-1:runs.append(xlsx_patch.RichTextRun('\n'))
-                    else:runs.append(xlsx_patch.RichTextRun(line+('\n' if index<len(lines)-1 else ''),color))
-                text=xlsx_patch.RichTextValue(tuple(runs))
+            original = value(ws, month['row'], cols, '单号') if not cross else None
+            color_item = {**item, 'so_list': sorted(target_sos), 'red_sos': sorted(red_sos)}
+            text = _order_value_with_colors(text, original, color_item)
             if pending:
                 completed={o['so'] for o in item.get('so_outcomes',[]) if o.get('completed')}
                 for entry in item['monthly_entries']:
-                    if entry['so'] in completed:pending['pending'].pop(entry['so'],None)
-            receipt_status=flow_completion.status(item, pending['pending'] if pending else ())
-            if source_entries and not cross and not receipt_status:
-                receipt_status=str(value(ws,month['row'],cols,'是否更新应收款') or '')
-            overrides={cols['单号']:text,cols['预收']:formula(month['start'],month['entries']),cols['是否更新应收款']:receipt_status}
+                    for so in flow_parent_net.members(entry):
+                        if so in completed:pending['pending'].pop(so,None)
+            receipt_status = desired_status
+            if pending and pending['pending'] and receipt_status == '是':
+                receipt_status = '部分'
+            metadata_only = not new and not repair and (status_change or color_change)
+            overrides = ({cols['单号']: text,
+                          **({cols['是否更新应收款']: receipt_status} if status_change else {})}
+                         if metadata_only else
+                         {cols['单号']: text, cols['预收']: formula(month['start'],month['entries']),
+                          cols['是否更新应收款']: receipt_status})
             if cross:
-                overrides.update({cols['日期']:day,cols['金额']:float(money(month['start'])),cols['收款形式']:'冲预收'})
+                overrides.update({cols['日期']:common.norm_date(month['date']),cols['金额']:float(money(month['start'])),cols['收款形式']:'冲预收'})
                 # Receipt registration is new for this month; do not copy old status.
                 headers=list(ws.iter_rows(values_only=True))
                 for key in ('是否已登记系统',):
                     aliases=common.load_aliases();_,names=common.find_header_row(headers,'到账流转',['日期','公司名称','金额','单号'],aliases)
                     idx=common.fuzzy_find_col(names,aliases.get('到账流转',{}).get(key,[key]))
                     if idx is not None:overrides[idx+1]=None
-                marker=(chain['months'][0].get('prefix','')+'转'+str(day.month)+'月')
-                old=(last.get('prefix','') if last.pop('_relocate_display',False) else str(value(ws,last['row'],cols,'单号') or '').strip())
+                marker=(month.get('prefix','')+'转'+str(day.month)+'月')
+                old=(last.get('prefix','') if last.pop('_relocate_display',False) else
+                     order_text(last) if last['row'] in repaired_rows else str(value(ws,last['row'],cols,'单号') or '').strip())
                 if not SO.search(old) and old==chain['months'][0].get('prefix',''):old=marker
                 elif marker not in old:old=(old+'\n'+marker).strip()
                 from apply_flow import _rich_signature
@@ -832,25 +1331,17 @@ def write_file(src, out, items, *, validate_only=False, workbook=None):
                 else:marker_value=old
                 edits.append((last['row'],cols['单号'],marker_value))
                 last['signature'][4]=old
-                insertions.append((last['row'],overrides));month['_insert_after']=last['row'];chain['months'].append(month)
+                insertions.append((last['row'],month['row'],overrides));chain['months'].append(month)
             else:
                 edits.extend((month['row'],col,v) for col,v in overrides.items())
             expected_cells.append((sheet, month, dict(overrides)))
-            changes.append({'AR':ar,'单号':order_text(month),'日期':month['date'],'是否更新应收款':receipt_status,'文件':src.name,'sheet':sheet,'行号':month['row'],'操作':'恢复核销公式' if repair else ('跨月结转' if cross else '同月登记'),
-                '预收公式':formula(month['start'],month['entries']),'预收余额':float(remaining), '核销事项':[e['key'] for e in new]})
+            changes.append({'AR':ar,'单号':order_text(month),'日期':month['date'],'是否更新应收款':receipt_status,'文件':src.name,'sheet':sheet,'行号':month['row'],'操作':'状态及颜色更新' if metadata_only and status_change else ('单号颜色更新' if color_only else ('恢复核销公式' if repair else ('跨月结转' if cross else '同月登记'))),
+                '销售缩写说明':item.get('sales_initials_note',''),'预收公式':formula(month['start'],month['entries']),'预收余额':float(remaining), '核销事项':[e['key'] for e in new],
+                **({'appended_after_row':month['row']-1,'copied_from_row':last['row']} if cross else {}),
+                **({'原预收备注':last.get('_balance_note')} if last.get('_balance_note') else {}),
+                **({'已确认一元内尾差':month['_tolerance_note']} if month.get('_tolerance_note') else {})})
         if validate_only:return changes
         if not changes:return []
-        for ar,chain in state['receipts'].items():
-            sources=[r for r,_ in insert_by.get(chain['sheet'],[])]
-            for month in chain['months']:
-                if '_insert_after' in month:
-                    source=month.pop('_insert_after');month['row']=source+1+sum(r<source for r in sources)
-                else:month['row']+=sum(r<month['row'] for r in sources)
-        managed_ids={id(m) for chain in state['receipts'].values() for m in chain['months']}
-        for sheet,month,_ in expected_cells:
-            if id(month) not in managed_ids:
-                old_row=month['row'];month['row']+=sum(source<old_row for source,_ in insert_by.get(sheet,[]))
-                managed_ids.add(id(month))
         for change in changes:
             if change['操作']!='仅预填订单信息':change['行号']=state['receipts'][change['AR']]['months'][-1]['row']
             else:
@@ -862,8 +1353,16 @@ def write_file(src, out, items, *, validate_only=False, workbook=None):
     with tempfile.TemporaryDirectory(dir=out.parent,prefix='.flow-monthly-') as tmp:
         for index,sheet in enumerate(edits_by):
             target=Path(tmp)/f'{index}.xlsx'
-            patch=xlsx_patch.patch_cells(current,target,sheet,edits_by[sheet],insertions=insert_by[sheet],return_result=True)
-            update_filter_names(target,sheet,[row for row,_ in insert_by[sheet]])
+            appended=insert_by[sheet]
+            edits=list(edits_by[sheet])
+            if appended:
+                import flow_append_rows
+                copied=Path(tmp)/f'{index}-appended.xlsx'
+                flow_append_rows.copy_rows(current,copied,sheet,appended)
+                current=copied
+                edits.extend((row,col,value) for _,row,overrides in appended for col,value in overrides.items())
+            patch=xlsx_patch.patch_cells(current,target,sheet,edits,return_result=True)
+            update_filter_names(target,sheet,[row-1 for _,row,_ in appended])
             workbook_finalize.finalize_workbook(target,{sheet:patch});current=target
         # Re-read formulas AND caches before committing; metadata refers to actual rows.
         check=openpyxl.load_workbook(current,data_only=False,rich_text=True)
@@ -898,7 +1397,10 @@ def write_file(src, out, items, *, validate_only=False, workbook=None):
                     if not touched and month.get('signature') is not None and sig!=month['signature']:
                         raise ValueError('未授权修改的历史结转行发生变化')
                     if touched and id(month) not in order_only_ids:
-                        if sig[5]!=expected or value(cached[ws.title],r,cols,'预收')!=expected or balance(month['start'],month['entries'])!=money(month['remaining']):
+                        balance_changed=any(candidate is month and cols['预收'] in fields
+                                            for _,candidate,fields in expected_cells)
+                        expected_balance=expected if balance_changed else month['signature'][5]
+                        if sig[5]!=expected_balance or value(cached[ws.title],r,cols,'预收')!=expected_balance or balance(month['start'],month['entries'])!=money(month['remaining']):
                             raise ValueError('流转预收算式或余额回读不一致')
                     month['signature']=sig
         finally:check.close();cached.close()

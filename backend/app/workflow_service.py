@@ -2961,6 +2961,21 @@ def _assert_single_flight_available(
         )
 
 
+def _assert_current_ar_material_clear(
+    db: Session, user: UserContext, skill_id: str, *, exclude_workflow_id: str = "",
+    operation: str = "create_run",
+) -> None:
+    from .ar_execution_safety import MaterialOccupancyConflict, assert_operation_allowed
+
+    try:
+        assert_operation_allowed(db, user.user_id, user.department_id, skill_id,
+            operation=operation,
+            exclude_workflow_id=exclude_workflow_id)
+    except MaterialOccupancyConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+
 def create_workflow(
     db: Session,
     request: WorkflowCreate,
@@ -2980,6 +2995,7 @@ def create_workflow(
     if not llm:
         raise HTTPException(status_code=422, detail="对话式 Skill 必须选择一个大模型连接。")
     _assert_single_flight_available(db, request.skill_id)
+    _assert_current_ar_material_clear(db, user, request.skill_id)
     display_id = _next_business_task_id(db, skill.manifest.id)
     reusable_files = _reusable_file_bindings(db, skill, user)
     reusable_ready = not _missing_required_files(skill, reusable_files)
@@ -3109,6 +3125,7 @@ def start_workflow(
         raise HTTPException(status_code=422, detail="尚未配置智云登录凭据，请先安全保存账号密码。")
 
     _assert_single_flight_available(db, request.skill_id)
+    _assert_current_ar_material_clear(db, user, request.skill_id)
     workflow_id = str(uuid.uuid4())
     display_id = _next_business_task_id(db, skill.manifest.id)
     _snapshot_skill(skill, user.user_id, workflow_id)
@@ -3271,6 +3288,7 @@ def start_workflow_batch(
         raise HTTPException(status_code=422, detail="尚未配置智云登录凭据，请先安全保存账号密码。")
 
     _assert_single_flight_available(db, request.skill_id)
+    _assert_current_ar_material_clear(db, user, request.skill_id)
     normalized_files = _effective_file_bindings(
         db,
         skill,
@@ -4166,6 +4184,12 @@ def reset_workflow(
     )
     if pending or workflow.stage in BUSY_STAGES:
         raise HTTPException(status_code=409, detail="当前动作正在执行，完成后才能重置任务。")
+    if is_ar_skill(workflow.skill_id):
+        from .ar_execution_safety import has_effect_history
+
+        if has_effect_history(workflow) or _workflow_has_started_write(workflow):
+            raise HTTPException(status_code=409, detail=(
+                "本任务已有核销写入或发布执行事实，不能重置并清空证据；请从原阶段恢复或调查。"))
 
     revoke_workflow_approvals(db, workflow, actor, "工作流已由发起人重置。")
     workflow.state = "active"
@@ -4244,12 +4268,12 @@ def _new_action(
 ) -> WorkflowAction:
     state = "queued"
     if is_ar_skill(workflow.skill_id):
+        if name in {"apply_confirmed", "apply_material_update"}:
+            raise ValueError("旧版核销统一写入入口已停用；请使用分阶段核销流程。")
         from .ar_execution_runner import execution_version
         from .workflow_action_state import isolated_action_state
 
         if execution_version(workflow):
-            if name in {"apply_confirmed", "apply_material_update"}:
-                raise ValueError("新版核销必须分别执行盈亏、流转、复核和发布，不能排队旧版统一写入。")
             state = isolated_action_state(state)
     action_input = {
         "reconciliation_date": workflow.reconciliation_date,
@@ -4359,6 +4383,7 @@ def rebuild_failed_workflow(
     ):
         raise HTTPException(status_code=403, detail="当前账号不能恢复该任务。")
     assert_workflow_execution_enabled(source)
+    _assert_current_ar_material_clear(db, owner, source.skill_id)
     if not has_service_credential(
         db,
         source.owner_id,
@@ -4636,6 +4661,9 @@ def queue_pi_harness_tool(
         raise HTTPException(status_code=409, detail="任务正在取消，Pi Harness 不会继续调用工具。")
     actor = workflow_owner_context(db, workflow)
     assert_skill_permission(db, actor, workflow.skill_id)
+    _assert_current_ar_material_clear(
+        db, actor, workflow.skill_id, exclude_workflow_id=workflow.id, operation="resume_phase",
+    )
     harness_started_at = harness.queued_at
     if tool_name == "accept_fetched_data":
         confirm_fetched_data_review(db, workflow, actor, queue_plan=False)
@@ -4921,7 +4949,8 @@ def _apply_decision(
                 source,
             )
             return
-        workflow_owner_context(db, workflow)
+        owner = workflow_owner_context(db, workflow)
+        _assert_current_ar_material_clear(db, owner, workflow.skill_id)
         workflow.context_json = "{}"
         workflow.artifacts_json = "[]"
         if not workflow.material_set_id:
@@ -5257,6 +5286,19 @@ def claim_next_workflow_action(
                     continue
                 mark_workflow_action_execution_rejected(db, workflow, action)
                 continue
+            from .ar_skill_identity import is_ar_skill
+            from .ar_execution_safety import MaterialOccupancyConflict, assert_operation_allowed
+
+            # Investigation and final range reports must remain available to
+            # explain unresolved work. Other AR actions recheck material scope
+            # before recording a new attempt; waiting is not a financial retry.
+            if is_ar_skill(workflow.skill_id) and action.name not in {INVESTIGATION_ACTION, "finalize_batch"}:
+                try:
+                    assert_operation_allowed(db, workflow.owner_id, workflow.department_id,
+                        workflow.skill_id, operation="claim_action", exclude_workflow_id=workflow.id)
+                except MaterialOccupancyConflict as exc:
+                    workflow.progress_message = "等待材料占用核清，此步骤尚未开始。" + str(exc)
+                    continue
             if action.name == "finalize_batch" and workflow.stage == "completed":
                 batch = db.get(WorkflowBatch, workflow.batch_id) if workflow.batch_id else None
                 if batch and batch.state == "finalizing":
@@ -5636,11 +5678,37 @@ def _discard_registered_artifacts(
 ) -> None:
     if not artifacts:
         return
-    delivery = (workflow_root(workflow.owner_id, workflow.id) / "outputs" / action_id).resolve()
+    root = workflow_root(workflow.owner_id, workflow.id).resolve()
+    raw_delivery = root / "outputs" / action_id
+    if (Path(action_id).name != action_id or raw_delivery.is_symlink()
+            or raw_delivery.parent.is_symlink()):
+        raise ValueError("发布清理目录不属于当前执行或包含符号链接")
+    delivery = raw_delivery.resolve()
+    if not delivery.is_relative_to(root):
+        raise ValueError("发布清理目录超出当前任务")
     for artifact in artifacts:
         file_id = str(artifact.get("file_id", ""))
         record = db.get(FileRecord, file_id) if file_id else None
         if not record:
+            # A rolled-back savepoint removes FileRecord rows before this
+            # cleanup runs. The returned registration receipt still identifies
+            # the exact copy; never enumerate/delete the whole directory.
+            name = artifact.get("name")
+            if (not file_id or artifact.get("action_id") != action_id
+                    or not isinstance(name, str) or Path(name).name != name
+                    or name in ("", ".", "..")):
+                raise ValueError("发布清理缺少当前执行的文件凭据")
+            stored = delivery / name
+            if stored.is_symlink():
+                raise ValueError("发布清理文件已变成符号链接")
+            if stored.exists():
+                if (not stored.is_file() or stored.stat().st_size != artifact.get("size_bytes")
+                        or sha256_file(stored) != artifact.get("sha256")):
+                    raise ValueError("发布清理文件与登记凭据不一致，保留待核")
+                referenced = db.scalar(select(FileRecord.id).where(
+                    FileRecord.stored_path == str(stored.resolve())).limit(1))
+                if referenced is None:
+                    stored.unlink()
             continue
         stored = Path(record.stored_path).resolve()
         if stored.is_file() and stored.is_relative_to(delivery):
@@ -6747,6 +6815,8 @@ def _apply_confirmed(
     action: WorkflowAction,
     workflow: WorkflowSession,
 ) -> dict[str, Any]:
+    if is_ar_skill(workflow.skill_id):
+        raise RuntimeError("旧版核销统一写入入口已停用；不能绕过分阶段执行证据。")
     if _load(workflow.context_json, {}).get("ar_execution"):
         raise RuntimeError("新版任务必须完成独立写入、复核与发布阶段，不能使用旧版统一写入入口。")
     if isinstance(workflow, WorkflowSession):
@@ -7456,6 +7526,7 @@ def retry_workflow_batch(
     owner = workflow_owner_context(db, batch)
     if owner.user_id != actor.user_id and not actor.is_admin:
         raise HTTPException(status_code=403, detail="当前账号不能继续该批次。")
+    _assert_current_ar_material_clear(db, owner, batch.skill_id, operation="continue_batch")
 
     _cleanup_terminal_fetched_snapshot(db, failed)
     context = _load(failed.context_json, {})
@@ -8341,7 +8412,18 @@ def run_workflow_action_once(
     action = claim_next_workflow_action(db, pools, worker_id, execution_contracts=execution_contracts)
     if not action:
         return False
-    with LeaseHeartbeat("workflow_action", action.id, worker_id, attempt=action._ar_claim_attempt):
+    def stop_owned_process() -> None:
+        callback = getattr(action, "_ar_terminate_process", None)
+        if callback is not None:
+            callback()
+
+    with LeaseHeartbeat(
+        "workflow_action",
+        action.id,
+        worker_id,
+        attempt=action._ar_claim_attempt,
+        on_lease_lost=stop_owned_process,
+    ):
         execute_workflow_action(db, action)
     if db.info.pop("ar_execution_lease_lost", False):
         return True
