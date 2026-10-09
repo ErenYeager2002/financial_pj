@@ -8,17 +8,20 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from sqlalchemy.orm import Session
-from sqlalchemy import select
+from sqlalchemy import func, select, text, update
+from sqlalchemy.engine import Connection
+from sqlalchemy.pool import SingletonThreadPool, StaticPool
 from fastapi import HTTPException
 
-from .ar_execution_contract import CONTRACT_VERSION, PHASES, TOOL_PHASE, GUARDED_TOOLS, ExecutionCancelled, ExecutionLeaseLost, next_phase, require_phase
+from .ar_execution_contract import CONTRACT_VERSION, PHASES, TOOL_PHASE, GUARDED_TOOLS, INVESTIGATION_ACTION, ExecutionCancelled, ExecutionLeaseLost, next_phase, require_phase
 from .ar_execution_service import read_evidence_page, require_evidence_coverage
-from .models import WorkflowAction, WorkflowSession
+from .models import SchedulerLock, WorkflowAction, WorkflowSession
 from .resource_policy import workflow_root
 from .ar_annual_materials import fixed_annual_ledgers, annual_ledgers_in_copy
 
@@ -52,6 +55,46 @@ def lock_execution(db: Session, action: WorkflowAction, workflow: WorkflowSessio
     ):
         raise ExecutionLeaseLost("执行租约或任务状态已失效，旧 Worker 无权写入完成记录或发布材料")
     db.info["ar_execution_lock"] = action.id
+
+
+def _require_launch_lease(db: Session, action: WorkflowAction, original_action) -> None:
+    now = (db.scalar(select(func.clock_timestamp()))
+           if db.get_bind().dialect.name == "postgresql" else datetime.now(UTC))
+    deadline = action.lease_expires_at
+    if deadline is not None and deadline.tzinfo is None:
+        deadline = deadline.replace(tzinfo=UTC)
+    if deadline is None or deadline <= now or getattr(original_action, "_ar_lease_lost", False):
+        raise ExecutionLeaseLost("执行租约已失效，禁止启动下一脚本。")
+
+
+def _lock_launch_claim(db: Session, original_action, original_workflow, *, investigation=False):
+    """Fence the pinned claim without committing its caller-owned transaction."""
+    from .scheduler import acquire_claim_lock
+
+    expected_name = getattr(original_action, "_ar_claim_action_name", original_action.name)
+    expected_worker = getattr(original_action, "_ar_claim_worker_id", original_action.worker_id)
+    expected_attempt = getattr(original_action, "_ar_claim_attempt", original_action.attempt_count)
+    if db.get_bind().dialect.name == "postgresql":
+        limit = db.scalar(text("SELECT setting::integer FROM pg_settings WHERE name = 'lock_timeout'"))
+        if not limit or limit > 2000:
+            db.execute(text("SET LOCAL lock_timeout = '2000ms'"))
+    acquire_claim_lock(db)
+    if db.get(SchedulerLock, "global") is None:
+        raise ExecutionLeaseLost("执行锁缺失，禁止启动脚本。")
+    action = db.scalar(select(WorkflowAction).where(
+        WorkflowAction.id == original_action.id).execution_options(populate_existing=True).with_for_update())
+    workflow = db.scalar(select(WorkflowSession).where(
+        WorkflowSession.id == original_workflow.id).execution_options(populate_existing=True).with_for_update())
+    if (action is None or workflow is None or action.workflow_id != workflow.id
+            or action.state != "running" or action.name != expected_name
+            or not expected_worker or action.worker_id != expected_worker
+            or type(expected_attempt) is not int or expected_attempt <= 0
+            or action.attempt_count != expected_attempt
+            or (investigation and expected_name != INVESTIGATION_ACTION)
+            or workflow.state not in ({"failed"} if investigation else {"running", "cancelling"})):
+        raise ExecutionLeaseLost("执行租约或任务身份已失效，禁止启动脚本。")
+    _require_launch_lease(db, action, original_action)
+    return action, workflow
 
 
 def execution_version(workflow: WorkflowSession) -> str:
@@ -139,9 +182,17 @@ class ArExecution:
         self.action = action
         self.action._ar_claim_worker_id = action.worker_id
         self.workflow = workflow
+        self._confirmed_prepared_records = set()
+        from .ar_execution_safety import PROCESS_OBSERVATION_ACTIONS
+        self._investigation = action.name == INVESTIGATION_ACTION
+        self._process_observation = action.name in PROCESS_OBSERVATION_ACTIONS.values()
+        self._process_observation_phase = action.name.removeprefix("ar_") if self._process_observation else None
+        self._terminal_scope = (workflow.id, action.id, workflow.owner_id, workflow.department_id,
+                                workflow.skill_id, workflow.skill_hash, workflow.reconciliation_date)
         from .ar_abandon import require_not_abandoned
         require_not_abandoned(workflow)
         self.context = json.loads(workflow.context_json or "{}")
+        self._report_checked_plan = self.context.get("checked_plan") if self._process_observation else None
         self.execution = self.context.get("ar_execution") or {}
         if self.execution.get("schema_version") != CONTRACT_VERSION or execution_version(workflow) != CONTRACT_VERSION:
             raise ValueError("核销执行契约未初始化或与任务快照不一致")
@@ -157,22 +208,70 @@ class ArExecution:
         if self.execution.get("ledger_years") != {str(year): str(path) for year, path in self.ledgers.items()}:
             raise ValueError("年度盈亏映射与核销初始化时的固定记录不一致，不能继续原计划。")
         self.ledger_args = service._annual_ledger_arguments(self.ledgers)
+        if self._process_observation_phase == "rescan_holds":
+            from .ar_execution_safety import _canonical
+
+            self._verify_report_plan(self.context)
+            self._rescan_stage_checkpoint = _canonical(self.execution.get("steps", {}).get("stage_reconciliation"))
+            self._rescan_previous_files = _canonical(self.execution.get("steps", {}).get("verify_reconciliation", {}).get("files"))
+            stage, checked = self.staging()
+            self._require_staged_fingerprints(stage, "verify_reconciliation")
+            initial = stage / "04_产出" / f"判定结果_{self.tag}.json"
+            reviewed = stage / "execution-review" / "04_产出" / initial.name
+            self._rescan_paths = (stage, checked, initial.resolve(), reviewed.resolve(),
+                                  (stage / "execution-manifest.json").resolve())
+            self._rescan_arguments = ("--workspace", str(stage), "--result", str(initial),
+                *self.service._annual_ledger_arguments(annual_ledgers_in_copy(self.workspace, stage, self.ledgers)))
+            self._rescan_input_binding = tuple(self._read_rescan_input_binding(self.context).items())
 
     def script(self, name: str, arguments: list[str], *, accepted=(0,)) -> str:
         from .ar_process_evidence import run_recorded_script
         from .ar_lab_execution import cached_command
 
-        lock_execution(self.db, self.action, self.workflow)
-        self.verify_input_binding(observe_phase="write" if self.action.name in {"ar_write_ledger", "ar_write_receipt_flow"} else "start")
-        latest_context = json.loads(self.workflow.context_json or "{}")
-        if (self.workflow.state == "cancelling" or latest_context.get("stop_after_action")) and self.action.name != "ar_complete_reconciliation":
-            raise ExecutionCancelled("任务已请求取消，未启动下一脚本")
-        self.db.commit()
-        self.db.info.pop("ar_execution_lock", None)
+        from .ar_execution_safety import EFFECT_PHASES, PROCESS_OBSERVATION_PHASE, PROCESS_OBSERVATION_SCRIPTS
+
+        observation = self._process_observation
+        observation_script = PROCESS_OBSERVATION_SCRIPTS.get(self._process_observation_phase)
+        if observation and (self.action.name != "ar_" + self._process_observation_phase or name != observation_script):
+            raise ValueError(f"核销原观察只允许固定 {observation_script} 入口。")
+        effect = self.action.name.removeprefix("ar_") in EFFECT_PHASES
+        if not effect:
+            lock_execution(self.db, self.action, self.workflow)
+            self.verify_input_binding(observe_phase="start")
+            latest_context = json.loads(self.workflow.context_json or "{}")
+            if (self.workflow.state == "cancelling" or latest_context.get("stop_after_action")) and self.action.name != "ar_complete_reconciliation":
+                raise ExecutionCancelled("任务已请求取消，未启动下一脚本")
+            self.db.commit()
+            self.db.info.pop("ar_execution_lock", None)
+        original_binding_sha256 = None
+        if effect or observation:
+            from .ar_execution_safety import _process_state
+
+            state = _process_state(json.loads(self.workflow.context_json), self._terminal_scope[0], observation=observation)
+            original_attempt = getattr(self.action, "_ar_claim_attempt", self.action.attempt_count)
+            original_worker = self.action._ar_claim_worker_id
+            matches = [entry for entry in state["attempts"] if entry["action_id"] == self._terminal_scope[1]
+                       and entry["attempt"] == original_attempt and entry["worker_id"] == original_worker
+                       and entry["phase"] == self.action.name.removeprefix("ar_")]
+            if len(matches) != 1:
+                raise ValueError("核销脚本缺少唯一原进程绑定。")
+            original_binding_sha256 = matches[0]["binding_sha256"]
         original_name, original_arguments = name, list(arguments)
         name, arguments = cached_command(self, name, arguments)
+        if observation:
+            if name != observation_script:
+                raise ValueError("核销原观察脚本已改变，禁止启动。")
+            if self._process_observation_phase == PROCESS_OBSERVATION_PHASE and (arguments.count("--checked") != 1
+                    or arguments.index("--checked") + 1 >= len(arguments)
+                    or arguments[arguments.index("--checked") + 1] != self._report_checked_plan):
+                raise ValueError("首次日清原脚本或校验计划参数已改变，禁止启动。")
+            if self._process_observation_phase == "rescan_holds" and tuple(arguments) != self._rescan_arguments:
+                raise ValueError("挂账重扫原脚本参数已改变，禁止启动。")
         stdout = run_recorded_script(self.scripts, name, arguments, action=self.action, workflow=self.workflow,
-                                     accepted_returncodes=accepted)
+                                     accepted_returncodes=accepted,
+                                     launch_gate=self.launch_gate if effect or observation else None,
+                                     original_binding_sha256=original_binding_sha256,
+                                     terminal_recorder=self.record_terminal if effect or observation else None)
         if original_name in {"classify_hexiao.py", "build_execution_report.py"}:
             workspace = original_arguments[original_arguments.index("--workspace") + 1]
             self.service._run_script(Path(__file__).parent, "ar_history_guard.py", [
@@ -180,6 +279,180 @@ class ArExecution:
                 "--mode", "classify" if original_name == "classify_hexiao.py" else "report",
             ])
         return stdout
+
+    def _launch_binding(self, db: Session, action, workflow, anchor, *, observe_phase=None):
+        from .ar_execution_safety import BINDING_FIELDS, _process_state, _prepared_process_refs, PROCESS_OBSERVATION_SCRIPTS
+        from .ar_process_evidence import SCHEMA_VERSION, PREPARED_IDENTITY_FIELDS
+
+        from .ar_abandon import require_not_abandoned
+
+        require_not_abandoned(workflow)
+        context = json.loads(workflow.context_json or "{}")
+        if not isinstance(context, dict) or not isinstance(context.get("ar_execution"), dict):
+            raise ValueError("核销启动检查点无效。")
+        execution = context["ar_execution"]
+        phase = action.name.removeprefix("ar_")
+        state = _process_state(context, workflow.id, observation=self._process_observation)
+        _prepared_process_refs(state)
+        matches = [entry for entry in state["attempts"] if entry["action_id"] == action.id
+                   and entry["attempt"] == action.attempt_count and entry["phase"] == phase]
+        if len(matches) != 1 or (not self._process_observation and matches[0]["status"] != "intent_recorded"):
+            raise ValueError("核销脚本缺少唯一原启动意图。")
+        entry = matches[0]
+        if self._process_observation:
+            self._verify_report_plan(context)
+            if self._investigation:
+                from .ar_business_investigation import _validate_request
+
+                _validate_request(db, action, workflow)
+                current = self._read_investigation_input_binding(context, action, workflow)
+                if (current != dict(self._investigation_input_binding) or entry["input_binding"] != current
+                        or anchor.arguments_sha256 != current["arguments_sha256"]):
+                    raise ValueError("独立调查原进程输入桥接已改变，禁止启动。")
+            if self._process_observation_phase == "rescan_holds":
+                self._verify_rescan_inputs(context)
+                if entry["input_binding"] != dict(self._rescan_input_binding) or anchor.arguments_sha256 != entry["input_binding"]["arguments_sha256"]:
+                    raise ValueError("挂账重扫原进程输入桥接已改变，禁止启动。")
+            if anchor.script != PROCESS_OBSERVATION_SCRIPTS[self._process_observation_phase] or self.service.sha256_file(self.scripts / anchor.script) != anchor.script_sha256:
+                raise ValueError("核销原观察脚本指纹已改变，禁止启动。")
+        binding = {
+            "workflow_id": workflow.id, "action_id": action.id,
+            "attempt": action.attempt_count, "phase": phase, "worker_id": action.worker_id,
+            "owner_id": workflow.owner_id, "department_id": workflow.department_id,
+            "skill_id": workflow.skill_id, "skill_hash": workflow.skill_hash,
+            "material_set_id": execution.get("material_set_id"),
+            "material_version": execution.get("material_version"),
+            "reconciliation_date": workflow.reconciliation_date,
+            "plan_fingerprint": context.get("plan_fingerprint"),
+            "workspace_sha256": hashlib.sha256(str(context.get("workspace", "")).encode("utf-8")).hexdigest(),
+        }
+        if anchor.binding_sha256 != entry["binding_sha256"]:
+            raise ValueError("核销脚本原进程绑定摘要不一致。")
+        prepared = dict(anchor.prepared_identity)
+        expected_prepared = {**binding, "action_name": action.name}
+        if (any(type(entry[key]) is not type(binding[key]) or entry[key] != binding[key]
+                for key in BINDING_FIELDS)
+                or anchor.schema_version != SCHEMA_VERSION
+                or type(anchor.prepared_identity) is not tuple
+                or len(anchor.prepared_identity) != len(PREPARED_IDENTITY_FIELDS)
+                or set(prepared) != set(PREPARED_IDENTITY_FIELDS)
+                or any(type(prepared[key]) is not type(expected_prepared[key])
+                       or prepared[key] != expected_prepared[key] for key in PREPARED_IDENTITY_FIELDS)):
+            raise ValueError("核销脚本准备事实与原材料绑定不一致。")
+        actor = self.service.workflow_owner_context(db, workflow, observe_phase=observe_phase, action=action)
+        if not self._investigation:
+            self._verify_material_binding(db=db, workflow=workflow, execution=execution)
+        if (workflow.state == "cancelling" or context.get("stop_after_action")) and action.name != "ar_complete_reconciliation":
+            raise ExecutionCancelled("任务已请求取消，未启动下一脚本")
+        _require_launch_lease(db, action, self.action)
+        return context, entry, actor
+
+    @contextmanager
+    def launch_gate(self, anchor):
+        from .audit_service import record_audit
+        from .ar_execution_safety import register_prepared_process_ref, _process_state
+
+        bind = self.db.get_bind()
+        engine = bind.engine if isinstance(bind, Connection) else bind
+        if isinstance(engine.pool, (SingletonThreadPool, StaticPool)) or (
+                engine.dialect.name == "sqlite" and engine.url.database in {None, "", ":memory:"}):
+            raise ValueError("脚本启动检查需要独立数据库连接。")
+        observe = "write" if self.action.name in {"ar_write_ledger", "ar_write_receipt_flow"} else "start"
+        with Session(engine, expire_on_commit=False) as db:
+            action, workflow = _lock_launch_claim(db, self.action, self.workflow, investigation=self._investigation)
+            context, entry, actor = self._launch_binding(db, action, workflow, anchor, observe_phase=observe)
+            registered = register_prepared_process_ref(context, entry, anchor, observation=self._process_observation)
+            workflow.context_json = self.service._json(context)
+            record_audit(db, actor=actor, action="ar_process_prepared_registered",
+                resource_type="workflow", resource_id=workflow.id,
+                details={"action_id": action.id, "attempt": action.attempt_count,
+                         "phase": entry["phase"], "record_id": anchor.record_id,
+                         "prepared_sha256": anchor.prepared_sha256,
+                         "binding_sha256": entry["binding_sha256"],
+                         "evidence_revision": _process_state(context, workflow.id, observation=self._process_observation)["revision"],
+                         **({"evidence_namespace": "process_observations"} if self._process_observation else {})})
+            db.commit()
+            self._confirmed_prepared_records.add(anchor.record_id)
+        with Session(engine, expire_on_commit=False) as db:
+            try:
+                action, workflow = _lock_launch_claim(db, self.action, self.workflow, investigation=self._investigation)
+                context, entry, _ = self._launch_binding(db, action, workflow, anchor)
+                refs = [ref for ref in entry.get("prepared_process_refs", [])
+                        if ref["record_id"] == anchor.record_id]
+                if len(refs) != 1 or refs[0] != registered:
+                    raise ValueError("核销原进程准备锚点已改变，禁止启动。")
+                _require_launch_lease(db, action, self.action)
+                yield
+            finally:
+                db.rollback()
+
+    def record_terminal(self, anchor, observation):
+        from .ar_execution_safety import _canonical, register_terminal_process_ref, _process_state
+        from .ar_process_evidence import TerminalProcessRegistrationError
+        from .audit_service import record_audit
+        from .scheduler import acquire_claim_lock
+
+        if anchor.record_id not in self._confirmed_prepared_records:
+            return None
+        workflow_id, action_id, owner_id, department_id, skill_id, skill_hash, date = self._terminal_scope
+        lease_lost = getattr(self.action, "_ar_lease_lost", False)
+        bind = self.db.get_bind()
+        engine = bind.engine if isinstance(bind, Connection) else bind
+        if isinstance(engine.pool, (SingletonThreadPool, StaticPool)) or (
+                engine.dialect.name == "sqlite" and engine.url.database in {None, "", ":memory:"}):
+            raise TerminalProcessRegistrationError("terminal_binding_invalid")
+        try:
+            with Session(engine, expire_on_commit=False) as db:
+                if engine.dialect.name == "postgresql":
+                    limit = db.scalar(text("SELECT setting::integer FROM pg_settings WHERE name = 'lock_timeout'"))
+                    if not limit or limit > 2000:
+                        db.execute(text("SET LOCAL lock_timeout = '2000ms'"))
+                acquire_claim_lock(db)
+                if db.get(SchedulerLock, "global") is None:
+                    raise TerminalProcessRegistrationError("terminal_binding_invalid")
+                action = db.scalar(select(WorkflowAction).where(WorkflowAction.id == action_id).with_for_update())
+                workflow = db.scalar(select(WorkflowSession).where(WorkflowSession.id == workflow_id).with_for_update())
+                if (action is None or workflow is None or action.workflow_id != workflow_id
+                        or (workflow.owner_id, workflow.department_id, workflow.skill_id, workflow.skill_hash,
+                            workflow.reconciliation_date) != (owner_id, department_id, skill_id, skill_hash, date)):
+                    raise TerminalProcessRegistrationError("terminal_binding_invalid")
+                context = json.loads(workflow.context_json)
+                entry, ref, inserted = register_terminal_process_ref(context, anchor, observation, process_observation=self._process_observation)
+                if any(type(entry[key]) is not type(value) or entry[key] != value for key, value in {
+                        "owner_id": owner_id, "department_id": department_id, "skill_id": skill_id,
+                        "skill_hash": skill_hash, "reconciliation_date": date}.items()):
+                    raise TerminalProcessRegistrationError("terminal_binding_invalid")
+                if not inserted:
+                    return ref
+                now = db.scalar(select(func.clock_timestamp())) if engine.dialect.name == "postgresql" else datetime.now(UTC)
+                deadline = action.lease_expires_at
+                if deadline is not None and deadline.tzinfo is None:
+                    deadline = deadline.replace(tzinfo=UTC)
+                from .ar_execution_safety import PROCESS_OBSERVATION_ACTIONS
+                expected_name = PROCESS_OBSERVATION_ACTIONS[entry["phase"]] if self._process_observation else "ar_" + entry["phase"]
+                workflow_states = {"failed"} if entry["phase"] == INVESTIGATION_ACTION else {"running", "cancelling"}
+                late = (lease_lost or action.state != "running" or action.name != expected_name
+                        or action.attempt_count != entry["attempt"] or action.worker_id != entry["worker_id"]
+                        or deadline is None or deadline <= now or workflow.state not in workflow_states)
+                db.execute(update(WorkflowSession).where(WorkflowSession.id == workflow_id).values(
+                    context_json=self.service._json(context), updated_at=workflow.updated_at))
+                record_audit(db, actor_id="system", actor_role="system", department_id=department_id,
+                    action="ar_process_terminal_registered", resource_type="workflow", resource_id=workflow_id,
+                    details={"action_id": entry["action_id"], "attempt": entry["attempt"], "phase": entry["phase"],
+                             "record_id": ref["record_id"], "prepared_sha256": ref["prepared_sha256"],
+                             "binding_sha256": entry["binding_sha256"],
+                             "observation_sha256": hashlib.sha256(_canonical({key: value for key, value in ref.items()
+                                                                           if key != "registered_at"})).hexdigest(),
+                             "evidence_revision": _process_state(context, workflow_id, observation=self._process_observation)["revision"], "late_observation": late,
+                             **({"evidence_namespace": "process_observations"} if self._process_observation else {})})
+                db.commit()
+                return ref
+        except TerminalProcessRegistrationError:
+            raise
+        except Exception as exc:
+            code = ("terminal_registration_lock_timeout" if getattr(getattr(exc, "orig", None), "sqlstate", None) == "55P03"
+                    else "terminal_registration_failed")
+            raise TerminalProcessRegistrationError(code) from exc
 
     def verify_input_binding(self, *, observe_phase=None) -> None:
         if observe_phase is None:
@@ -189,27 +462,30 @@ class ArExecution:
                                                 observe_phase=observe_phase, action=self.action)
         self._verify_material_binding()
 
-    def _verify_material_binding(self) -> None:
+    def _verify_material_binding(self, *, db=None, workflow=None, execution=None) -> None:
         from .workflow_material_service import current_material_set
         from .ar_execution_safety import assert_operation_allowed
 
+        db = self.db if db is None else db
+        workflow = self.workflow if workflow is None else workflow
+        execution = self.execution if execution is None else execution
         current = current_material_set(
-            self.db, self.workflow.owner_id, self.workflow.department_id, self.workflow.skill_id,
+            db, workflow.owner_id, workflow.department_id, workflow.skill_id,
         )
-        expected = (self.execution.get("steps", {}).get("publish_reconciliation")
-                    if self.execution.get("publication") == "verified" else self.execution) or {}
+        expected = (execution.get("steps", {}).get("publish_reconciliation")
+                    if execution.get("publication") == "verified" else execution) or {}
         if (current is not None
                 and (current.id != expected.get("material_set_id")
                      or current.version != expected.get("material_version"))
-                and self.execution.get("reconciliation_date") == self.date
-                and self.execution.get("skill_hash") == self.workflow.skill_hash
+                and execution.get("reconciliation_date") == self.date
+                and execution.get("skill_hash") == workflow.skill_hash
                 and self.action.name == "ar_complete_reconciliation"
-                and json.loads(self.workflow.context_json or "{}").get("stop_after_action") is True):
+                and json.loads(workflow.context_json or "{}").get("stop_after_action") is True):
             # Only finish an immutable historical publication, then stop. This
             # does not permit writing, republishing, or advancing the old batch.
             from .ar_publication import publication_manifest
 
-            publication_manifest(self.db, self.workflow)
+            publication_manifest(db, workflow)
             return
         if current is not None and current.id == expected.get("material_set_id"):
             # Recheck inside the caller's execution/publication transaction.
@@ -219,13 +495,13 @@ class ArExecution:
                 "ar_complete_reconciliation": "complete_registration",
             }.get(self.action.name, "resume_phase")
             assert_operation_allowed(
-                self.db, self.workflow.owner_id, self.workflow.department_id,
-                self.workflow.skill_id, operation=operation,
-                exclude_workflow_id=self.workflow.id,
+                db, workflow.owner_id, workflow.department_id,
+                workflow.skill_id, operation=operation,
+                exclude_workflow_id=workflow.id,
             )
         if (
-            self.execution.get("reconciliation_date") != self.date
-            or self.execution.get("skill_hash") != self.workflow.skill_hash
+            execution.get("reconciliation_date") != self.date
+            or execution.get("skill_hash") != workflow.skill_hash
             or current is None
             or current.id != expected.get("material_set_id")
             or current.version != expected.get("material_version")
@@ -308,6 +584,109 @@ class ArExecution:
                     "material_version": self.execution["material_version"],
                     "plan_fingerprint": self.service.sha256_file(checked),
                 }}
+
+    def _verify_report_plan(self, context: dict) -> None:
+        """Verify existing input bytes, never infer report or financial effects."""
+        import re
+
+        checked = context.get("checked_plan")
+        fingerprint = context.get("plan_fingerprint")
+        workspace = context.get("workspace")
+        if (not isinstance(checked, str) or not checked or checked != self._report_checked_plan
+                or not isinstance(workspace, str) or not isinstance(fingerprint, str) or not re.fullmatch(r"[0-9a-f]{64}", fingerprint)):
+            raise ValueError("首次日清缺少原校验计划，禁止启动。")
+        path = Path(checked).resolve()
+        if (Path(workspace).resolve() != self.workspace or not path.is_relative_to(self.workspace)
+                or not path.is_file() or self.service.sha256_file(path) != fingerprint):
+            raise ValueError("首次日清原校验计划已改变，禁止启动。")
+
+    def _read_rescan_input_binding(self, context: dict) -> dict[str, str]:
+        """Re-read only the original caller inputs, never financial judgments."""
+        from .ar_execution_safety import _canonical
+
+        execution = context.get("ar_execution") or {}
+        steps = execution.get("steps") or {}
+        previous = steps.get("verify_reconciliation") or {}
+        stage, checked = self.staging()
+        initial = stage / "04_产出" / f"判定结果_{self.tag}.json"
+        reviewed = stage / "execution-review" / "04_产出" / initial.name
+        manifest_path = stage / "execution-manifest.json"
+        paths = (stage, checked, initial.resolve(), reviewed.resolve(), manifest_path.resolve())
+        if (paths != self._rescan_paths
+                or _canonical(steps.get("stage_reconciliation")) != self._rescan_stage_checkpoint
+                or _canonical(previous.get("files")) != self._rescan_previous_files
+                or previous.get("review_workspace") != str(stage / "execution-review")
+                or any(not path.is_relative_to(stage) or not path.is_file() for path in paths[1:])):
+            raise ValueError("挂账重扫原暂存或判定来源已改变，禁止启动。")
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if manifest.get("initial_plan_fingerprint") != context.get("plan_fingerprint"):
+            raise ValueError("挂账重扫原计划与暂存绑定不一致，禁止启动。")
+        self._require_staged_fingerprints(stage, "verify_reconciliation")
+        return {
+            "staging_workspace_sha256": hashlib.sha256(str(stage).encode("utf-8")).hexdigest(),
+            "manifest_sha256": self.service.sha256_file(manifest_path),
+            "staged_plan_sha256": self.service.sha256_file(checked),
+            "initial_result_sha256": self.service.sha256_file(initial),
+            "reviewed_result_sha256": self.service.sha256_file(reviewed),
+            "arguments_sha256": hashlib.sha256(json.dumps(list(self._rescan_arguments), ensure_ascii=False).encode("utf-8")).hexdigest(),
+        }
+
+    def bind_investigation_inputs(self, arguments: list[str]) -> dict[str, str]:
+        """Capture this existing read-only invocation outside claim locks."""
+        from .ar_execution_safety import _canonical
+
+        if not self._investigation:
+            raise ValueError("原调查绑定只允许固定独立调查动作。")
+        self._verify_report_plan(self.context)
+        self._investigation_arguments = tuple(arguments)
+        self._investigation_checkpoint = _canonical(self.execution.get("steps", {}).get("stage_reconciliation"))
+        self._investigation_paths = self.staging()
+        binding = self._read_investigation_input_binding(self.context, self.action, self.workflow)
+        self._investigation_input_binding = tuple(binding.items())
+        return binding
+
+    def _read_investigation_input_binding(self, context: dict, action, workflow) -> dict[str, str]:
+        from .ar_execution_safety import _canonical
+        from .ar_write_inspection import EvidenceReader, _fingerprints, _workbook_names
+
+        checkpoint = (context.get("ar_execution") or {}).get("steps", {}).get("stage_reconciliation")
+        stage, checked = self.staging()
+        if (_canonical(checkpoint) != self._investigation_checkpoint or (stage, checked) != self._investigation_paths):
+            raise ValueError("独立调查原暂存身份已改变，禁止启动。")
+        request = json.loads(action.input_json or "{}")
+        failed = next((item for item in workflow.actions if item.id == request.get("failed_action_id")), None)
+        if not isinstance(request, dict) or failed is None:
+            raise ValueError("独立调查原失败动作缺失，禁止启动。")
+        failure = {"failure": context.get("ar_failure"), "failed_action": {key: getattr(failed, key) for key in
+                   ("id", "workflow_id", "name", "state", "attempt_count", "worker_id")},
+                   "finished_at": str(failed.finished_at)}
+        reader = EvidenceReader(self.workspace)
+        manifest, manifest_sha = reader.read(stage / "execution-manifest.json", document=True)
+        files = _fingerprints(manifest.get("files"))
+        actual = {}
+        for scope, workspace in (("baseline", self.workspace), ("staging", stage)):
+            if _workbook_names(reader, workspace / "02_我的表副本") != set(files):
+                raise ValueError("独立调查原工作簿集合已改变，禁止启动。")
+            actual[scope] = {}
+            for relative in sorted(files):
+                _, digest = reader.read(workspace / relative)
+                if scope == "baseline" and digest != files[relative]:
+                    raise ValueError("独立调查原材料与写前指纹不一致，禁止启动。")
+                actual[scope][relative] = digest
+        _, checked_sha = reader.read(checked)
+        reader.finish()
+        return {
+            "staging_workspace_sha256": hashlib.sha256(str(stage).encode("utf-8")).hexdigest(),
+            "manifest_sha256": manifest_sha, "staged_plan_sha256": checked_sha,
+            "request_sha256": hashlib.sha256(_canonical(request)).hexdigest(),
+            "failed_action_binding_sha256": hashlib.sha256(_canonical(failure)).hexdigest(),
+            "workbook_inputs_sha256": hashlib.sha256(_canonical(actual)).hexdigest(),
+            "arguments_sha256": hashlib.sha256(json.dumps(list(self._investigation_arguments), ensure_ascii=False).encode("utf-8")).hexdigest(),
+        }
+
+    def _verify_rescan_inputs(self, context: dict) -> None:
+        if self._read_rescan_input_binding(context) != dict(self._rescan_input_binding):
+            raise ValueError("挂账重扫原输入指纹已改变，禁止启动。")
 
     def build_initial_report(self) -> dict[str, Any]:
         report = self.output / f"核销日清_{self.tag}.xlsx"
@@ -672,9 +1051,16 @@ def execute_phase(db: Session, action: WorkflowAction, workflow: WorkflowSession
                                      "phase": phase.name, "attempt": action.attempt_count}
     context.pop("step_error", None)
     context.pop("error_detail", None)
-    from .ar_execution_safety import register_effect_intent
+    from .ar_execution_safety import register_effect_intent, register_process_observation_intent, PROCESS_OBSERVATION_SCRIPTS
 
     register_effect_intent(context, workflow, action, phase.name)
+    if phase.name in PROCESS_OBSERVATION_SCRIPTS:
+        execution._verify_report_plan(context)
+        input_binding = None
+        if phase.name == "rescan_holds":
+            execution._verify_rescan_inputs(context)
+            input_binding = dict(execution._rescan_input_binding)
+        register_process_observation_intent(context, workflow, action, input_binding=input_binding)
     workflow.context_json = execution.service._json(context)
     workflow.progress = max(workflow.progress, phase.progress)
     workflow.progress_message = phase.label

@@ -1,0 +1,44 @@
+DeerFlow display component adaptation
+=====================================
+
+Upstream: https://github.com/bytedance/deer-flow
+Pinned commit: d3a9c123ff7ce37d6f6af3c7b065ef501fe16cb0
+License: MIT (full text below)
+
+Adapted source files (presentation only; state, protocol and business logic
+remain the platform's own):
+
+- deerflow-conversation.tsx  <- frontend/src/components/ai-elements/conversation.tsx
+- deerflow-messages.tsx      <- frontend/src/components/ai-elements/message.tsx
+- deerflow-tool-call.tsx     <- frontend/src/components/workspace/messages/tool-call-details.tsx
+
+Adaptations: upstream AI SDK UIMessage / LangGraph ToolCall types replaced with
+the platform Pi display types (ChatMessage in ../pi-chat-messages.tsx); Radix /
+Lucide controls replaced with platform primitives and @tabler/icons-react;
+streamdown replaced with the platform's audited safe Markdown renderer
+(AssistantResponse); use-stick-to-bottom not added (platform follow-scroll in
+../pi-chat.tsx remains authoritative). No new runtime dependency.
+
+---
+
+MIT License
+
+Copyright (c) 2024 Bytedance Ltd. and/or its affiliates
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

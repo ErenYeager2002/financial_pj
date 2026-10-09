@@ -241,11 +241,18 @@ def execute_investigation(db, action, workflow) -> None:
                      "--checked", str(checked), "--flow-file", str(flow), "--manifest-sha256", manifest_sha,
                      "--workflow-id", workflow.id, "--phase", context["ar_failure"]["phase"], "--attempt", attempt]
         arguments += service._annual_ledger_arguments(fixed_ledgers)
+        input_binding = execution.bind_investigation_inputs(arguments)
         lock_investigation(db, action, workflow)
-        _validate_request(db, action, workflow)
+        _, current_context = _validate_request(db, action, workflow)
+        from .ar_execution_safety import register_process_observation_intent, _process_state
+
+        register_process_observation_intent(current_context, workflow, action, input_binding=input_binding)
+        workflow.context_json = service._json(current_context)
+        original_binding = _process_state(current_context, workflow.id, observation=True)["attempts"][-1]["binding_sha256"]
         db.commit()
         stdout = run_recorded_script(execution.scripts, "investigate_failed_write.py", arguments,
-                                     action=action, workflow=workflow)
+                                     action=action, workflow=workflow, launch_gate=execution.launch_gate,
+                                     original_binding_sha256=original_binding, terminal_recorder=execution.record_terminal)
         response = json.loads(stdout.strip())
         report = stage / "execution-investigations" / attempt / "result.json"
         if (not report.is_file() or report.is_symlink() or not report.resolve().is_relative_to(stage)

@@ -162,3 +162,10 @@ Full construction remains incomplete and active. Next F2, then F4 / F5 / F3 / G4
 F2/A24 按可用容量领取已上线并完成只读浏览器验收。真实隔离 PostgreSQL 11 项通过、0 skip，原 execution snapshot 23 项通过，最终双轴静态复审0阻断。API及两Python Worker均为85bb307cf1b4625dc5e38692f8878d59217733905eba1d67ae854e550ef54ba0，worker源码/运行cac2ff匹配；API healthy、Worker running（无Docker Health），normal、活动计数0。F1、scheduler、前端及独立AR修改保留；旧marker未改，其中1条待调查。浏览器任务中心/工具中心/核销创建/旧封存警示通过，未进行财务操作或提交推送。详见 [F2上线与验证](pi-cw07-run-claim-capacity-20261008.md)。
 
 本条仅完成 F2/A24；整体继续 F4.A，各次执行记录只读展示。F4剩余、F5、F3、A25、G4、CW09、CW10、CW11未完成，不自动暂停。
+
+
+## 2026-10-08 F4.A accepted; continuation checkpoint
+
+F4.A各次执行元数据查询及页面展示已完成源码、13项专项验证、双轴审查、前后端上线和真实只读浏览器验收。history不授予恢复/解除，原F1/F2与历史待调查占用保留。API/两Python Worker为dca460，前端b8990a，normal且健康；本阶段未提交推送或进行财务操作。详见 [F4.A记录](pi-cw06-attempt-history-20261008.md)。
+
+当前节点：F4.A完成，整体目标active。下一步F4.B不可变prepared refs锚点及故障窗口TDD；多attempt调查/条件处置、F5、F3、A25、F6、G4、CW09、CW10、CW11尚未完成。AGENTS新规则同步三入口5ea6a，用户Token口径为上下文容量接近上限保存节点。

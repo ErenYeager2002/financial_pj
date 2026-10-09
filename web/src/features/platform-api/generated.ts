@@ -1347,6 +1347,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/pi-runtime/sessions/{session_id}/capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Session Capabilities */
+        get: operations["session_capabilities_api_pi_runtime_sessions__session_id__capabilities_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pi-runtime/sessions/{session_id}/deliveries/{request_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Delivery Receipt */
+        get: operations["delivery_receipt_api_pi_runtime_sessions__session_id__deliveries__request_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/pi-runtime/sessions/{session_id}/download": {
         parameters: {
             query?: never;
@@ -1375,6 +1409,23 @@ export interface paths {
         put?: never;
         /** Files */
         post: operations["files_api_pi_runtime_sessions__session_id__files_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pi-runtime/sessions/{session_id}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Session History */
+        get: operations["session_history_api_pi_runtime_sessions__session_id__history_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2228,6 +2279,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/workflows/{workflow_id}/execution/abandon": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Abandonment Conditions */
+        get: operations["read_abandonment_conditions_api_workflows__workflow_id__execution_abandon_get"];
+        put?: never;
+        /** Abandon Unpublished Result */
+        post: operations["abandon_unpublished_result_api_workflows__workflow_id__execution_abandon_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/workflows/{workflow_id}/execution/investigate": {
         parameters: {
             query?: never;
@@ -2419,6 +2488,11 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AbandonRequest */
+        AbandonRequest: {
+            /** Checkpoint Fingerprint */
+            checkpoint_fingerprint: string;
+        };
         /** AdminAssistantProfile */
         AdminAssistantProfile: {
             /**
@@ -2755,6 +2829,148 @@ export interface components {
              */
             workflow_id: string | null;
         };
+        /** ArAttemptHistoryItem */
+        ArAttemptHistoryItem: {
+            /**
+             * Action Id
+             * Format: uuid
+             */
+            action_id: string;
+            /** Attempt */
+            attempt?: number | null;
+            /**
+             * Binding Sha256
+             * @default
+             */
+            binding_sha256: string;
+            /** Completed At */
+            completed_at?: string | null;
+            /** Intent At */
+            intent_at?: string | null;
+            /** Material Version */
+            material_version?: number | null;
+            /** Missing Attempt Count */
+            missing_attempt_count?: number | null;
+            /**
+             * Phase
+             * @enum {string}
+             */
+            phase: "write_ledger" | "write_receipt_flow" | "publish_reconciliation" | "complete_reconciliation";
+            /** Reason Codes */
+            reason_codes?: ("context_invalid" | "index_invalid" | "index_missing" | "action_missing" | "action_identity_invalid" | "action_identity_conflict" | "action_phase_mismatch" | "action_counter_invalid" | "attempt_identity_conflict" | "attempt_history_missing" | "timestamp_invalid" | "action_scan_truncated" | "history_output_truncated" | "action_metadata_invalid")[];
+            /**
+             * Record State
+             * @enum {string}
+             */
+            record_state: "intent_recorded" | "phase_completed" | "legacy_unknown";
+        };
+        /** ArAttemptHistoryRead */
+        ArAttemptHistoryRead: {
+            /**
+             * Authorizes Resume
+             * @default false
+             * @constant
+             */
+            authorizes_resume: false;
+            /** Evidence Revision */
+            evidence_revision?: number | null;
+            /** Items */
+            items?: components["schemas"]["ArAttemptHistoryItem"][];
+            /** Metadata Coverage Complete */
+            metadata_coverage_complete: boolean;
+            /** Missing Attempt Count */
+            missing_attempt_count?: number | null;
+            /**
+             * Process Evidence Checked
+             * @default false
+             * @constant
+             */
+            process_evidence_checked: false;
+            /** Reason Codes */
+            reason_codes?: ("context_invalid" | "index_invalid" | "index_missing" | "action_missing" | "action_identity_invalid" | "action_identity_conflict" | "action_phase_mismatch" | "action_counter_invalid" | "attempt_identity_conflict" | "attempt_history_missing" | "timestamp_invalid" | "action_scan_truncated" | "history_output_truncated" | "action_metadata_invalid")[];
+            /** Registered Attempt Count */
+            registered_attempt_count: number;
+            /** Scanned Action Count */
+            scanned_action_count: number;
+            /**
+             * Schema Version
+             * @default ar-attempt-history-metadata-v1
+             * @constant
+             */
+            schema_version: "ar-attempt-history-metadata-v1";
+            /** Snapshot Fingerprint */
+            snapshot_fingerprint: string;
+        };
+        /** ArAttemptProcessDetailsItem */
+        ArAttemptProcessDetailsItem: {
+            /**
+             * Action Id
+             * Format: uuid
+             */
+            action_id: string;
+            /** Attempt */
+            attempt?: number | null;
+            /**
+             * Coverage Complete
+             * @default false
+             */
+            coverage_complete: boolean;
+            /** Descendant Domain Count */
+            descendant_domain_count?: number | null;
+            /** Direct Exit Count */
+            direct_exit_count?: number | null;
+            /**
+             * Inspection State
+             * @default unknown
+             * @enum {string}
+             */
+            inspection_state: "verified" | "unknown" | "invalid";
+            /** Liveness */
+            liveness?: {
+                [key: string]: number;
+            };
+            /**
+             * Phase
+             * @enum {string}
+             */
+            phase: "write_ledger" | "write_receipt_flow" | "publish_reconciliation" | "complete_reconciliation";
+            /** Prepared Record Count */
+            prepared_record_count?: number | null;
+            /** Reason Codes */
+            reason_codes?: ("context_invalid" | "index_invalid" | "attempt_unregistered" | "binding_invalid" | "prepared_refs_missing" | "terminal_refs_missing" | "terminal_refs_conflict" | "fact_missing" | "fact_invalid" | "directory_extra" | "scan_truncated" | "budget_exceeded" | "identity_unconfirmed" | "non_effect_unanchored" | "investigation_unanchored")[];
+            /** Registered Terminal Count */
+            registered_terminal_count?: number | null;
+        };
+        /** ArAttemptProcessDetailsRead */
+        ArAttemptProcessDetailsRead: {
+            /** Evidence Revision */
+            evidence_revision?: number | null;
+            /** Items */
+            items?: components["schemas"]["ArAttemptProcessDetailsItem"][];
+            /** Metadata Snapshot Fingerprint */
+            metadata_snapshot_fingerprint: string;
+            /** Observation Fingerprint */
+            observation_fingerprint: string;
+            /** Reason Codes */
+            reason_codes?: ("context_invalid" | "index_invalid" | "attempt_unregistered" | "binding_invalid" | "prepared_refs_missing" | "terminal_refs_missing" | "terminal_refs_conflict" | "fact_missing" | "fact_invalid" | "directory_extra" | "scan_truncated" | "budget_exceeded" | "identity_unconfirmed" | "non_effect_unanchored" | "investigation_unanchored")[];
+            /**
+             * Registered Effect Coverage Complete
+             * @default false
+             */
+            registered_effect_coverage_complete: boolean;
+            /**
+             * Schema Version
+             * @default ar-attempt-process-details-v1
+             * @constant
+             */
+            schema_version: "ar-attempt-process-details-v1";
+            /**
+             * Whole Workflow Coverage
+             * @default unknown
+             * @constant
+             */
+            whole_workflow_coverage: "unknown";
+        };
         /** ArEvidenceDetail */
         ArEvidenceDetail: {
             /** Entries */
@@ -2885,6 +3101,7 @@ export interface components {
         };
         /** ArExecutionRead */
         ArExecutionRead: {
+            attempt_history?: components["schemas"]["ArAttemptHistoryRead"] | null;
             /** Available */
             available: boolean;
             /**
@@ -2914,6 +3131,7 @@ export interface components {
             phases?: {
                 [key: string]: unknown;
             }[];
+            process_details?: components["schemas"]["ArAttemptProcessDetailsRead"] | null;
             /**
              * Publication
              * @default not_published
@@ -6766,6 +6984,7 @@ export interface components {
     headers: never;
     pathItems: never;
 }
+export type AbandonRequest = components['schemas']['AbandonRequest'];
 export type AdminAssistantProfile = components['schemas']['AdminAssistantProfile'];
 export type AdminAssistantProfileWrite = components['schemas']['AdminAssistantProfileWrite'];
 export type AdminPasswordReset = components['schemas']['AdminPasswordReset'];
@@ -6778,6 +6997,10 @@ export type AgentModelRequest = components['schemas']['AgentModelRequest'];
 export type AgentPrepareRequest = components['schemas']['AgentPrepareRequest'];
 export type ApprovalDecisionRequest = components['schemas']['ApprovalDecisionRequest'];
 export type ApprovalRecord = components['schemas']['ApprovalRecord'];
+export type ArAttemptHistoryItem = components['schemas']['ArAttemptHistoryItem'];
+export type ArAttemptHistoryRead = components['schemas']['ArAttemptHistoryRead'];
+export type ArAttemptProcessDetailsItem = components['schemas']['ArAttemptProcessDetailsItem'];
+export type ArAttemptProcessDetailsRead = components['schemas']['ArAttemptProcessDetailsRead'];
 export type ArEvidenceDetail = components['schemas']['ArEvidenceDetail'];
 export type ArEvidenceEntry = components['schemas']['ArEvidenceEntry'];
 export type ArEvidencePage = components['schemas']['ArEvidencePage'];
@@ -9701,6 +9924,69 @@ export interface operations {
             };
         };
     };
+    session_capabilities_api_pi_runtime_sessions__session_id__capabilities_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delivery_receipt_api_pi_runtime_sessions__session_id__deliveries__request_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     download_api_pi_runtime_sessions__session_id__download_get: {
         parameters: {
             query: {
@@ -9749,6 +10035,37 @@ export interface operations {
                 "application/json": components["schemas"]["FileOperation"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    session_history_api_pi_runtime_sessions__session_id__history_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -11563,7 +11880,9 @@ export interface operations {
     };
     get_workflow_execution_api_workflows__workflow_id__execution_get: {
         parameters: {
-            query?: never;
+            query?: {
+                include_process_details?: boolean;
+            };
             header?: never;
             path: {
                 workflow_id: string;
@@ -11579,6 +11898,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ArExecutionRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_abandonment_conditions_api_workflows__workflow_id__execution_abandon_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    abandon_unpublished_result_api_workflows__workflow_id__execution_abandon_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AbandonRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

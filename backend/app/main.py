@@ -1152,10 +1152,12 @@ def get_workflow(
 @app.get("/api/workflows/{workflow_id}/execution", response_model=ArExecutionRead)
 def get_workflow_execution(
     workflow_id: str,
+    include_process_details: bool = Query(False),
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ) -> ArExecutionRead:
-    return read_execution(get_workflow_or_404(db, workflow_id, user))
+    return read_execution(get_workflow_or_404(db, workflow_id, user),
+                          include_process_details=include_process_details)
 
 
 @app.get("/api/workflows/{workflow_id}/execution/abandon")

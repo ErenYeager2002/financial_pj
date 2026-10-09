@@ -7,8 +7,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from datetime import UTC, datetime
 from types import SimpleNamespace
+
+from .ar_execution_contract import INVESTIGATION_ACTION
 
 
 SCHEMA_VERSION = "ar-execution-safety-v1"
@@ -76,6 +79,156 @@ def _state(context: dict, workflow_id: str | None = None) -> dict:
     return value
 
 
+
+PROCESS_OBSERVATION_PHASE = "build_initial_report"
+PROCESS_OBSERVATION_SCRIPT = "build_worklist.py"
+PROCESS_OBSERVATION_NAMESPACE = "process_observations"
+PROCESS_OBSERVATION_SCHEMA = "ar-process-observations-v1"
+PROCESS_OBSERVATION_SCHEMA_V2 = "ar-process-observations-v2"
+PROCESS_OBSERVATION_SCHEMA_V3 = "ar-process-observations-v3"
+PROCESS_OBSERVATION_SCRIPTS = {
+    PROCESS_OBSERVATION_PHASE: PROCESS_OBSERVATION_SCRIPT,
+    "rescan_holds": "rescan_execution_holds.py",
+    INVESTIGATION_ACTION: "investigate_failed_write.py",
+}
+PROCESS_OBSERVATION_ACTIONS = {phase: (phase if phase == INVESTIGATION_ACTION else "ar_" + phase)
+                               for phase in PROCESS_OBSERVATION_SCRIPTS}
+RESCAN_INPUT_BINDING_FIELDS = frozenset({
+    "staging_workspace_sha256", "manifest_sha256", "staged_plan_sha256",
+    "initial_result_sha256", "reviewed_result_sha256", "arguments_sha256",
+})
+
+
+INVESTIGATION_INPUT_BINDING_FIELDS = frozenset({
+    "staging_workspace_sha256", "manifest_sha256", "staged_plan_sha256",
+    "request_sha256", "failed_action_binding_sha256", "workbook_inputs_sha256", "arguments_sha256",
+})
+
+
+def _valid_rescan_input_binding(value) -> bool:
+    return (isinstance(value, dict) and set(value) == RESCAN_INPUT_BINDING_FIELDS
+            and all(isinstance(digest, str) and re.fullmatch(r"[0-9a-f]{64}", digest)
+                    for digest in value.values()))
+
+
+def _valid_investigation_input_binding(value) -> bool:
+    return (isinstance(value, dict) and set(value) == INVESTIGATION_INPUT_BINDING_FIELDS
+            and all(isinstance(digest, str) and re.fullmatch(r"[0-9a-f]{64}", digest)
+                    for digest in value.values()))
+
+
+def _process_state(context: dict, workflow_id: str | None = None, *, observation=False) -> dict:
+    """Select the one server-owned observation partition; effect is the default."""
+    outer = _state(context, workflow_id)
+    if not observation:
+        return outer
+    state = outer.get(PROCESS_OBSERVATION_NAMESPACE)
+    if state is None and PROCESS_OBSERVATION_NAMESPACE not in outer:
+        return {"schema_version": PROCESS_OBSERVATION_SCHEMA, "revision": 0, "attempts": []}
+    if (not isinstance(state, dict) or set(state) != {"schema_version", "revision", "attempts"}
+            or state["schema_version"] not in {PROCESS_OBSERVATION_SCHEMA, PROCESS_OBSERVATION_SCHEMA_V2, PROCESS_OBSERVATION_SCHEMA_V3}
+            or type(state["revision"]) is not int or state["revision"] < 0
+            or not isinstance(state["attempts"], list) or len(state["attempts"]) > MAX_ATTEMPTS):
+        raise ValueError("首次日清原进程观察分区无效，禁止继续登记。")
+    seen = set()
+    for entry in state["attempts"]:
+        phase = entry.get("phase") if isinstance(entry, dict) else None
+        rescan = phase == "rescan_holds"
+        investigation = phase == INVESTIGATION_ACTION
+        binding_fields = (*BINDING_FIELDS, "input_binding") if rescan or investigation else BINDING_FIELDS
+        fields = set(binding_fields) | {"binding_sha256", "intent_at", "prepared_process_refs", "terminal_process_refs"}
+        if (not isinstance(entry, dict) or set(entry) != fields
+                or any(not isinstance(entry.get(key), str) or not entry[key] or len(entry[key]) > 255
+                       for key in set(BINDING_FIELDS) - {"attempt", "material_version"})
+                or type(entry.get("attempt")) is not int or entry["attempt"] < 1
+                or type(entry.get("material_version")) is not int or entry["material_version"] < 1
+                or phase not in PROCESS_OBSERVATION_SCRIPTS
+                or (state["schema_version"] == PROCESS_OBSERVATION_SCHEMA and phase != PROCESS_OBSERVATION_PHASE)
+                or (investigation and (state["schema_version"] != PROCESS_OBSERVATION_SCHEMA_V3
+                                      or not _valid_investigation_input_binding(entry.get("input_binding"))))
+                or (rescan and not _valid_rescan_input_binding(entry.get("input_binding")))
+                or (workflow_id is not None and entry.get("workflow_id") != workflow_id)
+                or (entry["action_id"], entry["attempt"]) in seen
+                or any(not isinstance(entry.get(key), str) or not re.fullmatch(r"[0-9a-f]{64}", entry[key])
+                       for key in ("skill_hash", "plan_fingerprint", "workspace_sha256", "binding_sha256"))
+                or entry["binding_sha256"] != hashlib.sha256(_canonical({key: entry[key] for key in binding_fields})).hexdigest()
+                or not isinstance(entry["prepared_process_refs"], list) or len(entry["prepared_process_refs"]) > 1
+                or not isinstance(entry["terminal_process_refs"], list)):
+            raise ValueError("首次日清原进程观察身份或绑定无效，禁止继续登记。")
+        try:
+            stamp = entry["intent_at"]
+            if not isinstance(stamp, str) or len(stamp) > 64:
+                raise ValueError
+            parsed = datetime.fromisoformat(stamp)
+            if parsed.tzinfo is None or parsed.utcoffset().total_seconds() != 0:
+                raise ValueError
+        except (TypeError, ValueError, AttributeError) as exc:
+            raise ValueError("首次日清原进程观察时间无效。") from exc
+        for ref in entry["prepared_process_refs"]:
+            if isinstance(ref, dict) and (not isinstance(ref.get("registered_at"), str)
+                    or len(ref["registered_at"]) > 64):
+                raise ValueError("首次日清原进程准备登记时间无效。")
+        seen.add((entry["action_id"], entry["attempt"]))
+    refs = _prepared_process_refs(state)
+    effect_ids = {ref["record_id"] for _, ref in _prepared_process_refs(outer)}
+    if any(ref["script"] != PROCESS_OBSERVATION_SCRIPTS[entry["phase"]]
+            or ref["record_id"] in effect_ids for entry, ref in refs):
+        raise ValueError("首次日清原进程准备引用与原脚本或分区冲突。")
+    for entry in state["attempts"]:
+        _terminal_process_refs(entry)
+    return state
+
+
+def _store_process_state(context: dict, state: dict, *, observation=False) -> None:
+    if observation:
+        outer = _state(context)
+        outer[PROCESS_OBSERVATION_NAMESPACE] = state
+        context["execution_safety_v1"] = outer
+    else:
+        context["execution_safety_v1"] = state
+
+
+def register_process_observation_intent(context: dict, workflow, action, *, input_binding=None) -> dict:
+    """Record a fixed existing-plan caller at its phase-owned commit."""
+    phase = action.name.removeprefix("ar_")
+    if (not isinstance(context, dict) or action.workflow_id != workflow.id
+            or action.name != PROCESS_OBSERVATION_ACTIONS.get(phase) or action.state != "running"
+            or type(action.attempt_count) is not int or action.attempt_count <= 0 or not action.worker_id):
+        raise ValueError("首次日清动作与原观察绑定不一致。")
+    execution = context.get("ar_execution")
+    if not isinstance(execution, dict) or not isinstance(context.get("workspace"), str):
+        raise ValueError("首次日清原材料或计划绑定不完整。")
+    if ((phase == "rescan_holds" and not _valid_rescan_input_binding(input_binding))
+            or (phase == INVESTIGATION_ACTION and not _valid_investigation_input_binding(input_binding))
+            or (phase == PROCESS_OBSERVATION_PHASE and input_binding is not None)):
+        raise ValueError("核销原进程观察的阶段输入绑定无效。")
+    state = _process_state(context, workflow.id, observation=True)
+    if len(state["attempts"]) >= MAX_ATTEMPTS or any(
+            entry["action_id"] == action.id and entry["attempt"] == action.attempt_count for entry in state["attempts"]):
+        raise ValueError("首次日清原观察意图重复或超过记录上限。")
+    binding = {
+        "workflow_id": workflow.id, "action_id": action.id, "attempt": action.attempt_count,
+        "phase": phase, "worker_id": action.worker_id,
+        "owner_id": workflow.owner_id, "department_id": workflow.department_id,
+        "skill_id": workflow.skill_id, "skill_hash": workflow.skill_hash,
+        "material_set_id": execution.get("material_set_id"), "material_version": execution.get("material_version"),
+        "reconciliation_date": workflow.reconciliation_date, "plan_fingerprint": context.get("plan_fingerprint"),
+        "workspace_sha256": hashlib.sha256(context["workspace"].encode("utf-8")).hexdigest(),
+    }
+    if phase in {"rescan_holds", INVESTIGATION_ACTION}:
+        binding["input_binding"] = dict(input_binding)
+        if phase == INVESTIGATION_ACTION:
+            state["schema_version"] = PROCESS_OBSERVATION_SCHEMA_V3
+        elif state["schema_version"] != PROCESS_OBSERVATION_SCHEMA_V3:
+            state["schema_version"] = PROCESS_OBSERVATION_SCHEMA_V2
+    state["attempts"].append({**binding, "binding_sha256": hashlib.sha256(_canonical(binding)).hexdigest(),
+        "intent_at": datetime.now(UTC).isoformat(), "prepared_process_refs": [], "terminal_process_refs": []})
+    state["revision"] += 1
+    _store_process_state(context, state, observation=True)
+    _process_state(context, workflow.id, observation=True)
+    return context
+
+
 def register_effect_intent(context: dict, workflow, action, phase: str) -> dict:
     """Append intent before the phase handler can start a child or publish."""
     if phase not in EFFECT_PHASES:
@@ -119,6 +272,166 @@ def register_effect_intent(context: dict, workflow, action, phase: str) -> dict:
     state["revision"] += 1
     context["execution_safety_v1"] = state
     return context
+
+
+def _prepared_process_refs(state: dict) -> list[tuple[dict, dict]]:
+    from .ar_process_evidence import SCHEMA_VERSION as EVIDENCE_VERSION
+    from .ar_process_inspection import MAX_RECORDS
+
+    fields = {"schema_version", "record_id", "prepared_sha256", "script",
+              "script_sha256", "arguments_sha256", "binding_sha256", "registered_at"}
+    seen = set()
+    result = []
+    counts = {}
+    for entry in state["attempts"]:
+        refs = entry.get("prepared_process_refs", [])
+        if not isinstance(refs, list) or len(refs) > MAX_RECORDS:
+            raise ValueError("核销进程准备引用格式或数量无效。")
+        counts[entry["action_id"]] = counts.get(entry["action_id"], 0) + len(refs)
+        if counts[entry["action_id"]] > MAX_RECORDS:
+            raise ValueError("核销动作进程引用超过记录上限。")
+        for ref in refs:
+            if (not isinstance(ref, dict) or set(ref) != fields
+                    or ref.get("schema_version") != EVIDENCE_VERSION
+                    or not isinstance(ref.get("record_id"), str)
+                    or len(ref["record_id"]) != 32
+                    or any(char not in "0123456789abcdef" for char in ref["record_id"])
+                    or ref["record_id"] in seen
+                    or not isinstance(ref.get("script"), str) or not ref["script"]
+                    or len(ref["script"]) > 255 or not re.fullmatch(r"[a-z_]+\.py", ref["script"])
+                    or ref.get("binding_sha256") != entry["binding_sha256"]):
+                raise ValueError("核销进程准备引用身份或绑定无效。")
+            for field in ("prepared_sha256", "script_sha256", "arguments_sha256", "binding_sha256"):
+                value = ref.get(field)
+                if (not isinstance(value, str) or len(value) != 64
+                        or any(char not in "0123456789abcdef" for char in value)):
+                    raise ValueError("核销进程准备引用摘要无效。")
+            try:
+                stamp = datetime.fromisoformat(ref["registered_at"])
+                if stamp.tzinfo is None or stamp.utcoffset().total_seconds() != 0:
+                    raise ValueError("核销进程准备引用时间无效。")
+            except (TypeError, ValueError, AttributeError) as exc:
+                raise ValueError("核销进程准备引用时间无效。") from exc
+            seen.add(ref["record_id"])
+            result.append((entry, ref))
+    return result
+
+
+def register_prepared_process_ref(context: dict, entry: dict, anchor, *, observation=False) -> dict:
+    from .ar_process_evidence import SCHEMA_VERSION as EVIDENCE_VERSION
+    from .ar_process_inspection import MAX_RECORDS
+
+    state = _process_state(context, entry["workflow_id"], observation=observation)
+    refs = _prepared_process_refs(state)
+    if observation and (anchor.script != PROCESS_OBSERVATION_SCRIPTS[entry["phase"]] or entry["prepared_process_refs"]
+            or (entry["phase"] != PROCESS_OBSERVATION_PHASE and anchor.arguments_sha256 != entry["input_binding"]["arguments_sha256"])
+            or any(ref["record_id"] == anchor.record_id for _, ref in _prepared_process_refs(_state(context)))):
+        raise ValueError("首次日清原准备引用重复或分区冲突，禁止再次启动。")
+    if any(ref["record_id"] == anchor.record_id for _, ref in refs):
+        raise ValueError("核销进程准备引用已登记，禁止再次启动。")
+    if sum(item["action_id"] == entry["action_id"] for item, _ in refs) >= MAX_RECORDS:
+        raise ValueError("核销动作进程引用达到记录上限。")
+    ref = {
+        "schema_version": EVIDENCE_VERSION, "record_id": anchor.record_id,
+        "prepared_sha256": anchor.prepared_sha256, "script": anchor.script,
+        "script_sha256": anchor.script_sha256, "arguments_sha256": anchor.arguments_sha256,
+        "binding_sha256": entry["binding_sha256"], "registered_at": datetime.now(UTC).isoformat(),
+    }
+    entry.setdefault("prepared_process_refs", []).append(ref)
+    _prepared_process_refs(state)
+    state["revision"] += 1
+    _store_process_state(context, state, observation=observation)
+    return ref
+
+
+def _terminal_process_refs(entry: dict) -> list[dict]:
+    from .ar_process_evidence import SCHEMA_VERSION as EVIDENCE_VERSION
+
+    fields = {"schema_version", "record_id", "prepared_sha256", "script", "started_sha256",
+              "exit_sha256", "domain_exit_sha256", "terminal_state", "binding_sha256", "registered_at"}
+    anchors = {ref["record_id"]: ref for ref in entry.get("prepared_process_refs", [])}
+    refs = entry.get("terminal_process_refs", [])
+    if not isinstance(refs, list) or len(refs) > len(anchors):
+        raise ValueError("原进程终态引用数量或格式无效。")
+    seen = set()
+    for ref in refs:
+        if (not isinstance(ref, dict) or set(ref) != fields
+                or ref.get("schema_version") != EVIDENCE_VERSION
+                or not isinstance(ref.get("record_id"), str) or ref["record_id"] not in anchors
+                or ref["record_id"] in seen
+                or ref.get("terminal_state") not in {"exited", "exit_unconfirmed", "launch_unconfirmed"}):
+            raise ValueError("原进程终态引用身份或格式无效。")
+        anchor = anchors[ref["record_id"]]
+        if any(type(ref.get(key)) is not type(anchor[key]) or ref[key] != anchor[key]
+               for key in ("prepared_sha256", "script", "binding_sha256")):
+            raise ValueError("原进程终态引用与准备锚点不一致。")
+        for key in ("started_sha256", "exit_sha256", "domain_exit_sha256"):
+            value = ref[key]
+            if value is not None and (not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value)):
+                raise ValueError("原进程终态指纹无效。")
+        value = ref["registered_at"]
+        try:
+            if not isinstance(value, str) or len(value) > 64:
+                raise ValueError("原进程终态登记时间无效。")
+            stamp = datetime.fromisoformat(value)
+            if stamp.tzinfo is None or stamp.utcoffset().total_seconds() != 0:
+                raise ValueError("原进程终态登记时间无效。")
+        except (TypeError, ValueError, AttributeError) as exc:
+            raise ValueError("原进程终态登记时间无效。") from exc
+        seen.add(ref["record_id"])
+    return refs
+
+
+def register_terminal_process_ref(context: dict, anchor, observation, *, process_observation=False) -> tuple[dict, dict, bool]:
+    from .ar_process_evidence import (PREPARED_IDENTITY_FIELDS, SCHEMA_VERSION as EVIDENCE_VERSION,
+                                     TerminalProcessObservation, TerminalProcessRegistrationError)
+
+    identity = dict(anchor.prepared_identity)
+    if (type(anchor.prepared_identity) is not tuple or len(anchor.prepared_identity) != len(PREPARED_IDENTITY_FIELDS)
+            or set(identity) != set(PREPARED_IDENTITY_FIELDS) or anchor.schema_version != EVIDENCE_VERSION
+            or not isinstance(anchor.binding_sha256, str) or not re.fullmatch(r"[0-9a-f]{64}", anchor.binding_sha256)
+            or type(observation) is not TerminalProcessObservation):
+        raise TerminalProcessRegistrationError("terminal_binding_invalid")
+    state = _process_state(context, identity["workflow_id"], observation=process_observation)
+    _prepared_process_refs(state)
+    matches = []
+    for entry in state["attempts"]:
+        expected = {"action_name": (PROCESS_OBSERVATION_ACTIONS[entry["phase"]] if process_observation else "ar_" + entry["phase"]),
+                    **{key: entry[key] for key in PREPARED_IDENTITY_FIELDS if key != "action_name"}}
+        if (entry["binding_sha256"] == anchor.binding_sha256
+                and all(type(identity[key]) is type(expected[key]) and identity[key] == expected[key]
+                        for key in PREPARED_IDENTITY_FIELDS)):
+            matches.append(entry)
+    if len(matches) != 1:
+        raise TerminalProcessRegistrationError("terminal_binding_invalid")
+    entry = matches[0]
+    prepared = [ref for ref in entry.get("prepared_process_refs", []) if ref["record_id"] == anchor.record_id]
+    if len(prepared) != 1 or any(type(prepared[0][key]) is not type(value) or prepared[0][key] != value
+            for key, value in {"prepared_sha256": anchor.prepared_sha256, "script": anchor.script,
+                "script_sha256": anchor.script_sha256, "arguments_sha256": anchor.arguments_sha256,
+                "binding_sha256": anchor.binding_sha256}.items()):
+        raise TerminalProcessRegistrationError("terminal_binding_invalid")
+    ref = {"schema_version": EVIDENCE_VERSION, "record_id": anchor.record_id,
+           "prepared_sha256": anchor.prepared_sha256, "script": anchor.script,
+           "started_sha256": observation.started_sha256, "exit_sha256": observation.exit_sha256,
+           "domain_exit_sha256": observation.domain_exit_sha256, "terminal_state": observation.terminal_state,
+           "binding_sha256": anchor.binding_sha256, "registered_at": datetime.now(UTC).isoformat()}
+    try:
+        existing = _terminal_process_refs(entry)
+        candidate = {**entry, "terminal_process_refs": [ref]}
+        _terminal_process_refs(candidate)
+    except ValueError as exc:
+        raise TerminalProcessRegistrationError("terminal_ref_conflict") from exc
+    for prior in existing:
+        if prior["record_id"] == anchor.record_id:
+            if _canonical({key: value for key, value in prior.items() if key != "registered_at"}) != _canonical(
+                    {key: value for key, value in ref.items() if key != "registered_at"}):
+                raise TerminalProcessRegistrationError("terminal_ref_conflict")
+            return entry, prior, False
+    entry.setdefault("terminal_process_refs", []).append(ref)
+    state["revision"] += 1
+    _store_process_state(context, state, observation=process_observation)
+    return entry, ref, True
 
 
 def record_effect_completion(context: dict, action, phase: str, result: dict) -> dict:

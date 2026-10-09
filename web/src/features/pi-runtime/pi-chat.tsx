@@ -3,6 +3,8 @@ import {useEffect,useRef,useState,type ReactNode} from 'react';
 import {useRouter} from 'next/navigation';
 import {IconArrowUp,IconSquare,IconPlus,IconAdjustmentsHorizontal,IconLayoutSidebar,IconEdit,IconX} from '@tabler/icons-react';
 import {PiChatMessages} from './pi-chat-messages';
+import {DeerflowMessages} from './deerflow/deerflow-messages';
+import {DeerflowWelcome} from './deerflow/deerflow-conversation';
 import styles from './pi-chat-design.module.css';
 import {PiCommands} from './pi-commands';
 import {PiChatArtifacts} from './pi-chat-artifacts';
@@ -19,6 +21,7 @@ function ChatSession({sessionId,storageScope,controls}:{sessionId:string;storage
  const {interrupting,controlNotice,artifacts,status,connectionError,commands,commandsOpen,messages,input,error,running,working,sending,queueMode,models,model,thinking,pending,dialogs,delivery,uncertainDelivery,uploading,uploadProgress,attachments}=view;
  const {refreshArtifacts,setCommandsOpen,setInput,setError,setQueueMode,setAttachments,queryDelivery,connect,upload,submit,acknowledgeDelivery,closeEnvironment,changeModel,interruptReply,takeQueuedMessages,compactContext,refreshCommands,changeThinking,replyToDialog}=actions;
  const [interruptChoice,setInterruptChoice]=useState(false);
+ const [renderer]=useState(()=>{if(typeof window==='undefined')return '';try{const param=new URLSearchParams(window.location.search).get('renderer');if(param)return param;return localStorage.getItem('pi-renderer')??''}catch{return ''}});
  const picker=useRef<HTMLInputElement>(null);const viewport=useRef<HTMLDivElement>(null);const follow=useRef(true);
  const dragDepth=useRef(0);const [dragging,setDragging]=useState(false);
  useEffect(()=>{const el=composer.current;if(el){el.style.height='auto';el.style.height=Math.min(192,Math.max(96,el.scrollHeight))+'px'}},[input]);
@@ -32,6 +35,7 @@ function ChatSession({sessionId,storageScope,controls}:{sessionId:string;storage
     <button disabled={!status.canConfigure} onClick={()=>void compactContext()}>整理上下文</button>
     {!running&&<button disabled={!status.canStartEnvironment} onClick={()=>void connect().catch(e=>setError(e.message))}>恢复会话环境</button>}
     <button disabled={!running||!status.canManageEnvironment} onClick={()=>void closeEnvironment()}>结束会话环境</button>
+    <button onClick={()=>{try{localStorage.setItem('pi-renderer',renderer==='deerflow'?'':'deerflow')}catch{/* ignore */}window.location.reload()}}>切换展示样式（当前：{renderer==='deerflow'?'新版':'经典'}）</button>
    </div></details></header>
    {status.message&&<p role='status' title={connectionError||undefined} className='text-muted-foreground mx-3 rounded-lg border p-2 text-sm'>{status.message}</p>}
    {controlNotice&&<p role='status' className='mx-3 rounded-lg border p-2 text-sm'>{controlNotice}</p>}
@@ -39,8 +43,8 @@ function ChatSession({sessionId,storageScope,controls}:{sessionId:string;storage
    {error&&<div role='alert' className='text-destructive mx-3 flex max-h-24 shrink-0 justify-between gap-2 overflow-y-auto rounded-lg border p-3 text-sm'>{error}<button aria-label='关闭错误提示' onClick={()=>setError('')}><IconX size={16}/></button></div>}
    {delivery&&<div role='status' className='mx-3 flex flex-wrap items-center gap-2 rounded-lg border p-2 text-sm'>{deliveryMessage(delivery.state)}{uncertainDelivery&&delivery.state!=='submitting'&&<><button type='button' className='underline' onClick={()=>void queryDelivery(delivery.id)}>查询投递状态</button><button type='button' className='underline' onClick={acknowledgeDelivery}>已核对，准备新请求</button></>}</div>}
    <div ref={viewport} role='region' aria-label='Agent 对话消息' className={styles.viewport} onScroll={()=>{const el=viewport.current;if(el)follow.current=el.scrollHeight-el.scrollTop-el.clientHeight<100}}><div className={styles.stream}>
-    {!messages.length&&<div className={styles.empty}><h2>今天想完成什么？</h2><p>描述任务，或上传文件开始工作。</p><div className={styles.suggestions}>{['分析上传的表格','查看可用工具','帮我整理文件'].map(text=><button key={text} onClick={()=>{setInput(text);composer.current?.focus()}}>{text}</button>)}</div></div>}
-    <PiChatMessages messages={messages} sessionId={sessionId}/>
+    {!messages.length&&(renderer==='deerflow'?<DeerflowWelcome greeting='今天想完成什么？' description='描述任务，或上传文件开始工作。' suggestions={['分析上传的表格','查看可用工具','帮我整理文件']} onPick={text=>{setInput(text);composer.current?.focus()}}/>:<div className={styles.empty}><h2>今天想完成什么？</h2><p>描述任务，或上传文件开始工作。</p><div className={styles.suggestions}>{['分析上传的表格','查看可用工具','帮我整理文件'].map(text=><button key={text} onClick={()=>{setInput(text);composer.current?.focus()}}>{text}</button>)}</div></div>)}
+    {renderer==='deerflow'?<DeerflowMessages messages={messages} sessionId={sessionId}/>:<PiChatMessages messages={messages} sessionId={sessionId}/>}
     <PiChatArtifacts view={artifacts} onRefresh={refreshArtifacts}/>
    </div></div>
    <div className={styles.composerArea}>

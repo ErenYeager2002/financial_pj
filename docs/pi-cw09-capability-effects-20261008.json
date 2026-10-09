@@ -1,0 +1,751 @@
+{
+ "schema_version": "pi-capability-effects-v1",
+ "derived_at": "2026-10-08T11:20:00+08:00",
+ "derived_by": "R10 audit (read-only)",
+ "authority_note": "派生索引，非第二份可编辑业务正本；权威来源为 Registry/tool.yaml、原生固定包与既有批准记录。可从权威来源重建。",
+ "sources": [
+  "worktree skills/*/tool.yaml+SKILL.md+脚本扫描",
+  "data/native-skills/packages/<id>/<commit>/",
+  "docs/pi-cw09-capability-register-20261008.json(2026-10-07 观察快照)",
+  "docs/pi-cw09-boundary-progress.md"
+ ],
+ "effect_categories": [
+  "immutable_in_independent_out",
+  "external_read",
+  "workcopy_modify",
+  "original_modify",
+  "external_write",
+  "unknown"
+ ],
+ "entries": [
+  {
+   "form": "fixed",
+   "id": "ar-hexiao-daily",
+   "version": "1.6.28-local.35.sales.4.balance.5",
+   "status": "published",
+   "side_effects": [
+    "external_read",
+    "workcopy_modify"
+   ],
+   "external_systems": [
+    {
+     "system": "智云",
+     "access": "direct_read",
+     "required": true
+    }
+   ],
+   "input_output": "入:盈亏核算表/到账流转表(可多份)；出:写入后工作副本+核销日清",
+   "recovery_facts": "有文档化恢复规则：SKILL.md needs_rerun 逐日重跑、幂等校验跳过已写行、禁止写入失败绕道重试；正式恢复由后端 workflow/安全索引裁决（见 ar-cw06/pi-cw07 文档）",
+   "evidence": [
+    "skills/ar-hexiao-daily/tool.yaml(risk:write,external_sources)",
+    "SKILL.md L120/L130/L164(重跑/幂等/禁止绕道)"
+   ],
+   "defects": [],
+   "note": null
+  },
+  {
+   "form": "fixed",
+   "id": "ar-hexiao-daily-lab",
+   "version": "1.6.24-lab.6.local.35.sales.9.balance.35",
+   "status": "published",
+   "side_effects": [
+    "external_read",
+    "workcopy_modify"
+   ],
+   "external_systems": [
+    {
+     "system": "智云",
+     "access": "direct_read",
+     "required": true
+    }
+   ],
+   "input_output": "同 ar-hexiao-daily（极速分叉版，主力在用）",
+   "recovery_facts": "有文档化恢复规则：SKILL.md needs_rerun 逐日重跑、幂等校验跳过已写行、禁止写入失败绕道重试；正式恢复由后端 workflow/安全索引裁决（见 ar-cw06/pi-cw07 文档）",
+   "evidence": [
+    "skills/ar-hexiao-daily-lab/tool.yaml"
+   ],
+   "defects": [],
+   "note": null
+  },
+  {
+   "form": "fixed",
+   "id": "jdy-cashflow-export",
+   "version": "1.0.0",
+   "status": "disabled",
+   "side_effects": [
+    "external_read",
+    "unknown"
+   ],
+   "external_systems": [
+    {
+     "system": "金蝶云",
+     "access": "browser_rpa",
+     "required": true
+    }
+   ],
+   "input_output": "入:受控凭据；出:导出明细",
+   "recovery_facts": "tool.yaml 无恢复规则字段；SKILL.md 未文档化单项恢复规则",
+   "evidence": [
+    "skills/jdy-cashflow-export/tool.yaml(risk:external_action)"
+   ],
+   "defects": [],
+   "note": "browser_rpa 经外部系统会话操作；是否存在点击类写动作未逐项核实，细项标 unknown"
+  },
+  {
+   "form": "fixed",
+   "id": "jdy-cashflow-reconcile",
+   "version": "1.0.0",
+   "status": "disabled",
+   "side_effects": [
+    "immutable_in_independent_out"
+   ],
+   "external_systems": [],
+   "input_output": "入:上传对账材料；出:对账结果",
+   "recovery_facts": "tool.yaml 无恢复规则字段；SKILL.md 未文档化单项恢复规则",
+   "evidence": [
+    "skills/jdy-cashflow-reconcile/tool.yaml"
+   ],
+   "defects": [],
+   "note": null
+  },
+  {
+   "form": "fixed",
+   "id": "labor-invoice-check",
+   "version": "1.0.0",
+   "status": "disabled",
+   "side_effects": [
+    "immutable_in_independent_out"
+   ],
+   "external_systems": [],
+   "input_output": "入:劳务明细+发票汇总；出:完成版统计",
+   "recovery_facts": "tool.yaml 无恢复规则字段；SKILL.md 未文档化单项恢复规则",
+   "evidence": [
+    "skills/labor-invoice-check/tool.yaml"
+   ],
+   "defects": [],
+   "note": null
+  },
+  {
+   "form": "fixed",
+   "id": "compliance-spot-check",
+   "version": "1.0.0",
+   "status": "disabled",
+   "side_effects": [
+    "immutable_in_independent_out"
+   ],
+   "external_systems": [],
+   "input_output": "入:应收all+抽查历史；出:建议抽查名单",
+   "recovery_facts": "tool.yaml 无恢复规则字段；SKILL.md 未文档化单项恢复规则",
+   "evidence": [
+    "skills/compliance-spot-check/tool.yaml"
+   ],
+   "defects": [],
+   "note": null
+  },
+  {
+   "form": "fixed",
+   "id": "task-clarifier",
+   "version": "1.0.0",
+   "status": "disabled",
+   "side_effects": [
+    "immutable_in_independent_out"
+   ],
+   "external_systems": [],
+   "input_output": "纯文本澄清，无文件无网络（扫描0命中）",
+   "recovery_facts": "tool.yaml 无恢复规则字段；SKILL.md 未文档化单项恢复规则",
+   "evidence": [
+    "skills/task-clarifier(tool.yaml+脚本扫描)"
+   ],
+   "defects": [],
+   "note": null
+  },
+  {
+   "form": "fixed",
+   "id": "env-doctor",
+   "version": "1.0.0",
+   "status": "disabled",
+   "side_effects": [
+    "immutable_in_independent_out"
+   ],
+   "external_systems": [],
+   "input_output": "环境只读检查（扫描0网络/0写命中）",
+   "recovery_facts": "tool.yaml 无恢复规则字段；SKILL.md 未文档化单项恢复规则",
+   "evidence": [
+    "skills/env-doctor(tool.yaml+脚本扫描)"
+   ],
+   "defects": [],
+   "note": null
+  },
+  {
+   "form": "fixed",
+   "id": "reconcile-bank",
+   "version": "1.0.0",
+   "status": "disabled",
+   "side_effects": [
+    "immutable_in_independent_out"
+   ],
+   "external_systems": [],
+   "input_output": "入:银行流水/账；出:对账结果",
+   "recovery_facts": "tool.yaml 无恢复规则字段；SKILL.md 未文档化单项恢复规则",
+   "evidence": [
+    "skills/reconcile-bank/tool.yaml"
+   ],
+   "defects": [],
+   "note": null
+  },
+  {
+   "form": "fixed",
+   "id": "receivables-merge-and-split",
+   "version": "1.2.1",
+   "status": "disabled",
+   "side_effects": [
+    "immutable_in_independent_out"
+   ],
+   "external_systems": [],
+   "input_output": "入:源台账/回填源；出:应收all+按销售拆分",
+   "recovery_facts": "tool.yaml 无恢复规则字段；SKILL.md 未文档化单项恢复规则",
+   "evidence": [
+    "skills/receivables-merge-and-split/tool.yaml"
+   ],
+   "defects": [],
+   "note": null
+  },
+  {
+   "form": "fixed",
+   "id": "dreame-ar-progress-diff",
+   "version": "1.0.0",
+   "status": "disabled",
+   "side_effects": [
+    "immutable_in_independent_out"
+   ],
+   "external_systems": [],
+   "input_output": "入:2~N份进度表；出:对比报告",
+   "recovery_facts": "tool.yaml 无恢复规则字段；SKILL.md 未文档化单项恢复规则",
+   "evidence": [
+    "skills/dreame-ar-progress-diff/tool.yaml"
+   ],
+   "defects": [],
+   "note": null
+  },
+  {
+   "form": "fixed",
+   "id": "pdf-compress",
+   "version": "1.0.0",
+   "status": "disabled",
+   "side_effects": [
+    "immutable_in_independent_out"
+   ],
+   "external_systems": [],
+   "input_output": "入:PDF；出:压缩副本",
+   "recovery_facts": "tool.yaml 无恢复规则字段；SKILL.md 未文档化单项恢复规则",
+   "evidence": [
+    "skills/pdf-compress/tool.yaml"
+   ],
+   "defects": [],
+   "note": null
+  },
+  {
+   "form": "fixed",
+   "id": "withholding-report-rename",
+   "version": "1.0.1",
+   "status": "disabled",
+   "side_effects": [
+    "immutable_in_independent_out",
+    "original_modify"
+   ],
+   "external_systems": [
+    {
+     "system": "电子税务局",
+     "access": "uploaded_export",
+     "required": true
+    }
+   ],
+   "input_output": "默认出重命名副本；仅用户明确「就地改」时 --mode rename（先整批备份）",
+   "recovery_facts": "tool.yaml 无恢复规则字段；SKILL.md 未文档化单项恢复规则",
+   "evidence": [
+    "skills/withholding-report-rename/README.md L44/L60(rename 条件+备份)",
+    "tool.yaml(risk:read_only,modifies_uploaded_files:false)"
+   ],
+   "defects": [],
+   "note": "original_modify 为条件行为：需用户明示且脚本先备份"
+  },
+  {
+   "form": "fixed",
+   "id": "xlsx",
+   "version": "1.0.5",
+   "status": "disabled",
+   "side_effects": [
+    "immutable_in_independent_out"
+   ],
+   "external_systems": [],
+   "input_output": "表格读写/清洗，出成品 spreadsheet",
+   "recovery_facts": "tool.yaml 无恢复规则字段；SKILL.md 未文档化单项恢复规则",
+   "evidence": [
+    "skills/xlsx/tool.yaml"
+   ],
+   "defects": [],
+   "note": null
+  },
+  {
+   "form": "fixed",
+   "id": "pdf",
+   "version": "1.0.0",
+   "status": "disabled",
+   "side_effects": [
+    "immutable_in_independent_out"
+   ],
+   "external_systems": [],
+   "input_output": "PDF 处理，出结果文件",
+   "recovery_facts": "tool.yaml 无恢复规则字段；SKILL.md 未文档化单项恢复规则",
+   "evidence": [
+    "skills/pdf/tool.yaml"
+   ],
+   "defects": [],
+   "note": null
+  },
+  {
+   "form": "fixed",
+   "id": "pptx",
+   "version": "1.0.0",
+   "status": "disabled",
+   "side_effects": [
+    "immutable_in_independent_out"
+   ],
+   "external_systems": [],
+   "input_output": "PPT 创建/编辑，出 pptx",
+   "recovery_facts": "tool.yaml 无恢复规则字段；SKILL.md 未文档化单项恢复规则",
+   "evidence": [
+    "skills/pptx/tool.yaml"
+   ],
+   "defects": [],
+   "note": null
+  },
+  {
+   "form": "fixed",
+   "id": "docx",
+   "version": "1.0.0",
+   "status": "disabled",
+   "side_effects": [
+    "immutable_in_independent_out"
+   ],
+   "external_systems": [],
+   "input_output": "Word 创建/美化，出 docx",
+   "recovery_facts": "tool.yaml 无恢复规则字段；SKILL.md 未文档化单项恢复规则",
+   "evidence": [
+    "skills/docx/tool.yaml"
+   ],
+   "defects": [],
+   "note": null
+  },
+  {
+   "form": "fixed",
+   "id": "order-daily-summary",
+   "version": "1.0.0",
+   "status": "disabled",
+   "side_effects": [
+    "external_read",
+    "immutable_in_independent_out"
+   ],
+   "external_systems": [
+    {
+     "system": "智云(192.168.10.167:18880)",
+     "access": "direct_read_per_skill_doc"
+    }
+   ],
+   "input_output": "入:智云下单表；出:下单数据(万元)Excel/ZIP",
+   "recovery_facts": "tool.yaml 无恢复规则字段；SKILL.md 未文档化单项恢复规则",
+   "evidence": [
+    "SKILL.md L27(需内网直连智云)",
+    "README.md L52/L92(登录智云)",
+    "tool.yaml(external_sources:uploaded_export)"
+   ],
+   "defects": [
+    "D-01: tool.yaml 声明 access=uploaded_export，但 SKILL.md/README 为直连登录智云取数；声明与文档行为不一致"
+   ],
+   "note": null
+  },
+  {
+   "form": "fixed",
+   "id": "project-detail-to-ledger",
+   "version": "1.1.0",
+   "status": "disabled",
+   "side_effects": [
+    "immutable_in_independent_out"
+   ],
+   "external_systems": [],
+   "input_output": "入:项目明细+盈亏核算表；出:追加后的新副本（SKILL 明示禁止覆盖原件）",
+   "recovery_facts": "tool.yaml 无恢复规则字段；SKILL.md 未文档化单项恢复规则",
+   "evidence": [
+    "SKILL.md L50(禁止覆盖用户上传原件)",
+    "skills/project-detail-to-ledger/tool.yaml"
+   ],
+   "defects": [],
+   "note": null
+  },
+  {
+   "form": "fixed",
+   "id": "consolidated-statements",
+   "version": "1.0.11",
+   "status": "disabled",
+   "side_effects": [
+    "external_read",
+    "immutable_in_independent_out"
+   ],
+   "external_systems": [
+    {
+     "system": "金蝶",
+     "access": "browser_rpa/api"
+    }
+   ],
+   "input_output": "入:金蝶取数；出:合并报表底稿",
+   "recovery_facts": "SKILL.md L34:金蝶取数失败→停并原样报告",
+   "evidence": [
+    "skills/consolidated-statements/tool.yaml",
+    "native 包 SKILL.md L34"
+   ],
+   "defects": [],
+   "note": null
+  },
+  {
+   "form": "fixed",
+   "id": "dept-expense-alloc",
+   "version": "1.0.0",
+   "status": "disabled",
+   "side_effects": [
+    "external_read",
+    "immutable_in_independent_out"
+   ],
+   "external_systems": [
+    {
+     "system": "用友",
+     "access": "uploaded_export"
+    }
+   ],
+   "input_output": "入:用友科目余额+收入底稿+人员归属；出:部门费用表+利润表",
+   "recovery_facts": "tool.yaml 无恢复规则字段；SKILL.md 未文档化单项恢复规则",
+   "evidence": [
+    "skills/dept-expense-alloc/tool.yaml"
+   ],
+   "defects": [],
+   "note": null
+  },
+  {
+   "form": "native",
+   "id": "ar-hexiao-daily",
+   "version": "见 VERSION.json",
+   "status": "installed:23a456a",
+   "side_effects": [
+    "external_read",
+    "workcopy_modify"
+   ],
+   "external_systems": [
+    {
+     "system": "智云",
+     "access": "direct_read"
+    }
+   ],
+   "input_output": "同 fixed ar-hexiao-daily（Pi 沙箱内执行 vendor/scripts）",
+   "recovery_facts": "有文档化恢复规则：SKILL.md needs_rerun 逐日重跑、幂等校验跳过已写行、禁止写入失败绕道重试；正式恢复由后端 workflow/安全索引裁决（见 ar-cw06/pi-cw07 文档）",
+   "evidence": [
+    "packages/ar-hexiao-daily/23a456a/SKILL.md",
+    "register native 条目"
+   ],
+   "defects": [],
+   "note": "磁盘另有 17f7f96 旧固定目录，当前 pinned 为 23a456a"
+  },
+  {
+   "form": "native",
+   "id": "consolidated-statements",
+   "version": "见 VERSION.json",
+   "status": "installed:aab80a8",
+   "side_effects": [
+    "external_read",
+    "immutable_in_independent_out"
+   ],
+   "external_systems": [
+    {
+     "system": "金蝶",
+     "access": "browser_rpa/api"
+    }
+   ],
+   "input_output": "同 fixed",
+   "recovery_facts": "SKILL.md L34:金蝶取数失败→停并原样报告",
+   "evidence": [
+    "packages/consolidated-statements/aab80a8/SKILL.md"
+   ],
+   "defects": [],
+   "note": "磁盘另有 17f7f96/55a8065 旧固定目录"
+  },
+  {
+   "form": "native",
+   "id": "dept-expense-alloc",
+   "version": "见 VERSION.json",
+   "status": "installed:17f7f96",
+   "side_effects": [
+    "external_read",
+    "immutable_in_independent_out"
+   ],
+   "external_systems": [
+    {
+     "system": "用友",
+     "access": "uploaded_export"
+    }
+   ],
+   "input_output": "同 fixed",
+   "recovery_facts": "tool.yaml 无恢复规则字段；SKILL.md 未文档化单项恢复规则",
+   "evidence": [
+    "packages/dept-expense-alloc/17f7f96/SKILL.md"
+   ],
+   "defects": [],
+   "note": null
+  },
+  {
+   "form": "native",
+   "id": "docx",
+   "version": "见 VERSION.json",
+   "status": "installed:17f7f96",
+   "side_effects": [
+    "immutable_in_independent_out"
+   ],
+   "external_systems": [],
+   "input_output": "Word 生成/美化",
+   "recovery_facts": "tool.yaml 无恢复规则字段；SKILL.md 未文档化单项恢复规则",
+   "evidence": [
+    "packages/docx/17f7f96/SKILL.md"
+   ],
+   "defects": [],
+   "note": null
+  },
+  {
+   "form": "native",
+   "id": "dreame-ar-progress-diff",
+   "version": "见 VERSION.json",
+   "status": "installed:17f7f96",
+   "side_effects": [
+    "immutable_in_independent_out"
+   ],
+   "external_systems": [],
+   "input_output": "进度表对比报告",
+   "recovery_facts": "tool.yaml 无恢复规则字段；SKILL.md 未文档化单项恢复规则",
+   "evidence": [
+    "packages/dreame-ar-progress-diff/17f7f96/SKILL.md"
+   ],
+   "defects": [],
+   "note": null
+  },
+  {
+   "form": "native",
+   "id": "labor-invoice-check",
+   "version": "见 VERSION.json",
+   "status": "installed:17f7f96",
+   "side_effects": [
+    "immutable_in_independent_out"
+   ],
+   "external_systems": [],
+   "input_output": "劳务发票核对完成版",
+   "recovery_facts": "tool.yaml 无恢复规则字段；SKILL.md 未文档化单项恢复规则",
+   "evidence": [
+    "packages/labor-invoice-check/17f7f96/SKILL.md"
+   ],
+   "defects": [],
+   "note": null
+  },
+  {
+   "form": "native",
+   "id": "pdf",
+   "version": "见 VERSION.json",
+   "status": "installed:17f7f96",
+   "side_effects": [
+    "immutable_in_independent_out"
+   ],
+   "external_systems": [],
+   "input_output": "PDF 处理",
+   "recovery_facts": "tool.yaml 无恢复规则字段；SKILL.md 未文档化单项恢复规则",
+   "evidence": [
+    "packages/pdf/17f7f96/SKILL.md"
+   ],
+   "defects": [],
+   "note": null
+  },
+  {
+   "form": "native",
+   "id": "pptx",
+   "version": "见 VERSION.json",
+   "status": "installed:17f7f96",
+   "side_effects": [
+    "immutable_in_independent_out"
+   ],
+   "external_systems": [],
+   "input_output": "PPT 生成/编辑",
+   "recovery_facts": "tool.yaml 无恢复规则字段；SKILL.md 未文档化单项恢复规则",
+   "evidence": [
+    "packages/pptx/17f7f96/SKILL.md"
+   ],
+   "defects": [],
+   "note": null
+  },
+  {
+   "form": "native",
+   "id": "project-detail-to-ledger",
+   "version": "见 VERSION.json",
+   "status": "installed:17f7f96",
+   "side_effects": [
+    "immutable_in_independent_out"
+   ],
+   "external_systems": [],
+   "input_output": "盈亏表新副本(禁覆盖原件)",
+   "recovery_facts": "tool.yaml 无恢复规则字段；SKILL.md 未文档化单项恢复规则",
+   "evidence": [
+    "packages/project-detail-to-ledger/17f7f96/SKILL.md"
+   ],
+   "defects": [],
+   "note": null
+  },
+  {
+   "form": "native",
+   "id": "receivables-merge",
+   "version": "见 VERSION.json",
+   "status": "installed:17f7f96",
+   "side_effects": [
+    "immutable_in_independent_out"
+   ],
+   "external_systems": [],
+   "input_output": "应收all合并清洗",
+   "recovery_facts": "tool.yaml 无恢复规则字段；SKILL.md 未文档化单项恢复规则",
+   "evidence": [
+    "packages/receivables-merge/17f7f96/SKILL.md"
+   ],
+   "defects": [],
+   "note": null
+  },
+  {
+   "form": "native",
+   "id": "split-by-sales",
+   "version": "见 VERSION.json",
+   "status": "installed:17f7f96",
+   "side_effects": [
+    "immutable_in_independent_out"
+   ],
+   "external_systems": [],
+   "input_output": "按销售拆分一人一份",
+   "recovery_facts": "tool.yaml 无恢复规则字段；SKILL.md 未文档化单项恢复规则",
+   "evidence": [
+    "packages/split-by-sales/17f7f96/SKILL.md"
+   ],
+   "defects": [],
+   "note": null
+  },
+  {
+   "form": "native",
+   "id": "xlsx",
+   "version": "见 VERSION.json",
+   "status": "installed:17f7f96",
+   "side_effects": [
+    "immutable_in_independent_out"
+   ],
+   "external_systems": [],
+   "input_output": "表格处理",
+   "recovery_facts": "tool.yaml 无恢复规则字段；SKILL.md 未文档化单项恢复规则",
+   "evidence": [
+    "packages/xlsx/17f7f96/SKILL.md"
+   ],
+   "defects": [],
+   "note": null
+  },
+  {
+   "form": "native",
+   "id": "withholding-report-rename",
+   "version": "见 VERSION.json",
+   "status": "installed:17f7f96",
+   "side_effects": [
+    "immutable_in_independent_out",
+    "original_modify"
+   ],
+   "external_systems": [
+    {
+     "system": "电子税务局",
+     "access": "uploaded_export"
+    }
+   ],
+   "input_output": "默认重命名副本；就地改名需明示+先备份",
+   "recovery_facts": "tool.yaml 无恢复规则字段；SKILL.md 未文档化单项恢复规则",
+   "evidence": [
+    "packages/withholding-report-rename/17f7f96/README.md(同名固定包)",
+    "fixed skills/withholding-report-rename/README.md L44/L60"
+   ],
+   "defects": [],
+   "note": "original_modify 为条件行为"
+  },
+  {
+   "form": "native",
+   "id": "kingdee-gl-import",
+   "version": "见 VERSION.json",
+   "status": "installed:17f7f96",
+   "side_effects": [
+    "immutable_in_independent_out"
+   ],
+   "external_systems": [],
+   "input_output": "入:序时账Excel；出:金蝶凭证引入表（人手动引入，不点引入）",
+   "recovery_facts": "tool.yaml 无恢复规则字段；SKILL.md 未文档化单项恢复规则",
+   "evidence": [
+    "SKILL.md L15(不登智云/不读各local.json)"
+   ],
+   "defects": [],
+   "note": "缺库时 pip 清华/阿里/中科大/默认源属环境准备外联，非业务外联"
+  },
+  {
+   "form": "native",
+   "id": "kingdee-posting",
+   "version": "见 VERSION.json",
+   "status": "installed:17f7f96",
+   "side_effects": [
+    "external_read",
+    "immutable_in_independent_out"
+   ],
+   "external_systems": [
+    {
+     "system": "金蝶开放平台",
+     "access": "api(api.kingdee.com)"
+    },
+    {
+     "system": "金蝶云星辰网页",
+     "access": "browser_export(service.jdy.com/www.jdy.com)"
+    },
+    {
+     "system": "智云",
+     "access": "direct_read_conditional(收款表销售为空时由convert.py读)"
+    }
+   ],
+   "input_output": "入:发票簿/付款台账/收款表；出:金蝶引入表（不点引入/审核/过账）",
+   "recovery_facts": "tool.yaml 无恢复规则字段；SKILL.md 未文档化单项恢复规则",
+   "evidence": [
+    "SKILL.md L0 入口-凭据表/L51(金蝶闸停整批)/L55(禁登智云)/L57(条件智云)"
+   ],
+   "defects": [],
+   "note": null
+  },
+  {
+   "form": "native",
+   "id": "pl-dept-report",
+   "version": "见 VERSION.json",
+   "status": "installed:17f7f96",
+   "side_effects": [
+    "external_read",
+    "immutable_in_independent_out"
+   ],
+   "external_systems": [
+    {
+     "system": "金蝶",
+     "access": "api+web_export"
+    }
+   ],
+   "input_output": "入:金蝶科目余额/部门核算/利润表；出:月度损益表Excel",
+   "recovery_facts": "tool.yaml 无恢复规则字段；SKILL.md 未文档化单项恢复规则",
+   "evidence": [
+    "SKILL.md L33(API失败处置)/L44(凭据分工)"
+   ],
+   "defects": [],
+   "note": null
+  }
+ ]
+}

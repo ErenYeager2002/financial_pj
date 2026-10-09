@@ -7724,6 +7724,7 @@ def _transition_reconciliation_plan_result(
 def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
     action_id = action.id
     workflow_id = action.workflow_id
+    action._ar_claim_action_name = getattr(action, "_ar_claim_action_name", action.name)
     action._ar_claim_worker_id = getattr(action, "_ar_claim_worker_id", action.worker_id)
     action._ar_claim_attempt = getattr(action, "_ar_claim_attempt", action.attempt_count)
     workflow = db.get(WorkflowSession, workflow_id)
@@ -8188,8 +8189,21 @@ def execute_workflow_action(db: Session, action: WorkflowAction) -> None:
         if workflow.state == "cancelled":
             finalize_requested_batch_cancellation(db, workflow.batch_id)
     except ExecutionCancelled as exc:
-        # This signal is raised only while holding the current action's claim
-        # lock, before a new script or publication has started.
+        if action.name.startswith("ar_") and db.info.get("ar_execution_lock") != action.id:
+            # A separate launch gate has released its lock. The outer execution
+            # owns discarding its unfinished phase before fencing cancellation.
+            from .ar_execution_runner import _lock_launch_claim
+
+            db.rollback()
+            db.info.pop("ar_execution_lock", None)
+            try:
+                action, workflow = _lock_launch_claim(db, action, workflow)
+            except ExecutionLeaseLost:
+                db.rollback()
+                db.info["ar_execution_lease_lost"] = True
+                return
+            db.info["ar_execution_lock"] = action.id
+        # Existing publication cancellation retains its original outer lock.
         action.state = "cancelled"
         action.finished_at = datetime.now(UTC)
         workflow.state = "cancelled"
@@ -8412,7 +8426,10 @@ def run_workflow_action_once(
     action = claim_next_workflow_action(db, pools, worker_id, execution_contracts=execution_contracts)
     if not action:
         return False
+    action._ar_lease_lost = False
+
     def stop_owned_process() -> None:
+        action._ar_lease_lost = True
         callback = getattr(action, "_ar_terminate_process", None)
         if callback is not None:
             callback()

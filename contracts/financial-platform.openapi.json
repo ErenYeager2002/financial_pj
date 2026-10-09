@@ -1,6 +1,19 @@
 {
   "components": {
     "schemas": {
+      "AbandonRequest": {
+        "properties": {
+          "checkpoint_fingerprint": {
+            "title": "Checkpoint Fingerprint",
+            "type": "string"
+          }
+        },
+        "required": [
+          "checkpoint_fingerprint"
+        ],
+        "title": "AbandonRequest",
+        "type": "object"
+      },
       "AdminAssistantProfile": {
         "properties": {
           "api_key_hint": {
@@ -824,6 +837,467 @@
         "title": "ApprovalRecord",
         "type": "object"
       },
+      "ArAttemptHistoryItem": {
+        "additionalProperties": false,
+        "properties": {
+          "action_id": {
+            "format": "uuid",
+            "title": "Action Id",
+            "type": "string"
+          },
+          "attempt": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attempt"
+          },
+          "binding_sha256": {
+            "default": "",
+            "pattern": "^(?:[0-9a-f]{64})?$",
+            "title": "Binding Sha256",
+            "type": "string"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "intent_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intent At"
+          },
+          "material_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material Version"
+          },
+          "missing_attempt_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Missing Attempt Count"
+          },
+          "phase": {
+            "enum": [
+              "write_ledger",
+              "write_receipt_flow",
+              "publish_reconciliation",
+              "complete_reconciliation"
+            ],
+            "title": "Phase",
+            "type": "string"
+          },
+          "reason_codes": {
+            "items": {
+              "enum": [
+                "context_invalid",
+                "index_invalid",
+                "index_missing",
+                "action_missing",
+                "action_identity_invalid",
+                "action_identity_conflict",
+                "action_phase_mismatch",
+                "action_counter_invalid",
+                "attempt_identity_conflict",
+                "attempt_history_missing",
+                "timestamp_invalid",
+                "action_scan_truncated",
+                "history_output_truncated",
+                "action_metadata_invalid"
+              ],
+              "type": "string"
+            },
+            "maxItems": 8,
+            "title": "Reason Codes",
+            "type": "array"
+          },
+          "record_state": {
+            "enum": [
+              "intent_recorded",
+              "phase_completed",
+              "legacy_unknown"
+            ],
+            "title": "Record State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action_id",
+          "phase",
+          "record_state"
+        ],
+        "title": "ArAttemptHistoryItem",
+        "type": "object"
+      },
+      "ArAttemptHistoryRead": {
+        "additionalProperties": false,
+        "properties": {
+          "authorizes_resume": {
+            "const": false,
+            "default": false,
+            "title": "Authorizes Resume",
+            "type": "boolean"
+          },
+          "evidence_revision": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Revision"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ArAttemptHistoryItem"
+            },
+            "maxItems": 256,
+            "title": "Items",
+            "type": "array"
+          },
+          "metadata_coverage_complete": {
+            "title": "Metadata Coverage Complete",
+            "type": "boolean"
+          },
+          "missing_attempt_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Missing Attempt Count"
+          },
+          "process_evidence_checked": {
+            "const": false,
+            "default": false,
+            "title": "Process Evidence Checked",
+            "type": "boolean"
+          },
+          "reason_codes": {
+            "items": {
+              "enum": [
+                "context_invalid",
+                "index_invalid",
+                "index_missing",
+                "action_missing",
+                "action_identity_invalid",
+                "action_identity_conflict",
+                "action_phase_mismatch",
+                "action_counter_invalid",
+                "attempt_identity_conflict",
+                "attempt_history_missing",
+                "timestamp_invalid",
+                "action_scan_truncated",
+                "history_output_truncated",
+                "action_metadata_invalid"
+              ],
+              "type": "string"
+            },
+            "maxItems": 16,
+            "title": "Reason Codes",
+            "type": "array"
+          },
+          "registered_attempt_count": {
+            "maximum": 128.0,
+            "minimum": 0.0,
+            "title": "Registered Attempt Count",
+            "type": "integer"
+          },
+          "scanned_action_count": {
+            "maximum": 2048.0,
+            "minimum": 0.0,
+            "title": "Scanned Action Count",
+            "type": "integer"
+          },
+          "schema_version": {
+            "const": "ar-attempt-history-metadata-v1",
+            "default": "ar-attempt-history-metadata-v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "snapshot_fingerprint": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Snapshot Fingerprint",
+            "type": "string"
+          }
+        },
+        "required": [
+          "metadata_coverage_complete",
+          "snapshot_fingerprint",
+          "registered_attempt_count",
+          "scanned_action_count"
+        ],
+        "title": "ArAttemptHistoryRead",
+        "type": "object"
+      },
+      "ArAttemptProcessDetailsItem": {
+        "additionalProperties": false,
+        "properties": {
+          "action_id": {
+            "format": "uuid",
+            "title": "Action Id",
+            "type": "string"
+          },
+          "attempt": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attempt"
+          },
+          "coverage_complete": {
+            "default": false,
+            "title": "Coverage Complete",
+            "type": "boolean"
+          },
+          "descendant_domain_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Descendant Domain Count"
+          },
+          "direct_exit_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Direct Exit Count"
+          },
+          "inspection_state": {
+            "default": "unknown",
+            "enum": [
+              "verified",
+              "unknown",
+              "invalid"
+            ],
+            "title": "Inspection State",
+            "type": "string"
+          },
+          "liveness": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "propertyNames": {
+              "enum": [
+                "running",
+                "not_running",
+                "exited_unreaped",
+                "identity_changed",
+                "different_scope",
+                "not_recorded",
+                "unavailable"
+              ]
+            },
+            "title": "Liveness",
+            "type": "object"
+          },
+          "phase": {
+            "enum": [
+              "write_ledger",
+              "write_receipt_flow",
+              "publish_reconciliation",
+              "complete_reconciliation"
+            ],
+            "title": "Phase",
+            "type": "string"
+          },
+          "prepared_record_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prepared Record Count"
+          },
+          "reason_codes": {
+            "items": {
+              "enum": [
+                "context_invalid",
+                "index_invalid",
+                "attempt_unregistered",
+                "binding_invalid",
+                "prepared_refs_missing",
+                "terminal_refs_missing",
+                "terminal_refs_conflict",
+                "fact_missing",
+                "fact_invalid",
+                "directory_extra",
+                "scan_truncated",
+                "budget_exceeded",
+                "identity_unconfirmed",
+                "non_effect_unanchored",
+                "investigation_unanchored"
+              ],
+              "type": "string"
+            },
+            "maxItems": 12,
+            "title": "Reason Codes",
+            "type": "array"
+          },
+          "registered_terminal_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Registered Terminal Count"
+          }
+        },
+        "required": [
+          "action_id",
+          "phase"
+        ],
+        "title": "ArAttemptProcessDetailsItem",
+        "type": "object"
+      },
+      "ArAttemptProcessDetailsRead": {
+        "additionalProperties": false,
+        "properties": {
+          "evidence_revision": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Revision"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ArAttemptProcessDetailsItem"
+            },
+            "maxItems": 256,
+            "title": "Items",
+            "type": "array"
+          },
+          "metadata_snapshot_fingerprint": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Metadata Snapshot Fingerprint",
+            "type": "string"
+          },
+          "observation_fingerprint": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Observation Fingerprint",
+            "type": "string"
+          },
+          "reason_codes": {
+            "items": {
+              "enum": [
+                "context_invalid",
+                "index_invalid",
+                "attempt_unregistered",
+                "binding_invalid",
+                "prepared_refs_missing",
+                "terminal_refs_missing",
+                "terminal_refs_conflict",
+                "fact_missing",
+                "fact_invalid",
+                "directory_extra",
+                "scan_truncated",
+                "budget_exceeded",
+                "identity_unconfirmed",
+                "non_effect_unanchored",
+                "investigation_unanchored"
+              ],
+              "type": "string"
+            },
+            "maxItems": 16,
+            "title": "Reason Codes",
+            "type": "array"
+          },
+          "registered_effect_coverage_complete": {
+            "default": false,
+            "title": "Registered Effect Coverage Complete",
+            "type": "boolean"
+          },
+          "schema_version": {
+            "const": "ar-attempt-process-details-v1",
+            "default": "ar-attempt-process-details-v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "whole_workflow_coverage": {
+            "const": "unknown",
+            "default": "unknown",
+            "title": "Whole Workflow Coverage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "metadata_snapshot_fingerprint",
+          "observation_fingerprint"
+        ],
+        "title": "ArAttemptProcessDetailsRead",
+        "type": "object"
+      },
       "ArEvidenceDetail": {
         "properties": {
           "entries": {
@@ -1040,6 +1514,16 @@
       },
       "ArExecutionRead": {
         "properties": {
+          "attempt_history": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArAttemptHistoryRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "available": {
             "title": "Available",
             "type": "boolean"
@@ -1078,6 +1562,16 @@
             },
             "title": "Phases",
             "type": "array"
+          },
+          "process_details": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArAttemptProcessDetailsRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "publication": {
             "default": "not_published",
@@ -13556,6 +14050,95 @@
         ]
       }
     },
+    "/api/pi-runtime/sessions/{session_id}/capabilities": {
+      "get": {
+        "operationId": "session_capabilities_api_pi_runtime_sessions__session_id__capabilities_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Session Capabilities",
+        "tags": [
+          "pi-runtime"
+        ]
+      }
+    },
+    "/api/pi-runtime/sessions/{session_id}/deliveries/{request_id}": {
+      "get": {
+        "operationId": "delivery_receipt_api_pi_runtime_sessions__session_id__deliveries__request_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delivery Receipt",
+        "tags": [
+          "pi-runtime"
+        ]
+      }
+    },
     "/api/pi-runtime/sessions/{session_id}/download": {
       "get": {
         "operationId": "download_api_pi_runtime_sessions__session_id__download_get",
@@ -13664,6 +14247,46 @@
           }
         },
         "summary": "Files",
+        "tags": [
+          "pi-runtime"
+        ]
+      }
+    },
+    "/api/pi-runtime/sessions/{session_id}/history": {
+      "get": {
+        "operationId": "session_history_api_pi_runtime_sessions__session_id__history_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Session History",
         "tags": [
           "pi-runtime"
         ]
@@ -16289,6 +16912,16 @@
               "title": "Workflow Id",
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "include_process_details",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Process Details",
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -16314,6 +16947,96 @@
           }
         },
         "summary": "Get Workflow Execution"
+      }
+    },
+    "/api/workflows/{workflow_id}/execution/abandon": {
+      "get": {
+        "operationId": "read_abandonment_conditions_api_workflows__workflow_id__execution_abandon_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workflow_id",
+            "required": true,
+            "schema": {
+              "title": "Workflow Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Read Abandonment Conditions Api Workflows  Workflow Id  Execution Abandon Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Abandonment Conditions"
+      },
+      "post": {
+        "operationId": "abandon_unpublished_result_api_workflows__workflow_id__execution_abandon_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workflow_id",
+            "required": true,
+            "schema": {
+              "title": "Workflow Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AbandonRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Abandon Unpublished Result Api Workflows  Workflow Id  Execution Abandon Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Abandon Unpublished Result"
       }
     },
     "/api/workflows/{workflow_id}/execution/investigate": {

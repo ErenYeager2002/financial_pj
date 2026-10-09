@@ -1,0 +1,383 @@
+/* DeerFlow-adapted renderer styles, v2 visual fidelity pass
+   (upstream d3a9c123, MIT; see NOTICE). Platform theme tokens only;
+   the legacy renderer CSS is untouched. */
+
+.stream {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  padding: 1rem;
+}
+
+/* DeerFlow signature: centered bounded chat column (upstream chat content
+   max-width 48rem) */
+.column {
+  margin-left: auto;
+  margin-right: auto;
+  width: 100%;
+  max-width: 48rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.welcome {
+  margin-left: auto;
+  margin-right: auto;
+  display: flex;
+  width: 100%;
+  max-width: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 2rem 1rem;
+  text-align: center;
+}
+
+.welcomeTitle {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 2rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.welcomeWave {
+  display: inline-block;
+  animation: df-wave 1.2s ease-in-out 1;
+  transform-origin: 70% 70%;
+}
+
+@keyframes df-wave {
+  0%, 100% { transform: rotate(0deg); }
+  20% { transform: rotate(14deg); }
+  40% { transform: rotate(-8deg); }
+  60% { transform: rotate(10deg); }
+  80% { transform: rotate(-4deg); }
+}
+
+.welcomeDesc {
+  color: var(--muted-foreground, rgba(0, 0, 0, 0.55));
+  font-size: 0.875rem;
+  max-width: 32rem;
+  white-space: pre-line;
+}
+
+.welcomeSuggestions {
+  margin-top: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.welcomeChip {
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.12));
+  border-radius: 9999px;
+  padding: 0.375rem 0.875rem;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  background: transparent;
+  color: inherit;
+}
+
+.welcomeChip:hover {
+  background: var(--accent, rgba(0, 0, 0, 0.05));
+}
+
+.message {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.messageUser {
+  margin-left: auto;
+  align-items: flex-end;
+}
+
+.messageAssistant {
+  align-items: stretch;
+}
+
+.content {
+  display: flex;
+  width: fit-content;
+  max-width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.messageUser .content {
+  margin-left: auto;
+  overflow: hidden;
+  border-radius: 0.5rem;
+  background: var(--secondary, rgba(0, 0, 0, 0.06));
+  color: var(--foreground, inherit);
+  padding: 0.75rem 1rem;
+}
+
+.messageAssistant .content {
+  width: 100%;
+  color: var(--foreground, inherit);
+}
+
+/* DeerFlow markdown typography (scoped to assistant/custom content) */
+.markdown h1, .markdown h2, .markdown h3, .markdown h4 {
+  font-weight: 600;
+  margin: 1rem 0 0.5rem;
+  line-height: 1.4;
+}
+
+.markdown h1 { font-size: 1.25rem; }
+.markdown h2 { font-size: 1.125rem; }
+.markdown h3 { font-size: 1rem; }
+
+.markdown h1:first-child, .markdown h2:first-child, .markdown h3:first-child, .markdown p:first-child {
+  margin-top: 0;
+}
+
+.markdown p { margin: 0.5rem 0; line-height: 1.7; }
+.markdown p:first-child { margin-top: 0; }
+.markdown p:last-child { margin-bottom: 0; }
+
+.markdown ul, .markdown ol {
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+  line-height: 1.7;
+}
+
+.markdown ul { list-style: disc; }
+.markdown ol { list-style: decimal; }
+.markdown li { margin: 0.25rem 0; }
+
+.markdown a {
+  color: var(--primary, #2563eb);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.markdown blockquote {
+  border-left: 3px solid var(--border, rgba(0, 0, 0, 0.15));
+  padding-left: 0.75rem;
+  margin: 0.75rem 0;
+  color: var(--muted-foreground, rgba(0, 0, 0, 0.6));
+}
+
+.markdown table {
+  border-collapse: collapse;
+  margin: 0.75rem 0;
+  width: 100%;
+  font-size: 0.875rem;
+}
+
+.markdown th, .markdown td {
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.12));
+  padding: 0.375rem 0.625rem;
+  text-align: left;
+}
+
+.markdown th {
+  background: var(--muted, rgba(0, 0, 0, 0.04));
+  font-weight: 600;
+}
+
+.markdown code {
+  background: var(--muted, rgba(0, 0, 0, 0.06));
+  border-radius: 0.25rem;
+  padding: 0.125rem 0.375rem;
+  font-size: 0.8125em;
+}
+
+/* DeerFlow-style code block: rounded card, dark body, padded */
+.markdown pre {
+  background: #0d1117;
+  color: #e6edf3;
+  border-radius: 0.75rem;
+  padding: 0.875rem 1rem;
+  margin: 0.75rem 0;
+  overflow-x: auto;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+}
+
+.markdown pre code {
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  font-size: inherit;
+}
+
+.markdown hr {
+  border: none;
+  border-top: 1px solid var(--border, rgba(0, 0, 0, 0.12));
+  margin: 1rem 0;
+}
+
+.caption {
+  font-size: 0.75rem;
+  color: var(--muted-foreground, rgba(0, 0, 0, 0.55));
+  margin-bottom: 0.25rem;
+}
+
+.toolCard {
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.12));
+  border-radius: 0.5rem;
+  background: var(--card, var(--background, transparent));
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.toolSummary {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  text-align: left;
+}
+
+.toolSummary:hover {
+  background: var(--accent, rgba(0, 0, 0, 0.05));
+}
+
+.toolSummary:focus-visible {
+  outline: 2px solid var(--primary, currentColor);
+  outline-offset: -2px;
+}
+
+.chevron {
+  transition: transform 120ms ease;
+  flex-shrink: 0;
+}
+
+.chevronOpen {
+  transform: rotate(90deg);
+}
+
+.toolStatus {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: var(--muted-foreground, rgba(0, 0, 0, 0.55));
+}
+
+.toolStatusError {
+  color: var(--destructive, #c00);
+}
+
+.toolPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  border-top: 1px solid var(--border, rgba(0, 0, 0, 0.12));
+  padding: 0.75rem;
+}
+
+.payload {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.payloadHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.payloadCopy {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--muted-foreground, rgba(0, 0, 0, 0.55));
+  border-radius: 0.25rem;
+  padding: 0.125rem 0.375rem;
+  cursor: pointer;
+}
+
+.payloadCopy:hover {
+  background: var(--accent, rgba(0, 0, 0, 0.05));
+}
+
+.payloadPre {
+  background: var(--muted, rgba(0, 0, 0, 0.04));
+  max-height: 16rem;
+  overflow: auto;
+  border-radius: 0.25rem;
+  padding: 0.5rem;
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.message:hover .actions,
+.message:focus-within .actions {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chevron,
+  .actions,
+  .welcomeWave {
+    transition: none;
+    animation: none;
+  }
+}
+
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.25rem;
+  padding: 0.25rem;
+  color: var(--muted-foreground, rgba(0, 0, 0, 0.55));
+  cursor: pointer;
+}
+
+.iconButton:hover {
+  background: var(--accent, rgba(0, 0, 0, 0.05));
+  color: var(--foreground, inherit);
+}
+
+.attachmentChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.12));
+  border-radius: 0.5rem;
+  padding: 0.25rem 0.625rem;
+  font-size: 0.8125rem;
+  text-decoration: none;
+  color: inherit;
+}
+
+.attachments {
+  margin-top: 0.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}

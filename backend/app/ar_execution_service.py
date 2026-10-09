@@ -12,6 +12,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from .ar_execution_contract import EVIDENCE_VERSION
+from .ar_attempt_history import ArAttemptHistoryRead, read_attempt_history
+from .ar_attempt_process_details import ArAttemptProcessDetailsRead, read_attempt_process_details
 from .ar_publication import PublishedReportError, published_report
 from .ar_evidence_paging import ArEvidenceDetail, PAGING_VERSION, detail_page, merge_read_ranges
 from .model_visible_data import visible_value
@@ -255,6 +257,8 @@ def require_evidence_coverage(context: dict, fingerprint: str, record_ids: set[s
 
 class ArExecutionRead(BaseModel):
     available: bool
+    attempt_history: ArAttemptHistoryRead | None = None
+    process_details: ArAttemptProcessDetailsRead | None = None
     schema_version: str = ""
     publication: str = "not_published"
     phases: list[dict[str, Any]] = Field(default_factory=list)
@@ -268,16 +272,24 @@ class ArExecutionRead(BaseModel):
     formal_ledgers_registered: bool = False
 
 
-def read_execution(workflow: WorkflowSession) -> ArExecutionRead:
+def read_execution(workflow: WorkflowSession, *, include_process_details: bool = False) -> ArExecutionRead:
     from .ar_execution_contract import CONTRACT_VERSION, PHASES
     from .ar_execution_recovery import recovery_status
     from .ar_business_investigation import investigation_status
     from .ar_retention_policy import workflow_retention_hold
 
-    context = json.loads(workflow.context_json or "{}")
+    try:
+        context = json.loads(workflow.context_json)
+    except (ValueError, TypeError):
+        context = None
+    history = read_attempt_history(workflow, context if isinstance(context, dict) else None)
+    details = (read_attempt_process_details(workflow, context, history)
+               if include_process_details else None)
+    if not isinstance(context, dict):
+        return ArExecutionRead(available=False, attempt_history=history, process_details=details)
     state = context.get("ar_execution") or {}
-    if state.get("schema_version") != CONTRACT_VERSION:
-        return ArExecutionRead(available=False)
+    if not isinstance(state, dict) or state.get("schema_version") != CONTRACT_VERSION:
+        return ArExecutionRead(available=False, attempt_history=history, process_details=details)
     completed = set(state.get("completed") or [])
     phases = []
     from .workflow_service import _action_queued_at_utc
@@ -305,7 +317,7 @@ def read_execution(workflow: WorkflowSession) -> ArExecutionRead:
             "retention": (retention or {}) if phase.name == "stage_reconciliation" else {},
         })
     return ArExecutionRead(
-        available=True, schema_version=CONTRACT_VERSION,
+        available=True, attempt_history=history, process_details=details, schema_version=CONTRACT_VERSION,
         publication=state.get("publication", "not_published"), phases=visible_value(phases),
         counts=(context.get("final_result") or {}).get("counts") or {},
         flow=visible_value(context.get("flow_result") or {}),
