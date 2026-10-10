@@ -83,9 +83,11 @@ class BlankRebuild(unittest.TestCase):
                  date='2026-08-05',record_id='HX1',rowid='R1',disposition='kept')]}
         final=self.final(row,'2026-08-05');self.assertEqual(final['manual_items'],[])
         self.assertEqual(flow_monthly.write(self.root,final['items'],in_place=True,phase='status')[1],[])
+        self.assertEqual(self.read('E3'),'WX SOOTHER 9000')
         self.assertEqual(self.read('F3'),'9000-9000=0')
-        self.assertIn('SO1',str(self.read('E3')))
-        self.assertEqual(self.read('E4'),'WX SOOTHER 9000')
+        self.assertEqual(self.read('A3'),'2026-09-07')
+        self.assertEqual(self.read('C3'),9000)
+        self.assertIn('SO1',str(self.read('E4')))
         self.assertEqual(self.read('F4'),'9000-9000=0')
         self.modify(lambda ws:None)
         final=self.final(row,'2026-08-05');self.assertEqual(final['manual_items'],[])

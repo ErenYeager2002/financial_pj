@@ -186,6 +186,7 @@ def classify_one(
         "flow_row_no": rec.get("flow_row_no"),
         "flow_order_existing": rec.get("flow_order_existing") or "",
         "flow_identity": rec.get("flow_identity") or {},
+        "flow_receipt_group": rec.get("flow_receipt_group") or {},
         "huikuan_type": rec.get("huikuan_type") or "",
         "status": rec.get("status") or "",
         "write_currency_audit": {
@@ -248,6 +249,8 @@ def classify_one(
     }
     import flow_source_receipts
     result['flow_source_receipt'] = flow_source_receipts.proof(rec)
+    if rec.get('inferred_source_conflict'):
+        result['inferred_source_conflict'] = rec['inferred_source_conflict']
     if "_year_route_order" in rec:
         result["_year_route_order"] = rec["_year_route_order"]
     if rec.get("so"):
@@ -266,6 +269,13 @@ def classify_one(
         result["code"] = "E7"
         result["reason"] = "核销已作废"
         return result
+
+    if rec.get("inferred_source_conflict"):
+        # Uncertain ownership does not reopen a closed SO. It still supplies no
+        # flow allocation or proof that this particular AR was registered.
+        settled = _whole_order_settled_result(rec, result, ledger)
+        if settled is not None:
+            return settled
 
     # 父 AR 金额守恒失败是付款级硬闸；即使盈亏里已有结账行，也必须保留异常，
     # 不能被下面的订单幂等快捷路径改写为普通 auto/skip。

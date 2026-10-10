@@ -248,6 +248,8 @@ def reconcile_writeoff_details(
             item['_resolved_amount_local'] = WLA.detail_local(item)
         logical_rows.extend(logical)
 
+    import source_allocation_conflicts
+    source_conflicts = source_allocation_conflicts.identify(logical_rows, parent_references, audits, target_date)
     by_ar = {p["ar"]: p for p in payments}
     for p in payments:
         audit = audits.get(p["ar"]) or {
@@ -261,6 +263,7 @@ def reconcile_writeoff_details(
             "reason": "没有逐SO核销明细，沿用现有全额核销语义",
         }
         p["duplicate_writeoff_audit"] = audit
+        p["_source_allocation_conflicts"] = {so: evidence for (ar,so),evidence in source_conflicts.items() if ar == p["ar"]}
         p["writeoffs"] = {}
         p["writeoffs_local"] = {}
         p["cumulative_writeoffs"] = {}
@@ -311,7 +314,8 @@ def reconcile_writeoff_details(
     # 都误判为已经结清，后续写入也就失去了逐笔拆行的依据。
     dated_logical_rows = [
         item for item in logical_rows
-        if target_date is None or item.get("date") is None or item.get("date") <= target_date
+        if (target_date is None or item.get("date") is None or item.get("date") <= target_date)
+        and (item["ar"],item["so"]) not in source_conflicts
     ]
 
     def sequence_key(item: dict) -> Tuple[str, str, str, str, str]:

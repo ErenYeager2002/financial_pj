@@ -633,7 +633,24 @@ def _expand_ambiguous_sod_waterfall(
         seen_sods.add(sod)
 
     available = round(sum(item["capacity"] for item in candidates), 2)
-    if float(total_local) > available + tolerance:
+    # A business tail belongs to the complete SO, never one allowance per SOD.
+    source_values = [common.to_number(line.get("deliver_local")) for line in line_by_sod.values()]
+    latest = common.to_number(rec.get("so_delivery_local"))
+    baseline = sum(float((ledger.row_snapshot.get(row) or {}).get("yingshou") or 0)
+                   for row in ledger.so_index.get(so, []))
+    so_received = round(sum(float((ledger.row_snapshot.get(row) or {}).get("huikuan") or 0)
+                            for row in ledger.so_index.get(so, []))
+                        + sum(float(value) for value in (rec.get("_batch_sod_reserved") or {}).values()), 2)
+    tail = round(float(total_local) - available, 2)
+    tail_allowed = bool(candidates and latest is not None and latest > 0
+        and set(line_by_sod) == ledger_sods and "" not in ledger_sods
+        and all(value is not None and value >= 0 for value in source_values)
+        and abs(sum(source_values) - latest) <= tolerance
+        and abs(baseline - latest) <= tolerance
+        and all(item["capacity"] >= -tolerance for item in capacity_details)
+        and abs(so_received + float(total_local) - latest) <= BUSINESS_SETTLEMENT_TOL
+        and abs(tail) <= BUSINESS_SETTLEMENT_TOL)
+    if float(total_local) > available + tolerance and not tail_allowed:
         failed = dict(rec)
         failed.pop("default_first_sod", None)
         missing_sods = sorted(set(line_by_sod) - {
@@ -649,6 +666,7 @@ def _expand_ambiguous_sod_waterfall(
         failed["forced_reason"] = (
             f"SO={so} 未结清 SOD 可承接金额合计 {available:.2f}，小于本次核销 {float(total_local):.2f}。"
             + (detail or "未找到同时满足已登记 SOD、未结账且无已填回款的承接行")
+            + (f"；整SO已收及前序分配 {so_received:.2f} 加本次回款，与交付 {latest:.2f} 的差额超过1元，不能使用结清尾差" if latest is not None and so_received + float(total_local) > latest + BUSINESS_SETTLEMENT_TOL else "")
             + (f"；来源 SOD 在盈亏表缺行：{','.join(missing_sods)}" if missing_sods else "")
             + "；当前无法将回款安全分配到 SOD。请核对历史回款的 SOD 归属和缺失业务行；SO 总额对平不能证明逐 SOD 归属正确。"
         )
@@ -666,6 +684,10 @@ def _expand_ambiguous_sod_waterfall(
         allocations.append({**item, "allocated_local": allocated})
         remaining = round(remaining - allocated, 2)
 
+    if tail_allowed and remaining > tolerance and allocations:
+        # Preserve the actual receipt; the last open SOD carries the SO tail.
+        allocations[-1]["allocated_local"] = round(allocations[-1]["allocated_local"] + remaining, 2)
+        remaining = 0.0
     if remaining > tolerance or not allocations:
         failed = dict(rec)
         failed.pop("default_first_sod", None)
@@ -736,6 +758,9 @@ def _expand_ambiguous_sod_waterfall(
                 "allocation_index": index,
                 "allocation_count": len(allocations),
                 "allocations": audit_rows,
+                "settlement_tail": ({"amount": tail, "tolerance": BUSINESS_SETTLEMENT_TOL,
+                    "so_delivery_local": latest, "baseline_receivable": baseline,
+                    "target_sod": allocations[-1]["sod"]} if tail_allowed and tail else {}),
             },
         })
         expanded.append(resolved)

@@ -230,6 +230,8 @@ def prove(records, rows):
 def prepare(records, ledger):
     if ledger is None:
         return {}
+    # Conflicting estimates cannot poison independent explicit-event proof.
+    records = [r for r in records if not r.get("inferred_source_conflict")]
     groups = defaultdict(list)
     for rec in records:
         groups[(rec.get('so'), rec.get('sod'))].append(rec)

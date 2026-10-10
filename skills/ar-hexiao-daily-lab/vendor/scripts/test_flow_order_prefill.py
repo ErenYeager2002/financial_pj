@@ -81,7 +81,7 @@ class PendingOrders(unittest.TestCase):
   self.assertEqual(apply_flow.write_flow_items(self.root,final['items'],in_place=True,phase='status')[1],[])
   row=self.pending('SO2');row['ar']='OTHER';before=self.path.read_bytes()
   self.assertTrue(self.run_pending([row])[1]);self.assertEqual(self.path.read_bytes(),before)
- def test_pending_row_moves_after_other_receipt_insertion(self):
+ def test_pending_row_stays_after_other_receipt_append(self):
   import datetime as dt
   self.modify(lambda ws:ws.append([dt.date(2026,7,27),'测试乙',9000,'汇款','YX',9000,None]))
   ready=self.entry();pending=self.pending('SO2');pending.update(ar='AR2',flow_row_no=3)
@@ -89,8 +89,12 @@ class PendingOrders(unittest.TestCase):
   flow=build_flow_plan.build_plan({'auto':[ready],'hold':[pending],'hexiao_date':'2026-08-01'})
   final=build_flow_plan.finalize_plan_after_ledger(flow,{'hexiao_date':'2026-08-01','write':[ready]})
   changes,errors=apply_flow.write_flow_items(self.root,final['items'],in_place=True,phase='status')
-  self.assertEqual(errors,[]);self.assertIn('SO2',self.read('E4'));self.assertEqual(self.read('F4'),9000)
-  self.assertEqual(next(c['行号'] for c in changes if c['AR']=='AR2'),4)
+  self.assertEqual(errors,[]);self.assertIn('SO2',self.read('E3'));self.assertEqual(self.read('F3'),9000)
+  self.assertEqual(self.read('B3'),'测试乙');self.assertIsNone(self.read('G3'))
+  self.assertIn('SO1',self.read('E4'));self.assertEqual(self.read('F4'),'9000-1000=8000')
+  self.assertEqual(self.read('B4'),'测试甲')
+  self.assertEqual(next(c['行号'] for c in changes if c['AR']=='AR2'),3)
+  self.assertEqual(next(c['行号'] for c in changes if c['AR']=='AR1'),4)
  def test_rich_history_is_preserved(self):
   from openpyxl.cell.rich_text import CellRichText,TextBlock
   from openpyxl.cell.text import InlineFont

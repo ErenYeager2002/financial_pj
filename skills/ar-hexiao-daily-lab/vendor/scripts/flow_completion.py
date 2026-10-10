@@ -1,12 +1,13 @@
 """Receipt completion from the same verified cases used for flow registration."""
 
 def bind(item, rows):
-    ar=str(item.get('ar') or '').strip()
+    from flow_merged_receipts import member_ars
+    ars=set(member_ars(item))
     outcomes=item.get('so_outcomes') or [
         {'so':so,'buckets':['auto'],'case_ids':[]} for so in item.get('so_list',[])]
     good={}
     for _,row in rows:
-        if str(row.get('ar') or '').strip()!=ar or row.get('bucket') not in ('auto','ready'):
+        if str(row.get('ar') or '').strip() not in ars or row.get('bucket') not in ('auto','ready'):
             continue
         so=str(row.get('so') or '').strip()
         good.setdefault(so,set()).add(str(row.get('case_id') or '').strip())

@@ -68,7 +68,7 @@ def _classify_records_planning(
     for rec in resolved_records:
         value = common.to_number(rec.get("cumulative_received_local"))
         key = (rec.get("so"), rec.get("sod"))
-        if value is not None:
+        if value is not None and not rec.get("inferred_source_conflict"):
             batch_cumulative[key] = max(batch_cumulative.get(key, 0.0), float(value))
             batch_first_cumulative[key] = min(batch_first_cumulative.get(key, float(value)), float(value))
     import current_workbook_receipts as CWR

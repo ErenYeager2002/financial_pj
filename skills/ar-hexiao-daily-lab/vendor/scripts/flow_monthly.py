@@ -319,7 +319,9 @@ def finalize(items, checked):
             continue
         item.pop('order_only', None)
         item['monthly_date'] = date.isoformat()
-        flow_completion.bind(item, by_ar.get(item.get('ar'), []))
+        import flow_merged_receipts
+        receipt_rows = [row for ar in flow_merged_receipts.member_ars(item) for row in by_ar.get(ar, [])]
+        flow_completion.bind(item, receipt_rows)
         entries = {}
         deliveries = {}
         try:
@@ -329,7 +331,7 @@ def finalize(items, checked):
                             source_allocation=True, monthly_receipt_history=flow_parent_net.history(parent_net))
                 continue
             require_existing=[]
-            for kind,row in by_ar.get(item.get('ar'), []):
+            for kind,row in receipt_rows:
                 if row.get('bucket') not in ('auto', 'ready'):
                     continue
                 currency = (row.get('write_currency_audit') or {}).get('currency') or ''
@@ -1060,8 +1062,11 @@ def update_filter_names(path, sheet, sources):
         if '_xlnm._FilterDatabase' not in match.group(1) or '!' not in content:return match.group(0)
         qualifier,refs=content.rsplit('!',1)
         if qualifier.strip("'").replace("''", "'")!=sheet:return match.group(0)
-        for source in sorted(sources,reverse=True):
-            refs=xlsx_patch._shift_a1_token(refs,source,include_inserted=True)
+        # Appending never shifts old rows; only extend the filter's last row.
+        maximum=max(sources)+1
+        last_row=re.search(r'(\d+)$',refs)
+        if last_row and int(last_row.group(1))<maximum:
+            refs=refs[:last_row.start()]+str(maximum)
         return '<definedName'+match.group(1)+'>'+qualifier+'!'+refs+'</definedName>'
     text=re.sub(r'<definedName\b([^>]*)>(.*?)</definedName>',replace,text,flags=re.S)
     payload['xl/workbook.xml']=text.encode()
@@ -1149,7 +1154,11 @@ def write_file(src, out, items, *, validate_only=False, workbook=None):
             sheet=item['sheet'];ws=wb[sheet];cols=sheet_columns(sheet)
             import flow_source_receipts
             flow_source_receipts.verify_formula(item, ws, cols)
+            import flow_merged_receipts
+            flow_merged_receipts.validate(item)
             ar=item['ar'];chain=state['receipts'].get(ar);chain_diagnostics=[]
+            if chain and chain.get('receipt_group') != item.get('receipt_group'):
+                raise ValueError('合并到账成员发生变化，不能部分重领或重复扣款')
             if item.get('order_only'):
                 import flow_order_prefill
                 root=int(item['row_no'])
@@ -1188,6 +1197,7 @@ def write_file(src, out, items, *, validate_only=False, workbook=None):
                 state['receipts'][ar]=chain
             else:
                 chain=adopt_chain(ws,cols,item)
+                if item.get('receipt_group'):chain['receipt_group']=copy.deepcopy(item['receipt_group'])
                 chain_rows={m['row'] for m in chain['months']}
                 if any(known['sheet']==sheet and chain_rows & {m['row'] for m in known['months'] if '_insert_after' not in m}
                        for other,known in state['receipts'].items() if other!=ar):
@@ -1268,7 +1278,8 @@ def write_file(src, out, items, *, validate_only=False, workbook=None):
                     expected_cells.append((sheet,last,{cols['预收']:restored}))
                 posting_day=min(e['date'] for e in relocating) if relocating else day.isoformat()
                 last.pop('_relocate_entries',None)
-                month={'month':month_key,'date':posting_day,'row':ws.max_row+1+len(insertions),
+                import flow_append_rows
+                month={'month':month_key,'date':posting_day,'row':flow_append_rows.last_record_row(ws,cols)+1+len(insertions),
                     'start':last['remaining'],'remaining':last['remaining'],'entries':[],
                     'prefix':chain['months'][0].get('prefix',''),
                     'display_original':chain['months'][0].get('prefix',''), 'display_amounts':{}, 'legacy_sos':[]}
@@ -1364,6 +1375,8 @@ def write_file(src, out, items, *, validate_only=False, workbook=None):
             patch=xlsx_patch.patch_cells(current,target,sheet,edits,return_result=True)
             update_filter_names(target,sheet,[row-1 for _,row,_ in appended])
             workbook_finalize.finalize_workbook(target,{sheet:patch});current=target
+            if appended:
+                flow_append_rows.verify_filters_cleared(target,sheet)
         # Re-read formulas AND caches before committing; metadata refers to actual rows.
         check=openpyxl.load_workbook(current,data_only=False,rich_text=True)
         cached=openpyxl.load_workbook(current,data_only=True)

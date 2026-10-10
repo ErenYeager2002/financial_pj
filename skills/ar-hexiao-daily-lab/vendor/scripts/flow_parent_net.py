@@ -24,6 +24,8 @@ def collect(rows):
 def bind(item, day):
     """Return one parent amount only for a complete, audited fallback group."""
     from flow_monthly import money, number
+    if item.get("receipt_group"):
+        return None  # Each member AR is conserved by the merged source validator.
     sources = item.get('source_receipts') or []
     fallback = [s for s in sources if len(s.get('event') or []) > 1
                 and str(s['event'][1]).startswith('DELIVERY_FALLBACK|')]

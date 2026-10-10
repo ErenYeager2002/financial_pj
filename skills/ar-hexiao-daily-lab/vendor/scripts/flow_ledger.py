@@ -819,7 +819,8 @@ def annotate_records(
             rec["flow_file"] = ""
             rec["flow_sheet"] = ""
             rec["flow_row_no"] = None
-    return records
+    import flow_merged_receipts
+    return flow_merged_receipts.annotate(records, flow)
 
 
 def main(argv=None) -> int:

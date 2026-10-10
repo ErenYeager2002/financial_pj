@@ -126,13 +126,16 @@ def verify_formula(item, ws, cols):
 
 def allocations(item, day):
     from flow_monthly import money, number
+    import flow_merged_receipts
+    flow_merged_receipts.validate(item)
+    allowed_ars = flow_merged_receipts.member_ars(item)
     values = {}
     fx = '原币公式' in str(item.get('matched_by') or '')
     original_total, rate = fx_basis(item) if fx else (None, None)
     cumulative_orig = Decimal(0)
     cumulative_flow = Decimal(0)
     for source in item.get('source_receipts') or []:
-        if source.get('basis') != 'current_source_so_receipt' or source.get('ar') != item['ar'] or source.get('date') != day.isoformat():
+        if source.get('basis') != 'current_source_so_receipt' or source.get('ar') not in allowed_ars or source.get('date') != day.isoformat():
             raise ValueError('智云核销来源身份或日期不一致')
         so = str(source.get('so') or '').strip().upper()
         if not so:
@@ -140,7 +143,7 @@ def allocations(item, day):
         event = source.get('event') or []
         if event and (len(event)<3 or common.norm_date(event[0])!=day):
             raise ValueError('智云核销事件日期不一致')
-        key = 'source|' + json.dumps([item['ar'],so,day.isoformat(),event[1:3]],ensure_ascii=False,separators=(',',':'))
+        key = 'source|' + json.dumps([source['ar'],so,day.isoformat(),event[1:3]],ensure_ascii=False,separators=(',',':'))
         if key in values:
             raise ValueError('同一智云核销事项重复或金额冲突')
         local = money(source.get('amount'))
@@ -154,7 +157,7 @@ def allocations(item, day):
             next_flow = (cumulative_orig * rate).quantize(Decimal('.01'))
             amount = next_flow - cumulative_flow
             cumulative_flow = next_flow
-        entry = {'key':key,'case_id':item['ar']+'|'+so,'date':day.isoformat(),'so':so,'amount':number(amount)}
+        entry = {'key':key,'case_id':source['ar']+'|'+so,'date':day.isoformat(),'so':so,'amount':number(amount)}
         values[key] = entry
     return [e for e in values.values() if money(e['amount'])>0]
 

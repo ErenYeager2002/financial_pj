@@ -149,6 +149,12 @@ def expand_payment(p: dict, rates: Dict[str, float]) -> List[dict]:
                     item.setdefault("warning_codes", []).append(
                         "W_WHOLE_PAYMENT_DELIVERY_FALLBACK"
                     )
+        for item in items:
+            conflict = (p.get("_source_allocation_conflicts") or {}).get(item.get("so"))
+            if conflict:
+                item.update(inferred_source_conflict=copy.deepcopy(conflict),
+                            forced_code="E_PARENT_ALLOCATION_HISTORY_MISSING",
+                            forced_reason=conflict["reason"])
         return items
 
     unresolved = p.get("_parent_audit_unresolved")

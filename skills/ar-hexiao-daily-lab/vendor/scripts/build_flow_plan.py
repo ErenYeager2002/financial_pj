@@ -35,7 +35,8 @@ STRONG = frozenset({
     "三键(原币公式,中英文对照)",
 })
 from flow_date_identity import BASIS as DATE_IDENTITY_BASIS
-AUTO_MATCH_BASES = STRONG | {DATE_IDENTITY_BASIS, "日期+金额(名字不符)", "同回款历史单号及预收承接", "已登记核销行"}
+from flow_merged_receipts import BASIS as MERGED_RECEIPT_BASIS
+AUTO_MATCH_BASES = STRONG | {MERGED_RECEIPT_BASIS, DATE_IDENTITY_BASIS, "日期+金额(名字不符)", "同回款历史单号及预收承接", "已登记核销行"}
 
 _LOC_RE = re.compile(
     r"^(?P<file>.+)#(?P<sheet>.+) 第(?P<row>\d+)行（(?P<by>[^）]*)）\s*$"
@@ -251,8 +252,24 @@ def build_plan(result: dict) -> dict:
     by_ar = _group_by_ar(items)
     summary_by = {s.get("ar") or "-": s for s in (result.get("ar_summary") or [])}
     plan_items = []
+    consumed = set()
     for ar, group in by_ar.items():
+        if ar in consumed:continue
+        merged = group[0].get('flow_receipt_group') or {}
+        if merged:
+            members = [m['ar'] for m in merged['members']]
+            complete = set(members).issubset(by_ar) and all(
+                r.get('flow_receipt_group') == merged for member in members for r in by_ar.get(member, []))
+            if complete:
+                ar = members[0]
+                group = [r for member in members for r in by_ar[member]]
+                consumed.update(members)
         item = plan_item_for_ar(ar, group, summary_by.get(ar))
+        if merged:
+            item.update(receipt_group=merged, receipt_net_orig=merged['identity']['amount'],
+                        receipt_total_orig=merged['identity']['amount'], receipt_fee_orig=0,
+                        parent_net_audit={}, source_receipt_history=[])
+            if not complete:item.update(verdict='hand',reason='合并到账缺少完整AR成员，不能单独写入')
         item["monthly_schema"] = "receipt-monthly-v2"
         item["monthly_date"] = result.get("hexiao_date") or ""
         locations = {(x.get("flow_file"),x.get("flow_sheet"),x.get("flow_row_no")) for x in group if x.get("flow_hits")==1}
